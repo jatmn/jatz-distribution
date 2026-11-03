@@ -12,6 +12,7 @@ Seven 3×3 depot buildings: Provider, Request, Buffer, Fuel, Liquid Provider, Li
 | `source/pipe-connector.blend` | Editable model of the shared exterior pipe connector |
 | `<role>/3/sheets/` | **Game sprites.** 2048×512 atlases (north, east, south, west) for `base`, three paint masks, `shadow` and a default-color `preview` |
 | `<role>/3/masters/hero-default-palette.png` | 2048px presentation render |
+| `loading-zone/loading-zone.png` | The 1×1 loading zone ground marking (64 px, drawn at scale 0.5). It's drawn by `tools/make_loading_zone.py`, which is its source; `loading-zone.json` records both hashes |
 | `icons/<role>-depot.png` | In-game icons: each depot facing south, taken from the south frame of its `sheets/preview.png` by `tools/make_icons.py`. 64 px with three custom mipmaps (120 × 64); `icons/icons.json` records their sources |
 | `<role>/3/previews/four-directions.png` | Four-direction preview strip |
 | `<role>/3/asset.json` | Palette, scale, pipe-port positions and source model |
@@ -39,6 +40,13 @@ The packaging pipeline is shared with the freighter, so the files keep the freig
 Masks are neutral grayscale with alpha, so any tint color works. Bare metal, copper, brass, rubber, paint chips, gauges and lenses stay in `base` and are never tinted. Draw the layers in this order: shadow, base, role, clamps, housing. All layers share one canvas and ground pivot.
 
 ## Using it in Factorio
+
+**In Jat'z Distribution**, every depot placed unrotated has its loading zone to the south (`prototypes/orientation.lua`):
+- Provider, Request, Buffer and Fuel load through an opening at their front, so the mod shows their `south` artwork by default and turns their pipe ports with it. The Fuel depot's port is then on the east.
+- The liquid depots keep their pipes to the north and load from the opposite, south side.
+- The loading zone marking is the depot's `integration_patch`, drawn on the `decals` layer one tile beyond the footprint. It rotates with the depot, shows on ghosts and disappears with it.
+
+The rest of this section describes the helpers for any mod, using the artwork's own direction names.
 
 Copy each depot's `sheets/` into your mod as `graphics/depots/<role>/3/`, copy `connectors/sheets/` to `graphics/depots/connectors/`, and copy the three Lua files from `factorio/` into its prototypes. To keep the sheets somewhere else, pass their location: `pictures(...)` takes an optional fifth argument, a `string.format` pattern for (role, size) such as `"assets/depots/%s/%d/sheets/"`, and `pipe_pictures(mod_name, directory)` takes the connector folder. Jat'z Distribution itself does this; see `prototypes/depots.lua`. Then:
 

@@ -15,7 +15,8 @@ local EXPECTED_PORTS = {
   provider = {},
   request = {},
   buffer = {},
-  fuel = { { x = -1, y = 0, direction = defines.direction.west } },
+  -- Shown half a turn from its artwork so its opening faces south: the port is on the east.
+  fuel = { { x = 1, y = 0, direction = defines.direction.east } },
   ["liquid-provider"] = { { x = 0, y = -1, direction = defines.direction.north } },
   ["liquid-request"] = { { x = 0, y = -1, direction = defines.direction.north } },
   ["liquid-buffer"] = {
@@ -157,6 +158,44 @@ local function check_depot(surface, role, row, result)
   end
 end
 
+-- Building a depot clears decoratives whose footprint overlaps its loading zone tile, and only
+-- those: a floor-layer sand rock on the zone goes, a desert bush two tiles further out stays.
+local function check_loading_zone_clearing(surface, result)
+  for row, role in ipairs(ROLES) do
+    local name = "jatz-" .. role .. "-depot"
+    for turn, heading in ipairs(HEADINGS) do
+      local position = { 30 + (turn - 1) * 8 + 0.5, -56 + (row - 1) * 8 + 0.5 }
+      local zx, zy = rotated(0, 2, turn - 1)
+      local fx, fy = rotated(0, 4, turn - 1)
+      local zone = { x = position[1] + zx - 0.5, y = position[2] + zy - 0.5 }
+      local beyond = { x = position[1] + fx - 0.5, y = position[2] + fy - 0.5 }
+      -- Decoratives grow on natural ground, not concrete: give them desert sand to sit on.
+      surface.set_tiles({ { name = "sand-1", position = zone }, { name = "sand-1", position = beyond } })
+      surface.create_decoratives({
+        check_collision = false,
+        decoratives = {
+          { name = "medium-sand-rock", position = zone, amount = 1 },
+          { name = "white-desert-bush", position = beyond, amount = 1 },
+        },
+      })
+      assert(#surface.find_decoratives_filtered({ position = zone }) == 1, name .. ": test rock not placed")
+      surface.create_entity({
+        name = name,
+        position = position,
+        direction = heading,
+        force = "player",
+        raise_built = true,
+      })
+      assert(#surface.find_decoratives_filtered({ position = zone }) == 0, name .. ": loading zone not cleared")
+      assert(
+        #surface.find_decoratives_filtered({ position = beyond, name = "white-desert-bush" }) == 1,
+        name .. ": cleared decoratives beyond the loading zone"
+      )
+      result.cleared_zones = result.cleared_zones + 1
+    end
+  end
+end
+
 script.on_init(function()
   local surface = game.create_surface("jatz-check", { width = 160, height = 160 })
   surface.request_to_generate_chunks({ 0, 0 }, 3)
@@ -171,6 +210,8 @@ script.on_init(function()
     end
   end
   surface.set_tiles(tiles)
+  -- Start without any map-generated decoratives, so the loading zone checks see only their own.
+  surface.destroy_decoratives({})
 
   local result = {
     engine = script.active_mods.base,
@@ -181,10 +222,12 @@ script.on_init(function()
     rotations = 0,
     pipe_connections = 0,
     localised_names = {},
+    cleared_zones = 0,
   }
   for row, role in ipairs(ROLES) do
     check_depot(surface, role, row - 1, result)
   end
+  check_loading_zone_clearing(surface, result)
 
   check_recipe(FREIGHTER, result)
   check_menu_placement(result)

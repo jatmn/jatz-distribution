@@ -242,6 +242,28 @@ def check_icons(root, area, errors):
             errors.append(f'{icon.relative_to(root)}: not in {record_path.name}; {remake}')
 
 
+def check_loading_zone(root, errors):
+    """The loading zone marking is a 64 px tile, not blank, and current with the script that draws it."""
+    folder = root / 'assets/depots/loading-zone'
+    remake = 'run assets/depots/tools/make_loading_zone.py (never edit it by hand)'
+    record = load(folder / 'loading-zone.json')['loading-zone.png']
+    image, generator = folder / 'loading-zone.png', root / record['generator']
+    shown = image.relative_to(root)
+    decoded = png_rgba(image) if image.is_file() else None
+    if decoded is None:
+        errors.append(f'{shown}: must be an 8-bit RGBA PNG; {remake}')
+        return
+    width, height, rows = decoded
+    if (width, height) != (64, 64) or record.get('size') != 64:
+        errors.append(f'{shown}: must be 64x64 (one tile at scale 0.5), found {width}x{height}; {remake}')
+    if not any(row[column * 4 + 3] >= VISIBLE for row in rows for column in range(width)):
+        errors.append(f'{shown}: is blank; {remake}')
+    if not generator.is_file() or sha256(generator) != record['generator_sha256']:
+        errors.append(f'{shown}: drawn by an older {record["generator"]}; {remake}')
+    if sha256(image) != record['sha256']:
+        errors.append(f'{shown}: does not match loading-zone.json; {remake}')
+
+
 def check(root, areas=tuple(AREAS)):
     errors = []
     for area in areas:
@@ -252,6 +274,7 @@ def check(root, areas=tuple(AREAS)):
                 check_freighter(root, errors)
             else:
                 check_depots(root, errors)
+                check_loading_zone(root, errors)
                 check_archive(root, errors)
         except FileNotFoundError as missing:
             name = Path(missing.filename).resolve()

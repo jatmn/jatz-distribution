@@ -1,9 +1,12 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- The seven 3x3 depots. Cargo depots are rotatable containers; depots with pipe ports
--- (Fuel and the liquid depots) are storage tanks. Dispatch and transfer come later.
+-- (Fuel and the liquid depots) are storage tanks. Each draws its loading zone marking on the
+-- ground beside it, south when placed unrotated (prototypes/orientation.lua). Dispatch and
+-- transfer come later.
 local util = require("util")
 local constants = require("prototypes.constants")
 local definitions = require("prototypes.depot-definitions")
+local orientation = require("prototypes.orientation")
 local pictures = require("assets.depots.factorio.depot-pictures")
 local pipe_pictures = require("assets.depots.factorio.depot-pipe-pictures")
 
@@ -23,7 +26,7 @@ local ORDER = {
 for index, role in ipairs(ORDER) do
   local definition = definitions[role][SIZE]
   local name = "jatz-" .. role .. "-depot"
-  local artwork = pictures(constants.mod_name, role, SIZE, nil, constants.depot_sheets)
+  local artwork = orientation.pictures(role, pictures(constants.mod_name, role, SIZE, nil, constants.depot_sheets))
   local icon = string.format(constants.depot_icon, role)
   local entity
   if #definition.ports == 0 then
@@ -36,7 +39,7 @@ for index, role in ipairs(ORDER) do
     entity.two_direction_only = false
     entity.fluid_box = {
       volume = 25000,
-      pipe_connections = table.deepcopy(definition.ports),
+      pipe_connections = orientation.ports(role, definition.ports),
       pipe_covers = pipecoverspictures(),
       pipe_picture = pipe_pictures(constants.mod_name, constants.connector_sheets),
       -- North-side connectors draw behind the building.
@@ -63,6 +66,9 @@ for index, role in ipairs(ORDER) do
   entity.tile_height = SIZE
   entity.selection_box = { { -SIZE / 2, -SIZE / 2 }, { SIZE / 2, SIZE / 2 } }
   entity.collision_box = { { -SIZE / 2 + 0.2, -SIZE / 2 + 0.2 }, { SIZE / 2 - 0.2, SIZE / 2 - 0.2 } }
+  -- Ground marking on the loading side; it rotates, ghosts and disappears with the depot.
+  entity.integration_patch = orientation.loading_zone({ filename = constants.loading_zone, size = 64, scale = 0.5 })
+  entity.integration_patch_render_layer = orientation.loading_zone_render_layer
 
   data:extend({
     entity,

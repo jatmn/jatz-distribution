@@ -17,7 +17,11 @@ hashes, so tools/check_blender_sources.py catches icons left behind by a re-rend
 or edited by hand. Run after re-rendering or re-packaging the sprites:
 
     .venv/bin/python tools/make_icons.py
+
+With --check it writes nothing and fails unless every committed icon has exactly the
+pixels made from its sprite sheet; CI runs that whenever an area's art changes.
 """
+import argparse
 import hashlib
 from io import BytesIO
 import json
@@ -25,6 +29,7 @@ import os
 from pathlib import Path
 import tempfile
 
+import numpy as np
 from PIL import Image
 
 REPO = Path(__file__).resolve().parents[1]
@@ -46,15 +51,17 @@ def frame_box(direction, columns):
     return (x, y, x + FRAME, y + FRAME)
 
 
-def sources(root=REPO):
+def sources(root=REPO, areas=('freighter', 'depots')):
     """(icon folder, icon file name, preview sheet, frame box) for every icon the mod uses."""
-    freighter = root / 'assets/quinityn-freighter'
-    yield (freighter / 'icons', 'quinityn-freighter.png', freighter / 'sheets/freighter-preview.png',
-           frame_box(FREIGHTER_DIRECTION, 8))
-    depots = root / 'assets/depots'
-    for role in ROLES:
-        yield (depots / 'icons', f'{role}-depot.png', depots / role / '3/sheets/preview.png',
-               frame_box(DEPOT_DIRECTION, 4))
+    if 'freighter' in areas:
+        freighter = root / 'assets/quinityn-freighter'
+        yield (freighter / 'icons', 'quinityn-freighter.png', freighter / 'sheets/freighter-preview.png',
+               frame_box(FREIGHTER_DIRECTION, 8))
+    if 'depots' in areas:
+        depots = root / 'assets/depots'
+        for role in ROLES:
+            yield (depots / 'icons', f'{role}-depot.png', depots / role / '3/sheets/preview.png',
+                   frame_box(DEPOT_DIRECTION, 4))
 
 
 def padded_art(sheet_bytes, box, label):
@@ -107,9 +114,23 @@ def replace_atomically(target, data):
             os.unlink(temporary)
 
 
-def main(root=REPO):
+def check(root, areas):
+    """Fail unless every committed icon has exactly the pixels made from its sprite sheet."""
+    stale = []
+    for folder, name, sheet, box in sources(root, areas):
+        expected = np.asarray(icon(sheet.read_bytes(), box, sheet.relative_to(root)))
+        actual = np.asarray(Image.open(folder / name).convert('RGBA'))
+        if actual.shape != expected.shape or not np.array_equal(actual, expected):
+            stale.append(str((folder / name).relative_to(root)))
+    if stale:
+        raise SystemExit('Not made from the current sprite sheets: ' + ', '.join(stale)
+                         + '; run tools/make_icons.py and commit the result (never edit icons by hand)')
+    print('Every icon matches its sprite sheet')
+
+
+def main(root=REPO, areas=('freighter', 'depots')):
     records = {}
-    for folder, name, sheet, box in sources(root):
+    for folder, name, sheet, box in sources(root, areas):
         folder.mkdir(parents=True, exist_ok=True)
         target = folder / name
         # Hash and decode the same bytes, so the record names exactly what the icon was made from.
@@ -131,4 +152,13 @@ def main(root=REPO):
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--check', action='store_true', help='compare with the committed icons; write nothing')
+    parser.add_argument('--root', type=Path, default=REPO, help='repository checkout holding the art')
+    parser.add_argument('--area', choices=('freighter', 'depots'), help='only this area (default: both)')
+    args = parser.parse_args()
+    areas = (args.area,) if args.area else ('freighter', 'depots')
+    if args.check:
+        check(args.root.resolve(), areas)
+    else:
+        main(args.root.resolve(), areas)

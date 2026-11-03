@@ -55,7 +55,7 @@ def touches_art(path):
     suffix = PurePosixPath(path).suffix
     return (path.startswith('assets/') and suffix in ART_SUFFIXES
             or path.startswith('assets/depots/archive/')
-            or path == 'assets/depots/tools/render_connector.py')
+            or path in {'assets/depots/tools/render_connector.py', 'assets/depots/tools/make_loading_zone.py'})
 
 
 def classify(paths):
@@ -76,6 +76,9 @@ def classify(paths):
         if area is None:
             continue
         checks[area] = True
+        # The mod loads the Lua sprite helpers and depot data in assets/*/factorio/.
+        if path.startswith('assets/') and '/factorio/' in path and path.endswith('.lua'):
+            checks['mod'] = True
         if area in ('freighter', 'depots') and touches_art(path):
             checks[f'{area}_art'] = True
     # An art check runs inside its area's job.
