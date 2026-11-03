@@ -41,9 +41,9 @@ Every depot sits on a 3×3 footprint and can be placed facing north, east, south
 
 ## Roads and deliveries
 
-Freighters drive only on **road**, a placeable floor tile in our crafting row. Lay road from a provider depot's loading zone (the marked tile) to a request depot's loading zone. Then open the request depot and choose an item and an amount to keep in stock. Within a second, a freighter sets off along the road to the nearest provider depot that has the item. It loads up to ten stacks and drives back to unload. If no road route exists, the request depot shows why and tries another provider; it tries the same one again after 30 seconds.
+Freighters drive only on **road**, a placeable floor tile in our crafting row. Lay road from a provider depot's loading zone (the marked tile) to a request depot's loading zone. Then open the request depot and choose an item and an amount to keep in stock. Within a second, a freighter sets off along the road to the nearest provider depot that has the item. It loads what the depot still needs and has room for, up to ten stacks, and drives back to unload. Items keep their data on the way: armor keeps its equipment, food how far it has spoiled. If no road route exists, the request depot shows why and tries another provider; it tries the same one again after 30 seconds. If the road is cut behind a loaded freighter, it takes the cargo back to the provider.
 
-For now, freighters appear for each delivery and need no fuel. Requests aren't kept in blueprints yet, but Copy and Paste settings works between request depots. Buildings can still be placed on road; freighters drive through them.
+For now, freighters appear for each delivery and need no fuel. Requests are for normal-quality items. They aren't kept in blueprints yet, but Copy and Paste settings works between request depots, and cloned depots keep theirs. Buildings can still be placed on road; freighters drive through them.
 
 By default, provider depots are red, request depots blue, buffer depots green and the fuel depot amber. Every color can be changed.
 

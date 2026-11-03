@@ -221,6 +221,23 @@ local function check_road(result)
   result.free_recipes = result.free_recipes + 1
 end
 
+-- Road is built like any floor tile: from a ghost, on ordinary ground but not on water.
+local function check_road_placement(surface, result)
+  surface.set_tiles({ { name = "grass-1", position = { 66, 66 } }, { name = "water", position = { 68, 66 } } })
+  for _, case in ipairs({ { 66, "road_on_grass" }, { 68, "road_on_water" } }) do
+    local ghost = surface.create_entity({
+      name = "tile-ghost",
+      inner_name = ROAD,
+      position = { case[1], 66 },
+      force = "player",
+    })
+    if ghost then
+      ghost.revive()
+    end
+    result[case[2]] = surface.get_tile(case[1], 66).name == ROAD
+  end
+end
+
 -- Lay road over every tile from one corner to the other (inclusive).
 local function lay_road(surface, x1, y1, x2, y2)
   local tiles = {}
@@ -241,14 +258,16 @@ local function depot(surface, role, x, y)
   })
 end
 
--- Three requests for iron plate, built as a player would, south of the other checks:
+-- Requests built as a player would, south and north-west of the other checks. Each uses its own
+-- item, so no request can be served by another check's provider.
 -- * connected: provider and request depots 20 tiles apart, joined by a U-shaped road that
 --   detours 10 tiles south. The straight line between their loading zones is concrete, so the
 --   freighter must follow the road there and back.
 -- * island: a request depot whose loading zone is a single road tile, joined to nothing. A
 --   freighter can't reach the provider, so nothing arrives.
 -- * unpaved: a request depot with no road at its loading zone. No freighter is sent.
-local function setup_deliveries(surface)
+-- The rest are pairs 12 or 24 tiles apart on a straight road (see pair()).
+local function setup_deliveries(surface, result)
   -- Unrotated depots load from the tile two south of their centre.
   local provider = depot(surface, "provider", -60.5, 45.5)
   local connected = depot(surface, "request", -40.5, 45.5)
@@ -264,7 +283,7 @@ local function setup_deliveries(surface)
   assert(remote.call("jatz-distribution", "set_request", unpaved, "iron-plate", 10), "unpaved: not registered")
   local request = remote.call("jatz-distribution", "get_request", connected)
   assert(request.item == "iron-plate" and request.count == 30, "request: not stored")
-  storage.deliveries = {
+  local deliveries = {
     provider = provider,
     connected = connected,
     island = island,
@@ -272,6 +291,57 @@ local function setup_deliveries(surface)
     road_samples = 0,
     deepest = 0,
   }
+  storage.deliveries = deliveries
+
+  -- A provider at (x, y) and a request depot `apart` tiles east, joined by a straight road
+  -- between their loading zones; the provider holds `stock`, the request asks for `count`.
+  local function pair(x, y, apart, item, stock, count)
+    local from = depot(surface, "provider", x + 0.5, y + 0.5)
+    local to = depot(surface, "request", x + apart + 0.5, y + 0.5)
+    lay_road(surface, x, y + 2, x + apart, y + 2)
+    assert(from.insert({ name = item, count = stock }) == stock, item .. ": cannot stock")
+    assert(remote.call("jatz-distribution", "set_request", to, item, count), item .. ": request refused")
+    return { provider = from, request = to, item = item }
+  end
+
+  -- Item data survives the trip: armor keeps the equipment in its grid.
+  deliveries.armor = pair(-66, 2, 12, "modular-armor", 1, 1)
+  local armor = deliveries.armor.provider.get_inventory(defines.inventory.chest).find_item_stack("modular-armor")
+  assert(armor.grid.put({ name = "solar-panel-equipment" }), "armor: cannot equip")
+  -- Space Age: food keeps how far it has spoiled.
+  if prototypes.item.yumako then
+    deliveries.food = pair(-46, 2, 12, "yumako", 20, 20)
+    local food = deliveries.food.provider.get_inventory(defines.inventory.chest).find_item_stack("yumako")
+    food.spoil_percent = 0.5
+  end
+  -- A request depot with no room: nothing is fetched, nothing is spilled.
+  deliveries.full = pair(-26, 2, 12, "copper-plate", 50, 10)
+  local chest = deliveries.full.request.get_inventory(defines.inventory.chest)
+  chest.insert({ name = "stone", count = #chest * 50 })
+  assert(chest.get_insertable_count("copper-plate") == 0, "full: request depot still has room")
+  -- A freighter destroyed on its way: the request sends another and is filled.
+  deliveries.destroyed = pair(20, 2, 12, "steel-plate", 30, 30)
+  -- The request changes to another item while the freighter is on its way out: it must not load
+  -- the old item.
+  deliveries.changed = pair(40, 2, 12, "plastic-bar", 20, 10)
+  -- The road is cut behind a loaded freighter: it brings the cargo back to the provider.
+  deliveries.cut = pair(20, 20, 24, "iron-gear-wheel", 30, 20)
+
+  -- Requests are validated, and clones keep them.
+  local original = depot(surface, "request", 60.5, 45.5)
+  assert(remote.call("jatz-distribution", "set_request", original, "wood", 5), "wood: request refused")
+  result.bad_item_rejected = remote.call("jatz-distribution", "set_request", original, "no-such-item", 5) == false
+    and remote.call("jatz-distribution", "set_request", original, "wood", "lots") == false
+  local kept = remote.call("jatz-distribution", "get_request", original)
+  result.refused_request_kept = kept ~= nil and kept.item == "wood" and kept.count == 5
+  if not kept then
+    remote.call("jatz-distribution", "set_request", original, "wood", 5)
+  end
+  local clone = original.clone({ position = { 60.5, 55.5 } })
+  local cloned = remote.call("jatz-distribution", "get_request", clone)
+  result.cloned_request = cloned and (cloned.item .. " x" .. cloned.count) or "none"
+  result.request_cleared = remote.call("jatz-distribution", "set_request", clone, nil) == true
+    and remote.call("jatz-distribution", "get_request", clone) == nil
 end
 
 -- Every freighter on the way must stand wholly on road.
@@ -292,45 +362,107 @@ local function check_freighters_on_road(surface)
       )
     end
     deliveries.road_samples = deliveries.road_samples + 1
-    deliveries.deepest = math.max(deliveries.deepest, drone.position.y)
+    if drone.position.x < -30 and drone.position.y > 40 then
+      deliveries.deepest = math.max(deliveries.deepest, drone.position.y)
+    end
   end
 end
 
-local function count_iron(entity)
-  return entity.get_inventory(defines.inventory.chest).get_item_count("iron-plate")
+local function count(entity, item)
+  return entity.get_inventory(defines.inventory.chest).get_item_count(item or "iron-plate")
 end
 
--- Once the connected request is stocked and no freighter is out, record what happened.
+local function status(entity)
+  return remote.call("jatz-distribution", "get_status", entity)
+end
+
+-- Interfere with trips as they happen: destroy one freighter, change one request, cut one road.
+local function interfere(surface)
+  local deliveries = storage.deliveries
+  local destroyed = deliveries.destroyed
+  if not destroyed.done and status(destroyed.request) == "delivering" then
+    local drones = surface.find_entities_filtered({ name = DRONE, position = { 32.5, 4.5 }, radius = 3 })
+    if #drones == 1 then
+      drones[1].destroy()
+      destroyed.done = true
+    end
+  end
+  local changed = deliveries.changed
+  if not changed.done and status(changed.request) == "delivering" then
+    assert(remote.call("jatz-distribution", "set_request", changed.request, "electronic-circuit", 5), "change refused")
+    changed.done = true
+  end
+  local cut = deliveries.cut
+  if not cut.done and count(cut.provider, cut.item) < 30 then
+    -- Loaded and about to head east: remove a road tile halfway.
+    surface.set_tiles({ { name = "concrete", position = { 32, 22 } } })
+    cut.done = true
+  end
+end
+
+-- Once every trip has played out, record what happened.
 local function deliveries_finished(surface, tick, result)
   local deliveries = storage.deliveries
-  local done = count_iron(deliveries.connected) >= 30 and #surface.find_entities_filtered({ name = DRONE }) == 0
+  local armor, full, destroyed, changed, cut =
+    deliveries.armor, deliveries.full, deliveries.destroyed, deliveries.changed, deliveries.cut
+  local done = count(deliveries.connected) >= 30
+    and count(armor.request, armor.item) == 1
+    and (not deliveries.food or count(deliveries.food.request, "yumako") == 20)
+    and destroyed.done
+    and count(destroyed.request, destroyed.item) == 30
+    and changed.done
+    and cut.done
+    and count(cut.provider, cut.item) == 30
+    and #surface.find_entities_filtered({ name = DRONE }) == 0
   if not done or tick < DELIVERY_SETTLE then
     if tick >= DELIVERY_DEADLINE then
       error(
         string.format(
-          "deliveries did not finish in time: request has %d iron (status %s), provider %d, %d freighter(s) out, %d on-road samples, deepest y %.1f",
-          count_iron(deliveries.connected),
-          tostring(remote.call("jatz-distribution", "get_status", deliveries.connected)),
-          count_iron(deliveries.provider),
-          #surface.find_entities_filtered({ name = DRONE }),
-          deliveries.road_samples,
-          deliveries.deepest
+          "deliveries did not finish in time: iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), %d freighter(s) out",
+          count(deliveries.connected),
+          tostring(status(deliveries.connected)),
+          count(armor.request, armor.item),
+          count(destroyed.request, destroyed.item),
+          tostring(destroyed.done),
+          tostring(changed.done),
+          count(cut.provider, cut.item),
+          tostring(cut.done),
+          tostring(status(cut.request)),
+          #surface.find_entities_filtered({ name = DRONE })
         )
       )
     end
     return false
   end
-  result.delivered = count_iron(deliveries.connected)
-  result.provider_left = count_iron(deliveries.provider)
-  result.island_received = count_iron(deliveries.island)
-  result.request_status = remote.call("jatz-distribution", "get_status", deliveries.connected)
-  result.island_status = remote.call("jatz-distribution", "get_status", deliveries.island)
-  result.unpaved_status = remote.call("jatz-distribution", "get_status", deliveries.unpaved)
+  result.delivered = count(deliveries.connected)
+  result.provider_left = count(deliveries.provider)
+  result.island_received = count(deliveries.island)
+  result.request_status = status(deliveries.connected)
+  result.island_status = status(deliveries.island)
+  result.unpaved_status = status(deliveries.unpaved)
   result.road_samples = deliveries.road_samples
   -- The road's south edge is the tile row at y 57; the straight route stays at y 47.
   result.detour = deliveries.deepest - 47.5
   assert(result.road_samples > 0, "no freighter was ever seen driving")
   assert(result.detour > 9, "the freighter did not follow the road south")
+  local delivered = armor.request.get_inventory(defines.inventory.chest).find_item_stack("modular-armor")
+  result.armor_equipment = delivered.grid and #delivered.grid.equipment or 0
+  if deliveries.food then
+    local food = deliveries.food.request.get_inventory(defines.inventory.chest).find_item_stack("yumako")
+    result.food_spoiled = food.spoil_percent
+    assert(food.spoil_percent >= 0.5, "food arrived fresher than it left")
+  end
+  result.full_status = status(full.request)
+  result.full_provider_left = count(full.provider, full.item)
+  result.redelivered_after_destroy = count(destroyed.request, destroyed.item)
+  result.changed_provider_left = count(changed.provider, changed.item)
+  result.changed_received = count(changed.request, changed.item)
+  result.changed_status = status(changed.request)
+  result.cut_returned = count(cut.provider, cut.item)
+  result.cut_received = count(cut.request, cut.item)
+  result.cut_status = status(cut.request)
+  -- Nothing was left on the ground anywhere.
+  result.spilled = surface.count_entities_filtered({ type = "item-entity" })
   return true
 end
 
@@ -369,8 +501,9 @@ script.on_init(function()
 
   check_recipe(FREIGHTER, result)
   check_road(result)
+  check_road_placement(surface, result)
   check_menu_placement(result)
-  setup_deliveries(surface)
+  setup_deliveries(surface, result)
   local start = { 0.5, 30.5 }
   assert(surface.can_place_entity({ name = FREIGHTER, position = start, force = "player" }), "freighter: cannot place")
   local freighter = surface.create_entity({ name = FREIGHTER, position = start, force = "player" })
@@ -396,6 +529,7 @@ script.on_event(defines.events.on_tick, function(event)
   if event.tick % 10 == 0 then
     check_freighters_on_road(surface)
   end
+  interfere(surface)
   if not result.driven_tiles and event.tick >= DRIVE_TICKS then
     local freighter = storage.freighter
     local dx, dy = freighter.position.x - storage.start.x, freighter.position.y - storage.start.y

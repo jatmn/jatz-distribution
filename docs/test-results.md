@@ -22,8 +22,17 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | Delivery over road: a provider with 50 iron plates and a request for 30, 20 tiles apart, joined by a U-shaped road with concrete on the straight line. A freighter drove out and back along the road (10-tile detour) and the request depot received exactly 30; the provider kept 20 | Passed |
 | Freighters stay on road: every 10 ticks, all four corners of every delivering freighter stood on road (45 samples) | Passed |
 | A request depot whose loading zone is an isolated road tile receives nothing and reports no route; one without road at its loading zone sends no freighter and says so | Passed |
+| Cargo keeps item data: modular armor arrives with its solar panel; with Space Age, food that left 50% spoiled arrives at least as spoiled | Passed |
+| A request depot with no room fetches nothing (provider keeps all 50 copper, status "full") | Passed |
+| A freighter destroyed on its way is replaced, and the request is filled (30 steel) | Passed |
+| A request changed from plastic to circuits mid-trip loads no plastic | Passed |
+| Road cut behind a loaded freighter: all 30 gears go back to the provider, none to the request, provider cooled down | Passed |
+| Nothing left on the ground by any check | Passed |
+| Unknown items and non-numeric counts are refused without changing the request; a cloned request depot keeps its request; clearing works | Passed |
+| Road laid from a ghost on grass; refused on water | Passed |
+| A save made by the PR's first version, with a freighter on its way, loads and finishes the delivery | Passed (one-off check) |
 | Road tile art, transitions and the item icon in the graphical client | Untested |
-| Request panel beside the request depot's window (item, amount, status), and Copy and Paste settings between request depots | Untested (the headless server has no players) |
+| Request panel beside the request depot's window (item, amount, status), and Copy and Paste settings between request depots | **Passed:** the owner reported the first version working in game on November 3, 2026; the panel is unchanged since |
 
 ## Depots: passed
 

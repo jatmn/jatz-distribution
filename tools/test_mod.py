@@ -34,7 +34,16 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # provider's 50 iron plates reach the request over the road; the request on an
             # isolated road tile gets nothing, and the one without road sends no freighter.
             'delivered': 30, 'provider_left': 20, 'island_received': 0, 'request_status': 'satisfied',
-            'island_status': 'unreachable', 'unpaved_status': 'no-road'}
+            'island_status': 'unreachable', 'unpaved_status': 'no-road',
+            # Cargo keeps item data; a full request depot fetches nothing; a destroyed freighter is
+            # replaced; a changed request doesn't load the old item; cargo cut off from its
+            # destination goes back to the provider; nothing is ever spilled; requests are
+            # validated, cloned and cleared; road is laid on ground but not water.
+            'armor_equipment': 1, 'full_status': 'full', 'full_provider_left': 50,
+            'redelivered_after_destroy': 30, 'changed_provider_left': 20, 'changed_received': 0,
+            'changed_status': 'no-provider', 'cut_returned': 30, 'cut_received': 0, 'cut_status': 'unreachable',
+            'spilled': 0, 'bad_item_rejected': True, 'refused_request_kept': True, 'cloned_request': 'wood x5', 'request_cleared': True, 'road_on_grass': True,
+            'road_on_water': False}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 

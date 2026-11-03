@@ -38,6 +38,21 @@ for _, event in ipairs({
 }) do
   script.on_event(event, on_built, filters)
 end
+local clone_filters = { { filter = "name", name = logistics.drone } }
+for _, filter in ipairs(filters) do
+  clone_filters[#clone_filters + 1] = filter
+end
+-- Another mod cloning a depot (or a whole area): the clone is a new depot with the original's
+-- request. A cloned freighter has no trip, so it is removed.
+script.on_event(defines.events.on_entity_cloned, function(event)
+  local entity = event.destination
+  if entity.valid then
+    if loading_zone.depots[entity.name] then
+      loading_zone.clear(entity)
+    end
+    logistics.on_cloned(event.source, entity)
+  end
+end, clone_filters)
 script.on_event(defines.events.on_player_rotated_entity, on_turned)
 script.on_event(defines.events.on_player_flipped_entity, on_turned)
 script.on_event(defines.events.on_entity_settings_pasted, logistics.on_entity_settings_pasted)
