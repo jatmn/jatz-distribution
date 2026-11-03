@@ -26,7 +26,10 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | A request depot with no room fetches nothing (provider keeps all 50 copper, status "full") | Passed |
 | A freighter destroyed on its way is replaced, and the request is filled (30 steel) | Passed |
 | A request changed from plastic to circuits mid-trip loads no plastic | Passed |
-| Road cut behind a loaded freighter: all 30 gears go back to the provider, none to the request, provider cooled down | Passed |
+| Road cut behind a loaded freighter: all 30 gears go back to the provider, none to the request, provider cooled down; the cut is noticed in 2 ticks (it used to take about 6 s of standing stuck) | Passed |
+| Mending a gap in a road: delivery done 195 ticks (about 3 s, round trip included) after the repair, instead of waiting out the retry cooldown | Passed |
+| Nearer of two providers removed mid-trip: the same freighter goes on to the other one and delivers | Passed |
+| Request depot removed mid-trip: its freighter leaves at once and the provider keeps its stock | Passed |
 | Nothing left on the ground by any check | Passed |
 | Unknown items and non-numeric counts are refused without changing the request; a cloned request depot keeps its request; clearing works | Passed |
 | Road laid from a ghost on grass; refused on water | Passed |

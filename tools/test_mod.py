@@ -43,7 +43,11 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             'redelivered_after_destroy': 30, 'changed_provider_left': 20, 'changed_received': 0,
             'changed_status': 'no-provider', 'cut_returned': 30, 'cut_received': 0, 'cut_status': 'unreachable',
             'spilled': 0, 'bad_item_rejected': True, 'refused_request_kept': True, 'cloned_request': 'wood x5', 'request_cleared': True, 'road_on_grass': True,
-            'road_on_water': False}
+            'road_on_water': False,
+            # Road and depot changes take effect at once: a mended road is used, a removed provider
+            # is replaced by the next one, a removed request depot's freighter leaves.
+            'rerouted_received': 10, 'rerouted_from_farther': 10, 'orphaned_provider_left': 10,
+            'rerouted_same_freighter': True}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 

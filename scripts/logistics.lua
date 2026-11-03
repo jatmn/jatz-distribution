@@ -31,8 +31,10 @@ local DISPATCH_INTERVAL = 60
 -- A freighter carries at most this many stacks.
 local CAPACITY_STACKS = 10
 -- After a provider can't be reached, a request depot ignores it for this long; after a freighter
--- can't be created, the depot waits this long before trying again.
-local RETRY_TICKS = 30 * 60
+-- can't be created, the depot waits this long before trying again. Laying road, or building or
+-- turning a depot, ends every wait on that surface at once (logistics.on_roads_changed and
+-- logistics.on_depot_changed), so this only matters for changes the game doesn't report.
+local RETRY_TICKS = 10 * 60
 -- How close a freighter must get to a loading zone's centre to load or unload there.
 local ARRIVAL_RADIUS = 0.5
 -- Requests are for normal-quality items.
@@ -184,6 +186,7 @@ local function find_provider(depot, from)
 end
 
 local function drive(trip, destination)
+  trip.destination = destination
   trip.drone.commandable.set_command({
     type = defines.command.go_to_location,
     destination = destination,
@@ -406,7 +409,8 @@ end
 function logistics.on_ai_command_completed(event)
   local id = event.unit_number
   local trip = storage.trips and storage.trips[id]
-  if not trip then
+  -- A command replaced by a newer one (see replan) is not the end of anything.
+  if not trip or event.result == defines.behavior_result.deleted then
     return
   end
   upgrade(trip)
@@ -425,6 +429,98 @@ function logistics.on_ai_command_completed(event)
   end
 end
 
+-- Where a trip is heading: the provider's loading zone, or the request depot's with cargo.
+local function target(trip)
+  local depot = depot_entity(trip.state == TO_REQUEST and trip.request or trip.provider)
+  return depot and (loading_tile(depot)) or trip.destination
+end
+
+-- Plan a freighter's route again from where it stands. A route that no longer exists fails at
+-- once (on_ai_command_completed), instead of after the freighter stands stuck for seconds.
+local function replan(trip)
+  if trip.drone.valid and trip.destination then
+    drive(trip, target(trip))
+  end
+end
+
+-- Forget cooldowns of the request depots on a surface: their routes may exist now.
+local function retry_now(surface_index)
+  for _, depot in pairs(storage.depots) do
+    if depot.role == "request" and depot.entity.valid and depot.entity.surface_index == surface_index then
+      depot.cooldowns = {}
+      depot.retry_at = 0
+    end
+  end
+end
+
+-- Road was laid (`added`) or removed or covered (`removed`) on a surface.
+function logistics.on_roads_changed(surface_index, added, removed)
+  if not storage.depots then
+    return
+  end
+  if added then
+    retry_now(surface_index)
+  end
+  if removed then
+    for _, trip in pairs(storage.trips) do
+      if trip.drone.valid and trip.drone.surface_index == surface_index then
+        replan(upgrade(trip))
+      end
+    end
+  end
+end
+
+-- A depot was built, turned or flipped: routes to and from it changed.
+function logistics.on_depot_changed(entity)
+  if not storage.depots or not logistics.depots[entity.name] then
+    return
+  end
+  retry_now(entity.surface_index)
+  for _, trip in pairs(storage.trips) do
+    if trip.provider == entity.unit_number or trip.request == entity.unit_number then
+      replan(upgrade(trip))
+    end
+  end
+end
+
+-- A depot was removed: trips to it go elsewhere now, rather than finding it gone on arrival.
+local function depot_removed(id)
+  for trip_id, trip in pairs(storage.trips) do
+    upgrade(trip)
+    if not trip.drone.valid then
+      end_trip(trip_id, trip)
+    elseif trip.request == id then
+      -- Nobody to deliver to: cargo goes back to the provider, an empty freighter just leaves.
+      if trip.state == TO_REQUEST and depot_entity(trip.provider) then
+        trip.state = RETURNING
+        replan(trip)
+      elseif trip.state == TO_PROVIDER or trip.cargo.is_empty() then
+        end_trip(trip_id, trip)
+      end
+    elseif trip.provider == id and trip.state == RETURNING then
+      -- Bringing cargo back to a provider that is gone: try the request depot again.
+      if depot_entity(trip.request) then
+        trip.state = TO_REQUEST
+        replan(trip)
+      else
+        spill(trip)
+        end_trip(trip_id, trip)
+      end
+    elseif trip.provider == id and trip.state == TO_PROVIDER then
+      -- On to the next nearest provider with the item; with none, the freighter leaves.
+      local depot = storage.depots[trip.request]
+      local request = depot and depot.entity.valid and depot.request
+      local provider = request and request.item == trip.item and find_provider(depot, trip.drone.position)
+      if provider then
+        trip.provider = provider.entity.unit_number
+        replan(trip)
+      else
+        end_trip(trip_id, trip)
+      end
+    end
+  end
+end
+
 function logistics.on_object_destroyed(event)
   -- For entities, useful_id is the unit_number: the key of storage.depots and storage.trips.
   local id = event.useful_id
@@ -432,8 +528,8 @@ function logistics.on_object_destroyed(event)
     return
   end
   if storage.depots[id] then
-    -- A request depot's freighter finishes its trip; arriving, it finds the depot gone.
     storage.depots[id] = nil
+    depot_removed(id)
   elseif storage.trips[id] then
     -- A freighter destroyed on the way (by enemies, say): its cargo is lost with it.
     end_trip(id, upgrade(storage.trips[id]))

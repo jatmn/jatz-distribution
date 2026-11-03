@@ -13,6 +13,7 @@ local function on_built(event)
       loading_zone.clear(entity)
     end
     logistics.add(entity)
+    logistics.on_depot_changed(entity)
   end
 end
 
@@ -21,6 +22,7 @@ local function on_turned(event)
   local entity = event.entity
   if entity and entity.valid and loading_zone.depots[entity.name] then
     loading_zone.clear(entity)
+    logistics.on_depot_changed(entity)
   end
 end
 
@@ -51,11 +53,58 @@ script.on_event(defines.events.on_entity_cloned, function(event)
       loading_zone.clear(entity)
     end
     logistics.on_cloned(event.source, entity)
+    if entity.valid then
+      logistics.on_depot_changed(entity)
+    end
   end
 end, clone_filters)
 script.on_event(defines.events.on_player_rotated_entity, on_turned)
 script.on_event(defines.events.on_player_flipped_entity, on_turned)
 script.on_event(defines.events.on_entity_settings_pasted, logistics.on_entity_settings_pasted)
+
+-- Road laid or removed, by anyone: freighters re-plan, and waiting requests try again at once.
+local ROAD = "jatz-road"
+local function on_tiles_built(event)
+  local removed = false
+  for _, tile in pairs(event.tiles) do
+    removed = removed or tile.old_tile.name == ROAD
+  end
+  local added = event.tile.name == ROAD
+  logistics.on_roads_changed(event.surface_index, added, removed and not added)
+end
+local function on_tiles_mined(event)
+  for _, tile in pairs(event.tiles) do
+    if tile.old_tile.name == ROAD then
+      return logistics.on_roads_changed(event.surface_index, false, true)
+    end
+  end
+end
+for _, event in ipairs({
+  defines.events.on_player_built_tile,
+  defines.events.on_robot_built_tile,
+  defines.events.on_space_platform_built_tile,
+}) do
+  script.on_event(event, on_tiles_built)
+end
+for _, event in ipairs({
+  defines.events.on_player_mined_tile,
+  defines.events.on_robot_mined_tile,
+  defines.events.on_space_platform_mined_tile,
+}) do
+  script.on_event(event, on_tiles_mined)
+end
+-- Scripts report only the new tiles: road among them was laid; anything else may have covered road.
+script.on_event(defines.events.script_raised_set_tiles, function(event)
+  local added, other = false, false
+  for _, tile in pairs(event.tiles) do
+    if tile.name == ROAD then
+      added = true
+    else
+      other = true
+    end
+  end
+  logistics.on_roads_changed(event.surface_index, added, other)
+end)
 logistics.register()
 request_gui.register()
 

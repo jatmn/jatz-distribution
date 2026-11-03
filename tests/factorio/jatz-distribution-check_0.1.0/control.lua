@@ -324,8 +324,19 @@ local function setup_deliveries(surface, result)
   -- The request changes to another item while the freighter is on its way out: it must not load
   -- the old item.
   deliveries.changed = pair(40, 2, 12, "plastic-bar", 20, 10)
-  -- The road is cut behind a loaded freighter: it brings the cargo back to the provider.
+  -- The road is cut behind a loaded freighter: it brings the cargo back to the provider, at once.
   deliveries.cut = pair(20, 20, 24, "iron-gear-wheel", 30, 20)
+  -- A road with a gap: the first trip fails; mending the road sends a freighter at once, without
+  -- waiting for the retry cooldown.
+  deliveries.mended = pair(-66, 20, 12, "pipe", 20, 20)
+  surface.set_tiles({ { name = "concrete", position = { -60, 22 } } })
+  -- Two providers on one road; the nearer one is removed while a freighter heads for it: the
+  -- freighter goes on to the other.
+  deliveries.rerouted = pair(-46, 20, 20, "stone-brick", 10, 10)
+  deliveries.rerouted.nearer = depot(surface, "provider", -37.5, 20.5)
+  assert(deliveries.rerouted.nearer.insert({ name = "stone-brick", count = 10 }) == 10, "brick: cannot stock")
+  -- The request depot is removed while its freighter heads out: the freighter leaves, nothing moves.
+  deliveries.orphaned = pair(50, 20, 12, "wooden-chest", 10, 10)
 
   -- Requests are validated, and clones keep them.
   local original = depot(surface, "request", 60.5, 45.5)
@@ -394,9 +405,48 @@ local function interfere(surface)
   end
   local cut = deliveries.cut
   if not cut.done and count(cut.provider, cut.item) < 30 then
-    -- Loaded and about to head east: remove a road tile halfway.
-    surface.set_tiles({ { name = "concrete", position = { 32, 22 } } })
-    cut.done = true
+    -- Loaded and about to head east: remove a road tile halfway, as a mod would, reporting it.
+    surface.set_tiles({ { name = "concrete", position = { 32, 22 } } }, true, false, true, true)
+    cut.done = game.tick
+  end
+  if cut.done and not cut.returned and count(cut.provider, cut.item) == 30 then
+    cut.returned = game.tick
+  end
+  local mended = deliveries.mended
+  if not mended.done and status(mended.request) == "unreachable" then
+    surface.set_tiles({ { name = ROAD, position = { -60, 22 } } }, true, false, true, true)
+    mended.done = game.tick
+  end
+  if mended.done and not mended.delivered and count(mended.request, mended.item) == 20 then
+    mended.delivered = game.tick
+  end
+  -- The freighter that set off from a request depot's loading zone (centre 2 tiles south).
+  local function freighter_of(entity)
+    local drones = surface.find_entities_filtered({
+      name = DRONE,
+      position = { entity.position.x, entity.position.y + 2 },
+      radius = 3,
+    })
+    return drones[1]
+  end
+  local rerouted = deliveries.rerouted
+  if not rerouted.done and status(rerouted.request) == "delivering" then
+    rerouted.freighter = freighter_of(rerouted.request)
+    rerouted.nearer.destroy()
+    rerouted.done = true
+  end
+  if rerouted.done and not rerouted.freighter.valid and count(rerouted.request, "stone-brick") < 10 then
+    -- The freighter gave up instead of going on to the other provider.
+    rerouted.replaced = true
+  end
+  local orphaned = deliveries.orphaned
+  if not orphaned.done and status(orphaned.request) == "delivering" then
+    orphaned.freighter = freighter_of(orphaned.request)
+    orphaned.request.destroy()
+    orphaned.done = game.tick
+  end
+  if orphaned.done and not orphaned.left and not orphaned.freighter.valid then
+    orphaned.left = game.tick
   end
 end
 
@@ -411,14 +461,16 @@ local function deliveries_finished(surface, tick, result)
     and destroyed.done
     and count(destroyed.request, destroyed.item) == 30
     and changed.done
-    and cut.done
-    and count(cut.provider, cut.item) == 30
+    and cut.returned
+    and deliveries.mended.delivered
+    and count(deliveries.rerouted.request, "stone-brick") == 10
+    and deliveries.orphaned.left
     and #surface.find_entities_filtered({ name = DRONE }) == 0
   if not done or tick < DELIVERY_SETTLE then
     if tick >= DELIVERY_DEADLINE then
       error(
         string.format(
-          "deliveries did not finish in time: iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), %d freighter(s) out",
+          "deliveries did not finish in time: iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), pipes after mending %d (%s), bricks rerouted %d, %d freighter(s) out",
           count(deliveries.connected),
           tostring(status(deliveries.connected)),
           count(armor.request, armor.item),
@@ -428,6 +480,9 @@ local function deliveries_finished(surface, tick, result)
           count(cut.provider, cut.item),
           tostring(cut.done),
           tostring(status(cut.request)),
+          count(deliveries.mended.request, "pipe"),
+          tostring(status(deliveries.mended.request)),
+          count(deliveries.rerouted.request, "stone-brick"),
           #surface.find_entities_filtered({ name = DRONE })
         )
       )
@@ -461,6 +516,20 @@ local function deliveries_finished(surface, tick, result)
   result.cut_returned = count(cut.provider, cut.item)
   result.cut_received = count(cut.request, cut.item)
   result.cut_status = status(cut.request)
+  -- Without re-planning, a freighter stands stuck about six seconds before giving up.
+  result.cut_turnaround = cut.returned - cut.done
+  assert(result.cut_turnaround < 240, "the cut was noticed late: " .. result.cut_turnaround .. " ticks")
+  -- Without a retry on road changes, the 10 s cooldown would hold this one back.
+  result.mended_delay = deliveries.mended.delivered - deliveries.mended.done
+  assert(result.mended_delay < 400, "the mended road was used late: " .. result.mended_delay .. " ticks")
+  result.rerouted_received = count(deliveries.rerouted.request, "stone-brick")
+  result.rerouted_from_farther = 10 - count(deliveries.rerouted.provider, "stone-brick")
+  result.orphaned_provider_left = count(deliveries.orphaned.provider, "wooden-chest")
+  -- The freighter heading for the removed provider went on to the other one itself.
+  result.rerouted_same_freighter = not deliveries.rerouted.replaced
+  -- The freighter of a removed request depot left at once, rather than driving on.
+  result.orphaned_left_after = deliveries.orphaned.left - deliveries.orphaned.done
+  assert(result.orphaned_left_after <= 2, "orphaned freighter kept driving: " .. result.orphaned_left_after .. " ticks")
   -- Nothing was left on the ground anywhere.
   result.spilled = surface.count_entities_filtered({ type = "item-entity" })
   return true
