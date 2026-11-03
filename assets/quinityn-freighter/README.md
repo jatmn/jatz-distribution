@@ -15,6 +15,7 @@ An armored eight-wheel freight truck with three cargo bays and an exposed power 
 | `sheets/` | **Game sprites.** 4096×4096 atlases of 512×512 frames: `base`, three paint masks, `shadow`, and a default-color `preview` |
 | `factorio/freighter-animation.lua` | Lua helper that builds the layered `RotatedAnimation` |
 | `masters/hero-default-palette.png` | 2048px presentation render |
+| `icons/quinityn-freighter.png` | In-game icon: the freighter heading south-east, frame 24 of `sheets/freighter-preview.png`, made by `tools/make_icons.py`. 64 px with three custom mipmaps (120 × 64); `icons/icons.json` records its source |
 | `previews/` | 64-direction contact sheet, turntable animation, per-layer compass sheets, fan clearance check and `recolor.html`, a recoloring viewer you open in a browser |
 | `asset.json` | Default palette, scale and render settings |
 | `tools/` | Model builder, render driver and renderer, packager, preview generator and validators |
@@ -74,6 +75,7 @@ python3 $A/tools/render_freighter.py        # add --blender /path/to/blender if 
 .venv/bin/python $A/tools/package_sprites.py
 .venv/bin/python $A/tools/create_preview.py
 .venv/bin/python $A/tools/validate_assets.py
+.venv/bin/python tools/make_icons.py
 ```
 
 `render_freighter.py` renders all 64 directions and the 2048px presentation render with the recorded settings. Before rendering, it saves the model's SHA-256 in a local `masters/render-inputs.json`. `package_sprites.py` only packages renders whose record matches the committed model, and copies that hash into `validation.json`. CI compares it with the model, so a model edited without re-rendering is caught.

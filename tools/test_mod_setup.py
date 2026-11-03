@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-only
-"""Unit tests for test_mod.py's setup logic, without Factorio: expansion resolution and locale parsing."""
+"""Unit tests without Factorio: test_mod.py's expansion resolution and locale parsing, the English
+names, and the icon size the prototypes declare."""
 from pathlib import Path
+import re
 import shutil
 import tempfile
 import unittest
@@ -31,6 +33,15 @@ class ExpansionTests(unittest.TestCase):
     def test_optional_and_incompatible_dependencies_are_not_enabled(self):
         bundled = {'a': {'dependencies': ['? b', '(?) c', '! d', '~ e']}, 'b': {}, 'c': {}, 'd': {}, 'e': {}}
         self.assertEqual(enabled_with('a', bundled), {'a', 'e'})
+
+
+class IconTests(unittest.TestCase):
+    def test_prototypes_declare_the_checked_icon_format(self):
+        # prototypes/constants.lua sets icon_size for every icon; check_blender_sources.py checks
+        # the icon files against ICON_SIZE. The two must agree.
+        from check_blender_sources import ICON_SIZE
+        constants = (Path(__file__).resolve().parents[1] / 'prototypes/constants.lua').read_text()
+        self.assertEqual(re.findall(r'^\s*icon_size = (\d+),', constants, re.MULTILINE), [str(ICON_SIZE)])
 
 
 class LocaleTests(unittest.TestCase):

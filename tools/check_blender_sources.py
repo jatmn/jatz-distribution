@@ -5,13 +5,16 @@
 Blender isn't needed. The render, packaging and inspection tools record the SHA-256
 of the .blend they used, so a model that changed without re-rendering, re-packaging
 or re-inspecting no longer matches its records. Also checks that every .blend was
-saved uncompressed by Blender 4.3, and that the frozen 1x1 archive is unchanged.
+saved uncompressed by Blender 4.3, that the in-game icons follow Factorio's icon layout
+and were made from the current sprites, and that the frozen 1x1 archive is unchanged.
 """
 import argparse
 import hashlib
 import json
 from pathlib import Path
+import struct
 import subprocess
+import zlib
 
 REPO = Path(__file__).resolve().parents[1]
 # 64-bit little-endian file saved by Blender 4.3, without compression.
@@ -130,11 +133,121 @@ def check_archive(root, errors):
             errors.append(f'{path.relative_to(root)}: not in the frozen 1x1 archive manifest')
 
 
+# The icon format the prototypes declare (icon_size = 64 in prototypes/constants.lua; the Mod
+# tests keep the two equal): 64 px plus three custom mipmaps, each half the previous size,
+# top-aligned with no padding, as Factorio 2.1 documents (types/IconData).
+ICON_SIZE = 64
+MIPMAPS = 4
+SLOTS = [(sum(ICON_SIZE >> n for n in range(level)), ICON_SIZE >> level) for level in range(MIPMAPS)]
+ICON_WIDTH = sum(size for _, size in SLOTS)
+VISIBLE = 16  # alpha at or above this counts as visible art
+
+
+def required_icons(root, area):
+    """The icons the mod needs for an area, from the entities themselves rather than icons.json."""
+    if area == 'freighter':
+        return {'quinityn-freighter.png'}
+    return {f'{load(path)["role"]}-depot.png' for path in (root / 'assets/depots').glob('*/3/asset.json')}
+
+
+def png_rgba(path):
+    """(width, height, rows of RGBA bytes) for an 8-bit, non-interlaced RGBA PNG, or None otherwise."""
+    data = path.read_bytes()
+    if data[:8] != b'\x89PNG\r\n\x1a\n':
+        return None
+    position, header, compressed = 8, None, b''
+    while position + 8 <= len(data):
+        length, kind = struct.unpack('>I4s', data[position:position + 8])
+        body = data[position + 8:position + 8 + length]
+        if kind == b'IHDR':
+            header = struct.unpack('>IIBBBBB', body)
+        elif kind == b'IDAT':
+            compressed += body
+        position += 12 + length
+    if header is None or header[2:] != (8, 6, 0, 0, 0):
+        return None
+    width, height = header[:2]
+    try:
+        raw = zlib.decompress(compressed)
+    except zlib.error:
+        return None
+    stride, rows, previous = width * 4, [], bytearray(width * 4)
+    for y in range(height):
+        start = y * (stride + 1)
+        kind, row = raw[start], bytearray(raw[start + 1:start + 1 + stride])
+        if len(row) != stride or kind > 4:
+            return None
+        for x in range(stride):  # undo the PNG scanline filter
+            left = row[x - 4] if x >= 4 else 0
+            up, corner = previous[x], previous[x - 4] if x >= 4 else 0
+            if kind == 1:
+                row[x] = (row[x] + left) & 255
+            elif kind == 2:
+                row[x] = (row[x] + up) & 255
+            elif kind == 3:
+                row[x] = (row[x] + (left + up) // 2) & 255
+            elif kind == 4:
+                estimate = left + up - corner
+                distances = (abs(estimate - left), abs(estimate - up), abs(estimate - corner))
+                row[x] = (row[x] + (left, up, corner)[distances.index(min(distances))]) & 255
+        rows.append(bytes(row))
+        previous = row
+    return width, height, rows
+
+
+def icon_layout_problems(path):
+    """What, if anything, stops a PNG from being a valid 64 px icon with its three mipmaps."""
+    decoded = png_rgba(path)
+    if decoded is None:
+        return ['must be an 8-bit RGBA PNG']
+    width, height, rows = decoded
+    if (width, height) != (ICON_WIDTH, ICON_SIZE):
+        return [f'must be {ICON_WIDTH}x{ICON_SIZE} ({ICON_SIZE} px with {MIPMAPS - 1} mipmaps), found {width}x{height}']
+    problems = []
+    for x, size in SLOTS:
+        if not any(rows[y][(x + column) * 4 + 3] >= VISIBLE for y in range(size) for column in range(size)):
+            problems.append(f'the {size} px level is blank')
+    outside = any(row[column * 4 + 3] for y, row in enumerate(rows) for column in range(width)
+                  if not any(x <= column < x + size and y < size for x, size in SLOTS))
+    if outside:
+        problems.append('has pixels outside the mipmap slots')
+    return problems
+
+
+def check_icons(root, area, errors):
+    """Every icon the mod needs exists, has Factorio's icon layout, and is current with its sprite sheet."""
+    folder = root / AREAS[area] / 'icons'
+    record_path = folder / 'icons.json'
+    remake = 'run tools/make_icons.py (never edit icons by hand)'
+    records = load(record_path)
+    for name in sorted(required_icons(root, area) - set(records)):
+        errors.append(f'{(folder / name).relative_to(root)}: required by the mod but not in {record_path.name}; {remake}')
+    for name, record in sorted(records.items()):
+        icon, source = folder / name, root / record['source']
+        shown = icon.relative_to(root)
+        if not icon.is_file():
+            errors.append(f'{shown}: missing; {remake}')
+            continue
+        if (record.get('icon_size'), record.get('mipmaps')) != (ICON_SIZE, MIPMAPS):
+            errors.append(f'{shown}: recorded as {record.get("icon_size")} px with {record.get("mipmaps")} levels; '
+                          f'the mod uses {ICON_SIZE} px with {MIPMAPS} levels; {remake}')
+        for problem in icon_layout_problems(icon):
+            errors.append(f'{shown}: {problem}; {remake}')
+        if not source.is_file() or sha256(source) != record['source_sha256']:
+            errors.append(f'{shown}: made from an older {record["source"]}; {remake}')
+        if sha256(icon) != record['sha256']:
+            errors.append(f'{shown}: does not match {record_path.name}; {remake}')
+    for icon in sorted(folder.glob('*.png')):
+        if icon.name not in records:
+            errors.append(f'{icon.relative_to(root)}: not in {record_path.name}; {remake}')
+
+
 def check(root, areas=tuple(AREAS)):
     errors = []
     for area in areas:
         try:
             check_headers(root, AREAS[area], errors)
+            check_icons(root, area, errors)
             if area == 'freighter':
                 check_freighter(root, errors)
             else:

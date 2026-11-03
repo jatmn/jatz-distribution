@@ -50,7 +50,8 @@ More screenshots: [every depot in every rotation](docs/images/depots-all-rotatio
 - [ ] Freighter dispatch between depots
 - [ ] Cargo and fluid loading and unloading
 - [ ] Solid and liquid refueling at the Fuel depot
-- [ ] Freighter wheel animation, proper item icons and final freighter stats
+- [x] In-game icons for the freighter and every depot, made from the game sprites
+- [ ] Freighter wheel animation and final freighter stats
 - [ ] Recipes, technology and balance
 - [ ] Release on the Factorio Mod Portal
 
@@ -66,7 +67,7 @@ The mod isn't on the Mod Portal yet, so build it from this repository (Python 3.
 python3 tools/package_mod.py
 ```
 
-Copy the resulting `dist/jatz-distribution_0.1.0.zip` into your [Factorio mods folder](https://wiki.factorio.com/Application_directory#User_data_directory) and enable **Jat'z Distribution**. All items are in the Logistics tab of the crafting menu and are free to craft for now.
+Copy the resulting `dist/jatz-distribution_0.1.0.zip` into your [Factorio mods folder](https://wiki.factorio.com/Application_directory#User_data_directory) and enable **Jat'z Distribution**. All items are in the Logistics tab of the crafting menu, in the row just above the car and tank, and are free to craft for now.
 
 ## Development
 

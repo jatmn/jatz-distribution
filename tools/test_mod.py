@@ -134,6 +134,8 @@ def check(binary, data, bundled, enabled_mods, label):
     translations = locale_keys()
     untranslated = sorted({key for names in report.get('localised_names', {}).values()
                            for key in names.values() if key not in translations})
+    if report.get('menu_tab') != 'logistics':
+        wrong['menu_tab'] = report.get('menu_tab')
     if wrong or report.get('driven_tiles', 0) <= 1 or loaded != expected_mods or untranslated:
         problems = wrong or {'loaded': loaded, 'expected': expected_mods, 'untranslated': untranslated,
                              'driven_tiles': report.get('driven_tiles')}
@@ -142,7 +144,8 @@ def check(binary, data, bundled, enabled_mods, label):
     (workspace / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
     print(f'{label}: {package.name} passed: {report["placed"]} depots placed, {report["rotations"]} rotations, '
           f'{report["pipe_connections"]} pipe connections, {report["free_recipes"]} free recipes, '
-          f'freighter drove {report["driven_tiles"]:.1f} tiles. Mods loaded: {", ".join(loaded)}')
+          f'freighter drove {report["driven_tiles"]:.1f} tiles, menu row {report["menu_row_order"]!r} directly above '
+          f'the car row {report["car_row_order"]!r} in {report["menu_tab"]}. Mods loaded: {", ".join(loaded)}')
     return True
 
 

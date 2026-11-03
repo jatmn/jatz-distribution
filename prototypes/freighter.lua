@@ -7,7 +7,8 @@ local name = "jatz-quinityn-freighter"
 
 local freighter = table.deepcopy(data.raw.car.car)
 freighter.name = name
-freighter.icon = "__base__/graphics/icons/car.png"
+freighter.icon = constants.freighter_icon
+freighter.icon_size = constants.icon_size
 freighter.minable = { mining_time = 0.5, result = name }
 freighter.animation = make_animation(constants.mod_name, nil, constants.freighter_sheets)
 -- No gun turret, and the car's lamp sprite doesn't fit this body.
@@ -23,9 +24,11 @@ data:extend({
   {
     type = "item-with-entity-data",
     name = name,
-    icon = "__base__/graphics/icons/car.png",
+    icon = constants.freighter_icon,
+    icon_size = constants.icon_size,
     subgroup = constants.subgroup,
-    order = "a[freighter]",
+    -- After the seven depots ("b[depot]-..."): last in our row.
+    order = "c[freighter]",
     place_result = name,
     stack_size = 1,
   },

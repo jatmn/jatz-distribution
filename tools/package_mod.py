@@ -20,16 +20,19 @@ LAYERS = ('base', 'mask-cab', 'mask-trim', 'mask-cargo', 'shadow')
 
 
 def mod_files(root=REPO):
-    files = [root / name for name in ('info.json', 'data.lua', 'COPYING', 'COPYING.LESSER', 'NOTICE')]
+    files = [root / name for name in ('info.json', 'data.lua', 'data-final-fixes.lua', 'COPYING', 'COPYING.LESSER',
+                                      'NOTICE')]
     files += sorted((root / 'prototypes').glob('*.lua'))
     files += sorted((root / 'locale').rglob('*.cfg'))
     freighter = root / 'assets/quinityn-freighter'
-    files += [freighter / 'factorio/freighter-animation.lua']
+    files += [freighter / 'factorio/freighter-animation.lua', freighter / 'icons/quinityn-freighter.png']
     files += [freighter / f'sheets/freighter-{layer}.png' for layer in LAYERS]
     depots = root / 'assets/depots'
     files += sorted((depots / 'factorio').glob('*.lua'))
     for metadata in sorted(depots.glob('*/3/asset.json')):
         files += [metadata.parent / f'sheets/{layer}.png' for layer in LAYERS]
+        # One icon per depot, named from the depot itself, so a missing icon stops the build.
+        files += [depots / f'icons/{json.loads(metadata.read_text())["role"]}-depot.png']
     files += [depots / f'connectors/sheets/{layer}.png' for layer in ('base', 'shadow')]
     missing = [str(path.relative_to(root)) for path in files if not path.is_file()]
     if missing:

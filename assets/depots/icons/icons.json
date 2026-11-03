@@ -1,0 +1,93 @@
+{
+  "provider-depot.png": {
+    "source": "assets/depots/provider/3/sheets/preview.png",
+    "source_frame": [
+      1024,
+      0,
+      1536,
+      512
+    ],
+    "source_sha256": "ed2ac99b31f7b9ffc3d4716edb34010e8b5261785ce7d3caf99235efa7bdbce4",
+    "sha256": "6b312d59b405b1cb2a1793973901fdb245dea87be265d22bcb3ea53d74cdf6f4",
+    "icon_size": 64,
+    "mipmaps": 4
+  },
+  "request-depot.png": {
+    "source": "assets/depots/request/3/sheets/preview.png",
+    "source_frame": [
+      1024,
+      0,
+      1536,
+      512
+    ],
+    "source_sha256": "1f340d77169d4a7f6ff2c903821a8cc20e5d7133455b220b0f0795b91a55552a",
+    "sha256": "8b083b093a1677344e95953597f3492974ad174234b9237ccd034d773c31cba2",
+    "icon_size": 64,
+    "mipmaps": 4
+  },
+  "buffer-depot.png": {
+    "source": "assets/depots/buffer/3/sheets/preview.png",
+    "source_frame": [
+      1024,
+      0,
+      1536,
+      512
+    ],
+    "source_sha256": "49ebb46e93966e3309ec0ee71b5aac132eb6e822825b7b8d840a4dc9e211f9ce",
+    "sha256": "890f17925d62c9e712265a739b2e68836b245a84ce42a11f7acfb985c7ba1b8e",
+    "icon_size": 64,
+    "mipmaps": 4
+  },
+  "fuel-depot.png": {
+    "source": "assets/depots/fuel/3/sheets/preview.png",
+    "source_frame": [
+      1024,
+      0,
+      1536,
+      512
+    ],
+    "source_sha256": "86291ec38078dc0379ea01438551a9b41a948976d3251fe6ac78d0420fd8200c",
+    "sha256": "62e83bdf1b9a885bc97daaab34abd9063790f7a88b777d3e60d6cae3aa4ca530",
+    "icon_size": 64,
+    "mipmaps": 4
+  },
+  "liquid-provider-depot.png": {
+    "source": "assets/depots/liquid-provider/3/sheets/preview.png",
+    "source_frame": [
+      1024,
+      0,
+      1536,
+      512
+    ],
+    "source_sha256": "1d7988ff48fc5cda25c66633516693b302fcb3a6a3a81b86b54276e5f8d72b9c",
+    "sha256": "c183c75f30fb58e9398aa8569f8e0caded4e903983a52a7aa039e5f093229bec",
+    "icon_size": 64,
+    "mipmaps": 4
+  },
+  "liquid-request-depot.png": {
+    "source": "assets/depots/liquid-request/3/sheets/preview.png",
+    "source_frame": [
+      1024,
+      0,
+      1536,
+      512
+    ],
+    "source_sha256": "5c98a14a9732f7c8a3400f8dde650adce507a8db58118e92f83b79df53c3101d",
+    "sha256": "a3dc60f3d9c60a2620a26abfbc4651d84432e1314bbdb7a91e9fe90f61c86aaf",
+    "icon_size": 64,
+    "mipmaps": 4
+  },
+  "liquid-buffer-depot.png": {
+    "source": "assets/depots/liquid-buffer/3/sheets/preview.png",
+    "source_frame": [
+      1024,
+      0,
+      1536,
+      512
+    ],
+    "source_sha256": "926723ea1b01a2f311e34f3c5b1878961efccaad1cddb8cf808b822f17da4d8a",
+    "sha256": "13d7b12b602112eb564fff8f39fa0c48abab1a9023ab3bc5ad4a105f6fba4489",
+    "icon_size": 64,
+    "mipmaps": 4
+  }
+}

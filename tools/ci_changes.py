@@ -27,7 +27,8 @@ SHARED_LINT = {'.luacheckrc', '.stylua.toml', '.ruff.toml', '.gitattributes'}
 DOCUMENTATION = {'README.md', 'AGENTS.md', 'NOTICE', 'COPYING', 'COPYING.LESSER',
                  '.gitignore', 'requirements.txt'}
 ART_SUFFIXES = {'.blend', '.png', '.webp', '.json'}
-ART_CHECKER = 'tools/check_blender_sources.py'
+# The art check and the icon generator cover both art areas.
+ART_TOOLS = {'tools/check_blender_sources.py', 'tools/make_icons.py'}
 
 
 def area_of(path):
@@ -66,8 +67,10 @@ def classify(paths):
             for area in AREAS:
                 checks[area] = True
             continue
-        if path == ART_CHECKER:
+        if path in ART_TOOLS:
             checks.update(repository=True, freighter_art=True, depots_art=True)
+            # The Mod tests check the prototypes' icon_size against the checker's icon format.
+            checks['mod'] = checks['mod'] or path == 'tools/check_blender_sources.py'
             continue
         area = area_of(path)
         if area is None:

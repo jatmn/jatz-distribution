@@ -1,0 +1,15 @@
+{
+  "quinityn-freighter.png": {
+    "source": "assets/quinityn-freighter/sheets/freighter-preview.png",
+    "source_frame": [
+      0,
+      1536,
+      512,
+      2048
+    ],
+    "source_sha256": "dfc19a0d7a83f5227573050c3a1a79fd07853bfa5e2a601e0a8ac4d0a7814e08",
+    "sha256": "338726ecab9a09bad8d5078a49daa188c3a5b5d92a89c9013c478c6e9f2d2a41",
+    "icon_size": 64,
+    "mipmaps": 4
+  }
+}
