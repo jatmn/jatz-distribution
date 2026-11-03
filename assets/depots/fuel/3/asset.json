@@ -1,0 +1,47 @@
+{
+  "role": "fuel",
+  "size": 3,
+  "fidelity_pass": 16,
+  "directions": [
+    "north",
+    "east",
+    "south",
+    "west"
+  ],
+  "palette": {
+    "cab": [
+      0.83,
+      0.58,
+      0.15
+    ],
+    "trim": [
+      0.8,
+      0.38,
+      0.12
+    ],
+    "cargo": [
+      0.43,
+      0.43,
+      0.4
+    ]
+  },
+  "ortho_scale": 7.5,
+  "projection_y_scale": 1.4142135623730951,
+  "ports": [
+    {
+      "direction": 12,
+      "position": [
+        -1,
+        0
+      ],
+      "seam": [
+        -1.5,
+        0
+      ],
+      "height": 0.36
+    }
+  ],
+  "game_frame_size": 512,
+  "game_scale": 0.46875,
+  "source": "source/fuel-3.blend"
+}

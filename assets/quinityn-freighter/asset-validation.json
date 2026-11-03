@@ -1,0 +1,396 @@
+{
+  "status": "passed",
+  "directions": 64,
+  "game_frame_size": 512,
+  "atlas_size": 4096,
+  "tint_masks": 3,
+  "atlas_cells_checked": 384,
+  "local_intermediates_checked": [],
+  "max_quantized_alpha_error": 0.006055772304534912,
+  "checks": [
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 0,
+      "quantized_alpha_max_error": 0.003921568393707275
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 1,
+      "quantized_alpha_max_error": 0.004536718130111694
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 2,
+      "quantized_alpha_max_error": 0.0041522495448589325
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 3,
+      "quantized_alpha_max_error": 0.004429072141647339
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 4,
+      "quantized_alpha_max_error": 0.0047981515526771545
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 5,
+      "quantized_alpha_max_error": 0.0045213401317596436
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 6,
+      "quantized_alpha_max_error": 0.005059599876403809
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 7,
+      "quantized_alpha_max_error": 0.004429064691066742
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 8,
+      "quantized_alpha_max_error": 0.004290655255317688
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 9,
+      "quantized_alpha_max_error": 0.004336804151535034
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 10,
+      "quantized_alpha_max_error": 0.004567474126815796
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 11,
+      "quantized_alpha_max_error": 0.004367552697658539
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 12,
+      "quantized_alpha_max_error": 0.003967704251408577
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 13,
+      "quantized_alpha_max_error": 0.00464436411857605
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 14,
+      "quantized_alpha_max_error": 0.005198001861572266
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 15,
+      "quantized_alpha_max_error": 0.004075348377227783
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 16,
+      "quantized_alpha_max_error": 0.004229143261909485
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 17,
+      "quantized_alpha_max_error": 0.003936947323381901
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 18,
+      "quantized_alpha_max_error": 0.00484427809715271
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 19,
+      "quantized_alpha_max_error": 0.004429072141647339
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 20,
+      "quantized_alpha_max_error": 0.00392156932502985
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 21,
+      "quantized_alpha_max_error": 0.004809379577636719
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 22,
+      "quantized_alpha_max_error": 0.004244506359100342
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 23,
+      "quantized_alpha_max_error": 0.004505962133407593
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 24,
+      "quantized_alpha_max_error": 0.004497990012168884
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 25,
+      "quantized_alpha_max_error": 0.004152238368988037
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 26,
+      "quantized_alpha_max_error": 0.004721254110336304
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 27,
+      "quantized_alpha_max_error": 0.0043214112520217896
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 28,
+      "quantized_alpha_max_error": 0.004675120115280151
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 29,
+      "quantized_alpha_max_error": 0.00470588356256485
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 30,
+      "quantized_alpha_max_error": 0.004013841971755028
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 31,
+      "quantized_alpha_max_error": 0.004152253270149231
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 32,
+      "quantized_alpha_max_error": 0.0041214898228645325
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 33,
+      "quantized_alpha_max_error": 0.004675120115280151
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 34,
+      "quantized_alpha_max_error": 0.003983083181083202
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 35,
+      "quantized_alpha_max_error": 0.004429042339324951
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 36,
+      "quantized_alpha_max_error": 0.004229143261909485
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 37,
+      "quantized_alpha_max_error": 0.00392156932502985
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 38,
+      "quantized_alpha_max_error": 0.0045213401317596436
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 39,
+      "quantized_alpha_max_error": 0.003952326253056526
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 40,
+      "quantized_alpha_max_error": 0.003967704251408577
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 41,
+      "quantized_alpha_max_error": 0.0042445361614227295
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 42,
+      "quantized_alpha_max_error": 0.0047366321086883545
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 43,
+      "quantized_alpha_max_error": 0.006055772304534912
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 44,
+      "quantized_alpha_max_error": 0.0041983723640441895
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 45,
+      "quantized_alpha_max_error": 0.0043214112520217896
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 46,
+      "quantized_alpha_max_error": 0.0043829381465911865
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 47,
+      "quantized_alpha_max_error": 0.004628986120223999
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 48,
+      "quantized_alpha_max_error": 0.005059584975242615
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 49,
+      "quantized_alpha_max_error": 0.003936947323381901
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 50,
+      "quantized_alpha_max_error": 0.004659742116928101
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 51,
+      "quantized_alpha_max_error": 0.003936947323381901
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 52,
+      "quantized_alpha_max_error": 0.004382908344268799
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 53,
+      "quantized_alpha_max_error": 0.004336796700954437
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 54,
+      "quantized_alpha_max_error": 0.004090741276741028
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 55,
+      "quantized_alpha_max_error": 0.004182994365692139
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 56,
+      "quantized_alpha_max_error": 0.004152253270149231
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 57,
+      "quantized_alpha_max_error": 0.00405997596681118
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 58,
+      "quantized_alpha_max_error": 0.00405997596681118
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 59,
+      "quantized_alpha_max_error": 0.004229139536619186
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 60,
+      "quantized_alpha_max_error": 0.00392156932502985
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 61,
+      "quantized_alpha_max_error": 0.0045213401317596436
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 62,
+      "quantized_alpha_max_error": 0.004229143261909485
+    },
+    {
+      "source": "sheets",
+      "size": 512,
+      "direction": 63,
+      "quantized_alpha_max_error": 0.003921568393707275
+    }
+  ]
+}

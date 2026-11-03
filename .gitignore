@@ -1,0 +1,21 @@
+.venv/
+.local/
+__pycache__/
+*.py[cod]
+*.blend1
+*.blend2
+*.log
+.DS_Store
+dist/
+
+# Render intermediates. The render and package tools regenerate these from the
+# .blend sources; only the game atlases (sheets/) and previews are tracked.
+assets/**/masters/exr/
+assets/**/masters/layers/
+assets/**/masters/shadow-silhouettes/
+assets/**/masters/render-inputs.json
+assets/**/frames/
+# The depot preview and packaging tools composite these small connector frames.
+!assets/depots/connectors/frames/
+assets/depots/connectors/masters/
+assets/depots/connectors/layers/

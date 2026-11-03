@@ -1,0 +1,47 @@
+{
+  "role": "liquid-request",
+  "size": 3,
+  "fidelity_pass": 16,
+  "directions": [
+    "north",
+    "east",
+    "south",
+    "west"
+  ],
+  "palette": {
+    "cab": [
+      0.23,
+      0.42,
+      0.69
+    ],
+    "trim": [
+      0.8,
+      0.38,
+      0.12
+    ],
+    "cargo": [
+      0.43,
+      0.43,
+      0.4
+    ]
+  },
+  "ortho_scale": 7.5,
+  "projection_y_scale": 1.4142135623730951,
+  "ports": [
+    {
+      "direction": 0,
+      "position": [
+        0,
+        -1
+      ],
+      "seam": [
+        0,
+        -1.5
+      ],
+      "height": 0.36
+    }
+  ],
+  "game_frame_size": 512,
+  "game_scale": 0.46875,
+  "source": "source/liquid-request-3.blend"
+}

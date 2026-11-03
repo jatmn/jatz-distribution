@@ -1,0 +1,34 @@
+{
+  "role": "provider",
+  "size": 1,
+  "fidelity_pass": 7,
+  "directions": [
+    "north",
+    "east",
+    "south",
+    "west"
+  ],
+  "palette": {
+    "cab": [
+      0.64,
+      0.23,
+      0.18
+    ],
+    "trim": [
+      0.8,
+      0.38,
+      0.12
+    ],
+    "cargo": [
+      0.43,
+      0.43,
+      0.4
+    ]
+  },
+  "ortho_scale": 2.5,
+  "projection_y_scale": 1.4142135623730951,
+  "ports": [],
+  "game_frame_size": 512,
+  "game_scale": 0.15625,
+  "source": "source/provider-1.blend"
+}

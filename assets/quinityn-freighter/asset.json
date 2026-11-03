@@ -1,0 +1,48 @@
+{
+  "asset": "Quinityn sealed freighter",
+  "revision": 3,
+  "created": "2026-11-01",
+  "renderer": "Blender 4.3.2 Cycles CPU",
+  "directions": 64,
+  "heading_step_degrees": 5.625,
+  "heading_zero": "north",
+  "order": "clockwise",
+  "camera_elevation_degrees": 45,
+  "orthographic_scale": 15.8,
+  "master_size": 1024,
+  "game_frame_size": 512,
+  "atlas_grid": [
+    8,
+    8
+  ],
+  "animation_frames_per_direction": 1,
+  "layers": [
+    "base",
+    "mask-cab",
+    "mask-trim",
+    "mask-cargo",
+    "shadow"
+  ],
+  "default_palette_srgb": {
+    "cab": [
+      0.48,
+      0.26,
+      0.58
+    ],
+    "trim": [
+      0.78,
+      0.43,
+      0.14
+    ],
+    "cargo": [
+      0.36,
+      0.46,
+      0.57
+    ]
+  },
+  "concept_sha256": "34a919877285ae1eaa807ccaeba8c38e469b26ab427766d0b382643ccf178caa",
+  "reconstruction_note": "Editable reconstruction with armored cab framing and inset paint panels, clear circular service fan, worn materials and smoky armored glass. Unseen surfaces remain interpreted.",
+  "factorio_scale": 0.395,
+  "tiles_per_blender_unit": 0.4,
+  "apply_projection": false
+}

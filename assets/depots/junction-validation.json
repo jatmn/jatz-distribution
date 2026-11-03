@@ -1,0 +1,602 @@
+{
+  "status": "passed",
+  "connector_source_sha256": "a03552a2bf81952dfeecd0cd2467963772df54a7a2ceadbdf86c90baa316c1c3",
+  "connector_rear_entry": 0.3399999737739563,
+  "native_diameter_tiles": 0.61,
+  "variants": 4,
+  "nonintersecting_pairs": 707,
+  "scope": "Every pipe ring retains native radius; full inlet ring enters tank; routes overlap straight rotating connector sleeves. All routes are horizontal and straight at ground-pipe height; complete inlet rings remain inside the single actual pressure-shell cross section in every heading. Native overlap and diameter checked. Structural/flange clearance and flat covers checked. Intentional tank welds excluded; not a hydraulic simulation or full-client acceptance.",
+  "results": [
+    {
+      "role": "fuel",
+      "size": 3,
+      "source_sha256": "4d0a6a1e3a6afbfaf86089d6f2cb8db0571f6b0e1265a7016c08d1b4cb55a338",
+      "connected_routes": [
+        {
+          "route": "Factory full bore tank route -1",
+          "tank": "Broad domed pressure vessel",
+          "socket_direction": 12,
+          "diameter_tiles": 0.61,
+          "minimum_inlet_embed": 0.3174982325124465,
+          "constant_radius_rings": 2,
+          "anchor": [
+            -1,
+            0
+          ],
+          "join_distance": 0.41999995708465576,
+          "straight_route_length": 0.6999999216624625
+        }
+      ],
+      "nonintersecting_pairs": 162,
+      "projected_nonintersecting_pairs": 648,
+      "closed_outward_flange_meshes": 0,
+      "pressure_vessels": 1,
+      "flat_tank_covers": 1,
+      "projected_endpoint_diameters": [
+        0.610000267624855,
+        0.610000267624855,
+        0.610000267624855,
+        0.610000267624855,
+        0.6099998205900192,
+        0.6099998205900192,
+        0.6099998205900192,
+        0.6099998205900192
+      ],
+      "native_socket_entry_errors": [
+        3.5886748369909214e-07,
+        7.178129095316364e-07,
+        3.998401124775034e-07,
+        3.073364496231079e-08
+      ],
+      "connector_seats": [
+        {
+          "heading": 0,
+          "horizontal_route": true,
+          "straight_overlap": 0.07999956607818604,
+          "axis_alignment": 1.0
+        },
+        {
+          "heading": 1,
+          "horizontal_route": true,
+          "straight_overlap": 0.11313772201538086,
+          "axis_alignment": 0.9999999403953552
+        },
+        {
+          "heading": 2,
+          "horizontal_route": true,
+          "straight_overlap": 0.07999956607818604,
+          "axis_alignment": 1.0
+        },
+        {
+          "heading": 3,
+          "horizontal_route": true,
+          "straight_overlap": 0.11313700675964355,
+          "axis_alignment": 1.0
+        }
+      ],
+      "fuel_exposed_fitting_visibility": [
+        {
+          "heading": 0,
+          "bands": [
+            {
+              "route_fraction": 0.8,
+              "visible_samples": 31,
+              "samples": 32,
+              "tank_contact_seam_samples": 0,
+              "blocking_objects": []
+            },
+            {
+              "route_fraction": 0.9,
+              "visible_samples": 31,
+              "samples": 32,
+              "tank_contact_seam_samples": 0,
+              "blocking_objects": []
+            },
+            {
+              "route_fraction": 0.95,
+              "visible_samples": 31,
+              "samples": 32,
+              "tank_contact_seam_samples": 0,
+              "blocking_objects": []
+            },
+            {
+              "route_fraction": 0.99,
+              "visible_samples": 31,
+              "samples": 32,
+              "tank_contact_seam_samples": 0,
+              "blocking_objects": []
+            }
+          ]
+        },
+        {
+          "heading": 2,
+          "bands": [
+            {
+              "route_fraction": 0.8,
+              "visible_samples": 31,
+              "samples": 32,
+              "tank_contact_seam_samples": 0,
+              "blocking_objects": []
+            },
+            {
+              "route_fraction": 0.9,
+              "visible_samples": 31,
+              "samples": 32,
+              "tank_contact_seam_samples": 0,
+              "blocking_objects": []
+            },
+            {
+              "route_fraction": 0.95,
+              "visible_samples": 31,
+              "samples": 32,
+              "tank_contact_seam_samples": 0,
+              "blocking_objects": []
+            },
+            {
+              "route_fraction": 0.99,
+              "visible_samples": 31,
+              "samples": 32,
+              "tank_contact_seam_samples": 0,
+              "blocking_objects": []
+            }
+          ]
+        },
+        {
+          "heading": 3,
+          "bands": [
+            {
+              "route_fraction": 0.8,
+              "visible_samples": 32,
+              "samples": 32,
+              "tank_contact_seam_samples": 0,
+              "blocking_objects": []
+            },
+            {
+              "route_fraction": 0.9,
+              "visible_samples": 32,
+              "samples": 32,
+              "tank_contact_seam_samples": 0,
+              "blocking_objects": []
+            },
+            {
+              "route_fraction": 0.95,
+              "visible_samples": 32,
+              "samples": 32,
+              "tank_contact_seam_samples": 0,
+              "blocking_objects": []
+            },
+            {
+              "route_fraction": 0.99,
+              "visible_samples": 32,
+              "samples": 32,
+              "tank_contact_seam_samples": 0,
+              "blocking_objects": []
+            }
+          ]
+        }
+      ],
+      "fuel_side_service_gaps": [
+        {
+          "heading": 0,
+          "native_exposed_pixels": 8.959999084472656
+        },
+        {
+          "heading": 2,
+          "native_exposed_pixels": 8.959999084472656
+        }
+      ],
+      "weld_necks": [
+        {
+          "heading": 0,
+          "route": "Factory full bore tank route -1",
+          "root_embed": 0.011989088853560646,
+          "exposed": true,
+          "tail_radius": 0.305
+        },
+        {
+          "heading": 1,
+          "route": "Factory full bore tank route -1",
+          "root_embed": 0.011989002574679237,
+          "exposed": true,
+          "tail_radius": 0.305
+        },
+        {
+          "heading": 2,
+          "route": "Factory full bore tank route -1",
+          "root_embed": 0.011989093638049293,
+          "exposed": true,
+          "tail_radius": 0.305
+        },
+        {
+          "heading": 3,
+          "route": "Factory full bore tank route -1",
+          "root_embed": 0.01198912152374185,
+          "exposed": true,
+          "tail_radius": 0.305
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "role": "liquid-provider",
+      "size": 3,
+      "source_sha256": "8202017b05aa0da3bbc5a178da2b7b76755373130e2dcfd30cfc44d219d01318",
+      "connected_routes": [
+        {
+          "route": "Factory full bore tank route 0",
+          "tank": "Broad domed pressure vessel",
+          "socket_direction": 0,
+          "diameter_tiles": 0.61,
+          "minimum_inlet_embed": 0.4758169251645435,
+          "constant_radius_rings": 2,
+          "anchor": [
+            0,
+            -1
+          ],
+          "join_distance": 0.41999995708465576,
+          "straight_route_length": 0.8199999259157845
+        }
+      ],
+      "nonintersecting_pairs": 70,
+      "projected_nonintersecting_pairs": 280,
+      "closed_outward_flange_meshes": 0,
+      "pressure_vessels": 1,
+      "flat_tank_covers": 1,
+      "projected_endpoint_diameters": [
+        0.6099998205900192,
+        0.6099998205900192,
+        0.610000267624855,
+        0.6099998205900192,
+        0.6099998205900192,
+        0.6099998205900192,
+        0.610000267624855,
+        0.610000267624855
+      ],
+      "native_socket_entry_errors": [
+        7.152563436342317e-07,
+        3.625608998714816e-07,
+        1.2759119272232056e-07,
+        3.5762786865234375e-07
+      ],
+      "connector_seats": [
+        {
+          "heading": 0,
+          "horizontal_route": true,
+          "straight_overlap": 0.11313772201538086,
+          "axis_alignment": 1.0
+        },
+        {
+          "heading": 1,
+          "horizontal_route": true,
+          "straight_overlap": 0.07999956607818604,
+          "axis_alignment": 1.0
+        },
+        {
+          "heading": 2,
+          "horizontal_route": true,
+          "straight_overlap": 0.11313700675964355,
+          "axis_alignment": 1.0
+        },
+        {
+          "heading": 3,
+          "horizontal_route": true,
+          "straight_overlap": 0.07999956607818604,
+          "axis_alignment": 1.0
+        }
+      ],
+      "fuel_exposed_fitting_visibility": [],
+      "fuel_side_service_gaps": [],
+      "weld_necks": [
+        {
+          "heading": 0,
+          "route": "Factory full bore tank route 0",
+          "root_embed": 0.011484673074094617,
+          "exposed": false,
+          "tail_radius": 0.305
+        },
+        {
+          "heading": 1,
+          "route": "Factory full bore tank route 0",
+          "root_embed": 0.011958215498505568,
+          "exposed": true,
+          "tail_radius": 0.305
+        },
+        {
+          "heading": 2,
+          "route": "Factory full bore tank route 0",
+          "root_embed": 0.011020980512812414,
+          "exposed": true,
+          "tail_radius": 0.305
+        },
+        {
+          "heading": 3,
+          "route": "Factory full bore tank route 0",
+          "root_embed": 0.011876465272696118,
+          "exposed": true,
+          "tail_radius": 0.305
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "role": "liquid-request",
+      "size": 3,
+      "source_sha256": "07717de71f4867fb1d2620082d994184871b470e6fa21a64d01d4f5c44126eed",
+      "connected_routes": [
+        {
+          "route": "Factory full bore tank route 0",
+          "tank": "Broad domed pressure vessel",
+          "socket_direction": 0,
+          "diameter_tiles": 0.61,
+          "minimum_inlet_embed": 0.4758169251645435,
+          "constant_radius_rings": 2,
+          "anchor": [
+            0,
+            -1
+          ],
+          "join_distance": 0.41999995708465576,
+          "straight_route_length": 0.8199999259157845
+        }
+      ],
+      "nonintersecting_pairs": 70,
+      "projected_nonintersecting_pairs": 280,
+      "closed_outward_flange_meshes": 0,
+      "pressure_vessels": 1,
+      "flat_tank_covers": 1,
+      "projected_endpoint_diameters": [
+        0.6099998205900192,
+        0.6099998205900192,
+        0.610000267624855,
+        0.6099998205900192,
+        0.6099998205900192,
+        0.6099998205900192,
+        0.610000267624855,
+        0.610000267624855
+      ],
+      "native_socket_entry_errors": [
+        7.152563436342317e-07,
+        3.625608998714816e-07,
+        1.2759119272232056e-07,
+        3.5762786865234375e-07
+      ],
+      "connector_seats": [
+        {
+          "heading": 0,
+          "horizontal_route": true,
+          "straight_overlap": 0.11313772201538086,
+          "axis_alignment": 1.0
+        },
+        {
+          "heading": 1,
+          "horizontal_route": true,
+          "straight_overlap": 0.07999956607818604,
+          "axis_alignment": 1.0
+        },
+        {
+          "heading": 2,
+          "horizontal_route": true,
+          "straight_overlap": 0.11313700675964355,
+          "axis_alignment": 1.0
+        },
+        {
+          "heading": 3,
+          "horizontal_route": true,
+          "straight_overlap": 0.07999956607818604,
+          "axis_alignment": 1.0
+        }
+      ],
+      "fuel_exposed_fitting_visibility": [],
+      "fuel_side_service_gaps": [],
+      "weld_necks": [
+        {
+          "heading": 0,
+          "route": "Factory full bore tank route 0",
+          "root_embed": 0.011484673074094617,
+          "exposed": false,
+          "tail_radius": 0.305
+        },
+        {
+          "heading": 1,
+          "route": "Factory full bore tank route 0",
+          "root_embed": 0.011958215498505568,
+          "exposed": true,
+          "tail_radius": 0.305
+        },
+        {
+          "heading": 2,
+          "route": "Factory full bore tank route 0",
+          "root_embed": 0.011020980512812414,
+          "exposed": true,
+          "tail_radius": 0.305
+        },
+        {
+          "heading": 3,
+          "route": "Factory full bore tank route 0",
+          "root_embed": 0.011876465272696118,
+          "exposed": true,
+          "tail_radius": 0.305
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "role": "liquid-buffer",
+      "size": 3,
+      "source_sha256": "99fd4e1c6bf78aea076558c3cb9d82d88ae76822b5d8c862518a1d1e2fbc800f",
+      "connected_routes": [
+        {
+          "route": "Factory full bore tank route -1",
+          "tank": "Broad domed pressure vessel",
+          "socket_direction": 0,
+          "diameter_tiles": 0.61,
+          "minimum_inlet_embed": 0.17487513712809913,
+          "constant_radius_rings": 2,
+          "anchor": [
+            -1,
+            -1
+          ],
+          "join_distance": 0.41999995708465576,
+          "straight_route_length": 1.4199999508387597
+        },
+        {
+          "route": "Factory full bore tank route 1",
+          "tank": "Broad domed pressure vessel",
+          "socket_direction": 0,
+          "diameter_tiles": 0.61,
+          "minimum_inlet_embed": 0.17487513712809913,
+          "constant_radius_rings": 2,
+          "anchor": [
+            1,
+            -1
+          ],
+          "join_distance": 0.41999995708465576,
+          "straight_route_length": 1.4199999508387597
+        }
+      ],
+      "nonintersecting_pairs": 405,
+      "projected_nonintersecting_pairs": 1620,
+      "closed_outward_flange_meshes": 2,
+      "pressure_vessels": 1,
+      "flat_tank_covers": 1,
+      "projected_endpoint_diameters": [
+        0.6100000441074371,
+        0.6100000441074371,
+        0.6100000441074371,
+        0.6100000441074371,
+        0.6099995970726013,
+        0.6099995970726013,
+        0.6100000441074371,
+        0.6100000441074371,
+        0.6100000441074371,
+        0.6100000441074371,
+        0.6100000441074371,
+        0.6100000441074371,
+        0.6100000441074371,
+        0.6100000441074371,
+        0.6099995970726013,
+        0.6099995970726013
+      ],
+      "native_socket_entry_errors": [
+        7.152557373046875e-07,
+        7.177349673981843e-07,
+        3.769728732309794e-07,
+        3.769728732309794e-07,
+        1.7881393432617188e-07,
+        2.384185791015625e-07,
+        3.769728732309794e-07,
+        3.769728732309794e-07
+      ],
+      "connector_seats": [
+        {
+          "heading": 0,
+          "horizontal_route": true,
+          "straight_overlap": 0.11313772201538086,
+          "axis_alignment": 1.0
+        },
+        {
+          "heading": 0,
+          "horizontal_route": true,
+          "straight_overlap": 0.11313772201538086,
+          "axis_alignment": 1.0
+        },
+        {
+          "heading": 1,
+          "horizontal_route": true,
+          "straight_overlap": 0.07999956607818604,
+          "axis_alignment": 1.0
+        },
+        {
+          "heading": 1,
+          "horizontal_route": true,
+          "straight_overlap": 0.07999956607818604,
+          "axis_alignment": 1.0
+        },
+        {
+          "heading": 2,
+          "horizontal_route": true,
+          "straight_overlap": 0.11313700675964355,
+          "axis_alignment": 1.0
+        },
+        {
+          "heading": 2,
+          "horizontal_route": true,
+          "straight_overlap": 0.11313700675964355,
+          "axis_alignment": 1.0
+        },
+        {
+          "heading": 3,
+          "horizontal_route": true,
+          "straight_overlap": 0.07999956607818604,
+          "axis_alignment": 1.0
+        },
+        {
+          "heading": 3,
+          "horizontal_route": true,
+          "straight_overlap": 0.07999956607818604,
+          "axis_alignment": 1.0
+        }
+      ],
+      "fuel_exposed_fitting_visibility": [],
+      "fuel_side_service_gaps": [],
+      "weld_necks": [
+        {
+          "heading": 0,
+          "route": "Factory full bore tank route -1",
+          "root_embed": 0.010356047807509258,
+          "exposed": false,
+          "tail_radius": 0.305
+        },
+        {
+          "heading": 0,
+          "route": "Factory full bore tank route 1",
+          "root_embed": 0.010080834379194787,
+          "exposed": false,
+          "tail_radius": 0.305
+        },
+        {
+          "heading": 1,
+          "route": "Factory full bore tank route -1",
+          "root_embed": 0.010194153137585479,
+          "exposed": true,
+          "tail_radius": 0.305
+        },
+        {
+          "heading": 1,
+          "route": "Factory full bore tank route 1",
+          "root_embed": 0.006721749414969673,
+          "exposed": true,
+          "tail_radius": 0.305
+        },
+        {
+          "heading": 2,
+          "route": "Factory full bore tank route -1",
+          "root_embed": 0.010356177257163868,
+          "exposed": true,
+          "tail_radius": 0.305
+        },
+        {
+          "heading": 2,
+          "route": "Factory full bore tank route 1",
+          "root_embed": 0.009393211730064837,
+          "exposed": true,
+          "tail_radius": 0.305
+        },
+        {
+          "heading": 3,
+          "route": "Factory full bore tank route -1",
+          "root_embed": 0.007892300876103837,
+          "exposed": true,
+          "tail_radius": 0.305
+        },
+        {
+          "heading": 3,
+          "route": "Factory full bore tank route 1",
+          "root_embed": 0.01193903623577685,
+          "exposed": true,
+          "tail_radius": 0.305
+        }
+      ],
+      "status": "passed"
+    }
+  ]
+}

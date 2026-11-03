@@ -1,0 +1,361 @@
+{
+  "source_commit": "52fdea02f6a196a2228fe8ad31d2bf4c9255d57a",
+  "note": "SHA-256 hashes of the retained 1x1 files, unchanged since source_commit. Render intermediates (EXR masters, PNG layers, shadow silhouettes and frames) were removed; they can be regenerated from the .blend sources, and the originals remain at source_commit in the jatz-distribution-archive repository.",
+  "files": [
+    {
+      "path": "buffer/1/asset.json",
+      "sha256": "eb96dd0b901b193fb3271b859b2be251733d7afbeeee21ed8af8aea5270baea1",
+      "bytes": 484
+    },
+    {
+      "path": "buffer/1/previews/four-directions.png",
+      "sha256": "80a58161e373d1183ae9fec25011f505c69067097d52db15672105f6da4712b1",
+      "bytes": 285870
+    },
+    {
+      "path": "buffer/1/sheets/base.png",
+      "sha256": "9b9f2903e7d4ace437d0e4289219b24f34fe2e3ea7f8254f48e294a91ef189ad",
+      "bytes": 550484
+    },
+    {
+      "path": "buffer/1/sheets/mask-cab.png",
+      "sha256": "96e901ff55729c41ff053bfa5af62273bab5bf3d98c9b9809b6de556e70e101b",
+      "bytes": 281660
+    },
+    {
+      "path": "buffer/1/sheets/mask-cargo.png",
+      "sha256": "2738e7ea15c35f0eeacc1bf1ac6d181e1a3e9eb95d4bb2b706983d6d5fa53ed0",
+      "bytes": 55979
+    },
+    {
+      "path": "buffer/1/sheets/mask-trim.png",
+      "sha256": "3e7995406b5eebc8191e124ac7eee925aa487b2f118c8a34e5fbe7f900587acc",
+      "bytes": 63123
+    },
+    {
+      "path": "buffer/1/sheets/preview.png",
+      "sha256": "71e7359855c256f68f3b1444b1f7091ecd8c5d508f5bec542e87b21091f4d2ee",
+      "bytes": 486224
+    },
+    {
+      "path": "buffer/1/sheets/shadow.png",
+      "sha256": "0586333386509aaf79252a0be70d73f8147fc3c10aa30f2610743bc2a16b8397",
+      "bytes": 18375
+    },
+    {
+      "path": "buffer/1/validation.json",
+      "sha256": "968d52dc6de396f62c2c909629aeaf42acee52bed87dc6f42ce9eed3e5bd15f7",
+      "bytes": 4146
+    },
+    {
+      "path": "fuel/1/asset.json",
+      "sha256": "d0248cbb2275757342971a76dc2badc24b14515c0788d4cb6193e2ce2819a87b",
+      "bytes": 640
+    },
+    {
+      "path": "fuel/1/previews/four-directions.png",
+      "sha256": "be30c26fd2a3ffc9af6868913dc94bc6cf4d7475593562c9041f81d474772ca2",
+      "bytes": 263390
+    },
+    {
+      "path": "fuel/1/sheets/base.png",
+      "sha256": "0175a54339aabd7e515a0f85870d13ad64beb720065a39fbf5bff0c4cede3c51",
+      "bytes": 481216
+    },
+    {
+      "path": "fuel/1/sheets/mask-cab.png",
+      "sha256": "afb5e9b6ff672527f1842dee6a115155734ebeb7f20fcdbdafc4561f37bc23c2",
+      "bytes": 59960
+    },
+    {
+      "path": "fuel/1/sheets/mask-cargo.png",
+      "sha256": "24ae844f2a250c57dbddea2fb5b0bdfdacebc5e8280fd7973629d0d02a994f54",
+      "bytes": 221313
+    },
+    {
+      "path": "fuel/1/sheets/mask-trim.png",
+      "sha256": "62a48a2da8ffe480b2d82594f2ce0e53a4f63a8f5712e96e75bb229a6a79fdbc",
+      "bytes": 48461
+    },
+    {
+      "path": "fuel/1/sheets/preview.png",
+      "sha256": "5eeb1b14a0f87be4e891233e8857b2683dd348eed3424d5a8b806d5673c96b7e",
+      "bytes": 424741
+    },
+    {
+      "path": "fuel/1/sheets/shadow.png",
+      "sha256": "89dd549adc8e27fb4df20338de289fccc9f7a089b28b9f3481fad0dff4641e88",
+      "bytes": 24487
+    },
+    {
+      "path": "fuel/1/validation.json",
+      "sha256": "715993fe2ca30e057177acf3309520fc468903732be50b352ae355acb6d8e89f",
+      "bytes": 4114
+    },
+    {
+      "path": "liquid-buffer/1/asset.json",
+      "sha256": "f1a94e24d97bbc720d002c4492277492a2a0f2436138cecc801959d1bc06afb5",
+      "bytes": 818
+    },
+    {
+      "path": "liquid-buffer/1/previews/four-directions.png",
+      "sha256": "4ec8dbd91e35554b30c10c04af9238e0788bd9481c796e80672750a575db8ccb",
+      "bytes": 200138
+    },
+    {
+      "path": "liquid-buffer/1/sheets/base.png",
+      "sha256": "57fdbcb1c33a6b7bdbb2cb4513b421bc497585c317f222c7d1149a7946035b8a",
+      "bytes": 455483
+    },
+    {
+      "path": "liquid-buffer/1/sheets/mask-cab.png",
+      "sha256": "dc42999bdb54966f9a71c12642f7713eada8d9882aa9e3b4b126426168680a39",
+      "bytes": 43516
+    },
+    {
+      "path": "liquid-buffer/1/sheets/mask-cargo.png",
+      "sha256": "86c6e45c868c3f1b9366d70075061c27065743296e3251faa68c99c0909e8260",
+      "bytes": 206676
+    },
+    {
+      "path": "liquid-buffer/1/sheets/mask-trim.png",
+      "sha256": "3cdb76d6f925002f018908bb66030d2f2cbdfae26a3366a51d79c3cc55f6ab2f",
+      "bytes": 79572
+    },
+    {
+      "path": "liquid-buffer/1/sheets/preview.png",
+      "sha256": "d4a4e8273597df4f6ef9a63e45f2a3ba3f691128dc594f4ef8a717085f14a41c",
+      "bytes": 401109
+    },
+    {
+      "path": "liquid-buffer/1/sheets/shadow.png",
+      "sha256": "8f1d10f0d4a2de257b500f622ce752b6eeeda30324de9129d567ebc640ae8fe7",
+      "bytes": 37052
+    },
+    {
+      "path": "liquid-buffer/1/validation.json",
+      "sha256": "5486fa9d3d2a42070f08f1ae22c2a7956c22f98cfde4dbcff4bc2ac27eb11953",
+      "bytes": 4162
+    },
+    {
+      "path": "liquid-provider/1/asset.json",
+      "sha256": "11f2aaf6a01117034f9e2167b95be10772cd342644078523facd8910a4cb6967",
+      "bytes": 664
+    },
+    {
+      "path": "liquid-provider/1/previews/four-directions.png",
+      "sha256": "7fa029cd90702f5cff3210306f020cae73833c5d919d0a138882c56e70febd6d",
+      "bytes": 252849
+    },
+    {
+      "path": "liquid-provider/1/sheets/base.png",
+      "sha256": "8df80e127ddc1e0fcb0911649f03732021ccff133c0c1a5ac094fc4c79a3c8bf",
+      "bytes": 497777
+    },
+    {
+      "path": "liquid-provider/1/sheets/mask-cab.png",
+      "sha256": "ba00eb18c7e92eae5b3b24713fea926e0ab559acc481b24792b5a23cbf1c81ec",
+      "bytes": 39935
+    },
+    {
+      "path": "liquid-provider/1/sheets/mask-cargo.png",
+      "sha256": "a483f20953f942c0aab0a417a6373196ee4fe2ec4eab89dbd58fdcfc1029bfb1",
+      "bytes": 290762
+    },
+    {
+      "path": "liquid-provider/1/sheets/mask-trim.png",
+      "sha256": "99509d1999873b8f09c4e0a51e68fddc4d2442d36c4f9c291b0b7e62b78601b1",
+      "bytes": 19725
+    },
+    {
+      "path": "liquid-provider/1/sheets/preview.png",
+      "sha256": "0980976ed893877ce1c35abc007f06975d4af80bb6f615e89cbd380f201a8807",
+      "bytes": 417935
+    },
+    {
+      "path": "liquid-provider/1/sheets/shadow.png",
+      "sha256": "9f61bc4251459c6b1a7276a281a0b456c5a23b11005b7329011406f082ee666e",
+      "bytes": 34587
+    },
+    {
+      "path": "liquid-provider/1/validation.json",
+      "sha256": "d67d3edf7585e75c107a20c1a3ebcb0731f080172d36144654b35e3cb53cb75a",
+      "bytes": 4146
+    },
+    {
+      "path": "liquid-request/1/asset.json",
+      "sha256": "c4b3fc8e59961561c9b822f7a086a89a6a3ea10e59acb93f7482f609e6877b1c",
+      "bytes": 660
+    },
+    {
+      "path": "liquid-request/1/previews/four-directions.png",
+      "sha256": "ebf4acc26b316f180c56da3f334a2b4d06031409d03d3aba0cbfa38fc8ad1c6e",
+      "bytes": 247817
+    },
+    {
+      "path": "liquid-request/1/sheets/base.png",
+      "sha256": "7b51fc4d12937ce209aed0e7ecc42530ee1bb30574f582de0bf655c69d54c582",
+      "bytes": 488640
+    },
+    {
+      "path": "liquid-request/1/sheets/mask-cab.png",
+      "sha256": "b08ec0d0d7c9143726d29f83e4c7fd96bef9870de9027a04036cc64859085951",
+      "bytes": 43369
+    },
+    {
+      "path": "liquid-request/1/sheets/mask-cargo.png",
+      "sha256": "5134993579cf58b1a7e4723472ff0dc6a44e6625b775a4b1bc1546221ee03ba3",
+      "bytes": 288471
+    },
+    {
+      "path": "liquid-request/1/sheets/mask-trim.png",
+      "sha256": "4fa27e111357831aa9a55ec8299ec3b5021470a06ee1c9fa38059fef38d7ccfa",
+      "bytes": 21165
+    },
+    {
+      "path": "liquid-request/1/sheets/preview.png",
+      "sha256": "ddf15bd0d92caf6c5aa5c6ec6d8449e913852932c0ccc133d74845431c6c878f",
+      "bytes": 408413
+    },
+    {
+      "path": "liquid-request/1/sheets/shadow.png",
+      "sha256": "b7203626364391c71510f9053733588a725dabe1faac1017dd2d98379e39c73d",
+      "bytes": 35104
+    },
+    {
+      "path": "liquid-request/1/validation.json",
+      "sha256": "9cc8bbf28b78cc723def333b999db1d8f24dc28f4487a243facb5aab2c5e5757",
+      "bytes": 4148
+    },
+    {
+      "path": "previews/all-depots-1.png",
+      "sha256": "fd46edd1ff5c5601a6ecaeb648ee97188f38c7b148d9df81f94b71802a693c79",
+      "bytes": 858125
+    },
+    {
+      "path": "provider/1/asset.json",
+      "sha256": "565926dbc3a106493f4ecec3417b0051a84478f269851bce8fff0c0b385aaaf2",
+      "bytes": 488
+    },
+    {
+      "path": "provider/1/previews/four-directions.png",
+      "sha256": "8393059f346e57d9fc2e71cd6b9750d9ba5fb13c721b4a93a7366e3c1df40689",
+      "bytes": 289057
+    },
+    {
+      "path": "provider/1/sheets/base.png",
+      "sha256": "f2789dff307c9a8e9b2e5086a9857a82501340395c2616352ea076a64ea9b484",
+      "bytes": 532738
+    },
+    {
+      "path": "provider/1/sheets/mask-cab.png",
+      "sha256": "a982385c225e90734e46f074a9ae941dfa2441bfccb05d24a54b5fd25ded5a2d",
+      "bytes": 210860
+    },
+    {
+      "path": "provider/1/sheets/mask-cargo.png",
+      "sha256": "97bb5368277f1e8bf82f1c57eca9d9c6dc87621ce00387a90361d25551bc99d1",
+      "bytes": 55219
+    },
+    {
+      "path": "provider/1/sheets/mask-trim.png",
+      "sha256": "1187a407c11221c1a4b6255b7b8a368f54f1e10525d6cf0797f485527ea058a1",
+      "bytes": 68158
+    },
+    {
+      "path": "provider/1/sheets/preview.png",
+      "sha256": "9ac09d86d2d056e22ad6370ddf9d0a39f0130b241d6602f505822f418938c03e",
+      "bytes": 484837
+    },
+    {
+      "path": "provider/1/sheets/shadow.png",
+      "sha256": "5a3b2d5558f1008fed9819d8b1260163ada1bd2bb39998d224ffdd9e17436df0",
+      "bytes": 19114
+    },
+    {
+      "path": "provider/1/validation.json",
+      "sha256": "c67f3bc37e88b8b2696bd75188c008b4399463e24cdc4c1657c58eb83f0e710e",
+      "bytes": 4150
+    },
+    {
+      "path": "request/1/asset.json",
+      "sha256": "b8eb60e5e0891fe43824af0c455ca1b99ae9c90248f0018b69bd6515f1e72b84",
+      "bytes": 486
+    },
+    {
+      "path": "request/1/previews/four-directions.png",
+      "sha256": "b9b82b625742256dfad5af95067f4f7756c1cbaf93c632e4254e6e8be6371a0b",
+      "bytes": 285921
+    },
+    {
+      "path": "request/1/sheets/base.png",
+      "sha256": "d6839c16d33a1b329f968a49c828172a8e1eaf987628aa48ae47286ce4902784",
+      "bytes": 544891
+    },
+    {
+      "path": "request/1/sheets/mask-cab.png",
+      "sha256": "7c652fa35aac1924327fd6fdfcecc26ea44ddebf73507ec42dffa261863ba888",
+      "bytes": 285869
+    },
+    {
+      "path": "request/1/sheets/mask-cargo.png",
+      "sha256": "672736b7ddf6f8d153add0756113211c2cc4cbf481428460aa97f6be766570d4",
+      "bytes": 55507
+    },
+    {
+      "path": "request/1/sheets/mask-trim.png",
+      "sha256": "c4c6858e87ef6aa671cb2c5de83239c21cbbdc1c475a3d6058d18dfc0960589f",
+      "bytes": 62426
+    },
+    {
+      "path": "request/1/sheets/preview.png",
+      "sha256": "df5e4cfb641c6ca7b68f3488f9a5d661bc1afe68187a024c1921463d8b460b84",
+      "bytes": 486123
+    },
+    {
+      "path": "request/1/sheets/shadow.png",
+      "sha256": "9d4b497899d173c9bb5c48dd95f1c2ff479e77d403fc3bc77cffea71dec1636b",
+      "bytes": 18756
+    },
+    {
+      "path": "request/1/validation.json",
+      "sha256": "9f4b36a0a06d4316ac36602790524bb9eafe01e3c603f146358022fef2adbb6d",
+      "bytes": 4150
+    },
+    {
+      "path": "source/buffer-1.blend",
+      "sha256": "0b727661d92482562179b4243a54758ef12f69369f5540e460d9b866050b45d1",
+      "bytes": 7150920
+    },
+    {
+      "path": "source/fuel-1.blend",
+      "sha256": "cd19f7f337595533a6a5cae2169102250279e156dcfe7a109f1d16f63989fd0a",
+      "bytes": 5387628
+    },
+    {
+      "path": "source/liquid-buffer-1.blend",
+      "sha256": "f11a436e0d44d785c61826285230c8444a5eb0555d85d70cbca7a2b31786f7a0",
+      "bytes": 5716692
+    },
+    {
+      "path": "source/liquid-provider-1.blend",
+      "sha256": "be967949b26c97ad6c580729351d834cb0c9714bf17a78ecfba0a96dcab499bb",
+      "bytes": 4327120
+    },
+    {
+      "path": "source/liquid-request-1.blend",
+      "sha256": "052bc45c9449c0283b892b709c073495f45bf7a1134f81b578ab798bd3343563",
+      "bytes": 3807836
+    },
+    {
+      "path": "source/provider-1.blend",
+      "sha256": "579748d2ad07a0ac96545ae0dad63edcb788257a498a6ec28046f1c012bf55db",
+      "bytes": 6647932
+    },
+    {
+      "path": "source/request-1.blend",
+      "sha256": "6cb37b6a970c461dd72f0d173d742bd36e66b878fa2b4398b598bf5adc9fec23",
+      "bytes": 6368468
+    }
+  ]
+}

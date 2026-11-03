@@ -1,0 +1,24 @@
+{
+  "status": "passed",
+  "model_sha256": "2ee3b273ea7b84552537abe88fea851550420ad7b4953aa46f527447fb934299",
+  "fan_world_bounds": [
+    [
+      -0.7450000047683716,
+      0.9950000047683716,
+      3.8276917934417725
+    ],
+    [
+      0.7450000047683716,
+      2.4850001335144043,
+      3.9323079586029053
+    ]
+  ],
+  "cargo_front_y": 0.9399998188018799,
+  "cab_rear_y": 2.549999952316284,
+  "clearance_blender_units": {
+    "cargo": 0.0550001859664917,
+    "cab": 0.06499981880187988
+  },
+  "circular_xy_extent": true,
+  "description": "Evaluated mesh bounds at north orientation; complete fan rim clears both bodies by >0.04 Blender units."
+}

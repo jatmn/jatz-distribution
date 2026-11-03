@@ -1,0 +1,57 @@
+{
+  "pipe_picture_engine_origin": "neighboring_pipe_center",
+  "status": "passed",
+  "directions": 4,
+  "master_layers": 8,
+  "game_layers": 8,
+  "atlas_cells": 8,
+  "source_sha256": "a03552a2bf81952dfeecd0cd2467963772df54a7a2ceadbdf86c90baa316c1c3",
+  "renderer_sha256": "ec9dd44745778bace4c6725543ccadd458fd09287b09b3258dbe6885c1ae1d61",
+  "resolution": 2048,
+  "samples": 64,
+  "ortho_scale": 2.5,
+  "game_scale": 0.15625,
+  "picture_shift": [
+    0,
+    0.2295584412271571
+  ],
+  "shadow_shift": [
+    0,
+    0
+  ],
+  "registration": [
+    {
+      "direction": "north",
+      "registered_seam": [
+        0.0,
+        -0.5250000027959753
+      ],
+      "barrel_width_tiles": 0.6099999696016312
+    },
+    {
+      "direction": "east",
+      "registered_seam": [
+        0.4999999701976776,
+        -0.02500003259829761
+      ],
+      "barrel_width_tiles": 0.6099999696016312
+    },
+    {
+      "direction": "south",
+      "registered_seam": [
+        -7.450580596923828e-08,
+        0.47499993759938
+      ],
+      "barrel_width_tiles": 0.6100000441074371
+    },
+    {
+      "direction": "west",
+      "registered_seam": [
+        -0.4999999701976776,
+        -0.02500003259829761
+      ],
+      "barrel_width_tiles": 0.6100001186132431
+    }
+  ],
+  "reference_commit": "7f40d810b0e7d19624e9aee69e0205ff40f9ea4b"
+}

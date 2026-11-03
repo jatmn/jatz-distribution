@@ -1,0 +1,309 @@
+{
+  "status": "passed",
+  "rotated_ports": 20,
+  "reference_commit": "7f40d810b0e7d19624e9aee69e0205ff40f9ea4b",
+  "native_measurement": "49\u201351 px at 80 px/tile; approximate center offset \u22120.025 tile",
+  "graphical_acceptance": "pending",
+  "checks": [
+    {
+      "role": "fuel",
+      "size": 3,
+      "heading": 0,
+      "port_direction": 12,
+      "neighbor": [
+        -2,
+        0
+      ],
+      "visible_seam_tiles": [
+        -1.4999999701976776,
+        -0.02500003259829761
+      ],
+      "barrel_width_at_1x_pixels": 19.52000379562378
+    },
+    {
+      "role": "fuel",
+      "size": 3,
+      "heading": 4,
+      "port_direction": 0,
+      "neighbor": [
+        0,
+        -2
+      ],
+      "visible_seam_tiles": [
+        0.0,
+        -1.5250000027959754
+      ],
+      "barrel_width_at_1x_pixels": 19.519999027252197
+    },
+    {
+      "role": "fuel",
+      "size": 3,
+      "heading": 8,
+      "port_direction": 4,
+      "neighbor": [
+        2,
+        0
+      ],
+      "visible_seam_tiles": [
+        1.4999999701976776,
+        -0.02500003259829761
+      ],
+      "barrel_width_at_1x_pixels": 19.519999027252197
+    },
+    {
+      "role": "fuel",
+      "size": 3,
+      "heading": 12,
+      "port_direction": 8,
+      "neighbor": [
+        0,
+        2
+      ],
+      "visible_seam_tiles": [
+        -7.450580596923828e-08,
+        1.4749999375993799
+      ],
+      "barrel_width_at_1x_pixels": 19.52000141143799
+    },
+    {
+      "role": "liquid-buffer",
+      "size": 3,
+      "heading": 0,
+      "port_direction": 0,
+      "neighbor": [
+        -1,
+        -2
+      ],
+      "visible_seam_tiles": [
+        -1.0,
+        -1.5250000027959754
+      ],
+      "barrel_width_at_1x_pixels": 19.519999027252197
+    },
+    {
+      "role": "liquid-buffer",
+      "size": 3,
+      "heading": 0,
+      "port_direction": 0,
+      "neighbor": [
+        1,
+        -2
+      ],
+      "visible_seam_tiles": [
+        1.0,
+        -1.5250000027959754
+      ],
+      "barrel_width_at_1x_pixels": 19.519999027252197
+    },
+    {
+      "role": "liquid-buffer",
+      "size": 3,
+      "heading": 4,
+      "port_direction": 4,
+      "neighbor": [
+        2,
+        -1
+      ],
+      "visible_seam_tiles": [
+        1.4999999701976776,
+        -1.0250000325982975
+      ],
+      "barrel_width_at_1x_pixels": 19.519999027252197
+    },
+    {
+      "role": "liquid-buffer",
+      "size": 3,
+      "heading": 4,
+      "port_direction": 4,
+      "neighbor": [
+        2,
+        1
+      ],
+      "visible_seam_tiles": [
+        1.4999999701976776,
+        0.9749999674017024
+      ],
+      "barrel_width_at_1x_pixels": 19.519999027252197
+    },
+    {
+      "role": "liquid-buffer",
+      "size": 3,
+      "heading": 8,
+      "port_direction": 8,
+      "neighbor": [
+        1,
+        2
+      ],
+      "visible_seam_tiles": [
+        0.999999925494194,
+        1.4749999375993799
+      ],
+      "barrel_width_at_1x_pixels": 19.52000141143799
+    },
+    {
+      "role": "liquid-buffer",
+      "size": 3,
+      "heading": 8,
+      "port_direction": 8,
+      "neighbor": [
+        -1,
+        2
+      ],
+      "visible_seam_tiles": [
+        -1.000000074505806,
+        1.4749999375993799
+      ],
+      "barrel_width_at_1x_pixels": 19.52000141143799
+    },
+    {
+      "role": "liquid-buffer",
+      "size": 3,
+      "heading": 12,
+      "port_direction": 12,
+      "neighbor": [
+        -2,
+        1
+      ],
+      "visible_seam_tiles": [
+        -1.4999999701976776,
+        0.9749999674017024
+      ],
+      "barrel_width_at_1x_pixels": 19.52000379562378
+    },
+    {
+      "role": "liquid-buffer",
+      "size": 3,
+      "heading": 12,
+      "port_direction": 12,
+      "neighbor": [
+        -2,
+        -1
+      ],
+      "visible_seam_tiles": [
+        -1.4999999701976776,
+        -1.0250000325982975
+      ],
+      "barrel_width_at_1x_pixels": 19.52000379562378
+    },
+    {
+      "role": "liquid-provider",
+      "size": 3,
+      "heading": 0,
+      "port_direction": 0,
+      "neighbor": [
+        0,
+        -2
+      ],
+      "visible_seam_tiles": [
+        0.0,
+        -1.5250000027959754
+      ],
+      "barrel_width_at_1x_pixels": 19.519999027252197
+    },
+    {
+      "role": "liquid-provider",
+      "size": 3,
+      "heading": 4,
+      "port_direction": 4,
+      "neighbor": [
+        2,
+        0
+      ],
+      "visible_seam_tiles": [
+        1.4999999701976776,
+        -0.02500003259829761
+      ],
+      "barrel_width_at_1x_pixels": 19.519999027252197
+    },
+    {
+      "role": "liquid-provider",
+      "size": 3,
+      "heading": 8,
+      "port_direction": 8,
+      "neighbor": [
+        0,
+        2
+      ],
+      "visible_seam_tiles": [
+        -7.450580596923828e-08,
+        1.4749999375993799
+      ],
+      "barrel_width_at_1x_pixels": 19.52000141143799
+    },
+    {
+      "role": "liquid-provider",
+      "size": 3,
+      "heading": 12,
+      "port_direction": 12,
+      "neighbor": [
+        -2,
+        0
+      ],
+      "visible_seam_tiles": [
+        -1.4999999701976776,
+        -0.02500003259829761
+      ],
+      "barrel_width_at_1x_pixels": 19.52000379562378
+    },
+    {
+      "role": "liquid-request",
+      "size": 3,
+      "heading": 0,
+      "port_direction": 0,
+      "neighbor": [
+        0,
+        -2
+      ],
+      "visible_seam_tiles": [
+        0.0,
+        -1.5250000027959754
+      ],
+      "barrel_width_at_1x_pixels": 19.519999027252197
+    },
+    {
+      "role": "liquid-request",
+      "size": 3,
+      "heading": 4,
+      "port_direction": 4,
+      "neighbor": [
+        2,
+        0
+      ],
+      "visible_seam_tiles": [
+        1.4999999701976776,
+        -0.02500003259829761
+      ],
+      "barrel_width_at_1x_pixels": 19.519999027252197
+    },
+    {
+      "role": "liquid-request",
+      "size": 3,
+      "heading": 8,
+      "port_direction": 8,
+      "neighbor": [
+        0,
+        2
+      ],
+      "visible_seam_tiles": [
+        -7.450580596923828e-08,
+        1.4749999375993799
+      ],
+      "barrel_width_at_1x_pixels": 19.52000141143799
+    },
+    {
+      "role": "liquid-request",
+      "size": 3,
+      "heading": 12,
+      "port_direction": 12,
+      "neighbor": [
+        -2,
+        0
+      ],
+      "visible_seam_tiles": [
+        -1.4999999701976776,
+        -0.02500003259829761
+      ],
+      "barrel_width_at_1x_pixels": 19.52000379562378
+    }
+  ]
+}

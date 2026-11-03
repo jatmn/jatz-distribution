@@ -1,0 +1,8 @@
+Use case: identity-preserve. Create a high-resolution modeling reference turnaround of exactly this approved Quinityn cargo truck. Preserve the same design, proportions, four axles/eight wheels, short purple armored cab, behind-cab power unit with round brass-edged roof fan and copper pipes, long slate blue sealed freight vault divided into three reinforced bays, dark steel skeletal frame, orange corner clamps, teal windows, violet power inspection ports. Produce a clean 2 by 2 layout, each quadrant shows the entire SAME truck from one orthographic view. Top left exact front elevation looking at windshield and grille. Top right exact rear elevation showing plausible double freight doors, hinges, orange clamps and small red tail lamps. Bottom left exact left-side elevation showing four wheel axles and original truck arrangement. Bottom right exact top plan showing cab, engine cooling fan, three roof cargo panels. No perspective in these views, plain neutral gray background, no cast floor shadows, equal consistent scale where possible, full uncropped vehicles within each quadrant. Detailed industrial game art matching reference. No labels, captions or decorations. This image is a modeling reference, do not simplify truck into a toy or change the chosen concept. Aim for 3072 by 2048 resolution.
+
+Input reference
+source/approved-concept.png
+
+Generation method
+Built-in imagegen with referenced_image_paths and transparent_background=false.
+The returned image is 1536 by 1024 pixels. It serves as a modeling reference.

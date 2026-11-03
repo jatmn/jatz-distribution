@@ -1,0 +1,186 @@
+{
+  "status": "passed",
+  "variants": 7,
+  "results": [
+    {
+      "role": "buffer",
+      "size": 3,
+      "source_sha256": "004b577afcb69bc6be93aa1a62db03746cc835317f1f4c9125f541ec875f5326",
+      "functional_geometry": {
+        "clear_path_probes": 18,
+        "conveyor_surface_heights_large_equivalent": [
+          0.184,
+          0.175,
+          0.184,
+          0.184,
+          0.184,
+          0.175,
+          0.184,
+          0.184
+        ]
+      },
+      "geometry_objects": 769,
+      "logical_bounds": [
+        [
+          -1.4638060331344604,
+          -1.4638060331344604,
+          0.0
+        ],
+        [
+          1.4638060331344604,
+          1.496000051498413,
+          2.2983999252319336
+        ]
+      ],
+      "socket_projection_checks": 0
+    },
+    {
+      "role": "fuel",
+      "size": 3,
+      "source_sha256": "4d0a6a1e3a6afbfaf86089d6f2cb8db0571f6b0e1265a7016c08d1b4cb55a338",
+      "functional_geometry": {
+        "clear_path_probes": 6,
+        "conveyor_surface_heights_large_equivalent": []
+      },
+      "geometry_objects": 396,
+      "logical_bounds": [
+        [
+          -1.4638060331344604,
+          -1.4638060331344604,
+          0.0
+        ],
+        [
+          1.4638060331344604,
+          1.4638060331344604,
+          2.5210001468658447
+        ]
+      ],
+      "socket_projection_checks": 4
+    },
+    {
+      "role": "liquid-buffer",
+      "size": 3,
+      "source_sha256": "99fd4e1c6bf78aea076558c3cb9d82d88ae76822b5d8c862518a1d1e2fbc800f",
+      "functional_geometry": {
+        "clear_path_probes": 8,
+        "conveyor_surface_heights_large_equivalent": []
+      },
+      "geometry_objects": 196,
+      "logical_bounds": [
+        [
+          -1.5040000677108765,
+          -1.4141490459442139,
+          0.0
+        ],
+        [
+          1.5040000677108765,
+          1.4749999046325684,
+          2.13100004196167
+        ]
+      ],
+      "socket_projection_checks": 8
+    },
+    {
+      "role": "liquid-provider",
+      "size": 3,
+      "source_sha256": "8202017b05aa0da3bbc5a178da2b7b76755373130e2dcfd30cfc44d219d01318",
+      "functional_geometry": {
+        "clear_path_probes": 8,
+        "conveyor_surface_heights_large_equivalent": []
+      },
+      "geometry_objects": 199,
+      "logical_bounds": [
+        [
+          -1.4183989763259888,
+          -1.4183988571166992,
+          0.009999999776482582
+        ],
+        [
+          1.4183989763259888,
+          1.4424999952316284,
+          2.3324999809265137
+        ]
+      ],
+      "socket_projection_checks": 4
+    },
+    {
+      "role": "liquid-request",
+      "size": 3,
+      "source_sha256": "07717de71f4867fb1d2620082d994184871b470e6fa21a64d01d4f5c44126eed",
+      "functional_geometry": {
+        "clear_path_probes": 8,
+        "conveyor_surface_heights_large_equivalent": []
+      },
+      "geometry_objects": 192,
+      "logical_bounds": [
+        [
+          -1.4183989763259888,
+          -1.4183988571166992,
+          0.009999999776482582
+        ],
+        [
+          1.4183989763259888,
+          1.4424999952316284,
+          2.2810001373291016
+        ]
+      ],
+      "socket_projection_checks": 4
+    },
+    {
+      "role": "provider",
+      "size": 3,
+      "source_sha256": "bf796fad83261c4742cb27f4038d612405de960bdf69e1f65073cd3c2ed83ade",
+      "functional_geometry": {
+        "clear_path_probes": 9,
+        "conveyor_surface_heights_large_equivalent": [
+          0.184,
+          0.175,
+          0.184,
+          0.184
+        ]
+      },
+      "geometry_objects": 713,
+      "logical_bounds": [
+        [
+          -1.4638060331344604,
+          -1.4638060331344604,
+          0.0
+        ],
+        [
+          1.4638060331344604,
+          1.496000051498413,
+          2.2983999252319336
+        ]
+      ],
+      "socket_projection_checks": 0
+    },
+    {
+      "role": "request",
+      "size": 3,
+      "source_sha256": "2859e423a8b093fc7e9c04107cad33421fff154de79b580780f5512e60f2ce71",
+      "functional_geometry": {
+        "clear_path_probes": 9,
+        "conveyor_surface_heights_large_equivalent": [
+          0.184,
+          0.175,
+          0.184,
+          0.184
+        ]
+      },
+      "geometry_objects": 712,
+      "logical_bounds": [
+        [
+          -1.4638060331344604,
+          -1.4638060331344604,
+          0.0
+        ],
+        [
+          1.4638060331344604,
+          1.496000051498413,
+          2.2983999252319336
+        ]
+      ],
+      "socket_projection_checks": 0
+    }
+  ]
+}
