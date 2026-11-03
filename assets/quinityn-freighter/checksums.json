@@ -24,6 +24,6 @@
   "tools/inspect_geometry.py": "8c8395060d85da14826b4946086227242d7a85acb4ac839e37af460636a42dfa",
   "tools/package_sprites.py": "5aa837bacd93390fd6dd177938a0338d1a94373d5aedcfa6bea1952c1c3a8abe",
   "tools/render_directions.py": "ca81670e351a2d99a7a321e6694835b93bf6b571c5af6ed8df1417e4bc6f3c9c",
-  "tools/render_freighter.py": "5f94db229b4f4cf0a33823a4abac6dfba722df65e2c7896916949087c83a71ac",
+  "tools/render_freighter.py": "58892721a5668c152f85399da61ca651d4d5da7d42c0e15467133159b0a74c11",
   "tools/validate_assets.py": "b0c23cbc4ddaa07292dcd820a6a4c0e6ea25311a118693db0e240246d75326ec"
 }

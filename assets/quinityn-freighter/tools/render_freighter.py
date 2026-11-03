@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,11 +29,38 @@ def stamp(resolution, samples):
             'resolution': resolution, 'samples': samples}
 
 
+def blender_executable(name):
+    """The absolute path of the Blender executable to run, or a clear error."""
+    found = shutil.which(name)
+    if not found:
+        raise SystemExit(f'Blender executable not found: {name!r}. Install Blender 4.3.2 or pass '
+                         '--blender /path/to/blender.')
+    return str(Path(found).resolve())
+
+
+def render(blender, options):
+    """Run the shared renderer on the freighter model in background Blender."""
+    command = [blender, '-b', str(SOURCE), '--python-exit-code', '1', '--python', str(RENDERER), '--', *options]
+    # An argument list with shell=False: no shell parses these values, so there is nothing to
+    # inject into and shlex quoting would corrupt them. The executable is resolved above from
+    # the operator's own --blender choice; the paths come from this repository.
+    subprocess.run(command, check=True)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args
+
+
+def positive(value):
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError('must be at least 1')
+    return number
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--blender', default='blender')
-    parser.add_argument('--threads', type=int, default=8)
+    parser.add_argument('--blender', default='blender', help='Blender 4.3.2 executable (default: blender on PATH)')
+    parser.add_argument('--threads', type=positive, default=8)
     args = parser.parse_args()
+    # Check every input before writing anything.
+    blender = blender_executable(args.blender)
     expected = stamp(1024, 48)
     existing = [path for name in OUTPUTS if (ROOT / name).is_dir() for path in (ROOT / name).iterdir()]
     if RECORD.exists():
@@ -45,11 +73,9 @@ def main():
     for name in OUTPUTS:
         (ROOT / name).mkdir(parents=True, exist_ok=True)
     RECORD.write_text(json.dumps(expected, indent=2) + '\n')
-    base = [args.blender, '-b', str(SOURCE), '--python-exit-code', '1', '--python', str(RENDERER), '--']
-    subprocess.run(base + ['--start', '0', '--end', '64', '--resolution', '1024', '--samples', '48',
-                           '--threads', str(args.threads)], check=True)
-    subprocess.run(base + ['--hero', '--resolution', '2048', '--samples', '96', '--threads', str(args.threads)],
-                   check=True)
+    threads = str(args.threads)
+    render(blender, ['--start', '0', '--end', '64', '--resolution', '1024', '--samples', '48', '--threads', threads])
+    render(blender, ['--hero', '--resolution', '2048', '--samples', '96', '--threads', threads])
     print('RENDERED freighter from', expected['source_sha256'])
 
 
