@@ -11,6 +11,11 @@ local orientation = {}
 -- Depots shown half a turn from their artwork's default, so the opening faces south.
 orientation.half_turn = { provider = true, request = true, buffer = true, fuel = true }
 
+-- The loading zone marking's render layer: the highest ground-patch layer, so it draws over
+-- every decorative (plants, small stones, ground cover; layer 19) and ground patch, but under
+-- rails, remnants, belts, items, buildings, rocks, vehicles and characters (Factorio 2.1 RenderLayer).
+orientation.loading_zone_render_layer = "ground-patch-higher2"
+
 -- Where the loading zone tile sits for each entity direction: one tile beyond the 3x3
 -- footprint, south of an unrotated depot, following the depot as it turns clockwise.
 orientation.loading_zone_shift = {

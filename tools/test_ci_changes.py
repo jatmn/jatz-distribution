@@ -171,8 +171,9 @@ class RoutingTests(unittest.TestCase):
               'assets/quinityn-freighter/checksums.json'], {'freighter', 'freighter_art'}),
             (['assets/quinityn-freighter/README.md'], {'freighter'}),
             (['assets/depots/factorio/depot-pictures.lua'], {'depots', 'mod'}),
-            (['assets/depots/tools/depot_lua.py', 'assets/depots/tools/make_loading_zone.py',
-              'tools/test_depot_art.py', 'tools/test_depot_lua.py'], {'depots'}),
+            (['assets/depots/tools/depot_lua.py', 'tools/test_depot_art.py', 'tools/test_depot_lua.py'], {'depots'}),
+            # The marking's drawing script is its source, so changing it runs the depot art checks.
+            (['assets/depots/tools/make_loading_zone.py'], {'depots', 'depots_art'}),
             (['assets/depots/loading-zone/loading-zone.png', 'assets/depots/loading-zone/loading-zone.json'],
              {'depots', 'depots_art'}),
             (['prototypes/orientation.lua'], {'mod'}),

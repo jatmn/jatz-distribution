@@ -152,3 +152,19 @@ jobs:
         env:
           AREA: ${{ inputs.area }}
         run: python3 tools/check_blender_sources.py --area "$AREA" --root .art
+      - name: Install the art scripts' Python packages
+        if: inputs.art
+        run: |
+          python3 -m venv "$RUNNER_TEMP/art"
+          # Only the pinned image packages; OpenEXR is for rendering, not these checks.
+          grep -E '^(numpy|Pillow)==' requirements.txt > "$RUNNER_TEMP/art-requirements.txt"
+          "$RUNNER_TEMP/art/bin/pip" install --quiet --requirement "$RUNNER_TEMP/art-requirements.txt"
+      - name: Redraw icons and markings and compare them with the committed images
+        if: inputs.art
+        env:
+          AREA: ${{ inputs.area }}
+        run: |
+          "$RUNNER_TEMP/art/bin/python" tools/make_icons.py --check --root .art --area "$AREA"
+          if [ "$AREA" = depots ]; then
+            "$RUNNER_TEMP/art/bin/python" .art/assets/depots/tools/make_loading_zone.py --check
+          fi

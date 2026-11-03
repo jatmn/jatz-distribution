@@ -68,7 +68,7 @@ for index, role in ipairs(ORDER) do
   entity.collision_box = { { -SIZE / 2 + 0.2, -SIZE / 2 + 0.2 }, { SIZE / 2 - 0.2, SIZE / 2 - 0.2 } }
   -- Ground marking on the loading side; it rotates, ghosts and disappears with the depot.
   entity.integration_patch = orientation.loading_zone({ filename = constants.loading_zone, size = 64, scale = 0.5 })
-  entity.integration_patch_render_layer = "decals"
+  entity.integration_patch_render_layer = orientation.loading_zone_render_layer
 
   data:extend({
     entity,

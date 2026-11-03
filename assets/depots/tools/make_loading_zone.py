@@ -13,7 +13,11 @@ loading-zone/loading-zone.json, which records this script's and the image's
 SHA-256 for tools/check_blender_sources.py. Run with the repository's .venv:
 
     .venv/bin/python assets/depots/tools/make_loading_zone.py
+
+With --check it writes nothing and fails unless the committed image has exactly the
+pixels this script draws; CI runs that whenever the depot art changes.
 """
+import argparse
 import hashlib
 from io import BytesIO
 import json
@@ -136,12 +140,31 @@ def replace_atomically(target, data):
             os.unlink(temporary)
 
 
+def tile():
+    """The marking at its in-game size, reduced with premultiplied alpha so chipped edges don't darken."""
+    return marking().convert('RGBa').resize((SIZE, SIZE), Image.Resampling.LANCZOS).convert('RGBA')
+
+
+def check():
+    """Fail unless the committed marking has exactly the pixels this script draws."""
+    committed = OUTPUT / 'loading-zone.png'
+    expected = np.asarray(tile())
+    actual = np.asarray(Image.open(committed).convert('RGBA'))
+    if actual.shape != expected.shape or not np.array_equal(actual, expected):
+        raise SystemExit(f'{committed.relative_to(ROOT.parents[1])} is not what this script draws; run it without '
+                         '--check and commit the result (never edit the marking by hand)')
+    print(f'{committed.relative_to(ROOT.parents[1])} matches this script')
+
+
 def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--check', action='store_true', help='compare with the committed image; write nothing')
+    if parser.parse_args().check:
+        return check()
     OUTPUT.mkdir(exist_ok=True)
-    # Reduced with premultiplied alpha, so chipped edges don't darken.
-    tile = marking().convert('RGBa').resize((SIZE, SIZE), Image.Resampling.LANCZOS).convert('RGBA')
+    image = tile()
     encoded = BytesIO()
-    tile.save(encoded, format='PNG', optimize=True)
+    image.save(encoded, format='PNG', optimize=True)
     replace_atomically(OUTPUT / 'loading-zone.png', encoded.getvalue())
     record = {
         'loading-zone.png': {

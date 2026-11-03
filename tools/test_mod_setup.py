@@ -83,6 +83,16 @@ for role, sizes in pairs(definitions) do
   end
   print(role, orientation.half_turn[role] and "half-turn" or "as-drawn", #ports)
 end
+-- The marking each depot draws: the sprite on the loading zone tile for every entity direction.
+local patch = orientation.loading_zone({ filename = "marking.png", size = 64, scale = 0.5 })
+for quarter, direction in ipairs(DIRECTIONS) do
+  local x, y = turn(0, 2, quarter - 1)
+  local sprite = patch[direction]
+  assert(sprite and sprite.filename == "marking.png" and sprite.size == 64 and sprite.scale == 0.5,
+    "marking sprite " .. direction)
+  assert(sprite.shift[1] == x and sprite.shift[2] == y, "marking drawn off the loading zone tile facing " .. direction)
+end
+print("layer", orientation.loading_zone_render_layer)
 local fuel = orientation.ports("fuel", definitions.fuel[3].ports)[1]
 assert(fuel.position[1] == 1 and fuel.position[2] == 0 and fuel.direction == 4, "fuel port must be on the east")
 local art = { north = "N", east = "E", south = "S", west = "W" }
@@ -98,7 +108,15 @@ class OrientationTests(unittest.TestCase):
         result = subprocess.run(['lua5.2', '-'], input=ORIENTATION_CHECK, cwd=ROOT, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         roles = dict(line.split('\t', 1) for line in result.stdout.splitlines())
+        layer = roles.pop('layer')
         self.assertEqual(len(roles), 7, result.stdout)
+        # Factorio 2.1 RenderLayer order (types/RenderLayer), lowest first: the marking must draw over
+        # decoratives and ground patches, and under rails, belts, items and objects.
+        order = ['decals', 'decorative', 'ground-patch', 'ground-patch-higher', 'ground-patch-higher2',
+                 'rail-chain-signal-metal', 'remnants', 'transport-belt', 'item', 'object']
+        self.assertIn(layer, order)
+        self.assertGreater(order.index(layer), order.index('ground-patch-higher'))
+        self.assertLess(order.index(layer), order.index('rail-chain-signal-metal'))
         for role in ('provider', 'request', 'buffer', 'fuel'):
             self.assertTrue(roles[role].startswith('half-turn'), role)
         for role in ('liquid-provider', 'liquid-request', 'liquid-buffer'):
