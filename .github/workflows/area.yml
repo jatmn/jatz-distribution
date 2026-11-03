@@ -55,8 +55,8 @@ jobs:
           done >> "$GITHUB_OUTPUT"
 
       - name: Install Lua 5.2
-        # The repository area's routing tests also exercise Lua file selection.
-        if: steps.files.outputs.lua == 'true' || inputs.area == 'repository'
+        # The repository area's routing tests exercise Lua file selection; the mod area's tests run Lua.
+        if: steps.files.outputs.lua == 'true' || inputs.area == 'repository' || inputs.area == 'mod'
         run: |
           sudo apt-get update -qq
           sudo apt-get install --no-install-recommends -y lua5.2

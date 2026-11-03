@@ -15,7 +15,8 @@ local EXPECTED_PORTS = {
   provider = {},
   request = {},
   buffer = {},
-  fuel = { { x = -1, y = 0, direction = defines.direction.west } },
+  -- Shown half a turn from its artwork so its opening faces south: the port is on the east.
+  fuel = { { x = 1, y = 0, direction = defines.direction.east } },
   ["liquid-provider"] = { { x = 0, y = -1, direction = defines.direction.north } },
   ["liquid-request"] = { { x = 0, y = -1, direction = defines.direction.north } },
   ["liquid-buffer"] = {

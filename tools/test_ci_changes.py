@@ -163,15 +163,19 @@ class RoutingTests(unittest.TestCase):
 
     def test_area_selection(self):
         cases = [
-            (['assets/quinityn-freighter/factorio/freighter-animation.lua'], {'freighter'}),
+            (['assets/quinityn-freighter/factorio/freighter-animation.lua'], {'freighter', 'mod'}),
             (['assets/quinityn-freighter/tools/package_sprites.py', 'tools/test_factorio.py',
               'tools/prepare_test_mod.py', 'tests/factorio/freighter-art-check_0.1.0/control.lua'], {'freighter'}),
             (['assets/quinityn-freighter/source/quinityn-freighter.blend'], {'freighter', 'freighter_art'}),
             (['assets/quinityn-freighter/sheets/freighter-base.png',
               'assets/quinityn-freighter/checksums.json'], {'freighter', 'freighter_art'}),
             (['assets/quinityn-freighter/README.md'], {'freighter'}),
-            (['assets/depots/factorio/depot-pictures.lua', 'assets/depots/tools/depot_lua.py',
+            (['assets/depots/factorio/depot-pictures.lua'], {'depots', 'mod'}),
+            (['assets/depots/tools/depot_lua.py', 'assets/depots/tools/make_loading_zone.py',
               'tools/test_depot_art.py', 'tools/test_depot_lua.py'], {'depots'}),
+            (['assets/depots/loading-zone/loading-zone.png', 'assets/depots/loading-zone/loading-zone.json'],
+             {'depots', 'depots_art'}),
+            (['prototypes/orientation.lua'], {'mod'}),
             (['assets/depots/source/fuel-3.blend'], {'depots', 'depots_art'}),
             (['assets/depots/fuel/3/asset.json', 'assets/depots/geometry-validation.json'], {'depots', 'depots_art'}),
             (['assets/depots/tools/render_connector.py'], {'depots', 'depots_art'}),

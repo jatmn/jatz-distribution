@@ -31,6 +31,8 @@ This builds the installable zip with `tools/package_mod.py` and loads it, with t
 - every item, recipe and entity name the game shows has an English translation;
 - our row sits directly above the car and tank row in the same tab, with the items in their intended order.
 
+The headless server can't show sprites. So `tools/test_mod_setup.py` checks the depots' default orientation and loading zones with Lua 5.2: south by default, turning with the depot, and never on a pipe tile. In the graphical client, check that each depot's loading zone marking lies on the right side and stays there as you rotate the depot.
+
 It runs with the base game only and, if your Factorio includes Space Age and the mods it needs, again with Space Age. The free headless server is enough. To look around yourself, open the newest save under `.local/mod-check/` in the full game with that run's `config.ini` and `mods` folder (see the depot instructions below).
 
 ## Freighter

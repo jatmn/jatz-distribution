@@ -34,6 +34,7 @@ def mod_files(root=REPO):
         # One icon per depot, named from the depot itself, so a missing icon stops the build.
         files += [depots / f'icons/{json.loads(metadata.read_text())["role"]}-depot.png']
     files += [depots / f'connectors/sheets/{layer}.png' for layer in ('base', 'shadow')]
+    files += [depots / 'loading-zone/loading-zone.png']
     missing = [str(path.relative_to(root)) for path in files if not path.is_file()]
     if missing:
         raise SystemExit('Missing mod files: ' + ', '.join(missing))

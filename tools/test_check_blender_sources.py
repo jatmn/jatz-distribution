@@ -96,6 +96,11 @@ def build(root):
     make_icon(root, 'assets/depots', 'fuel-depot.png', 'assets/depots/fuel/3/masters/hero-default-palette.png')
     make_icon(root, 'assets/quinityn-freighter', 'quinityn-freighter.png',
               'assets/quinityn-freighter/masters/hero-default-palette.png')
+    generator = write(root / 'assets/depots/tools/make_loading_zone.py', 'print("draw")\n')
+    marking = write(root / 'assets/depots/loading-zone/loading-zone.png', png(64, 64, slots=((0, 64),)))
+    record(root / 'assets/depots/loading-zone/loading-zone.json', {'loading-zone.png': {
+        'generator': 'assets/depots/tools/make_loading_zone.py', 'generator_sha256': generator,
+        'sha256': marking, 'size': 64}})
     small = BLEND_HEADER + b'small model'
     digest = write(root / ARCHIVE / 'source/fuel-1.blend', small)
     write(root / ARCHIVE / 'README.md', 'archive\n')
@@ -250,6 +255,23 @@ class CheckerTests(unittest.TestCase):
         build(self.root)
         write(self.root / 'assets/depots/icons/extra-depot.png', png(120, 64))
         self.assertOneError(self.errors('depots'), 'extra-depot.png', 'not in icons.json')
+
+    def test_loading_zone_marking(self):
+        folder = self.root / 'assets/depots/loading-zone'
+        write(self.root / 'assets/depots/tools/make_loading_zone.py', 'print("redrawn")\n')
+        self.assertOneError(self.errors('depots'), 'loading-zone.png', 'drawn by an older')
+        for data, problem in ((png(32, 32, slots=((0, 32),)), 'must be 64x64'), (png(64, 64, slots=()), 'blank'),
+                              (b'not a png', '8-bit RGBA')):
+            with self.subTest(problem=problem):
+                build(self.root)
+                digest = write(folder / 'loading-zone.png', data)
+                records = json.loads((folder / 'loading-zone.json').read_text())
+                records['loading-zone.png']['sha256'] = digest
+                record(folder / 'loading-zone.json', records)
+                self.assertOneError(self.errors('depots'), 'loading-zone.png', problem)
+        build(self.root)
+        write(folder / 'loading-zone.png', png(64, 64, slots=((0, 64),)) + b'edited')
+        self.assertOneError(self.errors('depots'), 'loading-zone.png', 'does not match')
 
     def test_areas_are_checked_independently(self):
         write(self.root / 'assets/depots/source/fuel-3.blend', b'not a blend file')

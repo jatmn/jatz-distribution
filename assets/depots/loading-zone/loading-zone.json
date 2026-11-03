@@ -1,0 +1,8 @@
+{
+  "loading-zone.png": {
+    "generator": "assets/depots/tools/make_loading_zone.py",
+    "generator_sha256": "4cff0cf388c481014c4ac23dcaf5975e21e5d2c330c26ff25ad26b7bf054f413",
+    "sha256": "cd4e11f42ea57318b369475379d4dcc59eba62e30e73690f593fdff83352a529",
+    "size": 64
+  }
+}

@@ -13,10 +13,10 @@ The gameplay is inspired by Klonan's [Transport Drones](https://mods.factorio.co
 ## Features
 
 - **Quinityn sealed freighter:** an armored eight-wheel cargo truck with 64 rotation directions.
-- **Seven freight depots:** dry cargo and fluid stations on a 3×3 footprint, each with four rotations.
+- **Seven freight depots:** dry cargo and fluid stations on a 3×3 footprint, each with four rotations. A worn "no parking: loading zone" marking on the ground shows where freighters load; placed unrotated, it's always on the south side.
 - **Full recoloring:** every vehicle and building has three independently tintable paint layers. Wear, metal and glass keep their detail in any color.
 - **Native fluid connections:** depot ports line up with vanilla pipes and turn with the building.
-- **Hand-built 3D artwork:** every sprite is rendered from an editable Blender model, with matching ground shadows.
+- **Hand-built artwork:** every building and vehicle sprite is rendered from an editable Blender model, with matching ground shadows.
 
 ## The Quinityn freighter
 

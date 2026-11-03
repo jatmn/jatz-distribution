@@ -76,6 +76,9 @@ def classify(paths):
         if area is None:
             continue
         checks[area] = True
+        # The mod loads the Lua sprite helpers and depot data in assets/*/factorio/.
+        if path.startswith('assets/') and '/factorio/' in path and path.endswith('.lua'):
+            checks['mod'] = True
         if area in ('freighter', 'depots') and touches_art(path):
             checks[f'{area}_art'] = True
     # An art check runs inside its area's job.

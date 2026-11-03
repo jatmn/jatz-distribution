@@ -12,4 +12,6 @@ return {
   -- string.format pattern taking the depot role.
   depot_icon = "__jatz-distribution__/assets/depots/icons/%s-depot.png",
   icon_size = 64,
+  -- The 1x1 loading zone marking (assets/depots/tools/make_loading_zone.py): 64 px at scale 0.5.
+  loading_zone = "__jatz-distribution__/assets/depots/loading-zone/loading-zone.png",
 }

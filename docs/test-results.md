@@ -15,6 +15,7 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | A character enters the fuelled freighter and drives it (28.5 tiles in 2 seconds) | Passed |
 | New freighter collision box (1.5 × 4.5 tiles, measured from the sprites) in the graphical client | Untested |
 | New 64 px icons in the graphical client: depots face south and the freighter heads south-east | **Passed:** checked by the owner on November 3, 2026, in the inventory and Factoriopedia |
+| Loading zone marking and default orientation (south for every depot) in the graphical client | Untested |
 | Menu placement in the graphical client: our row directly above the car and tank row, ordered provider, request, buffer, liquid provider, liquid request, liquid buffer, fuel, freighter | **Passed:** checked by the owner on November 3, 2026, alongside the Yuoki mods |
 
 ## Depots: passed
