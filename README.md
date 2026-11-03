@@ -67,7 +67,7 @@ The mod isn't on the Mod Portal yet, so build it from this repository (Python 3.
 python3 tools/package_mod.py
 ```
 
-Copy the resulting `dist/jatz-distribution_0.1.0.zip` into your [Factorio mods folder](https://wiki.factorio.com/Application_directory#User_data_directory) and enable **Jat'z Distribution**. All items are in the Logistics tab of the crafting menu and are free to craft for now.
+Copy the resulting `dist/jatz-distribution_0.1.0.zip` into your [Factorio mods folder](https://wiki.factorio.com/Application_directory#User_data_directory) and enable **Jat'z Distribution**. All items are in the Logistics tab of the crafting menu, in the row just above the car and tank, and are free to craft for now.
 
 ## Development
 

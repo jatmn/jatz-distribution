@@ -8,15 +8,16 @@ local pictures = require("assets.depots.factorio.depot-pictures")
 local pipe_pictures = require("assets.depots.factorio.depot-pipe-pictures")
 
 local SIZE = 3
--- Sort order in the crafting menu: dry cargo first, then fuel, then fluids.
+-- Order within our row in the crafting menu and Factoriopedia: dry cargo, then fluids, then
+-- fuel. The freighter comes last (prototypes/freighter.lua).
 local ORDER = {
   "provider",
   "request",
   "buffer",
-  "fuel",
   "liquid-provider",
   "liquid-request",
   "liquid-buffer",
+  "fuel",
 }
 
 for index, role in ipairs(ORDER) do

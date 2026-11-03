@@ -28,7 +28,8 @@ This builds the installable zip with `tools/package_mod.py` and loads it, with t
 - each depot's pipe ports match the designed layout (written out in the check mod, independently of the generated data) and all 20 connect;
 - containers hold items and tanks hold fluid;
 - a character can enter a fuelled freighter and drive it;
-- every item, recipe and entity name the game shows has an English translation.
+- every item, recipe and entity name the game shows has an English translation;
+- our row sits directly above the car and tank row in the same tab, with the items in their intended order.
 
 It runs with the base game only and, if your Factorio includes Space Age and the mods it needs, again with Space Age. The free headless server is enough. To look around yourself, open the newest save under `.local/mod-check/` in the full game with that run's `config.ini` and `mods` folder (see the depot instructions below).
 

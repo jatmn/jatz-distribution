@@ -27,7 +27,8 @@ data:extend({
     icon = constants.freighter_icon,
     icon_size = constants.icon_size,
     subgroup = constants.subgroup,
-    order = "a[freighter]",
+    -- After the seven depots ("b[depot]-..."): last in our row.
+    order = "c[freighter]",
     place_result = name,
     stack_size = 1,
   },

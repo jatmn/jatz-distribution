@@ -31,6 +31,43 @@ local function rotated(x, y, turns)
   return x, y
 end
 
+-- Where our items must appear in the crafting menu and Factoriopedia, in order.
+local ROW = {
+  "jatz-provider-depot",
+  "jatz-request-depot",
+  "jatz-buffer-depot",
+  "jatz-liquid-provider-depot",
+  "jatz-liquid-request-depot",
+  "jatz-liquid-buffer-depot",
+  "jatz-fuel-depot",
+  FREIGHTER,
+}
+
+-- Our row must be in the car and tank's tab, directly above their row, and in ROW order.
+local function check_menu_placement(result)
+  local ours, transport = prototypes.item_subgroup["jatz-distribution"], prototypes.item_subgroup["transport"]
+  assert(ours.group.name == transport.group.name, "our row must be in the car and tank's tab")
+  assert(ours.order < transport.order, "our row must come before the car and tank row")
+  for name, subgroup in pairs(prototypes.item_subgroup) do
+    if subgroup.group.name == ours.group.name and name ~= ours.name and name ~= transport.name then
+      assert(
+        not (subgroup.order > ours.order and subgroup.order < transport.order),
+        name .. " sits between our row and the car row"
+      )
+    end
+  end
+  for index, name in ipairs(ROW) do
+    local item = prototypes.item[name]
+    assert(item.subgroup.name == ours.name, name .. ": not in our row")
+    if index > 1 then
+      assert(prototypes.item[ROW[index - 1]].order < item.order, name .. ": out of order in our row")
+    end
+  end
+  result.menu_tab = ours.group.name
+  result.menu_row_order = ours.order
+  result.car_row_order = transport.order
+end
+
 local function locale_key(localised)
   return type(localised) == "table" and localised[1] or localised
 end
@@ -150,6 +187,7 @@ script.on_init(function()
   end
 
   check_recipe(FREIGHTER, result)
+  check_menu_placement(result)
   local start = { 0.5, 30.5 }
   assert(surface.can_place_entity({ name = FREIGHTER, position = start, force = "player" }), "freighter: cannot place")
   local freighter = surface.create_entity({ name = FREIGHTER, position = start, force = "player" })
