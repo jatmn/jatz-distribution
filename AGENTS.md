@@ -22,7 +22,7 @@ Jat'z Distribution is an in-development Factorio 2.1 mod. The artwork is finishe
 
 ## Testing rules
 
-- Use the isolated `.local/` workspace that the test runners create. Never touch the user's normal Factorio mods, settings or saves.
+- Factorio test runners (`tools/test_factorio.py`, `tools/test_depot_art.py`) build their workspaces under `.local/`. Never touch the user's normal Factorio mods, settings or saves. Unit tests that need scratch files use Python's `tempfile`, which cleans up after itself.
 - Headless runs, HTML previews and contact sheets don't prove visual quality. Visual changes need a graphical-client check.
 - Keep machine paths, Factorio binaries, logs, saves and Python environments out of commits.
 - Screenshots go in the pull request, not the repository. Only images used by the README belong in `docs/images/`.
@@ -36,7 +36,7 @@ The project is licensed LGPL-3.0-only. `COPYING.LESSER` and `COPYING` hold the l
 - Don't copy code from any other mod unless its license is compatible with LGPL-3.0. Record any such code in `NOTICE`.
 - Don't add third-party artwork (Yuoki sprites, Factorio Wiki images and similar) to the repository. Link to it instead.
 - Shipped graphics must be this project's own work, rendered from its Blender sources.
-- New Lua and Python source files start with `-- SPDX-License-Identifier: LGPL-3.0-only` or `# SPDX-License-Identifier: LGPL-3.0-only`.
+- New Lua and Python source files begin with `-- SPDX-License-Identifier: LGPL-3.0-only` or `# SPDX-License-Identifier: LGPL-3.0-only`. If the file has a `#!` shebang, the shebang stays on line 1 (it only works there) and the SPDX line comes directly after it.
 - The mod package includes `COPYING`, `COPYING.LESSER` and `NOTICE`. It excludes `concepts/`, `docs/`, `tests/`, `tools/`, Blender sources and asset tools.
 
 ## Repository

@@ -2,15 +2,18 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 """Exercise the actual authorization entrypoint without credentials or model calls."""
 from copy import deepcopy
+import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
 import unittest
 
 HELPER = Path(__file__).with_name('pullfrog_command.py').resolve()
+WORKFLOW = HELPER.parents[1] / '.github' / 'workflows' / 'pullfrog.yml'
 EVENT = {
     'action': 'created',
     'repository': {'full_name': 'jatmn/jatz-distribution'},
@@ -20,7 +23,40 @@ EVENT = {
 }
 
 
+def helper_version():
+    spec = importlib.util.spec_from_file_location('pullfrog_command', HELPER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.PULLFROG_VERSION
+
+
+def workflow_action_version():
+    pins = re.findall(r'uses:\s*pullfrog/pullfrog@[0-9a-f]{40}\s*#\s*v(\S+)', WORKFLOW.read_text(encoding='utf-8'))
+    if len(pins) != 1:
+        raise AssertionError(f'expected one pinned pullfrog/pullfrog action in {WORKFLOW}, found {pins}')
+    return pins[0]
+
+
 class OwnerCommandTests(unittest.TestCase):
+    def assert_envelope(self, payload, number, comment_id, is_pr):
+        """Match the JsonPayload schema in pullfrog/pullfrog utils/payload.ts at the pinned action."""
+        self.assertEqual(set(payload), {'~pullfrog', 'version', 'triggerer', 'prompt', 'event'})
+        self.assertIs(payload['~pullfrog'], True)
+        self.assertEqual(payload['version'], workflow_action_version())
+        self.assertEqual(payload['triggerer'], 'jatmn')
+        self.assertIsInstance(payload['prompt'], str)
+        expected_event = {
+            'trigger': 'issue_comment_created',
+            'authorPermission': 'admin',
+            'comment_type': 'issue',
+            'comment_id': comment_id,
+            'issue_number': number,
+            'body': None,
+        }
+        if is_pr:
+            expected_event['is_pr'] = True
+        self.assertEqual(payload['event'], expected_event)
+
     def run_command(self, event, **overrides):
         with tempfile.TemporaryDirectory(prefix='pullfrog-test-') as directory:
             event_path = Path(directory) / 'event.json'
@@ -52,12 +88,7 @@ class OwnerCommandTests(unittest.TestCase):
                 fields = dict(line.split('=', 1) for line in output.splitlines())
                 self.assertEqual(fields['authorized'], 'true')
                 payload = json.loads(fields['payload'])
-                self.assertTrue(payload['~pullfrog'])
-                self.assertEqual(payload['triggerer'], 'jatmn')
-                self.assertEqual(payload['event'].get('authorPermission'), 'admin')
-                self.assertEqual(payload['event']['issue_number'], 7)
-                self.assertEqual(payload['event']['comment_id'], 123)
-                self.assertEqual(payload['event'].get('is_pr', False), is_pr)
+                self.assert_envelope(payload, 7, 123, is_pr)
                 self.assertIn('/pull/7#' if is_pr else '/issues/7#', payload['prompt'])
 
     def test_wrong_actor_event_and_reruns_produce_no_output(self):
@@ -110,7 +141,7 @@ class OwnerCommandTests(unittest.TestCase):
         self.assertEqual(len(output.splitlines()), 2)
         payload = json.loads(output.splitlines()[0].removeprefix('payload='))
         self.assertIn(body, payload['prompt'])
-        self.assertEqual(payload['triggerer'], 'jatmn')
+        self.assert_envelope(payload, 7, 123, True)
         self.assertEqual(output.splitlines()[1], 'authorized=true')
 
     def test_large_command_uses_original_event_snapshot(self):
@@ -120,8 +151,13 @@ class OwnerCommandTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertLess(len(output.encode()), 64 * 1024)
         payload = json.loads(output.splitlines()[0].removeprefix('payload='))
+        self.assert_envelope(payload, 7, 123, True)
         self.assertIn(event_path, payload['prompt'])
         self.assertIn('comment.body', payload['prompt'])
+
+    def test_helper_version_matches_pinned_action(self):
+        # Pullfrog checks the payload version against the action it runs in.
+        self.assertEqual(helper_version(), workflow_action_version())
 
     def test_invalid_comment_identity_fails_closed(self):
         for invalid_id in (None, True, -1, '123', 2**53):
