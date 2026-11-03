@@ -50,7 +50,7 @@ More screenshots: [every depot in every rotation](docs/images/depots-all-rotatio
 - [ ] Freighter dispatch between depots
 - [ ] Cargo and fluid loading and unloading
 - [ ] Solid and liquid refueling at the Fuel depot
-- [x] In-game icons for the freighter and every depot, made from the presentation renders
+- [x] In-game icons for the freighter and every depot, made from the game sprites
 - [ ] Freighter wheel animation and final freighter stats
 - [ ] Recipes, technology and balance
 - [ ] Release on the Factorio Mod Portal

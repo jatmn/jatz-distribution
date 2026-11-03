@@ -21,7 +21,7 @@ Jat'z Distribution is an in-development Factorio 2.1 mod. The artwork is finishe
 
 - The `.blend` files under each `source/` folder are the masters. Edit them, then re-render. Never hand-edit sprites.
 - The builder scripts (`build_master.py`, `build_depots.py`, `build_connector.py`) **overwrite** the `.blend` files. Carry manual edits into the builder, or don't run it.
-- In-game icons (`assets/*/icons/`) are made from the presentation renders by `tools/make_icons.py`: 64 px with three custom mipmaps (120 × 64 PNG, `icon_size = 64`), the layout Factorio 2.1 documents. Regenerate them whenever a presentation render changes; never edit them by hand.
+- In-game icons (`assets/*/icons/`) are made from the game sprites by `tools/make_icons.py`, so they match what players see: depots face south, and the freighter heads south-east. They're 64 px with three custom mipmaps (120 × 64 PNG, `icon_size = 64`), the layout Factorio 2.1 documents. Regenerate them whenever the sprite sheets change; never edit them by hand.
 - Render intermediates (`masters/exr`, `masters/layers`, `masters/shadow-silhouettes`, `masters/render-inputs.json`, `frames/`) are generated and git-ignored. Commit only the resulting `sheets/`, previews and hero renders. The one exception is `assets/depots/connectors/frames/`, which the tools read and which stays tracked.
 - Paint masks must stay neutral grayscale. Metal, tires, glass, copper, lights and lenses belong in the untinted base layer.
 - **Freighter:** keep the eight wheels, three cargo bays, exposed power unit and cab/clamp/cargo paint split. Render all 64 directions from the same camera, pivot and light. Direction 0 is north, turning clockwise.

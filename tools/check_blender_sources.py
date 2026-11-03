@@ -6,7 +6,7 @@ Blender isn't needed. The render, packaging and inspection tools record the SHA-
 of the .blend they used, so a model that changed without re-rendering, re-packaging
 or re-inspecting no longer matches its records. Also checks that every .blend was
 saved uncompressed by Blender 4.3, that the in-game icons follow Factorio's icon layout
-and were made from the current renders, and that the frozen 1x1 archive is unchanged.
+and were made from the current sprites, and that the frozen 1x1 archive is unchanged.
 """
 import argparse
 import hashlib

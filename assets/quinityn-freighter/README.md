@@ -15,7 +15,7 @@ An armored eight-wheel freight truck with three cargo bays and an exposed power 
 | `sheets/` | **Game sprites.** 4096×4096 atlases of 512×512 frames: `base`, three paint masks, `shadow`, and a default-color `preview` |
 | `factorio/freighter-animation.lua` | Lua helper that builds the layered `RotatedAnimation` |
 | `masters/hero-default-palette.png` | 2048px presentation render |
-| `icons/quinityn-freighter.png` | In-game icon: 64 px with three custom mipmaps (120 × 64), made from the presentation render by `tools/make_icons.py`; `icons/icons.json` records its source |
+| `icons/quinityn-freighter.png` | In-game icon: the freighter heading south-east, frame 24 of `sheets/freighter-preview.png`, made by `tools/make_icons.py`. 64 px with three custom mipmaps (120 × 64); `icons/icons.json` records its source |
 | `previews/` | 64-direction contact sheet, turntable animation, per-layer compass sheets, fan clearance check and `recolor.html`, a recoloring viewer you open in a browser |
 | `asset.json` | Default palette, scale and render settings |
 | `tools/` | Model builder, render driver and renderer, packager, preview generator and validators |
