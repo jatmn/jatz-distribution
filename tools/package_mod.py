@@ -17,6 +17,9 @@ import zipfile
 REPO = Path(__file__).resolve().parents[1]
 # Every sprite layer the helpers draw; the preview atlases are for people, not the game.
 LAYERS = ('base', 'mask-cab', 'mask-trim', 'mask-cargo', 'shadow')
+# The road tile's variants, transitions and item icon (prototypes/roads.lua).
+ROAD_ART = tuple(f'{name}.png' for name in ('slag1', 'slag2', 'slag4', 'concrete-inner-corner', 'concrete-outer-corner',
+                                             'concrete-side', 'concrete-u', 'concrete-o', 'pslag_icon'))
 
 
 def mod_files(root=REPO):
@@ -36,6 +39,9 @@ def mod_files(root=REPO):
         files += [depots / f'icons/{json.loads(metadata.read_text())["role"]}-depot.png']
     files += [depots / f'connectors/sheets/{layer}.png' for layer in ('base', 'shadow')]
     files += [depots / 'loading-zone/loading-zone.png']
+    # The road art is Yuoki's (CC BY-NC-SA 4.0), so its licence ships beside it.
+    roads = root / 'assets/roads/yuoki-railways'
+    files += [roads / name for name in ROAD_ART + ('Licence.txt',)]
     missing = [str(path.relative_to(root)) for path in files if not path.is_file()]
     if missing:
         raise SystemExit('Missing mod files: ' + ', '.join(missing))

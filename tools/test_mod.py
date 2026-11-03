@@ -4,8 +4,9 @@
 
 Builds the mod zip with tools/package_mod.py, installs it in an isolated workspace
 under .local/mod-check/ with the check mod from tests/factorio/, creates a save
-(placing every depot in four directions with pipes and a fuelled, driven
-freighter) and runs it for a few seconds. Runs once with the base game only and,
+(placing every depot in four directions with pipes, a fuelled, driven freighter
+and road-connected provider and request depots) and runs it until the deliveries
+are done. Runs once with the base game only and,
 when the installation includes Space Age and everything it needs, once more with
 Space Age. Also checks that every item, recipe and entity name the game shows has
 an English translation. Works with the free headless server.
@@ -27,8 +28,15 @@ CHECK = ROOT / 'tests/factorio/jatz-distribution-check_0.1.0'
 OURS = ('jatz-distribution', 'jatz-distribution-check')
 # Dependency prefixes Factorio loads with the mod: required ('' and '~') and recommended ('+').
 LOADED_WITH = re.compile(r'^\s*(?:~|\+)?\s*([A-Za-z0-9_-]+)')
-EXPECTED = {'free_recipes': 8, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pipe_connections': 20,
-            'cleared_zones': 28}
+EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pipe_connections': 20,
+            'cleared_zones': 28,
+            # Deliveries (tests/factorio/jatz-distribution-check_0.1.0/control.lua): 30 of the
+            # provider's 50 iron plates reach the request over the road; the request on an
+            # isolated road tile gets nothing, and the one without road sends no freighter.
+            'delivered': 30, 'provider_left': 20, 'island_received': 0, 'request_status': 'satisfied',
+            'island_status': 'unreachable', 'unpaved_status': 'no-road'}
+# Long enough for the check mod's deliveries (it fails itself at tick 1700).
+TICKS = 1800
 
 
 def run(command, log, timeout=300):
@@ -117,7 +125,7 @@ def check(binary, data, bundled, enabled_mods, label):
     report_path = write / 'script-output/jatz-distribution-check.json'
     created = run(command + ['--create', str(save)], workspace / 'create.log')
     driven = created == 0 and save.exists() and run(
-        command + ['--benchmark', str(save), '--benchmark-ticks', '180', '--benchmark-runs', '1'],
+        command + ['--benchmark', str(save), '--benchmark-ticks', str(TICKS), '--benchmark-runs', '1'],
         workspace / 'drive.log') == 0
     # Factorio logs a checksum for every active mod, including ones without data stage files.
     loaded = sorted(set(re.findall(r'Checksum (?:for|of) ([A-Za-z0-9_-]+): \d+$',
@@ -145,7 +153,8 @@ def check(binary, data, bundled, enabled_mods, label):
     (workspace / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
     print(f'{label}: {package.name} passed: {report["placed"]} depots placed, {report["rotations"]} rotations, '
           f'{report["pipe_connections"]} pipe connections, {report["free_recipes"]} free recipes, '
-          f'freighter drove {report["driven_tiles"]:.1f} tiles, menu row {report["menu_row_order"]!r} directly above '
+          f'freighter drove {report["driven_tiles"]:.1f} tiles, {report["delivered"]} iron plates delivered by road '
+          f'(a {report["detour"]:.0f}-tile detour, {report["road_samples"]} on-road samples), menu row {report["menu_row_order"]!r} directly above '
           f'the car row {report["car_row_order"]!r} in {report["menu_tab"]}. Mods loaded: {", ".join(loaded)}')
     return True
 

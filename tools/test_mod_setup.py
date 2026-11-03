@@ -134,10 +134,23 @@ class LocaleTests(unittest.TestCase):
     def test_every_mod_entity_has_a_name(self):
         keys = locale_keys()
         roles = ('provider', 'request', 'buffer', 'fuel', 'liquid-provider', 'liquid-request', 'liquid-buffer')
-        for name in ['jatz-quinityn-freighter'] + [f'jatz-{role}-depot' for role in roles]:
+        for name in ['jatz-quinityn-freighter', 'jatz-freighter-drone'] + [f'jatz-{role}-depot' for role in roles]:
             with self.subTest(name=name):
                 self.assertIn(f'entity-name.{name}', keys)
                 self.assertIn(f'entity-description.{name}', keys)
+
+    def test_roads_and_request_panel_have_text(self):
+        keys = locale_keys()
+        for key in ('tile-name.jatz-road', 'tile-description.jatz-road', 'item-name.jatz-road',
+                    'jatz-gui.request-title'):
+            self.assertIn(key, keys)
+        # Every status the dispatcher can show (scripts/logistics.lua) has a line in the panel.
+        source = (Path(__file__).resolve().parents[1] / 'scripts/logistics.lua').read_text()
+        table = source[source.index('logistics.status = {'):]
+        statuses = re.findall(r'^\s+\w+ = "([a-z-]+)",$', table[:table.index('}')], re.MULTILINE)
+        self.assertGreaterEqual(len(statuses), 5)
+        for status in statuses:
+            self.assertIn(f'jatz-request-status.{status}', keys)
 
 
 if __name__ == '__main__':

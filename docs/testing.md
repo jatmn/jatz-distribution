@@ -23,14 +23,17 @@ python3 tools/test_mod.py --factorio /path/to/factorio/bin/x64/factorio
 ```
 
 This builds the installable zip with `tools/package_mod.py` and loads it, with the check mod `tests/factorio/jatz-distribution-check_0.1.0`, in a fresh workspace under `.local/mod-check/`. It checks that:
-- all eight recipes are available from the start and free;
+- all nine recipes are available from the start and free, and the road item lays the road tile;
 - every depot can be placed, as a ghost and for real, in all four directions, and rotated through a full turn;
 - each depot's pipe ports match the designed layout (written out in the check mod, independently of the generated data) and all 20 connect;
 - containers hold items and tanks hold fluid;
 - a character can enter a fuelled freighter and drive it;
 - every item, recipe and entity name the game shows has an English translation;
 - our row sits directly above the car and tank row in the same tab, with the items in their intended order;
-- building a depot clears decoratives from its loading zone tile and keeps those beyond it, for all 7 depots in all 4 directions.
+- building a depot clears decoratives from its loading zone tile and keeps those beyond it, for all 7 depots in all 4 directions;
+- deliveries stay on road. A provider holding 50 iron plates and a request depot asking for 30 stand 20 tiles apart, joined by a U-shaped road that detours 10 tiles south over concrete. The request must receive exactly 30, the freighter must reach the bottom of the U, and every 10 ticks all four corners of every delivering freighter must be on road. A request depot whose loading zone is an isolated road tile must receive nothing and report no route, and one without road at its loading zone must send nothing. The run lasts until the deliveries finish (at most 1,700 ticks).
+
+The request panel needs a player, so check it in the graphical client. Open a request depot, choose an item and amount in the panel on the right of its window, and watch the status line. Then use Copy and Paste settings onto another request depot.
 
 The headless server can't show sprites. So `tools/test_mod_setup.py` checks the depots' default orientation and loading zones with Lua 5.2: south by default, turning with the depot, and never on a pipe tile. In the graphical client, check that each depot's loading zone marking lies on the right side and stays there as you rotate the depot.
 

@@ -75,31 +75,4 @@ function loading_zone.clear_all()
   end
 end
 
-local function on_changed(event)
-  local entity = event.entity or event.destination
-  if entity and entity.valid and loading_zone.depots[entity.name] then
-    loading_zone.clear(entity)
-  end
-end
-
-function loading_zone.register()
-  local filters = {}
-  for name in pairs(loading_zone.depots) do
-    filters[#filters + 1] = { filter = "name", name = name }
-  end
-  -- Every way a depot can be built: by hand, robots, other mods' scripts, revived ghosts, platforms.
-  for _, event in ipairs({
-    defines.events.on_built_entity,
-    defines.events.on_robot_built_entity,
-    defines.events.script_raised_built,
-    defines.events.script_raised_revive,
-    defines.events.on_space_platform_built_entity,
-  }) do
-    script.on_event(event, on_changed, filters)
-  end
-  -- Turning or flipping a depot moves its loading zone.
-  script.on_event(defines.events.on_player_rotated_entity, on_changed)
-  script.on_event(defines.events.on_player_flipped_entity, on_changed)
-end
-
 return loading_zone

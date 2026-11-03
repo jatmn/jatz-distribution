@@ -14,4 +14,11 @@ return {
   icon_size = 64,
   -- The 1x1 loading zone marking (assets/depots/tools/make_loading_zone.py): 64 px at scale 0.5.
   loading_zone = "__jatz-distribution__/assets/depots/loading-zone/loading-zone.png",
+  -- The road tile, its item and recipe; Yuoki slag path art (assets/roads/README.md).
+  road = "jatz-road",
+  road_art = "assets/roads/yuoki-railways/",
+  -- Collision layer on every tile except roads; the freighter drone collides with it alone.
+  off_road_layer = "jatz_off_road",
+  -- The freighter that drives itself between depots.
+  freighter_drone = "jatz-freighter-drone",
 }

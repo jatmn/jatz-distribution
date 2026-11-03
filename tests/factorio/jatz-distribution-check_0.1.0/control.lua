@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- Checks that every Jat'z Distribution item is free to craft and can be placed, that every
--- depot works in all four directions with its pipe ports, and that the freighter can be driven.
+-- depot works in all four directions with its pipe ports, that the freighter can be driven, and
+-- that freighters deliver from provider to request depots driving only on road.
 -- Writes script-output/jatz-distribution-check.json; tools/test_mod.py runs it headless.
 
 local FREIGHTER = "jatz-quinityn-freighter"
@@ -8,6 +9,12 @@ local ROLES = { "provider", "request", "buffer", "fuel", "liquid-provider", "liq
 local HEADINGS = { defines.direction.north, defines.direction.east, defines.direction.south, defines.direction.west }
 local VECTORS = { [0] = { 0, -1 }, [4] = { 1, 0 }, [8] = { 0, 1 }, [12] = { -1, 0 } }
 local DRIVE_TICKS = 120
+local ROAD = "jatz-road"
+local DRONE = "jatz-freighter-drone"
+-- Deliveries have this long to finish; tools/test_mod.py runs a little longer.
+local DELIVERY_DEADLINE = 1700
+-- A failed route must have been tried and reported before the report is written.
+local DELIVERY_SETTLE = 600
 -- The designed pipe ports (assets/depots/README.md, "Using it in Factorio"), written out here
 -- independently of the generated depot definitions the prototypes are built from, so a port
 -- moved in the data fails this check. Unrotated positions in tiles; directions face outward.
@@ -42,6 +49,7 @@ local ROW = {
   "jatz-liquid-buffer-depot",
   "jatz-fuel-depot",
   FREIGHTER,
+  ROAD,
 }
 
 -- Our row must be in the car and tank's tab, directly above their row, and in ROW order.
@@ -196,6 +204,136 @@ local function check_loading_zone_clearing(surface, result)
   end
 end
 
+-- The road item is free and lays the road tile.
+local function check_road(result)
+  local item = prototypes.item[ROAD]
+  assert(item.place_as_tile_result and item.place_as_tile_result.result.name == ROAD, "road: item must lay the tile")
+  result.localised_names[ROAD] = {
+    tile = locale_key(prototypes.tile[ROAD].localised_name),
+    item = locale_key(item.localised_name),
+    recipe = locale_key(prototypes.recipe[ROAD].localised_name),
+  }
+  local recipe = game.forces.player.recipes[ROAD]
+  assert(recipe and recipe.enabled and #recipe.ingredients == 0, "road: recipe must be free from the start")
+  assert(recipe.products[1].name == ROAD, "road: recipe must make road")
+  assert(not prototypes.tile[ROAD].collision_mask.layers.jatz_off_road, "road: must not be off-road")
+  assert(prototypes.tile.concrete.collision_mask.layers.jatz_off_road, "concrete: must be off-road")
+  result.free_recipes = result.free_recipes + 1
+end
+
+-- Lay road over every tile from one corner to the other (inclusive).
+local function lay_road(surface, x1, y1, x2, y2)
+  local tiles = {}
+  for x = math.min(x1, x2), math.max(x1, x2) do
+    for y = math.min(y1, y2), math.max(y1, y2) do
+      tiles[#tiles + 1] = { name = ROAD, position = { x, y } }
+    end
+  end
+  surface.set_tiles(tiles)
+end
+
+local function depot(surface, role, x, y)
+  return surface.create_entity({
+    name = "jatz-" .. role .. "-depot",
+    position = { x, y },
+    force = "player",
+    raise_built = true,
+  })
+end
+
+-- Three requests for iron plate, built as a player would, south of the other checks:
+-- * connected: provider and request depots 20 tiles apart, joined by a U-shaped road that
+--   detours 10 tiles south. The straight line between their loading zones is concrete, so the
+--   freighter must follow the road there and back.
+-- * island: a request depot whose loading zone is a single road tile, joined to nothing. A
+--   freighter can't reach the provider, so nothing arrives.
+-- * unpaved: a request depot with no road at its loading zone. No freighter is sent.
+local function setup_deliveries(surface)
+  -- Unrotated depots load from the tile two south of their centre.
+  local provider = depot(surface, "provider", -60.5, 45.5)
+  local connected = depot(surface, "request", -40.5, 45.5)
+  lay_road(surface, -61, 47, -61, 57)
+  lay_road(surface, -61, 57, -41, 57)
+  lay_road(surface, -41, 47, -41, 57)
+  local island = depot(surface, "request", -20.5, 45.5)
+  lay_road(surface, -21, 47, -21, 47)
+  local unpaved = depot(surface, "request", -20.5, 60.5)
+  assert(provider.insert({ name = "iron-plate", count = 50 }) == 50, "provider: cannot stock")
+  assert(remote.call("jatz-distribution", "set_request", connected, "iron-plate", 30), "request: not registered")
+  assert(remote.call("jatz-distribution", "set_request", island, "iron-plate", 10), "island: not registered")
+  assert(remote.call("jatz-distribution", "set_request", unpaved, "iron-plate", 10), "unpaved: not registered")
+  local request = remote.call("jatz-distribution", "get_request", connected)
+  assert(request.item == "iron-plate" and request.count == 30, "request: not stored")
+  storage.deliveries = {
+    provider = provider,
+    connected = connected,
+    island = island,
+    unpaved = unpaved,
+    road_samples = 0,
+    deepest = 0,
+  }
+end
+
+-- Every freighter on the way must stand wholly on road.
+local function check_freighters_on_road(surface)
+  local deliveries = storage.deliveries
+  for _, drone in pairs(surface.find_entities_filtered({ name = DRONE })) do
+    local box = drone.bounding_box
+    for _, corner in ipairs({
+      { box.left_top.x, box.left_top.y },
+      { box.right_bottom.x - 0.001, box.left_top.y },
+      { box.left_top.x, box.right_bottom.y - 0.001 },
+      { box.right_bottom.x - 0.001, box.right_bottom.y - 0.001 },
+    }) do
+      local tile = surface.get_tile(math.floor(corner[1]), math.floor(corner[2]))
+      assert(
+        tile.name == ROAD,
+        string.format("freighter off road on %s at (%.2f, %.2f)", tile.name, drone.position.x, drone.position.y)
+      )
+    end
+    deliveries.road_samples = deliveries.road_samples + 1
+    deliveries.deepest = math.max(deliveries.deepest, drone.position.y)
+  end
+end
+
+local function count_iron(entity)
+  return entity.get_inventory(defines.inventory.chest).get_item_count("iron-plate")
+end
+
+-- Once the connected request is stocked and no freighter is out, record what happened.
+local function deliveries_finished(surface, tick, result)
+  local deliveries = storage.deliveries
+  local done = count_iron(deliveries.connected) >= 30 and #surface.find_entities_filtered({ name = DRONE }) == 0
+  if not done or tick < DELIVERY_SETTLE then
+    if tick >= DELIVERY_DEADLINE then
+      error(
+        string.format(
+          "deliveries did not finish in time: request has %d iron (status %s), provider %d, %d freighter(s) out, %d on-road samples, deepest y %.1f",
+          count_iron(deliveries.connected),
+          tostring(remote.call("jatz-distribution", "get_status", deliveries.connected)),
+          count_iron(deliveries.provider),
+          #surface.find_entities_filtered({ name = DRONE }),
+          deliveries.road_samples,
+          deliveries.deepest
+        )
+      )
+    end
+    return false
+  end
+  result.delivered = count_iron(deliveries.connected)
+  result.provider_left = count_iron(deliveries.provider)
+  result.island_received = count_iron(deliveries.island)
+  result.request_status = remote.call("jatz-distribution", "get_status", deliveries.connected)
+  result.island_status = remote.call("jatz-distribution", "get_status", deliveries.island)
+  result.unpaved_status = remote.call("jatz-distribution", "get_status", deliveries.unpaved)
+  result.road_samples = deliveries.road_samples
+  -- The road's south edge is the tile row at y 57; the straight route stays at y 47.
+  result.detour = deliveries.deepest - 47.5
+  assert(result.road_samples > 0, "no freighter was ever seen driving")
+  assert(result.detour > 9, "the freighter did not follow the road south")
+  return true
+end
+
 script.on_init(function()
   local surface = game.create_surface("jatz-check", { width = 160, height = 160 })
   surface.request_to_generate_chunks({ 0, 0 }, 3)
@@ -230,7 +368,9 @@ script.on_init(function()
   check_loading_zone_clearing(surface, result)
 
   check_recipe(FREIGHTER, result)
+  check_road(result)
   check_menu_placement(result)
+  setup_deliveries(surface)
   local start = { 0.5, 30.5 }
   assert(surface.can_place_entity({ name = FREIGHTER, position = start, force = "player" }), "freighter: cannot place")
   local freighter = surface.create_entity({ name = FREIGHTER, position = start, force = "player" })
@@ -248,14 +388,24 @@ script.on_init(function()
 end)
 
 script.on_event(defines.events.on_tick, function(event)
-  if not storage.result or storage.result.driven_tiles or event.tick < DRIVE_TICKS then
+  local result = storage.result
+  if not result or result.written then
     return
   end
-  local freighter, result = storage.freighter, storage.result
-  local dx, dy = freighter.position.x - storage.start.x, freighter.position.y - storage.start.y
-  result.driven_tiles = math.sqrt(dx * dx + dy * dy)
-  result.speed = freighter.speed
-  assert(result.driven_tiles > 1, "freighter: did not drive")
-  helpers.write_file("jatz-distribution-check.json", helpers.table_to_json(result), false)
-  log("JATZ_DISTRIBUTION_CHECK passed")
+  local surface = game.surfaces["jatz-check"]
+  if event.tick % 10 == 0 then
+    check_freighters_on_road(surface)
+  end
+  if not result.driven_tiles and event.tick >= DRIVE_TICKS then
+    local freighter = storage.freighter
+    local dx, dy = freighter.position.x - storage.start.x, freighter.position.y - storage.start.y
+    result.driven_tiles = math.sqrt(dx * dx + dy * dy)
+    result.speed = freighter.speed
+    assert(result.driven_tiles > 1, "freighter: did not drive")
+  end
+  if result.driven_tiles and deliveries_finished(surface, event.tick, result) then
+    result.written = true
+    helpers.write_file("jatz-distribution-check.json", helpers.table_to_json(result), false)
+    log("JATZ_DISTRIBUTION_CHECK passed")
+  end
 end)
