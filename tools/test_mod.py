@@ -27,7 +27,8 @@ CHECK = ROOT / 'tests/factorio/jatz-distribution-check_0.1.0'
 OURS = ('jatz-distribution', 'jatz-distribution-check')
 # Dependency prefixes Factorio loads with the mod: required ('' and '~') and recommended ('+').
 LOADED_WITH = re.compile(r'^\s*(?:~|\+)?\s*([A-Za-z0-9_-]+)')
-EXPECTED = {'free_recipes': 8, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pipe_connections': 20}
+EXPECTED = {'free_recipes': 8, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pipe_connections': 20,
+            'cleared_zones': 28}
 
 
 def run(command, log, timeout=300):

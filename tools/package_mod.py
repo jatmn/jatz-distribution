@@ -20,9 +20,10 @@ LAYERS = ('base', 'mask-cab', 'mask-trim', 'mask-cargo', 'shadow')
 
 
 def mod_files(root=REPO):
-    files = [root / name for name in ('info.json', 'data.lua', 'data-final-fixes.lua', 'COPYING', 'COPYING.LESSER',
-                                      'NOTICE')]
+    files = [root / name for name in ('info.json', 'data.lua', 'data-final-fixes.lua', 'control.lua', 'COPYING',
+                                      'COPYING.LESSER', 'NOTICE')]
     files += sorted((root / 'prototypes').glob('*.lua'))
+    files += sorted((root / 'scripts').glob('*.lua'))
     files += sorted((root / 'locale').rglob('*.cfg'))
     freighter = root / 'assets/quinityn-freighter'
     files += [freighter / 'factorio/freighter-animation.lua', freighter / 'icons/quinityn-freighter.png']

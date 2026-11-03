@@ -29,7 +29,8 @@ This builds the installable zip with `tools/package_mod.py` and loads it, with t
 - containers hold items and tanks hold fluid;
 - a character can enter a fuelled freighter and drive it;
 - every item, recipe and entity name the game shows has an English translation;
-- our row sits directly above the car and tank row in the same tab, with the items in their intended order.
+- our row sits directly above the car and tank row in the same tab, with the items in their intended order;
+- building a depot clears decoratives from its loading zone tile and keeps those beyond it, for all 7 depots in all 4 directions.
 
 The headless server can't show sprites. So `tools/test_mod_setup.py` checks the depots' default orientation and loading zones with Lua 5.2: south by default, turning with the depot, and never on a pipe tile. In the graphical client, check that each depot's loading zone marking lies on the right side and stays there as you rotate the depot.
 
