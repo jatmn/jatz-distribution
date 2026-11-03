@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
 from connector_preview import compose_frame
+from depot_lua import definitions_lua
 
 ROOT=Path(__file__).resolve().parents[1]
 REPO=ROOT.parents[1]
@@ -17,30 +18,7 @@ LAYERS=['shadow','base','mask-cab','mask-trim','mask-cargo','preview']
 
 
 def write_definitions():
-    # Emit StyLua-formatted Lua (.stylua.toml) so regenerated files pass the CI format check.
-    lines=['-- Generated from asset.json files by package_depots.py.','return {']
-    roles=sorted({p.parents[1].name for p in ROOT.glob('*/3/asset.json')})
-    for role in roles:
-        lines.append(f'  ["{role}"] = {{')
-        for size in [3]:
-            meta=json.loads((ROOT/role/str(size)/'asset.json').read_text())
-            lines+=[f'    [{size}] = {{',f'      size = {size},',f'      scale = {meta["game_scale"]},','      palette = {']
-            for semantic,channel in [('role','cab'),('clamps','trim'),('housing','cargo')]:
-                values=', '.join(str(value) for value in meta['palette'][channel])
-                lines.append(f'        {semantic} = {{ {values} }},')
-            lines.append('      },')
-            if meta['ports']:
-                lines.append('      ports = {')
-                for port in meta['ports']:
-                    x,y=port['position']
-                    lines.append(f'        {{ direction = {port["direction"]}, position = {{ {x}, {y} }}, hide_connection_info = false }},')
-                lines.append('      },')
-            else:
-                lines.append('      ports = {},')
-            lines.append('    },')
-        lines.append('  },')
-    lines.append('}')
-    (ROOT/'factorio/depot-definitions.lua').write_text('\n'.join(lines)+'\n')
+    (ROOT/'factorio/depot-definitions.lua').write_text(definitions_lua(ROOT))
 
 
 def main():

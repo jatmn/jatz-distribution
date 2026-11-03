@@ -29,14 +29,27 @@ Jat'z Distribution is an in-development Factorio 2.1 mod. The artwork is finishe
 
 ## Continuous integration
 
-CI (`.github/workflows/ci.yml`) matches yuoki-quinityn. `tools/ci_changes.py` reads the complete diff and runs only the affected checks; editing the router or `ci.yml` runs all of them. The `CI result` job is the one stable check to require.
+CI (`.github/workflows/ci.yml`) is based on yuoki-quinityn's, but routed by repository **area** so a change only runs the checks for what it touched. `tools/ci_changes.py` reads the complete diff and decides; `CI result` is the one stable check to require.
 
-- **Lua** (`lua.yml`): Lua 5.2 syntax, Luacheck (`.luacheckrc`) and StyLua formatting (`.stylua.toml`). Pull requests check changed `.lua` files; pushes to `main`, and lint or formatter config changes, check every file.
-- **Python** (`python.yml`): syntax, Ruff (`.ruff.toml`: syntax errors and Pyflakes), and the `tools/test_*.py` unit tests that need neither Blender nor Factorio. The frozen 1×1 archive tools are exempt from Pyflakes.
-- **Workflows** (`workflows.yml`): actionlint.
-- Every job also runs `git diff --check`.
+| Area | Paths | Checks (`.github/workflows/area.yml`) |
+| --- | --- | --- |
+| Freighter | `assets/quinityn-freighter/`, the freighter test mod, `tools/test_factorio.py`, `tools/prepare_test_mod.py` | Lua and Python lint; Blender sources check when models, images or records change |
+| Depots | `assets/depots/` (with the 1×1 archive), the depot test mod, `tools/test_depot_art.py`, `tools/test_depot_lua.py` | Lua and Python lint; generated-Lua test; Blender sources check when models, images or records change |
+| Mod | Everything else that isn't documentation: the mod source at the repository root | Lua and Python lint |
+| Repository | `.github/`, the other `tools/` | Python lint, the `tools/test_*.py` repository tests, actionlint |
 
-Before pushing, format Lua with `stylua --config-path .stylua.toml <files>`, and run `luacheck`, `ruff check --config .ruff.toml` and `python3 tools/test_ci_changes.py`. The tool versions are pinned in the workflow files. When a check is added or renamed, update `tools/ci_changes.py` and `tools/test_ci_changes.py` together. The depot packagers write `depot-definitions.lua` and `depot-pipe-pictures.lua` already in StyLua format; keep their templates formatted if you change them.
+- Documentation (`README.md`, `AGENTS.md`, `docs/`, `concepts/`, licence files) runs no area checks.
+- Shared lint configuration (`.luacheckrc`, `.stylua.toml`, `.ruff.toml`, `.gitattributes`) re-checks every area in full. Editing `ci.yml`, `area.yml` or the router runs everything.
+- **Lua:** Lua 5.2 syntax, Luacheck and StyLua. Pull requests check the area's changed `.lua` files; pushes to `main` check all of them.
+- **Python:** syntax and Ruff (syntax errors and Pyflakes). The frozen 1×1 archive tools are exempt from Pyflakes.
+- **Blender sources** (`tools/check_blender_sources.py`, no Blender needed): every `.blend` is saved uncompressed by Blender 4.3; each model matches the hashes in its render, packaging and inspection records; freighter sprites match `checksums.json`; and the 1×1 archive matches its manifest. Re-render, re-package and re-inspect after editing a model, so the records follow it.
+- The routing job runs `git diff --check` on every change, except binary files.
+
+**Downloads stay small.** CI checks out text only: blobs over 256 KiB and the binary types in `.gitattributes` are never downloaded, and an area's art is fetched only for its Blender sources check. So text files must stay under 256 KiB; mark larger generated files as `binary` in `.gitattributes` (the routing job fails with that advice otherwise). Keep the checkout exclusions in `ci.yml` and `area.yml` equal to the binary patterns in `.gitattributes`; `tools/test_ci_changes.py` checks that they match.
+
+**A green `CI result` only vouches for the PR's own workflow.** `pull_request` runs use the workflows from the PR, so a PR that edits `.github/workflows/`, `tools/ci_changes.py` or the tools they call can change what is checked, or skip it. Review those changes line by line before merging, whatever CI says; only the owner merges.
+
+Before pushing, format Lua with `stylua --config-path .stylua.toml <files>`, and run `luacheck`, `ruff check --config .ruff.toml` and the relevant `tools/test_*.py`. The tool versions are pinned in the workflow files. When an area or check is added or renamed, update `tools/ci_changes.py`, `tools/test_ci_changes.py` and the jobs in `ci.yml` together. The depot packagers generate `depot-definitions.lua` and `depot-pipe-pictures.lua` through `assets/depots/tools/depot_lua.py`, already in StyLua format; `tools/test_depot_lua.py` requires the committed files to match.
 
 ## Licensing
 
@@ -58,22 +71,6 @@ Branch rules are kept as two rulesets matching yuoki-quinityn:
 - `.github/main-ruleset.json`: no deleting or force-pushing `main`, and changes go through pull requests with all review threads resolved.
 - `.github/ci-ruleset.json`: the `CI result` check must pass.
 
-GitHub only enforces rulesets on private repositories with a paid plan, so apply them when the repository goes public (or the plan is upgraded). The same command applies later edits to the files. For each file, it updates the ruleset with that file's name if one exists, creates it otherwise, and stops if the name matches more than one ruleset:
-
-```sh
-REPO=jatmn/jatz-distribution
-for FILE in .github/main-ruleset.json .github/ci-ruleset.json; do
-  NAME=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["name"])' "$FILE")
-  if IDS=$(gh api --paginate "repos/$REPO/rulesets?includes_parents=false" --jq ".[] | select(.name == \"$NAME\") | .id"); then
-    case $(printf '%s' "$IDS" | grep -c .) in
-      0) gh api -X POST "repos/$REPO/rulesets" --input "$FILE" ;;
-      1) gh api -X PUT "repos/$REPO/rulesets/$IDS" --input "$FILE" ;;
-      *) echo "Several rulesets are named '$NAME' ($IDS); delete the extras first." >&2; false ;;
-    esac
-  else
-    echo "Could not list existing rulesets; $FILE was not applied." >&2; false
-  fi
-done
-```
+GitHub only enforces rulesets on private repositories with a paid plan, so apply them when the repository goes public (or the plan is upgraded), and again after editing either file. `python3 tools/apply_rulesets.py` needs `gh` signed in with admin rights. It creates a missing ruleset, updates an existing one by name, and keeps only the oldest if two runs created duplicates; a failed lookup changes nothing.
 
 Pullfrog (`.github/workflows/pullfrog.yml`) runs an AI agent only when the owner posts a new issue or PR comment whose first line is `@pullfrog <instruction>`. `tools/pullfrog_command.py` checks that before any credentials are used; run `python3 tools/test_pullfrog_command.py` after changing either file.

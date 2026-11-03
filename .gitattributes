@@ -4,6 +4,8 @@
 *.webp binary
 *.blend binary
 *.exr binary
+# Generated, self-contained preview pages: mostly embedded base64 images, over CI's 256 KiB text limit.
+assets/*/previews/recolor.html binary
 *.lua text eol=lf
 *.py text eol=lf
 *.md text eol=lf

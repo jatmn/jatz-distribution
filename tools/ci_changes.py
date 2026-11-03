@@ -1,41 +1,134 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-only
-"""Select CI surfaces from the complete Git diff, without API file-list limits."""
+"""Route CI by repository area, from the complete Git diff, without API file-list limits.
+
+Areas: freighter (truck artwork and its test mod), depots (depot artwork, the
+1x1 archive and their test mod), mod (the game mod source: everything that
+isn't another area or documentation) and repository (CI, workflows and repo
+tools). Each changed area gets its own CI job. An area's art check (Blender
+sources against their render records) only runs when its art or records change.
+
+--base BASE              print the routing as GitHub step outputs.
+--select AREA --base BASE --event EVENT --output DIR
+                         write the area's Lua and Python files for its CI job.
+"""
 import argparse
 import os
+from pathlib import Path, PurePosixPath
 import subprocess
 
-CHECKS = ('lua', 'python', 'workflows')
+AREAS = ('freighter', 'depots', 'mod', 'repository')
+EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+NO_COMMIT = '0' * 40
+# Changes that can alter any area's results: re-check every area, including art.
+EVERYTHING = {'.github/workflows/ci.yml', '.github/workflows/area.yml', 'tools/ci_changes.py'}
+# Shared lint configuration: every area's code is checked again, in full.
+SHARED_LINT = {'.luacheckrc', '.stylua.toml', '.ruff.toml', '.gitattributes'}
+DOCUMENTATION = {'README.md', 'AGENTS.md', 'NOTICE', 'COPYING', 'COPYING.LESSER',
+                 '.gitignore', 'requirements.txt'}
+ART_SUFFIXES = {'.blend', '.png', '.webp', '.json'}
+ART_CHECKER = 'tools/check_blender_sources.py'
+
+
+def area_of(path):
+    """The area a path belongs to, or None for documentation and concept art."""
+    if path.startswith(('assets/quinityn-freighter/', 'tests/factorio/freighter-art-check_')) or path in {
+        'tools/test_factorio.py', 'tools/prepare_test_mod.py'
+    }:
+        return 'freighter'
+    if path.startswith(('assets/depots/', 'tests/factorio/depot-art-check_')) or path in {
+        'tools/test_depot_art.py', 'tools/test_depot_lua.py'
+    }:
+        return 'depots'
+    if path.startswith(('.github/', 'tools/')):
+        return 'repository'
+    if path in DOCUMENTATION or path.startswith(('docs/', 'concepts/')):
+        return None
+    return 'mod'
+
+
+def touches_art(path):
+    """Whether a change can invalidate the Blender sources check for its area."""
+    suffix = PurePosixPath(path).suffix
+    return (path.startswith('assets/') and suffix in ART_SUFFIXES
+            or path.startswith('assets/depots/archive/')
+            or path == 'assets/depots/tools/render_connector.py')
 
 
 def classify(paths):
-    checks = dict.fromkeys(CHECKS, False)
+    checks = dict.fromkeys(('freighter', 'freighter_art', 'depots', 'depots_art', 'mod', 'repository'), False)
     for path in paths:
-        if path in {'.github/workflows/ci.yml', 'tools/ci_changes.py'}:
+        if path in EVERYTHING:
             return dict.fromkeys(checks, True)
-        if path.endswith('.lua') or path in {
-            '.luacheckrc', '.stylua.toml', '.github/workflows/lua.yml'
-        }:
-            checks['lua'] = True
-        if path.endswith('.py') or path in {'.ruff.toml', '.github/workflows/python.yml'}:
-            checks['python'] = True
-        if path.startswith('.github/workflows/'):
-            checks['workflows'] = True
+        if path in SHARED_LINT:
+            for area in AREAS:
+                checks[area] = True
+            continue
+        if path == ART_CHECKER:
+            checks.update(repository=True, freighter_art=True, depots_art=True)
+            continue
+        area = area_of(path)
+        if area is None:
+            continue
+        checks[area] = True
+        if area in ('freighter', 'depots') and touches_art(path):
+            checks[f'{area}_art'] = True
+    # An art check runs inside its area's job.
+    for area in ('freighter', 'depots'):
+        checks[area] = checks[area] or checks[f'{area}_art']
     return checks
+
+
+def git(*args):
+    return subprocess.check_output(['git', *args])
+
+
+def resolve_base(base):
+    # A push that creates the branch has no previous commit: compare with the empty tree.
+    return EMPTY_TREE if base == NO_COMMIT else base
 
 
 def changed_paths(base, head='HEAD'):
     # Disabling rename detection includes both the old and new surfaces. NUL
     # separators preserve filenames with whitespace/newlines. Git errors fail CI.
-    result = subprocess.check_output([
-        'git', 'diff', '--no-renames', '--name-only', '-z', base, head, '--'
-    ])
+    result = git('diff', '--no-renames', '--name-only', '-z', resolve_base(base), head, '--')
     return [os.fsdecode(path) for path in result.split(b'\0') if path]
 
 
+def area_files(area, pattern, base=None):
+    """Tracked files of an area matching a pattern; with base, only those added or changed since it."""
+    if base is None:
+        listed = git('ls-files', '-z', '--', pattern)
+    else:
+        listed = git('diff', '--no-renames', '--name-only', '--diff-filter=ACMRT', '-z',
+                     resolve_base(base), 'HEAD', '--', pattern)
+    return [name for name in (os.fsdecode(item) for item in listed.split(b'\0') if item) if area_of(name) == area]
+
+
+def select(area, base, event, output):
+    """Write NUL-separated Lua and Python file lists for an area's CI job."""
+    # Always read the diff first, so an unknown base revision fails instead of linting nothing.
+    changed = changed_paths(base)
+    # Pull requests lint changed Lua; pushes and lint/formatter/toolchain changes lint all of it.
+    full = event != 'pull_request' or any(path in EVERYTHING or path in SHARED_LINT for path in changed)
+    lua = area_files(area, '*.lua', None if full else base)
+    python = area_files(area, '*.py')
+    output.mkdir(parents=True, exist_ok=True)
+    for name, files in (('ci-lua-files', lua), ('ci-py-files', python)):
+        (output / name).write_bytes(b''.join(os.fsencode(path) + b'\0' for path in files))
+
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--base', required=True)
+    parser.add_argument('--select', choices=AREAS)
+    parser.add_argument('--event')
+    parser.add_argument('--output', type=Path)
     args = parser.parse_args()
-    for check, enabled in classify(changed_paths(args.base)).items():
-        print(f'{check}={str(enabled).lower()}')
+    if args.select:
+        if not args.event or not args.output:
+            parser.error('--select needs --event and --output')
+        select(args.select, args.base, args.event, args.output)
+    else:
+        for check, enabled in classify(changed_paths(args.base)).items():
+            print(f'{check}={str(enabled).lower()}')
