@@ -93,6 +93,11 @@ def check_freighter(root, errors):
     asset = root / 'assets/quinityn-freighter'
     source = asset / 'source/quinityn-freighter.blend'
     model, digest = source.relative_to(root), sha256(source)
+    # Render provenance: package_sprites.py copies the model hash that render_freighter.py
+    # recorded at render time. Refreshing the inspection or checksums can't update it.
+    expect(errors, load(asset / 'validation.json'), 'source_sha256', digest, model,
+           'its sprites are from an older model; render with assets/quinityn-freighter/tools/render_freighter.py '
+           'and package again (assets/quinityn-freighter/README.md)')
     expect(errors, load(asset / 'geometry-validation.json'), 'model_sha256', digest, model,
            'run assets/quinityn-freighter/tools/inspect_geometry.py in Blender')
     expect(errors, load(asset / 'asset.json'), 'concept_sha256', sha256(asset / 'source/approved-concept.png'),

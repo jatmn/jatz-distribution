@@ -3,6 +3,7 @@
 Requires Python, numpy, Pillow and OpenEXR. No generative edits occur here.
 """
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -139,6 +140,13 @@ if __name__=="__main__":
     parser=argparse.ArgumentParser()
     parser.add_argument("--count",type=int,default=64)
     args=parser.parse_args()
+    # Only package renders of the committed model: render_freighter.py records it.
+    record=ROOT/"masters"/"render-inputs.json"
+    if not record.exists():
+        raise SystemExit("No masters/render-inputs.json: render with tools/render_freighter.py first.")
+    source_sha256=json.loads(record.read_text())["source_sha256"]
+    if source_sha256!=hashlib.sha256((ROOT/"source"/"quinityn-freighter.blend").read_bytes()).hexdigest():
+        raise SystemExit("The renders are from another model: render again with tools/render_freighter.py.")
     report=[]
     for direction in range(args.count):
         report.append(extract(direction,[(1024,ROOT/"masters"/"layers"),(512,ROOT/"frames")]))
@@ -146,4 +154,4 @@ if __name__=="__main__":
     if args.count==64:
         make_sheets(args.count)
         make_previews(args.count)
-    (ROOT/"validation.json").write_text(json.dumps(report,indent=2)+"\n")
+    (ROOT/"validation.json").write_text(json.dumps({"source_sha256":source_sha256,"directions":report},indent=2)+"\n")

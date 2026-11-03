@@ -17,7 +17,7 @@ An armored eight-wheel freight truck with three cargo bays and an exposed power 
 | `masters/hero-default-palette.png` | 2048px presentation render |
 | `previews/` | 64-direction contact sheet, turntable animation, per-layer compass sheets, fan clearance check and `recolor.html`, a recoloring viewer you open in a browser |
 | `asset.json` | Default palette, scale and render settings |
-| `tools/` | Model builder, renderer, packager, preview generator and validators |
+| `tools/` | Model builder, render driver and renderer, packager, preview generator and validators |
 | `*-validation.json`, `checksums.json` | Results from the most recent validation run |
 
 ## Paint layers
@@ -70,16 +70,15 @@ Rendering creates EXR masters, PNG layers and frames under `masters/` and `frame
 
 ```sh
 A=assets/quinityn-freighter
-blender -b $A/source/quinityn-freighter.blend --python $A/tools/render_directions.py -- \
-  --start 0 --end 64 --resolution 1024 --samples 48 --threads 8
-blender -b $A/source/quinityn-freighter.blend --python $A/tools/render_directions.py -- \
-  --hero --resolution 2048 --samples 96 --threads 8
+python3 $A/tools/render_freighter.py        # add --blender /path/to/blender if needed
 .venv/bin/python $A/tools/package_sprites.py
 .venv/bin/python $A/tools/create_preview.py
 .venv/bin/python $A/tools/validate_assets.py
 ```
 
-The renderer skips directions that already have output. Before re-rendering a changed model, delete or move any local `masters/exr` and `masters/shadow-silhouettes` folders from an earlier run. The `--hero` command always replaces the presentation render. Rendering 64 directions takes a while on CPU, and an interrupted run resumes where it stopped.
+`render_freighter.py` renders all 64 directions and the 2048px presentation render with the recorded settings. Before rendering, it saves the model's SHA-256 in a local `masters/render-inputs.json`. `package_sprites.py` only packages renders whose record matches the committed model, and copies that hash into `validation.json`. CI compares it with the model, so a model edited without re-rendering is caught.
+
+The renderer skips directions that already have output, so the driver refuses to resume over renders from another, or an unknown, model. Before re-rendering a changed model, delete the local `masters/exr`, `masters/shadow-silhouettes` and `masters/render-inputs.json`. Rendering 64 directions takes a while on CPU, and an interrupted run resumes where it stopped.
 
 The default palette appears in four places: `asset.json`, `factorio/freighter-animation.lua`, `tools/package_sprites.py` and `tools/create_preview.py`. Change them together.
 

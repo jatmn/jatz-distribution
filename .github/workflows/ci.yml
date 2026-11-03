@@ -54,16 +54,17 @@ jobs:
           if [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
             BASE=4b825dc642cb6eb9a060e54bf8d69288fbee4904
           fi
-          # Larger blobs aren't downloaded and can't be fetched later, so text must stay below 256 KiB.
+          # blob:limit=256k omits blobs of 256 KiB or more, and they can't be fetched later
+          # (no credentials), so every text file must stay strictly below 256 KiB.
           python3 - <<'PY'
           import os
           import subprocess
 
           listed = subprocess.check_output(['git', 'ls-files', '-z', '--', ':(exclude,attr:binary)'])
           large = [path for path in (os.fsdecode(name) for name in listed.split(b'\0') if name)
-                   if os.path.lexists(path) and os.lstat(path).st_size > 256 * 1024]
+                   if os.path.lexists(path) and os.lstat(path).st_size >= 256 * 1024]
           for path in large:
-              print(f'::error file={path}::{path} is text over 256 KiB. CI only downloads smaller blobs; '
+              print(f'::error file={path}::{path} is text of 256 KiB or more. CI only downloads smaller blobs; '
                     'mark large generated or binary files as binary in .gitattributes.')
           raise SystemExit(1 if large else 0)
           PY

@@ -123,6 +123,22 @@ class RoutingTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('trailing whitespace', result.stdout + result.stderr)
 
+    def test_text_size_guard_matches_the_clone_filter(self):
+        # Git's blob:limit omits blobs of *at least* the limit, so the guard must reject that size too.
+        self.assertEqual(re.findall(r'filter: (blob:limit=\S+)', (WORKFLOWS / 'ci.yml').read_text()),
+                         ['blob:limit=256k'])
+        self.assertIn('st_size >= 256 * 1024', self.route_step)
+        for size, accepted in ((256 * 1024 - 1, True), (256 * 1024, False)):
+            with self.subTest(size=size):
+                repo = Repo(self)
+                base = repo.commit('base')
+                repo.write('assets/depots/previews/viewer.html', 'x' * size)
+                repo.commit('text at the boundary')
+                result, _ = repo.run_step(self.route_step, BASE=base)
+                self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
+                if not accepted:
+                    self.assertIn('viewer.html is text of 256 KiB or more', result.stdout)
+
     def test_large_text_must_be_marked_binary(self):
         repo = Repo(self)
         base = repo.commit('base')
@@ -130,7 +146,7 @@ class RoutingTests(unittest.TestCase):
         repo.commit('large text')
         result, _ = repo.run_step(self.route_step, BASE=base)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('viewer.html is text over 256 KiB', result.stdout)
+        self.assertIn('viewer.html is text of 256 KiB or more', result.stdout)
         repo.write('.gitattributes', 'assets/*/previews/*.html binary\n')
         repo.commit('mark it binary')
         result, _ = repo.run_step(self.route_step, BASE=base)

@@ -41,6 +41,7 @@ def build(root):
     model = write(freighter / 'source/quinityn-freighter.blend', BLEND_HEADER + b'truck model')
     concept = write(freighter / 'source/approved-concept.png', b'concept')
     sheet = write(freighter / 'sheets/freighter-base.png', b'sheet')
+    record(freighter / 'validation.json', {'source_sha256': model, 'directions': []})
     record(freighter / 'geometry-validation.json', {'model_sha256': model})
     record(freighter / 'asset.json', {'concept_sha256': concept})
     record(freighter / 'checksums.json', {'source/quinityn-freighter.blend': model,
@@ -95,11 +96,24 @@ class CheckerTests(unittest.TestCase):
                 asset = self.root / 'assets/quinityn-freighter'
                 digest = write(asset / 'source/quinityn-freighter.blend', header + b'truck model')
                 # Keep the records current so that only the header is wrong.
+                record(asset / 'validation.json', {'source_sha256': digest, 'directions': []})
                 record(asset / 'geometry-validation.json', {'model_sha256': digest})
                 checksums = json.loads((asset / 'checksums.json').read_text())
                 checksums['source/quinityn-freighter.blend'] = digest
                 record(asset / 'checksums.json', checksums)
                 self.assertOneError(self.errors('freighter'), 'quinityn-freighter.blend', 'Blender 4.3.2')
+
+    def test_freighter_model_revalidated_but_not_rendered(self):
+        # Editing the model and refreshing the inspection and checksums, without
+        # rendering, must still fail: only packaging records the rendered model.
+        asset = self.root / 'assets/quinityn-freighter'
+        digest = write(asset / 'source/quinityn-freighter.blend', BLEND_HEADER + b'edited truck model')
+        record(asset / 'geometry-validation.json', {'model_sha256': digest})
+        checksums = json.loads((asset / 'checksums.json').read_text())
+        checksums['source/quinityn-freighter.blend'] = digest
+        record(asset / 'checksums.json', checksums)
+        self.assertOneError(self.errors('freighter'), 'quinityn-freighter.blend', 'sprites are from an older model',
+                            'render_freighter.py')
 
     def test_freighter_sprite_or_concept_changed(self):
         write(self.root / 'assets/quinityn-freighter/sheets/freighter-base.png', b'hand edited')
