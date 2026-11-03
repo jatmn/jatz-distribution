@@ -42,3 +42,5 @@ The project is licensed LGPL-3.0-only. `COPYING.LESSER` and `COPYING` hold the l
 ## Repository
 
 Keep the repository private until the owner decides to publish it. Releases also need the owner's go-ahead.
+
+Pullfrog (`.github/workflows/pullfrog.yml`) runs an AI agent only when the owner posts a new issue or PR comment whose first line is `@pullfrog <instruction>`. `tools/pullfrog_command.py` checks that before any credentials are used; run `python3 tools/test_pullfrog_command.py` after changing either file.
