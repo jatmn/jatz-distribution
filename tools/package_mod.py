@@ -9,7 +9,9 @@ license files. Blender sources, tools, tests, docs and previews stay out
 """
 import argparse
 import json
+import os
 from pathlib import Path
+import tempfile
 import zipfile
 
 REPO = Path(__file__).resolve().parents[1]
@@ -41,13 +43,26 @@ def build(output, root=REPO):
     output.mkdir(parents=True, exist_ok=True)
     target = output / f'{folder}.zip'
     files = mod_files(root)
-    # Factorio expects one top-level folder inside the zip.
-    with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
-        for path in files:
-            archive.write(path, f'{folder}/{path.relative_to(root).as_posix()}')
-    with zipfile.ZipFile(target) as archive:
-        if archive.testzip() is not None:
-            raise SystemExit(f'Archive verification failed: {target}')
+    # Write and verify a private temporary file, then atomically replace the zip, so an
+    # interrupted or overlapping build never leaves a partial zip under the real name.
+    handle, temporary = tempfile.mkstemp(prefix=f'.{folder}-', suffix='.zip.tmp', dir=output)
+    os.close(handle)
+    try:
+        # Factorio expects one top-level folder inside the zip.
+        with zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+            for path in files:
+                archive.write(path, f'{folder}/{path.relative_to(root).as_posix()}')
+        with zipfile.ZipFile(temporary) as archive:
+            if archive.testzip() is not None or len(archive.namelist()) != len(files):
+                raise SystemExit(f'Archive verification failed: {target}')
+        # mkstemp files are private; give the zip normal permissions from the umask.
+        umask = os.umask(0)
+        os.umask(umask)
+        os.chmod(temporary, 0o666 & ~umask)
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
     return target, len(files)
 
 

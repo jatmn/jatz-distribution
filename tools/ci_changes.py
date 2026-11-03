@@ -40,7 +40,7 @@ def area_of(path):
         'tools/test_depot_art.py', 'tools/test_depot_lua.py'
     }:
         return 'depots'
-    if path in {'tools/package_mod.py', 'tools/test_mod.py'}:
+    if path in {'tools/package_mod.py', 'tools/test_mod.py', 'tools/test_mod_setup.py'}:
         return 'mod'
     if path.startswith(('.github/', 'tools/')):
         return 'repository'

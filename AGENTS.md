@@ -15,7 +15,7 @@ Jat'z Distribution is an in-development Factorio 2.1 mod. The artwork is finishe
 - The prototypes load the sprite helpers and sheets straight from `assets/` (paths in `prototypes/constants.lua`), so art is never copied. `prototypes/depot-definitions.lua` exists because `depot-pictures.lua` loads its data from that name.
 - Prefix every prototype name with `jatz-`, and keep player-facing text in `locale/en/`.
 - `python3 tools/package_mod.py` builds `dist/jatz-distribution_<version>.zip` from an explicit file list. Add new runtime files to it. Bump `version` in `info.json` for releases.
-- After changing the mod, run `python3 tools/test_mod.py --factorio <factorio>` (the free headless server is enough). It loads the packaged zip with and without Space Age, and checks crafting, placement, rotation, pipes and driving. Extend `tests/factorio/jatz-distribution-check_0.1.0/control.lua` along with new behavior.
+- After changing the mod, run `python3 tools/test_mod.py --factorio <factorio>` (the free headless server is enough). It loads the packaged zip with and without Space Age, and checks crafting, placement, rotation, pipes and driving. Extend `tests/factorio/jatz-distribution-check_0.1.0/control.lua` along with new behavior. Its `EXPECTED_PORTS` table is the designed pipe layout, kept separate from the generated data on purpose: update it only for a deliberate port change.
 
 ## Artwork rules
 

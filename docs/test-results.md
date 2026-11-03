@@ -49,7 +49,7 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | Tint isolation (default, alternate, white, black and each layer alone) | Passed |
 | Shadows at eight compass headings and at night | Passed |
 | Driving forward, in full circles and in reverse | Passed |
-| Selection and collision boxes | **Failed:** inherited from the base car, they cover only the middle of the truck. To be fixed when the freighter prototype is built. |
+| Selection and collision boxes | **Failed** in this artwork fixture, which inherits the base car's boxes (they cover only the middle of the truck). The mod's freighter now uses a 1.5 × 4.5 tile box measured from the sprites; that still needs a graphical check (see Mod above). |
 | Wheel animation | Not implemented yet (one static frame per direction) |
 
 ![Default and alternate trucks driving](images/freighter-driving.jpg)

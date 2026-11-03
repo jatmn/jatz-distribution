@@ -2,13 +2,27 @@
 -- Checks that every Jat'z Distribution item is free to craft and can be placed, that every
 -- depot works in all four directions with its pipe ports, and that the freighter can be driven.
 -- Writes script-output/jatz-distribution-check.json; tools/test_mod.py runs it headless.
-local definitions = require("__jatz-distribution__.prototypes.depot-definitions")
 
 local FREIGHTER = "jatz-quinityn-freighter"
 local ROLES = { "provider", "request", "buffer", "fuel", "liquid-provider", "liquid-request", "liquid-buffer" }
 local HEADINGS = { defines.direction.north, defines.direction.east, defines.direction.south, defines.direction.west }
 local VECTORS = { [0] = { 0, -1 }, [4] = { 1, 0 }, [8] = { 0, 1 }, [12] = { -1, 0 } }
 local DRIVE_TICKS = 120
+-- The designed pipe ports (assets/depots/README.md, "Using it in Factorio"), written out here
+-- independently of the generated depot definitions the prototypes are built from, so a port
+-- moved in the data fails this check. Unrotated positions in tiles; directions face outward.
+local EXPECTED_PORTS = {
+  provider = {},
+  request = {},
+  buffer = {},
+  fuel = { { x = -1, y = 0, direction = defines.direction.west } },
+  ["liquid-provider"] = { { x = 0, y = -1, direction = defines.direction.north } },
+  ["liquid-request"] = { { x = 0, y = -1, direction = defines.direction.north } },
+  ["liquid-buffer"] = {
+    { x = -1, y = -1, direction = defines.direction.north },
+    { x = 1, y = -1, direction = defines.direction.north },
+  },
+}
 
 local function rotated(x, y, turns)
   for _ = 1, turns do
@@ -17,9 +31,19 @@ local function rotated(x, y, turns)
   return x, y
 end
 
+local function locale_key(localised)
+  return type(localised) == "table" and localised[1] or localised
+end
+
 local function check_recipe(name, result)
   local item = prototypes.item[name]
   assert(item and item.place_result and item.place_result.name == name, name .. ": item must place the entity")
+  -- tools/test_mod.py checks that each of these keys has an English translation.
+  result.localised_names[name] = {
+    entity = locale_key(item.place_result.localised_name),
+    item = locale_key(item.localised_name),
+    recipe = locale_key(prototypes.recipe[name].localised_name),
+  }
   local recipe = game.forces.player.recipes[name]
   assert(recipe and recipe.enabled, name .. ": recipe must be available from the start")
   assert(#recipe.ingredients == 0, name .. ": recipe must be free")
@@ -27,9 +51,30 @@ local function check_recipe(name, result)
   result.free_recipes = result.free_recipes + 1
 end
 
+local function check_port_layout(name, role)
+  local expected = EXPECTED_PORTS[role]
+  local fluidboxes = prototypes.entity[name].fluidbox_prototypes
+  if #expected == 0 then
+    assert(#fluidboxes == 0, name .. ": a cargo depot must not have pipe ports")
+    return
+  end
+  assert(#fluidboxes == 1, name .. ": expected one fluid box")
+  local connections = fluidboxes[1].pipe_connections
+  assert(#connections == #expected, name .. ": wrong number of pipe ports")
+  for _, port in ipairs(expected) do
+    local found = false
+    for _, connection in ipairs(connections) do
+      local position = connection.positions[1]
+      found = found or (position.x == port.x and position.y == port.y and connection.direction == port.direction)
+    end
+    assert(found, string.format("%s: no port at (%d, %d) facing %d", name, port.x, port.y, port.direction))
+  end
+end
+
 local function check_depot(surface, role, row, result)
   local name = "jatz-" .. role .. "-depot"
   check_recipe(name, result)
+  check_port_layout(name, role)
   for index, heading in ipairs(HEADINGS) do
     local position = { -30 + (index - 1) * 16 + 0.5, -56 + row * 8 + 0.5 }
     local ghost = surface.create_entity({
@@ -54,9 +99,9 @@ local function check_depot(surface, role, row, result)
       assert(entity.direction == HEADINGS[(index - 1 + step) % 4 + 1], name .. ": rotation direction")
       result.rotations = result.rotations + 1
     end
-    for _, port in ipairs(definitions[role][3].ports) do
+    for _, port in ipairs(EXPECTED_PORTS[role]) do
       local vector = VECTORS[port.direction]
-      local x, y = rotated(port.position[1] + vector[1], port.position[2] + vector[2], index - 1)
+      local x, y = rotated(port.x + vector[1], port.y + vector[2], index - 1)
       local pipe =
         surface.create_entity({ name = "pipe", position = { position[1] + x, position[2] + y }, force = "player" })
       local connected = false
@@ -98,6 +143,7 @@ script.on_init(function()
     placed = 0,
     rotations = 0,
     pipe_connections = 0,
+    localised_names = {},
   }
   for row, role in ipairs(ROLES) do
     check_depot(surface, role, row - 1, result)

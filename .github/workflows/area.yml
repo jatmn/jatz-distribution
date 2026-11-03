@@ -134,6 +134,9 @@ jobs:
       - name: Test generated depot Lua against its generators
         if: inputs.area == 'depots'
         run: python3 tools/test_depot_lua.py
+      - name: Test the mod check's setup and the mod's English names
+        if: inputs.area == 'mod'
+        run: python3 tools/test_mod_setup.py
 
       # The art check needs this area's models and images, so fetch only those.
       - name: Check out this area's art
