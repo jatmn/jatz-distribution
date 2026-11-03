@@ -27,6 +27,17 @@ Jat'z Distribution is an in-development Factorio 2.1 mod. The artwork is finishe
 - Keep machine paths, Factorio binaries, logs, saves and Python environments out of commits.
 - Screenshots go in the pull request, not the repository. Only images used by the README belong in `docs/images/`.
 
+## Continuous integration
+
+CI (`.github/workflows/ci.yml`) matches yuoki-quinityn. `tools/ci_changes.py` reads the complete diff and runs only the affected checks; editing the router or `ci.yml` runs all of them. The `CI result` job is the one stable check to require.
+
+- **Lua** (`lua.yml`): Lua 5.2 syntax, Luacheck (`.luacheckrc`) and StyLua formatting (`.stylua.toml`). Pull requests check changed `.lua` files; pushes to `main`, and lint or formatter config changes, check every file.
+- **Python** (`python.yml`): syntax, Ruff (`.ruff.toml`: syntax errors and Pyflakes), and the `tools/test_*.py` unit tests that need neither Blender nor Factorio. The frozen 1×1 archive tools are exempt from Pyflakes.
+- **Workflows** (`workflows.yml`): actionlint.
+- Every job also runs `git diff --check`.
+
+Before pushing, format Lua with `stylua --config-path .stylua.toml <files>`, and run `luacheck`, `ruff check --config .ruff.toml` and `python3 tools/test_ci_changes.py`. The tool versions are pinned in the workflow files. When a check is added or renamed, update `tools/ci_changes.py` and `tools/test_ci_changes.py` together. The depot packagers write `depot-definitions.lua` and `depot-pipe-pictures.lua` already in StyLua format; keep their templates formatted if you change them.
+
 ## Licensing
 
 The project is licensed LGPL-3.0-only. `COPYING.LESSER` and `COPYING` hold the license texts, and `NOTICE` lists third-party material. Keep all three at the repository root and in every release.
@@ -43,20 +54,26 @@ The project is licensed LGPL-3.0-only. `COPYING.LESSER` and `COPYING` hold the l
 
 Keep the repository private until the owner decides to publish it. Releases also need the owner's go-ahead.
 
-`main` branch protection is kept in `.github/main-ruleset.json`, matching yuoki-quinityn: no deleting or force-pushing `main`, and changes go through pull requests with all review threads resolved. GitHub only enforces rulesets on private repositories with a paid plan, so apply it when the repository goes public (or the plan is upgraded). The same command applies later edits to the file. It updates the ruleset with the file's name if one exists, creates it otherwise, and stops if the name matches more than one ruleset:
+Branch rules are kept as two rulesets matching yuoki-quinityn:
+- `.github/main-ruleset.json`: no deleting or force-pushing `main`, and changes go through pull requests with all review threads resolved.
+- `.github/ci-ruleset.json`: the `CI result` check must pass.
+
+GitHub only enforces rulesets on private repositories with a paid plan, so apply them when the repository goes public (or the plan is upgraded). The same command applies later edits to the files. For each file, it updates the ruleset with that file's name if one exists, creates it otherwise, and stops if the name matches more than one ruleset:
 
 ```sh
-REPO=jatmn/jatz-distribution FILE=.github/main-ruleset.json
-NAME=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["name"])' "$FILE")
-if IDS=$(gh api --paginate "repos/$REPO/rulesets?includes_parents=false" --jq ".[] | select(.name == \"$NAME\") | .id"); then
-  case $(printf '%s' "$IDS" | grep -c .) in
-    0) gh api -X POST "repos/$REPO/rulesets" --input "$FILE" ;;
-    1) gh api -X PUT "repos/$REPO/rulesets/$IDS" --input "$FILE" ;;
-    *) echo "Several rulesets are named '$NAME' ($IDS); delete the extras first." >&2; false ;;
-  esac
-else
-  echo "Could not list existing rulesets; nothing was changed." >&2; false
-fi
+REPO=jatmn/jatz-distribution
+for FILE in .github/main-ruleset.json .github/ci-ruleset.json; do
+  NAME=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["name"])' "$FILE")
+  if IDS=$(gh api --paginate "repos/$REPO/rulesets?includes_parents=false" --jq ".[] | select(.name == \"$NAME\") | .id"); then
+    case $(printf '%s' "$IDS" | grep -c .) in
+      0) gh api -X POST "repos/$REPO/rulesets" --input "$FILE" ;;
+      1) gh api -X PUT "repos/$REPO/rulesets/$IDS" --input "$FILE" ;;
+      *) echo "Several rulesets are named '$NAME' ($IDS); delete the extras first." >&2; false ;;
+    esac
+  else
+    echo "Could not list existing rulesets; $FILE was not applied." >&2; false
+  fi
+done
 ```
 
 Pullfrog (`.github/workflows/pullfrog.yml`) runs an AI agent only when the owner posts a new issue or PR comment whose first line is `@pullfrog <instruction>`. `tools/pullfrog_command.py` checks that before any credentials are used; run `python3 tools/test_pullfrog_command.py` after changing either file.
