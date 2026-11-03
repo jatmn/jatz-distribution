@@ -16,6 +16,22 @@ The validator checks every freighter atlas cell: neutral masks, no clipped edges
 
 On Windows, use `py -3.13 -m venv .venv` and `.venv\Scripts\python.exe`.
 
+## The mod
+
+```sh
+python3 tools/test_mod.py --factorio /path/to/factorio/bin/x64/factorio
+```
+
+This builds the installable zip with `tools/package_mod.py` and loads it, with the check mod `tests/factorio/jatz-distribution-check_0.1.0`, in a fresh workspace under `.local/mod-check/`. It checks that:
+- all eight recipes are available from the start and free;
+- every depot can be placed, as a ghost and for real, in all four directions, and rotated through a full turn;
+- each depot's pipe ports match the designed layout (written out in the check mod, independently of the generated data) and all 20 connect;
+- containers hold items and tanks hold fluid;
+- a character can enter a fuelled freighter and drive it;
+- every item, recipe and entity name the game shows has an English translation.
+
+It runs with the base game only and, if your Factorio includes Space Age and the mods it needs, again with Space Age. The free headless server is enough. To look around yourself, open the newest save under `.local/mod-check/` in the full game with that run's `config.ini` and `mods` folder (see the depot instructions below).
+
 ## Freighter
 
 ```sh
@@ -36,7 +52,7 @@ Check:
 2. **Colors:** compare the default truck (violet cab, orange clamps, slate-blue cargo) with the alternate one. Glass, tires, steel, copper and the violet lenses must not change color. To stress one layer, edit its tint in `tests/factorio/freighter-art-check_0.1.0/data.lua` and rerun the runner.
 3. **Shadow and night:** the shadow stays attached at every heading. Check again at night.
 4. **Driving:** drive forward, turn in a full circle and reverse. The body and shadow move together.
-5. **Known issue:** the selection and collision boxes are inherited from the base car and cover only the middle of the truck.
+5. **This art fixture only:** its truck keeps the base car's selection and collision boxes, which cover only the middle of the truck. The mod's freighter (`prototypes/freighter.lua`) has a 1.5 × 4.5 tile box fitted to the body; check it in a save from `tools/test_mod.py`.
 
 ## Depots
 

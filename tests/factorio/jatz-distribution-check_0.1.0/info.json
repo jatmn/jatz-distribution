@@ -1,0 +1,1 @@
+{"name":"jatz-distribution-check","version":"0.1.0","title":"Jat'z Distribution placement and driving check","author":"Jat'z Distribution","factorio_version":"2.1","dependencies":["base >= 2.1.0","jatz-distribution"]}

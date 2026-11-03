@@ -39,7 +39,7 @@ Masks are neutral grayscale with alpha, so any tint color works. Bare metal, cop
 
 ## Using it in Factorio
 
-Copy each depot's `sheets/` into your mod as `graphics/depots/<role>/3/`, copy `connectors/sheets/` to `graphics/depots/connectors/`, and copy the three Lua files from `factorio/` into its prototypes. Then:
+Copy each depot's `sheets/` into your mod as `graphics/depots/<role>/3/`, copy `connectors/sheets/` to `graphics/depots/connectors/`, and copy the three Lua files from `factorio/` into its prototypes. To keep the sheets somewhere else, pass their location: `pictures(...)` takes an optional fifth argument, a `string.format` pattern for (role, size) such as `"assets/depots/%s/%d/sheets/"`, and `pipe_pictures(mod_name, directory)` takes the connector folder. Jat'z Distribution itself does this; see `prototypes/depots.lua`. Then:
 
 ```lua
 local pictures = require("prototypes.depot-pictures")

@@ -6,7 +6,7 @@ Jat'z Distribution is a depot-based logistics system for Factorio. Place provide
 
 The gameplay is inspired by Klonan's [Transport Drones](https://mods.factorio.com/mod/Transport_Drones), with heavy freight trucks in place of drones. The rugged industrial look draws on the Yuoki mod family.
 
-> **Status: in development.** All of the artwork is finished and tested in the game. Freight dispatch and cargo transfer are being built next. The mod is not yet available on the Factorio Mod Portal.
+> **Status: in development.** The freighter and all seven depots can be crafted for free, placed, rotated and driven in game. Freight dispatch and cargo transfer are being built next. The mod is not yet available on the Factorio Mod Portal.
 
 ![The Quinityn freighter parked beside Provider, Request, Buffer and Fuel depots in Factorio](docs/images/depots-with-freighter.jpg)
 
@@ -46,33 +46,46 @@ More screenshots: [every depot in every rotation](docs/images/depots-all-rotatio
 
 - [x] Quinityn freighter artwork, tested in game
 - [x] Seven depot designs, tested in game with all rotations and pipe connections
+- [x] Playable mod: the freighter and all depots can be crafted (free for now), placed, rotated and driven
 - [ ] Freighter dispatch between depots
 - [ ] Cargo and fluid loading and unloading
 - [ ] Solid and liquid refueling at the Fuel depot
-- [ ] Freighter wheel animation and final collision and selection sizes
+- [ ] Freighter wheel animation, proper item icons and final freighter stats
 - [ ] Recipes, technology and balance
 - [ ] Release on the Factorio Mod Portal
 
 ## Compatibility
 
-Built for **Factorio 2.1** (tested on 2.1.24). The mod requires only the base game.
+Built for **Factorio 2.1** (tested on 2.1.24). The mod requires only the base game and also works with Space Age.
+
+## Trying it
+
+The mod isn't on the Mod Portal yet, so build it from this repository (Python 3.13, no other dependencies):
+
+```sh
+python3 tools/package_mod.py
+```
+
+Copy the resulting `dist/jatz-distribution_0.1.0.zip` into your [Factorio mods folder](https://wiki.factorio.com/Application_directory#User_data_directory) and enable **Jat'z Distribution**. All items are in the Logistics tab of the crafting menu and are free to craft for now.
 
 ## Development
 
 | Folder | Contents |
 | --- | --- |
+| `info.json`, `data.lua`, [`prototypes/`](prototypes/), [`locale/`](locale/) | The mod itself. The repository root is the mod's root, so it uses the sprite helpers and sheets in `assets/` directly. |
 | [`assets/quinityn-freighter/`](assets/quinityn-freighter/README.md) | Freighter Blender model, game sprites, Lua helper and render tools |
 | [`assets/depots/`](assets/depots/README.md) | Depot Blender models, pipe connector, game sprites, Lua helpers and render tools, plus the archived 1×1 depots |
 | [`concepts/`](concepts/README.md) | Approved concept art for the depots, with links to the freighter concept |
-| [`tests/factorio/`](tests/factorio/) | Test mods that load the artwork in Factorio |
-| [`tools/`](tools/) | Test runners |
+| [`tests/factorio/`](tests/factorio/) | Test mods that check the mod and the artwork in Factorio |
+| [`tools/`](tools/) | Mod packager, test runners and CI tools |
 | [`docs/`](docs/) | [Testing guide](docs/testing.md), [test results](docs/test-results.md) and README images |
 
 Each asset folder's README explains its files, how to use the sprites in Factorio, and how to edit and re-render the models. Read [AGENTS.md](AGENTS.md) before changing anything; it holds the project rules for human and AI contributors.
 
-You need Python 3.13 and a full Factorio 2.1 install. Blender 4.3.2 is only needed to edit models and re-render sprites.
+You need Python 3.13 and Factorio 2.1; the free [headless server](https://factorio.com/download) is enough for the automated checks. Blender 4.3.2 is only needed to edit models and re-render sprites.
 
 ```sh
+python3 tools/test_mod.py --factorio /path/to/factorio/bin/x64/factorio     # the mod: craft, place, rotate, drive
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python assets/quinityn-freighter/tools/validate_assets.py
