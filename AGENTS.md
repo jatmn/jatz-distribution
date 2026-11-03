@@ -43,4 +43,20 @@ The project is licensed LGPL-3.0-only. `COPYING.LESSER` and `COPYING` hold the l
 
 Keep the repository private until the owner decides to publish it. Releases also need the owner's go-ahead.
 
+`main` branch protection is kept in `.github/main-ruleset.json`, matching yuoki-quinityn: no deleting or force-pushing `main`, and changes go through pull requests with all review threads resolved. GitHub only enforces rulesets on private repositories with a paid plan, so apply it when the repository goes public (or the plan is upgraded). The same command applies later edits to the file. It updates the ruleset with the file's name if one exists, creates it otherwise, and stops if the name matches more than one ruleset:
+
+```sh
+REPO=jatmn/jatz-distribution FILE=.github/main-ruleset.json
+NAME=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["name"])' "$FILE")
+if IDS=$(gh api --paginate "repos/$REPO/rulesets?includes_parents=false" --jq ".[] | select(.name == \"$NAME\") | .id"); then
+  case $(printf '%s' "$IDS" | grep -c .) in
+    0) gh api -X POST "repos/$REPO/rulesets" --input "$FILE" ;;
+    1) gh api -X PUT "repos/$REPO/rulesets/$IDS" --input "$FILE" ;;
+    *) echo "Several rulesets are named '$NAME' ($IDS); delete the extras first." >&2; false ;;
+  esac
+else
+  echo "Could not list existing rulesets; nothing was changed." >&2; false
+fi
+```
+
 Pullfrog (`.github/workflows/pullfrog.yml`) runs an AI agent only when the owner posts a new issue or PR comment whose first line is `@pullfrog <instruction>`. `tools/pullfrog_command.py` checks that before any credentials are used; run `python3 tools/test_pullfrog_command.py` after changing either file.
