@@ -1,0 +1,51 @@
+{
+  "provider-depot.png": {
+    "source": "assets/depots/provider/3/masters/hero-default-palette.png",
+    "source_sha256": "1861172c59e6d6e5d16b7a2b4b94f14327baa01435116f54c27910f94f2bfe3c",
+    "sha256": "3d72b2fc718c58090905dc4bca681fdb3917d9a97013c3439e206fed3a9c8689",
+    "icon_size": 64,
+    "mipmaps": 4
+  },
+  "request-depot.png": {
+    "source": "assets/depots/request/3/masters/hero-default-palette.png",
+    "source_sha256": "7d6934508c1422b771e7dae0c2e033d8d650d9635a1a077eb668a1efd5005e7c",
+    "sha256": "8da62fa2e47ac67829ff1b894ac727ac1b1a2b6c23f6e94e0e17427af57048c5",
+    "icon_size": 64,
+    "mipmaps": 4
+  },
+  "buffer-depot.png": {
+    "source": "assets/depots/buffer/3/masters/hero-default-palette.png",
+    "source_sha256": "5b492c5ab6e4a5271d5187776aaa4e9eb84f7f21429a0f41bef82fd78c3b7460",
+    "sha256": "efc03ecc91f083be9e1d59e2d55366537e0959bb536b14a5ec8769d78e8d445f",
+    "icon_size": 64,
+    "mipmaps": 4
+  },
+  "fuel-depot.png": {
+    "source": "assets/depots/fuel/3/masters/hero-default-palette.png",
+    "source_sha256": "a406cc1b10625ed9eba340010cc39e4ab46a49a589d6a9f8546af721ea2d2b06",
+    "sha256": "9159c7ef153dad7d18aa47df8176d8ca25e3bc68126d5889802f8f8221baa74d",
+    "icon_size": 64,
+    "mipmaps": 4
+  },
+  "liquid-provider-depot.png": {
+    "source": "assets/depots/liquid-provider/3/masters/hero-default-palette.png",
+    "source_sha256": "efc8f5aac1771f276d3ea216c7950d826210d8efc340ab7eae4768bd0c81c910",
+    "sha256": "53882936738dbc25c53d77aa7c3e3836ad64bb27f2848a82067a9feec69911ba",
+    "icon_size": 64,
+    "mipmaps": 4
+  },
+  "liquid-request-depot.png": {
+    "source": "assets/depots/liquid-request/3/masters/hero-default-palette.png",
+    "source_sha256": "57ddce6df2060537bdc013747fa3ad7f9281a6df1072997ea3383d515d989186",
+    "sha256": "ba44346f34565b4a72684bac5ef4c814c6cd586e1f7fec3f2961e5f8c89bd4fa",
+    "icon_size": 64,
+    "mipmaps": 4
+  },
+  "liquid-buffer-depot.png": {
+    "source": "assets/depots/liquid-buffer/3/masters/hero-default-palette.png",
+    "source_sha256": "2b0db04806be1f394b06948cef48b1c7cc083240da754a47ef8136afd35655a8",
+    "sha256": "9673f474751e430eb167a416b3534d087ca30fb9696d249308b3ac9670891ca9",
+    "icon_size": 64,
+    "mipmaps": 4
+  }
+}

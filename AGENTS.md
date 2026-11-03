@@ -21,6 +21,7 @@ Jat'z Distribution is an in-development Factorio 2.1 mod. The artwork is finishe
 
 - The `.blend` files under each `source/` folder are the masters. Edit them, then re-render. Never hand-edit sprites.
 - The builder scripts (`build_master.py`, `build_depots.py`, `build_connector.py`) **overwrite** the `.blend` files. Carry manual edits into the builder, or don't run it.
+- In-game icons (`assets/*/icons/`) are made from the presentation renders by `tools/make_icons.py`: 64 px with three custom mipmaps (120 × 64 PNG, `icon_size = 64`), the layout Factorio 2.1 documents. Regenerate them whenever a presentation render changes; never edit them by hand.
 - Render intermediates (`masters/exr`, `masters/layers`, `masters/shadow-silhouettes`, `masters/render-inputs.json`, `frames/`) are generated and git-ignored. Commit only the resulting `sheets/`, previews and hero renders. The one exception is `assets/depots/connectors/frames/`, which the tools read and which stays tracked.
 - Paint masks must stay neutral grayscale. Metal, tires, glass, copper, lights and lenses belong in the untinted base layer.
 - **Freighter:** keep the eight wheels, three cargo bays, exposed power unit and cab/clamp/cargo paint split. Render all 64 directions from the same camera, pivot and light. Direction 0 is north, turning clockwise.
@@ -50,7 +51,7 @@ CI (`.github/workflows/ci.yml`) is based on yuoki-quinityn's, but routed by repo
 - Shared lint configuration (`.luacheckrc`, `.stylua.toml`, `.ruff.toml`, `.gitattributes`) re-checks every area in full. Editing `ci.yml`, `area.yml` or the router runs everything.
 - **Lua:** Lua 5.2 syntax, Luacheck and StyLua. Pull requests check the area's changed `.lua` files; pushes to `main` check all of them.
 - **Python:** syntax and Ruff (syntax errors and Pyflakes). The frozen 1×1 archive tools are exempt from Pyflakes.
-- **Blender sources** (`tools/check_blender_sources.py`, no Blender needed): every `.blend` is saved uncompressed by Blender 4.3; each model matches the hashes in its render, packaging and inspection records; freighter sprites match `checksums.json`; and the 1×1 archive matches its manifest. Re-render, re-package and re-inspect after editing a model, so the records follow it.
+- **Blender sources** (`tools/check_blender_sources.py`, no Blender needed): every `.blend` is saved uncompressed by Blender 4.3; each model matches the hashes in its render, packaging and inspection records; freighter sprites match `checksums.json`; icons have Factorio's 120 × 64 mipmap layout and match the current renders; and the 1×1 archive matches its manifest. Re-render, re-package and re-inspect after editing a model, so the records follow it.
 - The routing job runs `git diff --check` on every change, except binary files.
 
 **Downloads stay small.** CI checks out text only: blobs over 256 KiB and the binary types in `.gitattributes` are never downloaded, and an area's art is fetched only for its Blender sources check. So text files must stay under 256 KiB; mark larger generated files as `binary` in `.gitattributes` (the routing job fails with that advice otherwise). Keep the checkout exclusions in `ci.yml` and `area.yml` equal to the binary patterns in `.gitattributes`; `tools/test_ci_changes.py` checks that they match.

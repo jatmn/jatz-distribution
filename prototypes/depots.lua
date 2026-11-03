@@ -19,21 +19,17 @@ local ORDER = {
   "liquid-buffer",
 }
 
-local function tinted_icon(icon, color)
-  return { { icon = icon, icon_size = 64, tint = { color[1], color[2], color[3], 1 } } }
-end
-
 for index, role in ipairs(ORDER) do
   local definition = definitions[role][SIZE]
   local name = "jatz-" .. role .. "-depot"
   local artwork = pictures(constants.mod_name, role, SIZE, nil, constants.depot_sheets)
-  local entity, icon
+  local icon = string.format(constants.depot_icon, role)
+  local entity
   if #definition.ports == 0 then
     entity = table.deepcopy(data.raw.container["steel-chest"])
     entity.direction_count = 4
     entity.picture = artwork
     entity.inventory_size = 48
-    icon = "__base__/graphics/icons/steel-chest.png"
   else
     entity = table.deepcopy(data.raw["storage-tank"]["storage-tank"])
     entity.two_direction_only = false
@@ -54,11 +50,11 @@ for index, role in ipairs(ORDER) do
     }
     entity.window_bounding_box = { { 0, 0 }, { 0, 0 } }
     entity.show_fluid_icon = true
-    icon = "__base__/graphics/icons/storage-tank.png"
   end
   entity.name = name
-  entity.icon = nil
-  entity.icons = tinted_icon(icon, definition.palette.role)
+  entity.icons = nil
+  entity.icon = icon
+  entity.icon_size = constants.icon_size
   entity.minable = { mining_time = 0.3, result = name }
   entity.circuit_connector = nil
   entity.fast_replaceable_group = nil
@@ -72,7 +68,8 @@ for index, role in ipairs(ORDER) do
     {
       type = "item",
       name = name,
-      icons = tinted_icon(icon, definition.palette.role),
+      icon = icon,
+      icon_size = constants.icon_size,
       subgroup = constants.subgroup,
       order = string.format("b[depot]-%d[%s]", index, role),
       place_result = name,

@@ -5,12 +5,14 @@
 Blender isn't needed. The render, packaging and inspection tools record the SHA-256
 of the .blend they used, so a model that changed without re-rendering, re-packaging
 or re-inspecting no longer matches its records. Also checks that every .blend was
-saved uncompressed by Blender 4.3, and that the frozen 1x1 archive is unchanged.
+saved uncompressed by Blender 4.3, that the in-game icons follow Factorio's icon layout
+and were made from the current renders, and that the frozen 1x1 archive is unchanged.
 """
 import argparse
 import hashlib
 import json
 from pathlib import Path
+import struct
 import subprocess
 
 REPO = Path(__file__).resolve().parents[1]
@@ -130,11 +132,49 @@ def check_archive(root, errors):
             errors.append(f'{path.relative_to(root)}: not in the frozen 1x1 archive manifest')
 
 
+def png_header(path):
+    """(width, height, bit depth, color type) from a PNG's IHDR chunk, or None if it isn't a PNG."""
+    with path.open('rb') as handle:
+        head = handle.read(26)
+    if len(head) < 26 or head[:8] != b'\x89PNG\r\n\x1a\n' or head[12:16] != b'IHDR':
+        return None
+    width, height = struct.unpack('>II', head[16:24])
+    return width, height, head[24], head[25]
+
+
+def check_icons(root, directory, errors):
+    """Icons follow Factorio's icon layout and are current with the renders they're made from."""
+    folder = root / directory / 'icons'
+    record_path = folder / 'icons.json'
+    remake = 'run tools/make_icons.py (never edit icons by hand)'
+    records = load(record_path)
+    for name, record in sorted(records.items()):
+        icon, source = folder / name, root / record['source']
+        shown = icon.relative_to(root)
+        if not icon.is_file():
+            errors.append(f'{shown}: listed in {record_path.name} but missing; {remake}')
+            continue
+        # Factorio: each mipmap is half the previous size, top-aligned, with no padding.
+        size, mipmaps = record['icon_size'], record['mipmaps']
+        expected = (sum(size >> level for level in range(mipmaps)), size, 8, 6)
+        if png_header(icon) != expected:
+            errors.append(f'{shown}: must be an 8-bit RGBA PNG of {expected[0]}x{expected[1]} '
+                          f'({size} px with {mipmaps} mipmap levels), found {png_header(icon)}; {remake}')
+        if not source.is_file() or sha256(source) != record['source_sha256']:
+            errors.append(f'{shown}: made from an older {record["source"]}; {remake}')
+        if sha256(icon) != record['sha256']:
+            errors.append(f'{shown}: does not match {record_path.name}; {remake}')
+    for icon in sorted(folder.glob('*.png')):
+        if icon.name not in records:
+            errors.append(f'{icon.relative_to(root)}: not in {record_path.name}; {remake}')
+
+
 def check(root, areas=tuple(AREAS)):
     errors = []
     for area in areas:
         try:
             check_headers(root, AREAS[area], errors)
+            check_icons(root, AREAS[area], errors)
             if area == 'freighter':
                 check_freighter(root, errors)
             else:

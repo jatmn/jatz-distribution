@@ -1,0 +1,9 @@
+{
+  "quinityn-freighter.png": {
+    "source": "assets/quinityn-freighter/masters/hero-default-palette.png",
+    "source_sha256": "4581bf458953194ffdf7055f9d767e8002be4ec48e433a009d3b389f0fd60521",
+    "sha256": "04704eb8befc6ea047d89d86c0d5f021c0d8486fb782726034a4740eee50c672",
+    "icon_size": 64,
+    "mipmaps": 4
+  }
+}

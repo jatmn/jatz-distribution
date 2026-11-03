@@ -12,6 +12,7 @@ Seven 3×3 depot buildings: Provider, Request, Buffer, Fuel, Liquid Provider, Li
 | `source/pipe-connector.blend` | Editable model of the shared exterior pipe connector |
 | `<role>/3/sheets/` | **Game sprites.** 2048×512 atlases (north, east, south, west) for `base`, three paint masks, `shadow` and a default-color `preview` |
 | `<role>/3/masters/hero-default-palette.png` | 2048px presentation render |
+| `icons/<role>-depot.png` | In-game icons: 64 px with three custom mipmaps (120 × 64), made from the presentation renders by `tools/make_icons.py`; `icons/icons.json` records their sources |
 | `<role>/3/previews/four-directions.png` | Four-direction preview strip |
 | `<role>/3/asset.json` | Palette, scale, pipe-port positions and source model |
 | `connectors/sheets/` | Connector game sprites and shadow |
@@ -98,6 +99,7 @@ blender -b --python-exit-code 1 --python $T/inspect_junctions.py
 python3 $T/render_depots.py            # add --role <role> for one depot
 python3 $T/package_depots.py
 python3 $T/create_preview.py
+.venv/bin/python tools/make_icons.py   # if a presentation render changed
 ```
 
 After changing the pipe connector:

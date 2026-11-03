@@ -14,6 +14,7 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | All 20 pipe ports connect; containers hold items, tanks hold fluid | Passed |
 | A character enters the fuelled freighter and drives it (28.5 tiles in 2 seconds) | Passed |
 | New freighter collision box (1.5 × 4.5 tiles, measured from the sprites) in the graphical client | Untested |
+| New 64 px icons (custom mipmaps) in the graphical client. The headless server loads no graphics; the Blender sources check verifies their layout | Untested |
 
 ## Depots: passed
 
