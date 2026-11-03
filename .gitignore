@@ -19,3 +19,6 @@ assets/**/frames/
 !assets/depots/connectors/frames/
 assets/depots/connectors/masters/
 assets/depots/connectors/layers/
+
+# CI file lists written by .github/workflows/lua.yml
+.cache/

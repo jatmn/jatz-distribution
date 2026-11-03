@@ -1,5 +1,5 @@
 {
-  "factorio/freighter-animation.lua": "f5985e1db800e11f2ad20ec72ed04f8ca52fac30c63fbee51cac8ded94b8e009",
+  "factorio/freighter-animation.lua": "5c12f8345fe756e41b53fdd623567efc419d259622892ca16b10a3fce0c58d00",
   "masters/hero-default-palette.png": "4581bf458953194ffdf7055f9d767e8002be4ec48e433a009d3b389f0fd60521",
   "previews/all-64-directions.png": "cfe45351f5ef019df0c53bb5200b4a20f2baca8787e0e916b9f624cd293cb304",
   "previews/compass-base.png": "8db5abd8f2ba729d70ac05e51b79f8b3d15cc2d38f8c6ab3d75bc5d3abdcf921",
@@ -22,7 +22,8 @@
   "tools/build_master.py": "88827d45b6d3e2432bd0f9c7d694cdc4fe0dbdf62d7aca593102c5527dc63d8a",
   "tools/create_preview.py": "e6c9a1eba5591ab2afb0eb4bbadf3b9424d97a34145cf0b07ffba80b10e4ac70",
   "tools/inspect_geometry.py": "8c8395060d85da14826b4946086227242d7a85acb4ac839e37af460636a42dfa",
-  "tools/package_sprites.py": "ea11ff003c7de91b823bdc2955f56a81b56208c080c3b38f9a6b56b32a07a727",
+  "tools/package_sprites.py": "5aa837bacd93390fd6dd177938a0338d1a94373d5aedcfa6bea1952c1c3a8abe",
   "tools/render_directions.py": "ca81670e351a2d99a7a321e6694835b93bf6b571c5af6ed8df1417e4bc6f3c9c",
+  "tools/render_freighter.py": "58892721a5668c152f85399da61ca651d4d5da7d42c0e15467133159b0a74c11",
   "tools/validate_assets.py": "b0c23cbc4ddaa07292dcd820a6a4c0e6ea25311a118693db0e240246d75326ec"
 }

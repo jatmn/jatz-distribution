@@ -91,7 +91,6 @@ def rigid_pipe(name,points,radius=.20,bend=.26,native=False):
         incoming=points[i]-points[i-1];outgoing=points[i+1]-points[i]
         distance=min(bend,incoming.length*(.9 if i==1 else .45),outgoing.length*(.9 if i==len(points)-2 else .45))
         before=points[i]-incoming.normalized()*distance
-        after=points[i]+outgoing.normalized()*distance
         path.append(before)
         u=incoming.normalized();v=outgoing.normalized();tangents.append(u)
         assert abs(u.dot(v))<1e-6, 'Bulk elbow requires orthogonal tangent sections'
@@ -546,7 +545,7 @@ def fluids(role):
         vessel(0,0,.88,2.05,span=.60)
         lens(-1.24,1.335,.73)
     else:
-        top=vessel(0,0,1.15,2.20)
+        vessel(0,0,1.15,2.20)
         lens(1.24,1.335,.73)
 
 
@@ -651,8 +650,7 @@ def fluid_mechanics(role):
         for x in [-.96,.96]:
             box('Front open frame rail',(x,1.40,.14),(.44,.085,.10),steel,.012)
     tanks=[(.56,0,.50,2.03)] if role=='fuel' else ([(0,0,.88,2.05)] if role=='liquid-buffer' else [(0,0,1.15,2.20)])
-    for x,y,r,height in tanks:
-        top=height
+    for x,y,r,_height in tanks:
         for a in ([math.pi/3,2*math.pi/3,4*math.pi/3,5*math.pi/3] if role=='fuel' else [math.pi/4,3*math.pi/4,5*math.pi/4,7*math.pi/4]):
             dx,dy=math.cos(a),math.sin(a)
             if role=='fuel' and dx>0:continue

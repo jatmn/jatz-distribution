@@ -1,0 +1,140 @@
+name: CI
+
+# Do not use event-level path filters: GitHub truncates their changed-file list.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # One group per commit: a re-run or late run for an older commit can never
+  # cancel the newest commit's checks. Pushes never cancel each other.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    outputs:
+      freighter: ${{ steps.paths.outputs.freighter }}
+      freighter_art: ${{ steps.paths.outputs.freighter_art }}
+      depots: ${{ steps.paths.outputs.depots }}
+      depots_art: ${{ steps.paths.outputs.depots_art }}
+      mod: ${{ steps.paths.outputs.mod }}
+      repository: ${{ steps.paths.outputs.repository }}
+    steps:
+      # Full history, but no blob over 256 KiB: the binary art is never downloaded.
+      # Keep the exclusions equal to the binary patterns in .gitattributes;
+      # tools/test_ci_changes.py checks that they match.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          filter: blob:limit=256k
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !*.png
+            !*.jpg
+            !*.gif
+            !*.webp
+            !*.blend
+            !*.exr
+            !assets/*/previews/recolor.html
+      - name: Route the complete Git diff
+        id: paths
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          # A push that creates the branch has no previous commit: compare with the empty tree.
+          if [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
+            BASE=4b825dc642cb6eb9a060e54bf8d69288fbee4904
+          fi
+          # blob:limit=256k omits blobs of 256 KiB or more, and they can't be fetched later
+          # (no credentials), so every text file must stay strictly below 256 KiB.
+          python3 - <<'PY'
+          import os
+          import subprocess
+
+          listed = subprocess.check_output(['git', 'ls-files', '-z', '--', ':(exclude,attr:binary)'])
+          large = [path for path in (os.fsdecode(name) for name in listed.split(b'\0') if name)
+                   if os.path.lexists(path) and os.lstat(path).st_size >= 256 * 1024]
+          for path in large:
+              print(f'::error file={path}::{path} is text of 256 KiB or more. CI only downloads smaller blobs; '
+                    'mark large generated or binary files as binary in .gitattributes.')
+          raise SystemExit(1 if large else 0)
+          PY
+          # Binary files have no whitespace to check, and their contents aren't downloaded.
+          git diff --check "$BASE" HEAD -- ':(exclude,attr:binary)'
+          # An edited router must not decide whether its own checks run.
+          git ls-tree "$BASE" -- tools/ci_changes.py > "$RUNNER_TEMP/ci-router-entry"
+          if [ -s "$RUNNER_TEMP/ci-router-entry" ]; then
+            git show "$BASE:tools/ci_changes.py" > "$RUNNER_TEMP/ci-router.py"
+            python3 "$RUNNER_TEMP/ci-router.py" --base "$BASE" > "$RUNNER_TEMP/ci-routes"
+          else
+            # The initial installation has no base router: validate everything.
+            : > "$RUNNER_TEMP/ci-routes"
+          fi
+          # Run any check the base router doesn't know about yet.
+          for check in freighter freighter_art depots depots_art mod repository; do
+            grep -qx "$check=\(true\|false\)" "$RUNNER_TEMP/ci-routes" || echo "$check=true" >> "$RUNNER_TEMP/ci-routes"
+          done
+          cat "$RUNNER_TEMP/ci-routes" >> "$GITHUB_OUTPUT"
+
+  freighter:
+    name: Freighter
+    needs: changes
+    if: needs.changes.outputs.freighter == 'true'
+    uses: ./.github/workflows/area.yml
+    with:
+      area: freighter
+      art: ${{ needs.changes.outputs.freighter_art == 'true' }}
+
+  depots:
+    name: Depots
+    needs: changes
+    if: needs.changes.outputs.depots == 'true'
+    uses: ./.github/workflows/area.yml
+    with:
+      area: depots
+      art: ${{ needs.changes.outputs.depots_art == 'true' }}
+
+  mod:
+    name: Mod
+    needs: changes
+    if: needs.changes.outputs.mod == 'true'
+    uses: ./.github/workflows/area.yml
+    with:
+      area: mod
+
+  repository:
+    name: Repository
+    needs: changes
+    if: needs.changes.outputs.repository == 'true'
+    uses: ./.github/workflows/area.yml
+    with:
+      area: repository
+
+  # Stable name for a required status check: routed jobs are skipped or renamed
+  # depending on the diff, so require this job instead of the individual checks.
+  result:
+    name: CI result
+    needs: [changes, freighter, depots, mod, repository]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    steps:
+      - name: Require every selected check to pass
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            case "$result" in
+              success | skipped) ;;
+              *) echo "::error::A selected CI check finished with: $result"; exit 1 ;;
+            esac
+          done

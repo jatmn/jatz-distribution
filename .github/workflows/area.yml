@@ -1,0 +1,151 @@
+name: Area checks
+
+# One repository area (see tools/ci_changes.py), called from ci.yml only when
+# that area changed. Steps skip themselves when the area has no files of their kind.
+on:
+  workflow_call:
+    inputs:
+      area:
+        description: freighter, depots, mod or repository
+        required: true
+        type: string
+      art:
+        description: Check the area's Blender sources against their render records
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # Text only: the binary art (.gitattributes) is never downloaded here.
+      # Keep the exclusions equal to the binary patterns in .gitattributes;
+      # tools/test_ci_changes.py checks that they match.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !*.png
+            !*.jpg
+            !*.gif
+            !*.webp
+            !*.blend
+            !*.exr
+            !assets/*/previews/recolor.html
+      - name: Select this area's files
+        id: files
+        env:
+          AREA: ${{ inputs.area }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          python3 tools/ci_changes.py --select "$AREA" --base "$BASE" --event "$EVENT_NAME" --output .cache
+          for kind in lua py; do
+            if [ -s ".cache/ci-$kind-files" ]; then echo "$kind=true"; else echo "$kind=false"; fi
+          done >> "$GITHUB_OUTPUT"
+
+      - name: Install Lua 5.2
+        # The repository area's routing tests also exercise Lua file selection.
+        if: steps.files.outputs.lua == 'true' || inputs.area == 'repository'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends -y lua5.2
+      - name: Check Lua syntax
+        if: steps.files.outputs.lua == 'true'
+        run: |
+          luac5.2 -p .luacheckrc
+          xargs -0 -r -n1 luac5.2 -p -- < .cache/ci-lua-files
+      - name: Lint Lua
+        if: steps.files.outputs.lua == 'true'
+        uses: lunarmodules/luacheck@cc089e3f65acdd1ef8716cc73a3eca24a6b845e4 # v1.2.0
+        with:
+          # This action runs args through sh. Parse the config even for an empty
+          # file list; pass filenames as NUL-delimited data, never shell source.
+          args: >-
+            --filename control.lua - < /dev/null &&
+            xargs -0 -r luacheck -- < .cache/ci-lua-files
+      - name: Install StyLua
+        if: steps.files.outputs.lua == 'true'
+        uses: JohnnyMorganz/stylua-action@76fd70c03e6340ceaf673366712db9b20560b402 # v5
+        with:
+          token: ${{ github.token }}
+          version: v2.5.2
+          args: 'false'
+      - name: Check Lua formatting
+        if: steps.files.outputs.lua == 'true'
+        run: |
+          # Parse the configuration even when only CI/configuration changed.
+          printf 'return true\n' | stylua --check --config-path .stylua.toml -
+          xargs -0 -r stylua --check --config-path .stylua.toml -- < .cache/ci-lua-files
+
+      - name: Check Python syntax
+        if: steps.files.outputs.py == 'true'
+        run: |
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+
+          for name in filter(None, Path('.cache/ci-py-files').read_bytes().split(b'\0')):
+              ast.parse(Path(name.decode()).read_bytes(), filename=name.decode())
+              print('PASS', name.decode())
+          PY
+      - name: Lint Python with Ruff
+        if: steps.files.outputs.py == 'true'
+        env:
+          RUFF_VERSION: 0.17.3
+        run: |
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSION}/ruff-x86_64-unknown-linux-gnu.tar.gz" \
+            -o "$RUNNER_TEMP/ruff.tar.gz"
+          echo "2b0890f5a55900af741f133918c2656919bbf18c2ab7741b4ca8403a90e647a9  $RUNNER_TEMP/ruff.tar.gz" |
+            sha256sum --check
+          tar -xzf "$RUNNER_TEMP/ruff.tar.gz" -C "$RUNNER_TEMP" --strip-components=1 ruff-x86_64-unknown-linux-gnu/ruff
+          xargs -0 -r "$RUNNER_TEMP/ruff" check --no-cache --config .ruff.toml -- < .cache/ci-py-files
+
+      - name: Test the repository tools
+        if: inputs.area == 'repository'
+        run: |
+          python3 tools/test_ci_changes.py
+          python3 tools/test_pullfrog_command.py
+          python3 tools/test_check_blender_sources.py
+          python3 tools/test_apply_rulesets.py
+      - name: Validate workflows with actionlint
+        if: inputs.area == 'repository'
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+        run: |
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
+            -o "$RUNNER_TEMP/actionlint.tar.gz"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" |
+            sha256sum --check
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint"
+      - name: Test generated depot Lua against its generators
+        if: inputs.area == 'depots'
+        run: python3 tools/test_depot_lua.py
+
+      # The art check needs this area's models and images, so fetch only those.
+      - name: Check out this area's art
+        if: inputs.art
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: .art
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout: assets/${{ inputs.area == 'freighter' && 'quinityn-freighter' || inputs.area }}
+      - name: Check Blender sources against their render and inspection records
+        if: inputs.art
+        env:
+          AREA: ${{ inputs.area }}
+        run: python3 tools/check_blender_sources.py --area "$AREA" --root .art
