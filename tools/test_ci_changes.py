@@ -161,6 +161,21 @@ class RoutingTests(unittest.TestCase):
         result, _ = repo.run_step(self.route_step, BASE=base)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_verbatim_third_party_files_can_opt_out_of_whitespace_checks(self):
+        # Third-party files kept exactly as published (assets/roads/yuoki-railways/) may end in a
+        # blank line; marking them -whitespace skips the check, and only for them.
+        repo = Repo(self)
+        repo.write('.gitattributes', 'vendor/** -whitespace\n')
+        base = repo.commit('base')
+        repo.write('vendor/Licence.txt', 'upstream text\n\n')
+        repo.commit('verbatim upstream file')
+        result, _ = repo.run_step(self.route_step, BASE=base)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        repo.write('ours.txt', 'our text\n\n')
+        repo.commit('our file with the same problem')
+        result, _ = repo.run_step(self.route_step, BASE=base)
+        self.assertNotEqual(result.returncode, 0, 'whitespace errors outside the exempt folder must still fail')
+
     def test_area_selection(self):
         cases = [
             (['assets/quinityn-freighter/factorio/freighter-animation.lua'], {'freighter', 'mod'}),

@@ -12,3 +12,6 @@ assets/*/previews/recolor.html binary
 *.txt text eol=lf
 *.json text eol=lf
 
+# Third-party files kept byte-for-byte as published upstream (assets/roads/README.md):
+# never reformat them, so whitespace checks skip them.
+assets/roads/yuoki-railways/** -whitespace
