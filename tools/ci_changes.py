@@ -69,6 +69,8 @@ def classify(paths):
             continue
         if path in ART_TOOLS:
             checks.update(repository=True, freighter_art=True, depots_art=True)
+            # The Mod tests check the prototypes' icon_size against the checker's icon format.
+            checks['mod'] = checks['mod'] or path == 'tools/check_blender_sources.py'
             continue
         area = area_of(path)
         if area is None:

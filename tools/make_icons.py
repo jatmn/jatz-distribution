@@ -19,8 +19,11 @@ or edited by hand. Run after re-rendering or re-packaging the sprites:
     .venv/bin/python tools/make_icons.py
 """
 import hashlib
+from io import BytesIO
 import json
+import os
 from pathlib import Path
+import tempfile
 
 from PIL import Image
 
@@ -54,15 +57,18 @@ def sources(root=REPO):
                frame_box(DEPOT_DIRECTION, 4))
 
 
-def padded_art(sheet, box):
+def padded_art(sheet_bytes, box, label):
     """The frame's visible pixels, centered on a transparent square that includes the margin.
 
     Every mipmap level is scaled from this one square, so each level is an exact
     half-size copy of the previous one, margin included.
     """
-    image = Image.open(sheet).convert('RGBA').crop(box)
+    image = Image.open(BytesIO(sheet_bytes)).convert('RGBA').crop(box)
     mask = image.getchannel('A').point(lambda alpha: 255 if alpha >= ALPHA_THRESHOLD else 0)
-    art = image.crop(mask.getbbox())
+    bounds = mask.getbbox()
+    if bounds is None:
+        raise SystemExit(f'{label}: frame {box} has no visible pixels; refusing to make a blank icon')
+    art = image.crop(bounds)
     side = round(max(art.size) / (1 - 2 * MARGIN))
     square = Image.new('RGBA', (side, side))
     square.paste(art, ((side - art.width) // 2, (side - art.height) // 2))
@@ -74,9 +80,9 @@ def scaled(square, size):
     return square.convert('RGBa').resize((size, size), Image.Resampling.LANCZOS).convert('RGBA')
 
 
-def icon(sheet, box):
+def icon(sheet_bytes, box, label):
     """A 64 px icon with its three custom mipmaps, laid out as Factorio expects."""
-    square = padded_art(sheet, box)
+    square = padded_art(sheet_bytes, box, label)
     sizes = [ICON_SIZE >> level for level in range(MIPMAPS)]
     sheet = Image.new('RGBA', (sum(sizes), ICON_SIZE))
     x = 0
@@ -86,8 +92,19 @@ def icon(sheet, box):
     return sheet
 
 
-def sha256(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+def replace_atomically(target, data):
+    """Write data to target via a temporary file in the same folder, so target is never partial."""
+    handle, temporary = tempfile.mkstemp(prefix=f'.{target.name}-', suffix='.tmp', dir=target.parent)
+    try:
+        with os.fdopen(handle, 'wb') as stream:
+            stream.write(data)
+        umask = os.umask(0)
+        os.umask(umask)
+        os.chmod(temporary, 0o666 & ~umask)
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def main(root=REPO):
@@ -95,18 +112,22 @@ def main(root=REPO):
     for folder, name, sheet, box in sources(root):
         folder.mkdir(parents=True, exist_ok=True)
         target = folder / name
-        icon(sheet, box).save(target, optimize=True)
+        # Hash and decode the same bytes, so the record names exactly what the icon was made from.
+        sheet_bytes = sheet.read_bytes()
+        encoded = BytesIO()
+        icon(sheet_bytes, box, sheet.relative_to(root)).save(encoded, format='PNG', optimize=True)
+        replace_atomically(target, encoded.getvalue())
         records.setdefault(folder, {})[name] = {
             'source': sheet.relative_to(root).as_posix(),
             'source_frame': list(box),
-            'source_sha256': sha256(sheet),
-            'sha256': sha256(target),
+            'source_sha256': hashlib.sha256(sheet_bytes).hexdigest(),
+            'sha256': hashlib.sha256(encoded.getvalue()).hexdigest(),
             'icon_size': ICON_SIZE,
             'mipmaps': MIPMAPS,
         }
         print(f'{target.relative_to(root)} from {sheet.relative_to(root)} frame {box}')
     for folder, record in records.items():
-        (folder / 'icons.json').write_text(json.dumps(record, indent=2) + '\n')
+        replace_atomically(folder / 'icons.json', (json.dumps(record, indent=2) + '\n').encode())
 
 
 if __name__ == '__main__':

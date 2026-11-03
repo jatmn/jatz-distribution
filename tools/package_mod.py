@@ -28,9 +28,10 @@ def mod_files(root=REPO):
     files += [freighter / f'sheets/freighter-{layer}.png' for layer in LAYERS]
     depots = root / 'assets/depots'
     files += sorted((depots / 'factorio').glob('*.lua'))
-    files += sorted((depots / 'icons').glob('*-depot.png'))
     for metadata in sorted(depots.glob('*/3/asset.json')):
         files += [metadata.parent / f'sheets/{layer}.png' for layer in LAYERS]
+        # One icon per depot, named from the depot itself, so a missing icon stops the build.
+        files += [depots / f'icons/{json.loads(metadata.read_text())["role"]}-depot.png']
     files += [depots / f'connectors/sheets/{layer}.png' for layer in ('base', 'shadow')]
     missing = [str(path.relative_to(root)) for path in files if not path.is_file()]
     if missing:
