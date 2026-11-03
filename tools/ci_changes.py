@@ -3,9 +3,9 @@
 """Route CI by repository area, from the complete Git diff, without API file-list limits.
 
 Areas: freighter (truck artwork and its test mod), depots (depot artwork, the
-1x1 archive and their test mod), mod (the game mod source: everything that
-isn't another area or documentation) and repository (CI, workflows and repo
-tools). Each changed area gets its own CI job. An area's art check (Blender
+1x1 archive and their test mod), mod (the game mod source at the repository
+root, its packager and its check: everything that isn't another area or
+documentation) and repository (CI, workflows and repo tools). Each changed area gets its own CI job. An area's art check (Blender
 sources against their render records) only runs when its art or records change.
 
 --base BASE              print the routing as GitHub step outputs.
@@ -40,6 +40,8 @@ def area_of(path):
         'tools/test_depot_art.py', 'tools/test_depot_lua.py'
     }:
         return 'depots'
+    if path in {'tools/package_mod.py', 'tools/test_mod.py'}:
+        return 'mod'
     if path.startswith(('.github/', 'tools/')):
         return 'repository'
     if path in DOCUMENTATION or path.startswith(('docs/', 'concepts/')):

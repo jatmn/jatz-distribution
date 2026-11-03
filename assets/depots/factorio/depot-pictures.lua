@@ -1,10 +1,12 @@
 -- Four Sprite4Way views, all layers share a camera, canvas and ground pivot.
 -- Internal cab/trim/cargo AOV names map to role/clamps/housing paint.
+-- By default the sheets are expected in graphics/depots/<role>/<size>/; pass layout,
+-- a string.format pattern relative to the mod root taking (role, size), to load them elsewhere.
 local definitions = require("prototypes.depot-definitions")
-return function(mod_name, role, size, palette)
+return function(mod_name, role, size, palette, layout)
   local definition = definitions[role][size]
   palette = palette or {}
-  local prefix = "__" .. mod_name .. "__/graphics/depots/" .. role .. "/" .. size .. "/"
+  local prefix = "__" .. mod_name .. "__/" .. string.format(layout or "graphics/depots/%s/%d/", role, size)
   local pictures = {}
   for index, direction in ipairs({ "north", "east", "south", "west" }) do
     local function layer(name, tint, shadow)

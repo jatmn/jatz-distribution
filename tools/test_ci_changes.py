@@ -178,6 +178,8 @@ class RoutingTests(unittest.TestCase):
             (['assets/depots/archive/1x1/README.md'], {'depots', 'depots_art'}),
             (['info.json', 'data.lua', 'control.lua', 'prototypes/freighter.lua',
               'scripts/dispatch.lua', 'locale/en/jatz.cfg'], {'mod'}),
+            (['tools/package_mod.py', 'tools/test_mod.py',
+              'tests/factorio/jatz-distribution-check_0.1.0/control.lua'], {'mod'}),
             (['.github/workflows/pullfrog.yml', 'tools/pullfrog_command.py',
               'tools/test_pullfrog_command.py', '.github/CODEOWNERS', '.github/main-ruleset.json'], {'repository'}),
             (['tools/check_blender_sources.py'], {'repository', 'freighter', 'freighter_art', 'depots', 'depots_art'}),

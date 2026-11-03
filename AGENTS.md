@@ -1,6 +1,6 @@
 # Contributor and agent rules
 
-Jat'z Distribution is an in-development Factorio 2.1 mod. The artwork is finished and tested in game. Mod code (dispatch, cargo transfer, recipes) is the next stage.
+Jat'z Distribution is an in-development Factorio 2.1 mod. The artwork is finished and tested in game, and the freighter and depots are placeable and drivable with free recipes. Dispatch, cargo transfer and balanced recipes are next.
 
 ## Where things are
 
@@ -8,6 +8,14 @@ Jat'z Distribution is an in-development Factorio 2.1 mod. The artwork is finishe
 - `assets/quinityn-freighter/README.md` and `assets/depots/README.md`: what each asset folder holds, how to use the sprites in Factorio, and how to edit and re-render the models. Read the relevant one before changing artwork or tools.
 - `docs/testing.md`: how to test in Factorio. Record outcomes in `docs/test-results.md`.
 - `concepts/`: approved concept art. Preserve it unchanged.
+
+## Mod source
+
+- The repository root is the mod's root: `info.json`, `data.lua`, `prototypes/` and `locale/`. Runtime scripts will go in `control.lua` and `scripts/`.
+- The prototypes load the sprite helpers and sheets straight from `assets/` (paths in `prototypes/constants.lua`), so art is never copied. `prototypes/depot-definitions.lua` exists because `depot-pictures.lua` loads its data from that name.
+- Prefix every prototype name with `jatz-`, and keep player-facing text in `locale/en/`.
+- `python3 tools/package_mod.py` builds `dist/jatz-distribution_<version>.zip` from an explicit file list. Add new runtime files to it. Bump `version` in `info.json` for releases.
+- After changing the mod, run `python3 tools/test_mod.py --factorio <factorio>` (the free headless server is enough). It loads the packaged zip with and without Space Age, and checks crafting, placement, rotation, pipes and driving. Extend `tests/factorio/jatz-distribution-check_0.1.0/control.lua` along with new behavior.
 
 ## Artwork rules
 
@@ -35,7 +43,7 @@ CI (`.github/workflows/ci.yml`) is based on yuoki-quinityn's, but routed by repo
 | --- | --- | --- |
 | Freighter | `assets/quinityn-freighter/`, the freighter test mod, `tools/test_factorio.py`, `tools/prepare_test_mod.py` | Lua and Python lint; Blender sources check when models, images or records change |
 | Depots | `assets/depots/` (with the 1×1 archive), the depot test mod, `tools/test_depot_art.py`, `tools/test_depot_lua.py` | Lua and Python lint; generated-Lua test; Blender sources check when models, images or records change |
-| Mod | Everything else that isn't documentation: the mod source at the repository root | Lua and Python lint |
+| Mod | The mod source at the repository root, `tools/package_mod.py`, `tools/test_mod.py` and its check mod, plus anything else that isn't documentation | Lua and Python lint |
 | Repository | `.github/`, the other `tools/` | Python lint, the `tools/test_*.py` repository tests, actionlint |
 
 - Documentation (`README.md`, `AGENTS.md`, `docs/`, `concepts/`, licence files) runs no area checks.

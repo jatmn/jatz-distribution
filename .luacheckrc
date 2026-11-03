@@ -10,10 +10,12 @@ max_line_length = false
 exclude_files = {"build/**", ".cache/**"}
 
 -- Factorio's data and runtime environments expose different globals.
--- Mod files at the repository root (none yet; the mod code comes next).
+-- The mod's source at the repository root. pipecoverspictures is a data-stage helper
+-- defined by the base game.
 files["data*.lua"].globals = {"data"}
 files["settings*.lua"].globals = {"data"}
 files["prototypes/**"].globals = {"data"}
+files["prototypes/**"].read_globals = {"pipecoverspictures"}
 files["control.lua"].globals = {"game", "storage"}
 files["control.lua"].read_globals = {"script", "prototypes", "helpers", "remote", "rendering"}
 files["scripts/**"].globals = {"game", "storage"}

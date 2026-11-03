@@ -16,6 +16,21 @@ The validator checks every freighter atlas cell: neutral masks, no clipped edges
 
 On Windows, use `py -3.13 -m venv .venv` and `.venv\Scripts\python.exe`.
 
+## The mod
+
+```sh
+python3 tools/test_mod.py --factorio /path/to/factorio/bin/x64/factorio
+```
+
+This builds the installable zip with `tools/package_mod.py` and loads it, with the check mod `tests/factorio/jatz-distribution-check_0.1.0`, in a fresh workspace under `.local/mod-check/`. It checks that:
+- all eight recipes are available from the start and free;
+- every depot can be placed, as a ghost and for real, in all four directions, and rotated through a full turn;
+- all 20 pipe ports connect;
+- containers hold items and tanks hold fluid;
+- a character can enter a fuelled freighter and drive it.
+
+It runs with the base game only and, if your Factorio includes it, again with Space Age. The free headless server is enough. To look around yourself, open the newest save under `.local/mod-check/` in the full game with that run's `config.ini` and `mods` folder (see the depot instructions below).
+
 ## Freighter
 
 ```sh

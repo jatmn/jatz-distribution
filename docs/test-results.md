@@ -2,6 +2,19 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Mod: passed (automated)
+
+**November 3, 2026.** `tools/test_mod.py` with Factorio 2.1.24 (build 87808) headless on Linux, loading the packaged `jatz-distribution_0.1.0.zip`. It ran once with the base game only and once with Space Age, and both passed:
+
+| Check | Result |
+| --- | --- |
+| All 8 recipes available from the start and free | Passed |
+| Each of the 7 depots placed in all 4 directions, as a ghost and for real (28 each) | Passed |
+| Full rotation of every placed depot (112 steps) | Passed |
+| All 20 pipe ports connect; containers hold items, tanks hold fluid | Passed |
+| A character enters the fuelled freighter and drives it (28.5 tiles in 2 seconds) | Passed |
+| New freighter collision box (1.5 × 4.5 tiles, measured from the sprites) in the graphical client | Untested |
+
 ## Depots: passed
 
 **November 3, 2026.** Tested artwork commit `b3159d0`. Environment: Factorio 2.1.24 (build 87808) full client, Windows 11, Direct3D 11, AMD Radeon 780M.

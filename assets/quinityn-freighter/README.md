@@ -34,7 +34,7 @@ The masks are neutral grayscale (equal R, G and B) with alpha, so any tint color
 
 ## Using it in Factorio
 
-Copy the five `sheets/freighter-*.png` game layers (all except `preview`) into your mod's `graphics/freighter/` folder, and `factorio/freighter-animation.lua` into its prototypes. Then:
+Copy the five `sheets/freighter-*.png` game layers (all except `preview`) into your mod's `graphics/freighter/` folder, and `factorio/freighter-animation.lua` into its prototypes. To keep the sheets elsewhere, pass their folder as a third argument, relative to the mod root; Jat'z Distribution passes `"assets/quinityn-freighter/sheets/"` (see `prototypes/freighter.lua`). Then:
 
 ```lua
 local make_animation = require("prototypes.freighter-animation")

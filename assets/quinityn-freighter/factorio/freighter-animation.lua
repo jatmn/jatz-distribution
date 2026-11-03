@@ -1,9 +1,10 @@
 -- Factorio 2.1 RotatedAnimation definition for the supplied 64-direction sheets.
--- Copy sheets/freighter-*.png into your mod's graphics/freighter directory.
+-- By default the sheets are expected in your mod's graphics/freighter/ directory;
+-- pass directory (relative to the mod root, ending in "/") to load them elsewhere.
 -- All colors are freely configurable. The PNG masks themselves are grayscale.
-return function(mod_name, palette)
+return function(mod_name, palette, directory)
   palette = palette or {}
-  local prefix = "__" .. mod_name .. "__/graphics/freighter/freighter-"
+  local prefix = "__" .. mod_name .. "__/" .. (directory or "graphics/freighter/") .. "freighter-"
   local function layer(name, tint, shadow)
     return {
       filename = prefix .. name .. ".png",
