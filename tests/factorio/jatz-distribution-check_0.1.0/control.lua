@@ -494,7 +494,60 @@ local function setup_deliveries(surface, result)
   -- Then filled by hand: the ghost's request for them goes away.
   remote.call("jatz-distribution", "add_freighters", revived, 3)
   deliveries.built = revived
+  -- Setting a blueprint up keeps other items' insert plans, stays off their chest stacks, and drops
+  -- settings the depot no longer has. Here the blueprint already asks for 5 iron plates in chest
+  -- stack 0.
+  local entities = blueprint.get_blueprint_entities()
+  entities[1].items = {
+    {
+      id = { name = "iron-plate", quality = "normal" },
+      items = { in_inventory = { { inventory = defines.inventory.chest, stack = 0, count = 5 } } },
+    },
+  }
+  blueprint.set_blueprint_entities(entities)
+  remote.call("jatz-distribution", "setup_blueprint", blueprint, mapping)
+  local kept_iron, freighter_stack = false, nil
+  for _, plan in pairs(blueprint.get_blueprint_entities()[1].items) do
+    local name = type(plan.id.name) == "string" and plan.id.name or plan.id.name.name
+    kept_iron = kept_iron or name == "iron-plate"
+    if name == FREIGHTER then
+      freighter_stack = plan.items.in_inventory[1].stack
+    end
+  end
+  result.blueprint_kept_other_items = kept_iron
+  result.blueprint_freighters_first_stack = freighter_stack
+  -- The same blueprint set up from a depot with no request and no freighters drops both.
+  local plain = depot(surface, "request", -66.5, -56.5, 0)
+  remote.call("jatz-distribution", "setup_blueprint", blueprint, { [1] = plain })
+  local stale = blueprint.get_blueprint_entities()[1]
+  result.blueprint_cleared = not (stale.tags and (stale.tags.jatz_request or stale.tags.jatz_freighters))
+  -- Freighters still in the source's chest count: 2 in its slot and 3 in its chest make 5.
+  local chested = depot(surface, "request", -56.5, -56.5, 2)
+  chested.insert({ name = FREIGHTER, count = 3 })
+  remote.call("jatz-distribution", "setup_blueprint", blueprint, { [1] = chested })
+  local counted = blueprint.get_blueprint_entities()[1]
+  result.blueprint_counts_chest = counted.tags and counted.tags.jatz_freighters
   holder.destroy()
+  -- A ghost with malformed tags (from an edited blueprint string, say) still builds, untouched.
+  local odd = surface.create_entity({
+    name = "entity-ghost",
+    inner_name = "jatz-request-depot",
+    position = { -46.5, -56.5 },
+    force = "player",
+    tags = { jatz_request = 5, jatz_freighters = "many" },
+  })
+  local _, odd_depot = odd.revive({ raise_revive = true })
+  result.malformed_tags_built = odd_depot ~= nil and remote.call("jatz-distribution", "get_request", odd_depot) == nil
+  -- Pasting onto a depot asking for more than the source has: requests beyond it are cancelled.
+  local over = depot(surface, "request", -36.5, -56.5, 0)
+  remote.call("jatz-distribution", "request_freighters", over, 8)
+  remote.call("jatz-distribution", "match_freighters", over, 3)
+  result.matched_down = remote.call("jatz-distribution", "requested_freighters", over)
+  -- Freighters put in by hand cancel requests at once, before robots could bring more.
+  local at_once = depot(surface, "request", -26.5, -56.5, 0)
+  remote.call("jatz-distribution", "request_freighters", at_once, 5)
+  remote.call("jatz-distribution", "add_freighters", at_once, 5)
+  result.trimmed_at_once = remote.call("jatz-distribution", "requested_freighters", at_once)
   -- Copy and Paste settings asks robots for the freighters the destination lacks: with 1, to match 3.
   local pasted = depot(surface, "request", -46.5, -66.5, 1)
   result.matched = remote.call("jatz-distribution", "match_freighters", pasted, 3)

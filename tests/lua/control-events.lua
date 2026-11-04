@@ -119,11 +119,16 @@ local function depot(x)
     surface_index = 1,
     force = "player",
     get_inventory = function()
-      return {
+      -- An empty chest of 48 stacks.
+      local chest = {
         get_item_count = function()
           return 0
         end,
       }
+      for index = 1, 48 do
+        chest[index] = { valid_for_read = false }
+      end
+      return chest
     end,
   }
 end

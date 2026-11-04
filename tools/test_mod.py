@@ -89,7 +89,13 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # 0; 5 asked, 5 put in -> 0; 5 asked, 2 put in -> 3; the blueprint's 3, put in -> 0).
             'blueprinted': 1, 'blueprint_tag': 'wood', 'blueprint_freighters': 3, 'built_request': 'wood x7',
             'built_freighters_requested': 3, 'matched': 2, 'trimmed_requests': 0, 'filled_by_hand_requests': 0,
-            'partly_filled_requests': 3, 'built_filled_requests': 0}
+            'partly_filled_requests': 3, 'built_filled_requests': 0,
+            # Blueprint setup keeps other items' plans and their chest stacks, drops settings the
+            # depot no longer has, counts freighters still in the chest; malformed tags build
+            # harmlessly; pasting a smaller count cancels the excess requests; filling by hand
+            # trims at once.
+            'blueprint_kept_other_items': True, 'blueprint_freighters_first_stack': 1, 'blueprint_cleared': True,
+            'blueprint_counts_chest': 5, 'malformed_tags_built': True, 'matched_down': 3, 'trimmed_at_once': 0}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 

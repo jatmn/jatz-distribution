@@ -1027,9 +1027,8 @@ end
 function logistics.on_entity_settings_pasted(event)
   copy_request(event.source, event.destination)
   if request_depot(event.source) and request_depot(event.destination) then
-    local in_slot, out = logistics.freighter_counts(event.source)
-    local coming = logistics.requested_freighters(event.source)
-    logistics.match_freighters(event.destination, in_slot + out + coming)
+    -- All the source has or will have: slot, out, chest (not leaving) and coming.
+    logistics.match_freighters(event.destination, logistics.freighter_total(event.source))
   end
 end
 
@@ -1312,16 +1311,25 @@ local function freighter_total(entity)
   local in_chest = inventory(entity).get_item_count(item_id(FREIGHTER)) - removing
   return in_slot + out + in_chest + coming, capacity, coming
 end
+logistics.freighter_total = freighter_total
 
 -- Ask robots for as many freighters as it takes for a request depot to have `total` (within its
 -- slot's limit). Returns how many were requested.
 function logistics.match_freighters(entity, total)
-  if not request_depot(entity) then
+  local depot = request_depot(entity)
+  if not depot then
     return 0
   end
+  total = math.max(0, math.floor(tonumber(total) or 0))
   local have = freighter_total(entity)
-  local wanted = math.floor(tonumber(total) or 0) - have
-  return wanted > 0 and logistics.request_freighters(entity, wanted) or 0
+  if total > have then
+    return logistics.request_freighters(entity, total - have)
+  end
+  -- Already as many or more: freighter requests beyond `total` are cancelled. Freighters already
+  -- in the depot stay; they are the player's, and taking them away is the player's call.
+  depot.freighter_target = total
+  logistics.trim_freighter_requests(entity)
+  return 0
 end
 
 -- Freighters requested from robots beyond what they were requested for (the depot's
@@ -1363,23 +1371,38 @@ function logistics.setup_blueprint(blueprint, mapping)
     local entity = mapping[planned.entity_number]
     local depot = entity and entity.valid and request_depot(entity)
     if depot then
-      if depot.request then
-        planned.tags = planned.tags or {}
-        planned.tags[REQUEST_TAG] = { item = depot.request.item, count = depot.request.count }
+      -- The depot's settings as they are now, replacing any from setting this blueprint up
+      -- before; other tags and other items' insert plans are kept.
+      planned.tags = planned.tags or {}
+      planned.tags[REQUEST_TAG] = depot.request and { item = depot.request.item, count = depot.request.count } or nil
+      local freighters = freighter_total(entity)
+      planned.tags[FREIGHTERS_TAG] = freighters > 0 and freighters or nil
+      if next(planned.tags) == nil then
+        planned.tags = nil
       end
-      local in_slot, out = logistics.freighter_counts(entity)
-      local freighters = in_slot + out + logistics.requested_freighters(entity)
+      local items, used = {}, {}
+      for _, plan in pairs(planned.items or {}) do
+        if item_name(plan.id.name) ~= FREIGHTER then
+          items[#items + 1] = plan
+          for _, position in pairs(plan.items.in_inventory or {}) do
+            if position.inventory == defines.inventory.chest then
+              used[position.stack] = true
+            end
+          end
+        end
+      end
       if freighters > 0 then
-        -- The count as a tag too, so freighters put in by hand count towards it once built.
-        planned.tags = planned.tags or {}
-        planned.tags[FREIGHTERS_TAG] = freighters
+        -- Chest stacks the other plans don't use, a stack of freighters at a time.
         local stacks = {}
-        for index = 0, math.ceil(freighters / prototypes.item[FREIGHTER].stack_size) - 1 do
-          stacks[#stacks + 1] = index
+        for index = 0, #inventory(entity) - 1 do
+          if not used[index] then
+            stacks[#stacks + 1] = index
+          end
         end
         local _, positions = spread(freighters, stacks)
-        planned.items = { { id = { name = FREIGHTER, quality = QUALITY }, items = { in_inventory = positions } } }
+        items[#items + 1] = { id = { name = FREIGHTER, quality = QUALITY }, items = { in_inventory = positions } }
       end
+      planned.items = #items > 0 and items or nil
       changed = changed + 1
     end
   end
@@ -1429,13 +1452,15 @@ function logistics.apply_tags(entity, tags)
   if not depot then
     return
   end
+  -- Tags can come from anywhere (other mods, edited blueprint strings): use them only if well formed.
   local request = tags[REQUEST_TAG]
-  if request then
+  if type(request) == "table" and type(request.item) == "string" and type(request.count) == "number" then
     logistics.set_request(entity, request.item, request.count)
   end
   -- The ghost's insert plan asks robots for the freighters; this is how many it is for.
-  if tags[FREIGHTERS_TAG] then
-    depot.freighter_target = tags[FREIGHTERS_TAG]
+  local freighters = tags[FREIGHTERS_TAG]
+  if type(freighters) == "number" and freighters >= 0 then
+    depot.freighter_target = math.floor(freighters)
   end
 end
 
@@ -1507,6 +1532,11 @@ function logistics.put_freighters(entity, stack, count)
       moved = moved + before - (stack.valid_for_read and stack.count or 0)
     end
   end
+  -- Freighters put in by hand count towards what robots were asked for: cancel the rest now,
+  -- before robots deliver it.
+  if moved > 0 then
+    logistics.trim_freighter_requests(entity)
+  end
   return moved
 end
 
@@ -1570,7 +1600,11 @@ function logistics.register()
       end
       local in_slot, out, capacity = logistics.freighter_counts(entity)
       local amount = math.max(0, math.min(math.floor(count), capacity - in_slot - out))
-      return amount > 0 and trucks_of(depot).insert({ name = FREIGHTER, count = amount }) or 0
+      local added = amount > 0 and trucks_of(depot).insert({ name = FREIGHTER, count = amount }) or 0
+      if added > 0 then
+        logistics.trim_freighter_requests(entity)
+      end
+      return added
     end,
     freighter_counts = logistics.freighter_counts,
     -- Ask construction robots to bring freighters (as from remote view), and cancel that.
