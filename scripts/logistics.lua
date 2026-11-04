@@ -466,7 +466,9 @@ end
 
 local function dispatch(depot)
   absorb_freighters(depot)
-  local out = next(trips_of(depot)) ~= nil
+  -- "On its way" only while a freighter is bringing some of the requested item: not one taking
+  -- cargo back to its provider, nor one driving home empty.
+  local out = committed(depot) > 0
   local wanted, room = need(depot)
   if wanted <= 0 then
     depot.status = out and logistics.status.delivering

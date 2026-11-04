@@ -258,9 +258,13 @@ local function refresh()
     local frame = player and player.valid and frame_of(player)
     if frame and entity.valid then
       local row = frame.children[1].request_row
-      if row and row[STATUS] then
-        show_status(row[STATUS], entity)
+      if not (row and row[STATUS]) then
+        -- A panel opened before an update that changed its layout: build it again.
+        open(player, entity)
+        frame = frame_of(player)
+        row = frame.children[1].request_row
       end
+      show_status(row[STATUS], entity)
       show_freighters(frame.children[1], entity)
     else
       storage.request_gui[index] = nil

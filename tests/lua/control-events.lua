@@ -29,11 +29,14 @@ defines = setmetatable({
     })
   end,
 })
+local nth = {}
 script = {
   on_event = function(event, handler)
     handlers[event] = handler
   end,
-  on_nth_tick = function() end,
+  on_nth_tick = function(ticks, handler)
+    nth[ticks] = handler
+  end,
   on_init = function() end,
   on_configuration_changed = function() end,
   register_on_object_destroyed = function() end,
@@ -83,7 +86,21 @@ function surface.find_entities_filtered()
 end
 
 storage = {}
-game = { tick = 0, surfaces = { [1] = surface } }
+-- A one-slot script inventory, as far as the freighter slot's counts need.
+local function script_inventory()
+  local slot = { valid_for_read = false, count = 0 }
+  return {
+    valid = true,
+    [1] = slot,
+    get_item_count = function()
+      return slot.count
+    end,
+    is_empty = function()
+      return slot.count == 0
+    end,
+  }
+end
+game = { tick = 0, surfaces = { [1] = surface }, create_inventory = script_inventory }
 
 require("control")
 
@@ -330,6 +347,51 @@ do -- Every status the dispatcher can report has a status light, one of the game
   for _, status in pairs(require("scripts.logistics").status) do
     check("status " .. status .. " has a status light", game_lights[lights[status]])
   end
+end
+
+do -- A panel opened before an update that changed its layout is rebuilt, with its status light.
+  -- A minimal GUI: elements with children by name, add and destroy.
+  local function element(spec, parent)
+    local self = { children = {}, style = {}, parent = parent }
+    for key, value in pairs(spec or {}) do
+      self[key] = value
+    end
+    function self.add(child_spec)
+      local child = element(child_spec, self)
+      self.children[#self.children + 1] = child
+      if child.name then
+        self[child.name] = child
+      end
+      return child
+    end
+    function self.destroy()
+      for index, child in ipairs(parent.children) do
+        if child == self then
+          table.remove(parent.children, index)
+        end
+      end
+      if self.name then
+        parent[self.name] = nil
+      end
+    end
+    return self
+  end
+  local entity = depot(70)
+  entity.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = entity })
+  local relative = element()
+  local player = { index = 2, valid = true, gui = { relative = relative } }
+  game.get_player = function()
+    return player
+  end
+  -- The old layout: a status label, no request row.
+  relative.add({ name = "jatz_request_frame" }).add({}).add({ name = "jatz_request_status", caption = "old" })
+  storage.request_gui = { [2] = entity }
+  nth[30]()
+  local row = relative.jatz_request_frame.children[1].request_row
+  local light = row and row.jatz_request_status
+  check("a panel from before the update is rebuilt", light ~= nil and light.type == "sprite")
+  check("with its status light lit", light.sprite == "utility/status_inactive" and light.tooltip ~= nil)
 end
 
 print("all control event checks passed")
