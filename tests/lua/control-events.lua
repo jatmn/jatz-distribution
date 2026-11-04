@@ -394,4 +394,12 @@ do -- A panel opened before an update that changed its layout is rebuilt, with i
   check("with its status light lit", light.sprite == "utility/status_inactive" and light.tooltip ~= nil)
 end
 
+do -- The line beside the freighter slot: how many are out on the road, always.
+  local caption = require("scripts.request-gui").freighter_caption
+  local none, some = caption(0), caption(3)
+  -- Exactly the one localised "N out", nothing before or after it.
+  check("none out still says so", #none == 2 and none[1] == "jatz-gui.freighters-out" and none[2] == 0)
+  check("three out", #some == 2 and some[1] == "jatz-gui.freighters-out" and some[2] == 3)
+end
+
 print("all control event checks passed")
