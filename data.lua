@@ -4,3 +4,5 @@
 require("prototypes.item-groups")
 require("prototypes.freighter")
 require("prototypes.depots")
+require("prototypes.roads")
+require("prototypes.freighter-drone")

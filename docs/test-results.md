@@ -8,7 +8,7 @@ Latest in-game results for the current artwork. The full screenshots and reports
 
 | Check | Result |
 | --- | --- |
-| All 8 recipes available from the start and free | Passed |
+| All 9 recipes (seven depots, the freighter, road) available from the start and free | Passed |
 | Each of the 7 depots placed in all 4 directions, as a ghost and for real (28 each) | Passed |
 | Full rotation of every placed depot (112 steps) | Passed |
 | All 20 pipe ports connect; containers hold items, tanks hold fluid | Passed |
@@ -19,6 +19,23 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | Marking drawn above decoratives (plants, ground cover): moved from `decals` to `ground-patch-higher2` after the owner saw plants drawn over it | Untested since the change |
 | Decorative rocks drawn over the marking (`floor`/`object` layers): building or turning a depot now clears decoratives overlapping its loading zone tile. Covered by the automated check (28 zones cleared, decoratives beyond kept) | Untested in the graphical client |
 | Menu placement in the graphical client: our row directly above the car and tank row, ordered provider, request, buffer, liquid provider, liquid request, liquid buffer, fuel, freighter | **Passed:** checked by the owner on November 3, 2026, alongside the Yuoki mods |
+| Delivery over road: a provider with 50 iron plates and a request for 30, 20 tiles apart, joined by a U-shaped road with concrete on the straight line. A freighter drove out and back along the road (10-tile detour) and the request depot received exactly 30; the provider kept 20 | Passed |
+| Freighters stay on road: every 10 ticks, all four corners of every delivering freighter stood on road (45 samples) | Passed |
+| A request depot whose loading zone is an isolated road tile receives nothing and reports no route; one without road at its loading zone sends no freighter and says so | Passed |
+| Cargo keeps item data: modular armor arrives with its solar panel; with Space Age, food that left 50% spoiled arrives at least as spoiled | Passed |
+| A request depot with no room fetches nothing (provider keeps all 50 copper, status "full") | Passed |
+| A freighter destroyed on its way is replaced, and the request is filled (30 steel) | Passed |
+| A request changed from plastic to circuits mid-trip loads no plastic | Passed |
+| Road cut behind a loaded freighter: all 30 gears go back to the provider, none to the request, provider cooled down; the cut is noticed in 2 ticks (it used to take about 6 s of standing stuck) | Passed |
+| Mending a gap in a road: delivery done 195 ticks (about 3 s, round trip included) after the repair, instead of waiting out the retry cooldown | Passed |
+| Nearer of two providers removed mid-trip: the same freighter goes on to the other one and delivers | Passed |
+| Request depot removed mid-trip: its freighter leaves at once and the provider keeps its stock | Passed |
+| Nothing left on the ground by any check | Passed |
+| Unknown items and non-numeric counts are refused without changing the request; a cloned request depot keeps its request; clearing works | Passed |
+| Road laid from a ghost on grass; refused on water | Passed |
+| A save made by the PR's first version, with a freighter on its way, loads and finishes the delivery | Passed (one-off check) |
+| Road tile art, transitions and the item icon in the graphical client | Untested |
+| Request panel beside the request depot's window (item, amount, status), and Copy and Paste settings between request depots | **Passed:** the owner reported the first version working in game on November 3, 2026; the panel is unchanged since |
 
 ## Depots: passed
 

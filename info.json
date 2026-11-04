@@ -5,5 +5,5 @@
   "author": "jatmn",
   "factorio_version": "2.1",
   "dependencies": ["base >= 2.1.0"],
-  "description": "Automated freight trucks and depots. In development: the freighter and all seven depots can be built, placed and driven; dispatch and cargo transfer are not implemented yet."
+  "description": "Automated freight trucks, depots and roads. In development: freighters deliver items from provider to request depots, driving only on road. Buffer, fuel and liquid depots don't take part yet."
 }

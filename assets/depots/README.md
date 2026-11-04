@@ -128,4 +128,4 @@ Afterwards, test in game; see [docs/testing.md](../../docs/testing.md).
 
 ## Not yet implemented
 
-These are static loading-state sprites. Moving belts, shutter animation, item and fluid transfer, freighter dispatch and the Fuel depot's combined solid and liquid inventory are gameplay work. Native tank ports are two-way.
+These are static loading-state sprites. Moving belts and shutter animation are not drawn. In the mod, freighters already carry items from provider to request depots (`scripts/logistics.lua`); fluid transfer, buffer and fuel depot gameplay, and the Fuel depot's combined solid and liquid inventory are still to come. Native tank ports are two-way.
