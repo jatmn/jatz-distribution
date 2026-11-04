@@ -478,4 +478,41 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
   )
 end
 
+do -- Freighters moved in from the player's inventory, or by ctrl+click on the depot, go to the slot.
+  local logistics = require("scripts.logistics")
+  local taken
+  logistics.take_in_freighters = function(entity, give_back)
+    taken = { entity = entity, give_back = give_back }
+    return 0, 0
+  end
+  local entity = depot(110)
+  entity.name = "jatz-request-depot"
+  local pockets = {}
+  local player = {
+    index = 4,
+    valid = true,
+    get_main_inventory = function()
+      return pockets
+    end,
+  }
+  game.get_player = function()
+    return player
+  end
+  storage.request_gui = { [4] = entity }
+  fire("on_player_main_inventory_changed", { player_index = 4 })
+  check(
+    "inventory changes with a request depot open take freighters in",
+    taken and taken.entity == entity and taken.give_back == pockets
+  )
+  taken = nil
+  storage.request_gui = {}
+  fire("on_player_main_inventory_changed", { player_index = 4 })
+  check("with no request depot open, nothing", taken == nil)
+  fire("on_player_fast_transferred", { player_index = 4, entity = entity, from_player = true })
+  check("ctrl+click on the depot takes freighters in", taken and taken.entity == entity)
+  taken = nil
+  fire("on_player_fast_transferred", { player_index = 4, entity = entity, from_player = false })
+  check("taking things out of it doesn't", taken == nil)
+end
+
 print("all control event checks passed")

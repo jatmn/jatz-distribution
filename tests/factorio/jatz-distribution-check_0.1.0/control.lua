@@ -548,6 +548,22 @@ local function setup_deliveries(surface, result)
   remote.call("jatz-distribution", "request_freighters", at_once, 5)
   remote.call("jatz-distribution", "add_freighters", at_once, 5)
   result.trimmed_at_once = remote.call("jatz-distribution", "requested_freighters", at_once)
+  -- Ctrl+click of freighters into a request depot's window drops them in its chest: they fill the
+  -- slot at once, and the rest go back to the player. 95 in the slot, 15 dropped in: 5 taken, 10
+  -- back.
+  local nearly_full = depot(surface, "request", -16.5, -56.5, 95)
+  nearly_full.insert({ name = FREIGHTER, count = 15 })
+  -- Other items ctrl+clicked in alongside stay in the chest, as in any container.
+  nearly_full.insert({ name = "iron-plate", count = 20 })
+  local pockets = game.create_inventory(20)
+  local taken, returned = remote.call("jatz-distribution", "take_in_freighters", nearly_full, pockets)
+  result.ctrl_click_taken, result.ctrl_click_returned = taken, returned
+  result.ctrl_click_slot = remote.call("jatz-distribution", "freighter_counts", nearly_full)
+  result.ctrl_click_left_in_chest = nearly_full.get_inventory(defines.inventory.chest).get_item_count(FREIGHTER)
+  result.ctrl_click_pockets = pockets.get_item_count(FREIGHTER)
+  result.ctrl_click_other_items_kept = nearly_full.get_inventory(defines.inventory.chest).get_item_count("iron-plate")
+  result.ctrl_click_other_items_returned = pockets.get_item_count("iron-plate")
+  pockets.destroy()
   -- Copy and Paste settings asks robots for the freighters the destination lacks: with 1, to match 3.
   local pasted = depot(surface, "request", -46.5, -66.5, 1)
   result.matched = remote.call("jatz-distribution", "match_freighters", pasted, 3)

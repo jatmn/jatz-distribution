@@ -259,6 +259,30 @@ local function on_pipette(event)
   end
 end
 
+-- Freighters moved into an open request depot's chest from the player's inventory (ctrl+click
+-- moves all of them, shift+click a stack) go straight into its freighter slot, filling it; the rest
+-- go back to the player.
+local function on_player_main_inventory_changed(event)
+  local player = game.get_player(event.player_index)
+  local entity = player and opened_depot(player)
+  if entity then
+    local taken = logistics.take_in_freighters(entity, player.get_main_inventory())
+    local frame = taken > 0 and frame_of(player)
+    if frame then
+      show_freighters(frame.children[1], entity)
+    end
+  end
+end
+
+-- Ctrl+click on a request depot in the world puts freighters in the same way.
+local function on_player_fast_transferred(event)
+  local entity = event.entity
+  if event.from_player and entity and entity.valid and entity.name == REQUEST then
+    local player = game.get_player(event.player_index)
+    logistics.take_in_freighters(entity, player and player.get_main_inventory())
+  end
+end
+
 -- Keep the status line current while the window is open.
 local function refresh()
   if not storage.request_gui then
@@ -290,6 +314,8 @@ function request_gui.register()
   script.on_event(defines.events.on_gui_text_changed, on_gui_text_changed)
   script.on_event(defines.events.on_gui_click, on_gui_click)
   script.on_event(defines.events.on_gui_hover, on_gui_hover)
+  script.on_event(defines.events.on_player_main_inventory_changed, on_player_main_inventory_changed)
+  script.on_event(defines.events.on_player_fast_transferred, on_player_fast_transferred)
   script.on_event(defines.events.on_gui_leave, on_gui_leave)
   script.on_event("jatz-pipette", on_pipette)
   script.on_nth_tick(30, refresh)

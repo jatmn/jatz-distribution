@@ -1509,6 +1509,47 @@ function logistics.cancel_freighter_requests(entity)
   return requested
 end
 
+-- Freighters a player has just put into a request depot's chest (ctrl+click or shift+click in its
+-- window, ctrl+click on the depot itself) go into its freighter slot at once, filling it, and any
+-- that don't fit go back to `give_back` (the player's inventory) rather than staying in the chest.
+-- Only freighters: every other item put in stays in the chest, as in any container.
+-- Freighters waiting there for robots to take away stay. Not if freighters are what the depot
+-- requests: then they are cargo. Returns how many went into the slot and how many went back.
+function logistics.take_in_freighters(entity, give_back)
+  local depot = request_depot(entity)
+  if not depot or (depot.request and depot.request.item == FREIGHTER) then
+    return 0, 0
+  end
+  local chest = inventory(entity)
+  if chest.get_item_count(item_id(FREIGHTER)) == 0 then
+    return 0, 0
+  end
+  local slot = trucks_of(depot)
+  local before = slot.get_item_count()
+  absorb_freighters(depot)
+  local returned = 0
+  if give_back then
+    local _, _, _, marked = freighter_requests(entity)
+    for index = 1, #chest do
+      local stack = chest[index]
+      if stack.valid_for_read and stack.name == FREIGHTER and not marked[index - 1] then
+        local inserted = give_back.insert(stack)
+        returned = returned + inserted
+        if inserted >= stack.count then
+          stack.clear()
+        elseif inserted > 0 then
+          stack.count = stack.count - inserted
+        end
+      end
+    end
+  end
+  local taken = slot.get_item_count() - before
+  if taken > 0 then
+    logistics.trim_freighter_requests(entity)
+  end
+  return taken, returned
+end
+
 -- Put freighters from `stack` (a player's cursor, say) into a request depot's slot: `count` of
 -- them, or all, as far as it has room counting those out on trips. Returns how many went in.
 function logistics.put_freighters(entity, stack, count)
@@ -1613,6 +1654,7 @@ function logistics.register()
     cancel_freighter_requests = logistics.cancel_freighter_requests,
     remove_freighters = logistics.remove_freighters,
     match_freighters = logistics.match_freighters,
+    take_in_freighters = logistics.take_in_freighters,
     setup_blueprint = logistics.setup_blueprint,
     cancel_freighter_removal = logistics.cancel_freighter_removal,
   })
