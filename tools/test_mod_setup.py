@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-only
 """Unit tests without Factorio: test_mod.py's expansion resolution and locale parsing, the English
-names, the icon size the prototypes declare, and the depots' orientation and loading zones."""
+names, the icon size the prototypes declare, the depots' orientation and loading zones, and the
+dispatcher's provider searches (tests/lua/logistics-search.lua)."""
 from pathlib import Path
 import re
 import shutil
@@ -121,6 +122,17 @@ class OrientationTests(unittest.TestCase):
             self.assertTrue(roles[role].startswith('half-turn'), role)
         for role in ('liquid-provider', 'liquid-request', 'liquid-buffer'):
             self.assertTrue(roles[role].startswith('as-drawn'), role)
+
+
+class LogisticsSearchTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('lua5.2'), 'the Mod CI job installs Lua 5.2')
+    def test_provider_searches_survive_engine_callback_races(self):
+        # tests/lua/logistics-search.lua plays out search races (stale answers after a request or
+        # road change, a busy pathfinder, timeouts, reroutes) against a fake runtime.
+        result = subprocess.run(['lua5.2', 'tests/lua/logistics-search.lua'], cwd=ROOT, capture_output=True,
+                                text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('all logistics search checks passed', result.stdout)
 
 
 class LocaleTests(unittest.TestCase):

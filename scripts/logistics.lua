@@ -74,6 +74,12 @@ local function init_storage()
   storage.searches = storage.searches or {}
 end
 
+-- Drop a request depot's current search; the next dispatch, within a second, starts a fresh one.
+local function cancel_search(depot)
+  depot.search_token = nil
+  depot.searching = nil
+end
+
 local function inventory(entity)
   return entity.get_inventory(defines.inventory.chest)
 end
@@ -144,6 +150,8 @@ function logistics.set_request(entity, item, count)
   end
   depot.cooldowns = {}
   depot.retry_at = 0
+  -- A search under way was for the old request.
+  cancel_search(depot)
   return true
 end
 
@@ -235,6 +243,27 @@ local function start_trip(depot, provider, from)
   return true
 end
 
+-- Searches belong to a request depot (finding a provider to send a freighter to) or to a trip (a
+-- freighter whose provider was removed). Each search has a token, and its owner keeps the token of
+-- its one current search. Whatever makes a search stale (road or depot changes, a new request, a
+-- busy pathfinder, a timeout) takes the owner's token away or replaces it, so the old search's
+-- answers are ignored: they neither put providers on cooldown nor send freighters, and the old
+-- search asks the pathfinder nothing more.
+local function new_token()
+  storage.search_count = (storage.search_count or 0) + 1
+  return storage.search_count
+end
+
+-- The depot or trip a search belongs to, if it is still that owner's current search.
+local function owner_of(search)
+  if search.trip then
+    local trip = storage.trips[search.trip]
+    return trip and trip.search_token == search.token and trip or nil
+  end
+  local depot = storage.depots[search.request]
+  return depot and depot.search_token == search.token and depot or nil
+end
+
 -- Ask the pathfinder for the road route from the search's start to its current candidate, as the
 -- freighter would drive it.
 local function ask_route(search, surface, force)
@@ -248,6 +277,8 @@ local function ask_route(search, surface, force)
     radius = ARRIVAL_RADIUS,
     pathfind_flags = { no_break = true },
   })
+  -- Saves from before searches existed have no table yet, and their mod version is the same.
+  storage.searches = storage.searches or {}
   storage.searches[id] = search
 end
 
@@ -260,19 +291,37 @@ local function search_providers(depot, from, trip)
     return false, waiting
   end
   local search = {
+    token = new_token(),
     request = depot.entity.unit_number,
     item = depot.request.item,
     from = from,
     candidates = found,
     index = 1,
     trip = trip,
-    started = game.tick,
   }
-  if not trip then
-    depot.searching = game.tick
-  end
+  local owner = trip and storage.trips[trip] or depot
+  owner.search_token = search.token
+  owner.searching = game.tick
   ask_route(search, depot.entity.surface, depot.entity.force)
   return true
+end
+
+-- Find a new provider, nearest by road from where it stands, for a freighter whose provider is
+-- gone or no longer suitable. It waits while the search runs, and leaves if there is none.
+local function reroute(id, trip)
+  local depot = storage.depots[trip.request]
+  local request = depot and depot.entity.valid and depot.request
+  trip.search_token, trip.searching = nil, nil
+  if
+    trip.drone.valid
+    and request
+    and request.item == trip.item
+    and search_providers(depot, trip.drone.position, id)
+  then
+    trip.drone.commandable.set_command({ type = defines.command.stop, distraction = defines.distraction.none })
+  else
+    end_trip(id, trip)
+  end
 end
 
 local function path_length(from, path)
@@ -315,16 +364,16 @@ local function dispatch(depot)
   if started then
     depot.status = logistics.status.searching
   else
-    depot.searching = nil
+    cancel_search(depot)
     depot.status = waiting and logistics.status.unreachable or logistics.status.no_provider
   end
 end
 
 function logistics.on_tick()
-  -- A freighter waiting for a reroute search that never answered gives up.
+  -- A freighter whose reroute search never answered (or met a busy pathfinder) searches again.
   for id, trip in pairs(storage.trips) do
     if trip.searching and game.tick - trip.searching >= SEARCH_TIMEOUT then
-      end_trip(id, trip)
+      reroute(id, trip)
     end
   end
   for id, depot in pairs(storage.depots) do
@@ -480,8 +529,9 @@ end
 function logistics.on_ai_command_completed(event)
   local id = event.unit_number
   local trip = storage.trips and storage.trips[id]
-  -- A command replaced by a newer one (see replan) is not the end of anything.
-  if not trip or event.result == defines.behavior_result.deleted then
+  -- A command replaced by a newer one (see replan) is not the end of anything, and a freighter
+  -- waiting for a reroute search has nowhere to arrive.
+  if not trip or event.result == defines.behavior_result.deleted or trip.searching then
     return
   end
   upgrade(trip)
@@ -509,7 +559,8 @@ end
 -- Plan a freighter's route again from where it stands. A route that no longer exists fails at
 -- once (on_ai_command_completed), instead of after the freighter stands stuck for seconds.
 local function replan(trip)
-  if trip.drone.valid and trip.destination then
+  -- A freighter waiting for a reroute search stays put; the search decides where it goes.
+  if trip.drone.valid and trip.destination and not trip.searching then
     drive(trip, target(trip))
   end
 end
@@ -524,11 +575,26 @@ local function retry_now(surface_index)
   end
 end
 
+-- Searches on a surface may have used roads or depots that changed since: start them again.
+local function restart_searches(surface_index)
+  for _, depot in pairs(storage.depots) do
+    if depot.search_token and depot.entity.valid and depot.entity.surface_index == surface_index then
+      cancel_search(depot)
+    end
+  end
+  for id, trip in pairs(storage.trips) do
+    if trip.search_token and trip.drone.valid and trip.drone.surface_index == surface_index then
+      reroute(id, trip)
+    end
+  end
+end
+
 -- Road was laid (`added`) or removed or covered (`removed`) on a surface.
 function logistics.on_roads_changed(surface_index, added, removed)
   if not storage.depots then
     return
   end
+  restart_searches(surface_index)
   if added then
     retry_now(surface_index)
   end
@@ -547,6 +613,7 @@ function logistics.on_depot_changed(entity)
     return
   end
   retry_now(entity.surface_index)
+  restart_searches(entity.surface_index)
   for _, trip in pairs(storage.trips) do
     if trip.provider == entity.unit_number or trip.request == entity.unit_number then
       replan(upgrade(trip))
@@ -578,23 +645,14 @@ local function depot_removed(id)
         end_trip(trip_id, trip)
       end
     elseif trip.provider == id and trip.state == TO_PROVIDER then
-      -- On to the provider nearest by road from where the freighter is; it waits while that is
-      -- worked out, and leaves if there is none.
-      local depot = storage.depots[trip.request]
-      local request = depot and depot.entity.valid and depot.request
-      if request and request.item == trip.item and search_providers(depot, trip.drone.position, trip_id) then
-        trip.searching = game.tick
-        trip.drone.commandable.set_command({ type = defines.command.stop, distraction = defines.distraction.none })
-      else
-        end_trip(trip_id, trip)
-      end
+      reroute(trip_id, trip)
     end
   end
 end
 
 -- The search is over: send a freighter to the provider nearest by road (or redirect the freighter
 -- the search was for), if the request still wants the item.
-local function finish_search(depot, search)
+local function finish_search(depot, search, owner)
   local provider = search.best and storage.depots[search.best]
   local still = depot.request
     and depot.request.item == search.item
@@ -602,22 +660,17 @@ local function finish_search(depot, search)
     and provider.entity.valid
     and inventory(provider.entity).get_item_count(item_id(search.item)) > 0
   if search.trip then
-    local trip = storage.trips[search.trip]
-    if trip and trip.searching then
-      trip.searching = nil
-      if still then
-        trip.provider = search.best
-        drive(trip, (loading_tile(provider.entity)))
-      else
-        end_trip(search.trip, trip)
-      end
+    if still then
+      owner.search_token, owner.searching = nil, nil
+      owner.provider = search.best
+      drive(owner, (loading_tile(provider.entity)))
+    else
+      -- The provider found was emptied or removed meanwhile: look again among the rest.
+      reroute(search.trip, owner)
     end
     return
   end
-  if depot.searching ~= search.started then
-    return
-  end
-  depot.searching = nil
+  cancel_search(depot)
   if not search.best then
     -- No provider with the item has a road route: each is on cooldown now.
     depot.status = logistics.status.unreachable
@@ -643,13 +696,21 @@ function logistics.on_script_path_request_finished(event)
     return
   end
   storage.searches[event.id] = nil
+  local owner = owner_of(search)
   local depot = storage.depots[search.request]
-  if not (depot and depot.entity.valid) then
+  if not (owner and depot and depot.entity.valid) then
     return
   end
   if event.try_again_later then
-    -- The pathfinder was busy: ask again.
-    return ask_route(search, depot.entity.surface, depot.entity.force)
+    -- The pathfinder is busy: this search ends, and a new one starts at the next dispatch (or, for
+    -- a freighter, the next once-a-second check), so a busy pathfinder is asked at most once a
+    -- second per owner.
+    if search.trip then
+      owner.search_token, owner.searching = nil, game.tick - SEARCH_TIMEOUT
+    else
+      cancel_search(depot)
+    end
+    return
   end
   local candidate = search.candidates[search.index]
   if event.path then
@@ -667,7 +728,7 @@ function logistics.on_script_path_request_finished(event)
   if next_candidate and next_candidate.distance < (search.best_length or math.huge) then
     return ask_route(search, depot.entity.surface, depot.entity.force)
   end
-  finish_search(depot, search)
+  finish_search(depot, search, owner)
 end
 
 function logistics.on_object_destroyed(event)
@@ -723,7 +784,7 @@ function logistics.add_all()
   -- Searches still waiting for the pathfinder start again from scratch.
   storage.searches = {}
   for id, depot in pairs(storage.depots) do
-    depot.searching = nil
+    cancel_search(depot)
     if not depot.entity.valid then
       storage.depots[id] = nil
     elseif depot.request and not prototypes.item[depot.request.item] then
@@ -735,7 +796,7 @@ function logistics.add_all()
     upgrade(trip)
     -- Trips whose freighter, cargo or item is gone end; the engine already removed any cargo of
     -- a removed item from the cargo inventory.
-    if trip.searching or not (trip.drone.valid and trip.cargo.valid and prototypes.item[trip.item]) then
+    if not (trip.drone.valid and trip.cargo.valid and prototypes.item[trip.item]) then
       if trip.drone.valid and trip.cargo.valid then
         spill(trip)
       end
@@ -747,6 +808,11 @@ function logistics.add_all()
       if not storage.trips[drone.unit_number] then
         drone.destroy()
       end
+    end
+  end
+  for id, trip in pairs(storage.trips) do
+    if trip.searching then
+      reroute(id, trip)
     end
   end
   for _, depot in pairs(storage.depots) do
