@@ -82,10 +82,12 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             'status_lights': 4,
             # Blueprints keep a request depot's request (tag) and freighters (insert plan): the
             # ghost built from one asks for 7 wood and has robots bring 3 freighters. Copy and Paste
-            # settings has robots bring what the destination lacks (1 -> 3). Requests that no
-            # longer fit after filling by hand are trimmed (6 requested + 7 put in -> 3).
+            # settings has robots bring what the destination lacks (1 -> 3). Freighters put in by
+            # hand count towards what was requested: requests beyond it go (6 asked, 7 put in ->
+            # 0; 5 asked, 5 put in -> 0; 5 asked, 2 put in -> 3; the blueprint's 3, put in -> 0).
             'blueprinted': 1, 'blueprint_tag': 'wood', 'blueprint_freighters': 3, 'built_request': 'wood x7',
-            'built_freighters_requested': 3, 'matched': 2, 'trimmed_requests': 3}
+            'built_freighters_requested': 3, 'matched': 2, 'trimmed_requests': 0, 'filled_by_hand_requests': 0,
+            'partly_filled_requests': 3, 'built_filled_requests': 0}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 

@@ -1218,6 +1218,9 @@ function logistics.request_freighters(entity, count)
     id = { name = FREIGHTER, quality = QUALITY },
     items = { in_inventory = { { inventory = defines.inventory.chest, stack = stack, count = amount } } },
   })
+  -- What these requests are for: the depot ending up with this many. Freighters arriving some
+  -- other way (put in by hand) count towards it, and requests beyond it are cancelled.
+  request_depot(entity).freighter_target = in_slot + out + in_chest + requested + amount
   return amount
 end
 
@@ -1271,14 +1274,22 @@ function logistics.match_freighters(entity, total)
   return wanted > 0 and logistics.request_freighters(entity, wanted) or 0
 end
 
--- Freighters requested from robots that would no longer fit (the slot was filled some other way,
--- by hand, say) are cancelled, so robots don't overfill it. Runs with every dispatch.
+-- Freighters requested from robots beyond what they were requested for (the depot's
+-- freighter_target, or the slot's limit) are cancelled: freighters that arrived some other way
+-- (put in by hand, say) count towards the target, so robots never bring more than it, nor
+-- overfill the slot, and a request already met by hand disappears. Runs with every dispatch.
 function logistics.trim_freighter_requests(entity)
+  local depot = request_depot(entity)
   local total, capacity, coming = freighter_total(entity)
-  if coming == 0 or total <= capacity then
+  if coming == 0 then
+    depot.freighter_target = nil
     return
   end
-  local keep = math.max(0, coming - (total - capacity))
+  local limit = math.min(capacity, depot.freighter_target or capacity)
+  if total <= limit then
+    return
+  end
+  local keep = math.max(0, coming - (total - limit))
   logistics.cancel_freighter_requests(entity)
   if keep > 0 then
     logistics.request_freighters(entity, keep)
@@ -1289,6 +1300,7 @@ end
 -- freighters (in the slot, out and coming), as an insert plan into the chest: the ghost asks for
 -- them, robots or a player bring them, and they move into the slot.
 local REQUEST_TAG = "jatz_request"
+local FREIGHTERS_TAG = "jatz_freighters"
 logistics.request_tag = REQUEST_TAG
 
 function logistics.setup_blueprint(blueprint, mapping)
@@ -1308,6 +1320,9 @@ function logistics.setup_blueprint(blueprint, mapping)
       local in_slot, out = logistics.freighter_counts(entity)
       local freighters = in_slot + out + logistics.requested_freighters(entity)
       if freighters > 0 then
+        -- The count as a tag too, so freighters put in by hand count towards it once built.
+        planned.tags = planned.tags or {}
+        planned.tags[FREIGHTERS_TAG] = freighters
         planned.items = {
           {
             id = { name = FREIGHTER, quality = QUALITY },
@@ -1360,9 +1375,17 @@ end
 -- A request depot built from a blueprint ghost takes its request from the ghost's tags (its
 -- freighters arrive through the ghost's insert plan).
 function logistics.apply_tags(entity, tags)
-  local request = tags and tags[REQUEST_TAG]
-  if request and request_depot(entity) then
+  local depot = tags and request_depot(entity)
+  if not depot then
+    return
+  end
+  local request = tags[REQUEST_TAG]
+  if request then
     logistics.set_request(entity, request.item, request.count)
+  end
+  -- The ghost's insert plan asks robots for the freighters; this is how many it is for.
+  if tags[FREIGHTERS_TAG] then
+    depot.freighter_target = tags[FREIGHTERS_TAG]
   end
 end
 
@@ -1389,9 +1412,11 @@ end
 
 -- Cancel a request depot's freighter requests (other requests on it stay). Returns how many.
 function logistics.cancel_freighter_requests(entity)
-  if not request_depot(entity) then
+  local depot = request_depot(entity)
+  if not depot then
     return 0
   end
+  depot.freighter_target = nil
   local proxies, requested = freighter_requests(entity)
   for _, proxy in ipairs(proxies) do
     local kept = {}

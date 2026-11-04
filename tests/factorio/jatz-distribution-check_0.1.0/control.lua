@@ -491,15 +491,26 @@ local function setup_deliveries(surface, result)
   local copied = revived and remote.call("jatz-distribution", "get_request", revived)
   result.built_request = copied and (copied.item .. " x" .. copied.count) or "none"
   result.built_freighters_requested = revived and remote.call("jatz-distribution", "requested_freighters", revived)
+  -- Then filled by hand: the ghost's request for them goes away.
+  remote.call("jatz-distribution", "add_freighters", revived, 3)
+  deliveries.built = revived
   holder.destroy()
   -- Copy and Paste settings asks robots for the freighters the destination lacks: with 1, to match 3.
   local pasted = depot(surface, "request", -46.5, -66.5, 1)
   result.matched = remote.call("jatz-distribution", "match_freighters", pasted, 3)
-  -- Freighters requested that no longer fit (the slot was filled by hand) are cancelled: 6
-  -- requested, then 7 put in, leaves room for 3.
+  -- Freighters put in by hand count towards what was requested; requests beyond it go: asked for
+  -- 6, given 7, nothing is left to request.
   deliveries.trimmed = depot(surface, "request", -36.5, -66.5, 0)
   remote.call("jatz-distribution", "request_freighters", deliveries.trimmed, 6)
   remote.call("jatz-distribution", "add_freighters", deliveries.trimmed, 7)
+  -- A pasted depot asking for 5 freighters, filled with 5 by hand: its request clears.
+  deliveries.filled = depot(surface, "request", -26.5, -66.5, 0)
+  remote.call("jatz-distribution", "match_freighters", deliveries.filled, 5)
+  remote.call("jatz-distribution", "add_freighters", deliveries.filled, 5)
+  -- Given only 2 by hand: it still asks for the other 3.
+  deliveries.partly = depot(surface, "request", -16.5, -66.5, 0)
+  remote.call("jatz-distribution", "match_freighters", deliveries.partly, 5)
+  remote.call("jatz-distribution", "add_freighters", deliveries.partly, 2)
   -- The freighter slot can't be overfilled through the remote interface: 7 more fill the stack of 10.
   result.add_beyond_limit = remote.call("jatz-distribution", "add_freighters", deliveries.dying, 20)
 
@@ -755,6 +766,9 @@ local function deliveries_finished(surface, tick, result)
   result.multi_freighters_home = remote.call("jatz-distribution", "freighter_counts", multi.request)
   result.no_trucks_status = status(deliveries.no_trucks)
   result.trimmed_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.trimmed)
+  result.filled_by_hand_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.filled)
+  result.partly_filled_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.partly)
+  result.built_filled_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.built)
   result.robots_delivered = deliveries.robots_delivered
   result.robots_removal_marked = deliveries.removal_started
   result.slot_after_removal = remote.call("jatz-distribution", "freighter_counts", deliveries.remote)
