@@ -29,6 +29,98 @@ defines = setmetatable({
     })
   end,
 })
+-- defines.relative_gui_type as Factorio 2.1 has it (runtime-api.json, api_version 6): a name it
+-- doesn't have (storage_tank_gui was removed in 2.1) is an error here, as it is in game, rather than
+-- a made-up value.
+local RELATIVE_GUI_TYPES = {
+  "accumulator_gui",
+  "achievement_gui",
+  "additional_entity_info_gui",
+  "admin_gui",
+  "agriculture_tower_gui",
+  "alerts_config_gui",
+  "arithmetic_combinator_gui",
+  "armor_gui",
+  "assembling_machine_gui",
+  "assembling_machine_select_recipe_gui",
+  "asteroid_collector_gui",
+  "beacon_gui",
+  "blueprint_book_gui",
+  "blueprint_library_gui",
+  "blueprint_setup_gui",
+  "boiler_gui",
+  "bonus_gui",
+  "burner_equipment_gui",
+  "car_gui",
+  "cargo_landing_pad_gui",
+  "constant_combinator_gui",
+  "container_gui",
+  "controller_gui",
+  "decider_combinator_gui",
+  "deconstruction_item_gui",
+  "display_panel_gui",
+  "electric_energy_interface_equipment_gui",
+  "electric_energy_interface_gui",
+  "electric_network_gui",
+  "entity_variations_gui",
+  "entity_with_energy_source_gui",
+  "equipment_grid_gui",
+  "furnace_gui",
+  "generic_on_off_entity_gui",
+  "ghost_picker_gui",
+  "global_electric_network_gui",
+  "heat_interface_gui",
+  "heat_pipe_gui",
+  "infinity_pipe_gui",
+  "inserter_gui",
+  "item_with_inventory_gui",
+  "lab_gui",
+  "lamp_gui",
+  "linked_container_gui",
+  "loader_gui",
+  "logistic_gui",
+  "market_gui",
+  "mining_drill_gui",
+  "other_player_gui",
+  "permissions_gui",
+  "pick_stop_gui",
+  "pipe_gui",
+  "power_switch_gui",
+  "production_gui",
+  "programmable_speaker_gui",
+  "proxy_container_gui",
+  "pump_gui",
+  "radar_gui",
+  "rail_signal_base_gui",
+  "reactor_gui",
+  "resource_entity_gui",
+  "roboport_gui",
+  "rocket_silo_gui",
+  "script_inventory_gui",
+  "selector_combinator_gui",
+  "server_config_gui",
+  "space_platform_hub_gui",
+  "spider_vehicle_gui",
+  "splitter_gui",
+  "standalone_character_gui",
+  "tile_variations_gui",
+  "tips_and_tricks_gui",
+  "train_gui",
+  "train_stop_gui",
+  "trains_gui",
+  "transport_belt_gui",
+  "turret_gui",
+  "upgrade_item_gui",
+  "wall_gui",
+}
+defines.relative_gui_type = setmetatable({}, {
+  __index = function(_, key)
+    error("FAILED: defines.relative_gui_type has no " .. tostring(key) .. " in Factorio 2.1", 2)
+  end,
+})
+for _, name in ipairs(RELATIVE_GUI_TYPES) do
+  rawset(defines.relative_gui_type, name, "relative_gui_type." .. name)
+end
 local nth = {}
 script = {
   on_event = function(event, handler)
@@ -821,11 +913,35 @@ do -- Liquid depots: the same panels, beside the storage tank window, choosing a
   check("a liquid request depot gets a truck chest", surface.created[#surface.created].name == "jatz-truck-chest")
   fire("on_gui_opened", { player_index = 12, entity = request })
   local frame = relative.jatz_request_frame
-  check("its panel is beside the storage tank window", frame.anchor.gui == "relative_gui_type.storage_tank_gui")
+  -- Factorio 2.1 has no storage_tank_gui (removed in 2.1): storage tanks open the pipe window.
+  check(
+    "its panel is beside the storage tank's window, a pipe window",
+    frame.anchor.gui == "relative_gui_type.pipe_gui"
+  )
   check("titled for a liquid request depot", frame.caption[1] == "jatz-gui.liquid-request-title")
   local inner = frame.children[1]
   local chooser = inner.request_row.jatz_request_item
   check("it chooses a fluid", chooser.elem_type == "fluid")
+  -- FluidPrototypeFilter's filters in the 2.1 API; anything else is an error when the panel opens.
+  local fluid_filters = {
+    hidden = true,
+    name = true,
+    subgroup = true,
+    ["default-temperature"] = true,
+    ["max-temperature"] = true,
+    ["heat-capacity"] = true,
+    ["fuel-value"] = true,
+    ["emissions-multiplier"] = true,
+    ["gas-temperature"] = true,
+  }
+  local valid, parameters_hidden = true, false
+  for _, filter in ipairs(chooser.elem_filters) do
+    valid = valid and fluid_filters[filter.filter] == true
+    parameters_hidden = parameters_hidden
+      or (filter.filter == "subgroup" and filter.subgroup == "parameters" and filter.invert)
+  end
+  check("with only filters fluids have", valid)
+  check("leaving out blueprint parameter fluids", parameters_hidden)
   check("with the request-from-buffers checkbox", inner.jatz_request_from_buffers ~= nil)
   check("and no priority", inner.priority_row == nil)
   check("and a freighter slot", inner.freighter_row and inner.freighter_row.jatz_request_freighters)

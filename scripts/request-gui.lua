@@ -3,7 +3,8 @@
 -- the item to keep in stock and how many, holds the depot's freighters, and shows what the depot is
 -- doing as a status light (hover it for the status in words). Buffer depots have the same panel,
 -- with a priority slider at the top; provider depots have a panel with only that slider. Liquid
--- depots have the same panels, for a fluid, beside their storage tank window. Changes apply as
+-- depots have the same panels, for a fluid, beside their storage tank window (a pipe window in
+-- Factorio 2.1). Changes apply as
 -- they are made. Factorio shows the panel only with these depots' windows.
 --
 -- The freighter slot works like an inventory slot: click with freighters in hand to put them in
@@ -39,6 +40,13 @@ for name in pairs(ROLES) do
   PANELLED_NAMES[#PANELLED_NAMES + 1] = name
 end
 table.sort(PANELLED_NAMES)
+-- What the chooser offers: no hidden items or fluids, and no blueprint parameters. Fluids have no
+-- "is-parameter" filter (FluidPrototypeFilter); parameter fluids are in the "parameters" subgroup.
+local ITEM_FILTERS = { { filter = "hidden", invert = true }, { filter = "is-parameter", invert = true, mode = "and" } }
+local FLUID_FILTERS = {
+  { filter = "hidden", invert = true },
+  { filter = "subgroup", subgroup = "parameters", invert = true, mode = "and" },
+}
 -- A new fluid request starts at this amount, as a new item request starts at one stack.
 local FLUID_START = 1000
 
@@ -153,8 +161,8 @@ local function open(player, entity)
     caption = { "jatz-gui." .. (LIQUID[entity.name] and "liquid-" or "") .. ROLES[entity.name] .. "-title" },
     direction = "vertical",
     anchor = {
-      gui = LIQUID[entity.name] and defines.relative_gui_type.storage_tank_gui
-        or defines.relative_gui_type.container_gui,
+      -- Factorio 2.1 dropped storage_tank_gui: storage tanks open the pipe window.
+      gui = LIQUID[entity.name] and defines.relative_gui_type.pipe_gui or defines.relative_gui_type.container_gui,
       position = defines.relative_gui_position.right,
       names = PANELLED_NAMES,
     },
@@ -178,7 +186,7 @@ local function open(player, entity)
     elem_type = LIQUID[entity.name] and "fluid" or "item",
     item = not LIQUID[entity.name] and request.item or nil,
     fluid = LIQUID[entity.name] and request.item or nil,
-    elem_filters = { { filter = "hidden", invert = true }, { filter = "is-parameter", invert = true, mode = "and" } },
+    elem_filters = LIQUID[entity.name] and FLUID_FILTERS or ITEM_FILTERS,
     tooltip = { LIQUID[entity.name] and "jatz-gui.request-fluid-tooltip" or "jatz-gui.request-item-tooltip" },
   })
   local count = row.add({
