@@ -362,33 +362,34 @@ do -- Every status the dispatcher can report has a status light, one of the game
   end
 end
 
-do -- A panel opened before an update that changed its layout is rebuilt, with its status light.
-  -- A minimal GUI: elements with children by name, add and destroy.
-  local function element(spec, parent)
-    local self = { children = {}, style = {}, parent = parent }
-    for key, value in pairs(spec or {}) do
-      self[key] = value
-    end
-    function self.add(child_spec)
-      local child = element(child_spec, self)
-      self.children[#self.children + 1] = child
-      if child.name then
-        self[child.name] = child
-      end
-      return child
-    end
-    function self.destroy()
-      for index, child in ipairs(parent.children) do
-        if child == self then
-          table.remove(parent.children, index)
-        end
-      end
-      if self.name then
-        parent[self.name] = nil
-      end
-    end
-    return self
+-- A minimal GUI: elements with children by name, add and destroy.
+local function element(spec, parent)
+  local self = { children = {}, style = {}, parent = parent }
+  for key, value in pairs(spec or {}) do
+    self[key] = value
   end
+  function self.add(child_spec)
+    local child = element(child_spec, self)
+    self.children[#self.children + 1] = child
+    if child.name then
+      self[child.name] = child
+    end
+    return child
+  end
+  function self.destroy()
+    for index, child in ipairs(parent.children) do
+      if child == self then
+        table.remove(parent.children, index)
+      end
+    end
+    if self.name then
+      parent[self.name] = nil
+    end
+  end
+  return self
+end
+
+do -- A panel opened before an update that changed its layout is rebuilt, with its status light.
   local entity = depot(70)
   entity.name = "jatz-request-depot"
   fire("on_built_entity", { entity = entity })
@@ -662,6 +663,109 @@ do -- "Request from buffer depots" survives a blueprint even with no item reques
   built.name = "jatz-request-depot"
   fire("on_robot_built_entity", { entity = built, tags = saved[1].tags })
   check("and restored on the depot built from it", logistics.get_from_buffers(built))
+end
+
+do -- The priority slider: provider depots get a panel with only it; buffer depots have it under
+  -- their request; request depots have none.
+  local logistics = require("scripts.logistics")
+  local relative = element()
+  local player = { index = 11, valid = true, gui = { relative = relative } }
+  game.get_player = function()
+    return player
+  end
+  -- Only this player's panel: the fake has one player for every index.
+  storage.request_gui = {}
+  local provider = depot(210)
+  fire("on_built_entity", { entity = provider })
+  fire("on_gui_opened", { player_index = 11, entity = provider })
+  local frame = relative.jatz_request_frame
+  local row = frame and frame.children[1].priority_row
+  check("a provider depot's window gets a panel", frame and frame.caption[1] == "jatz-gui.provider-title")
+  check("with only the priority slider", row and #frame.children[1].children == 1)
+  local slider = row.jatz_depot_priority
+  check(
+    "a slider from 1 to 10 in whole steps",
+    slider.type == "slider"
+      and slider.minimum_value == 1
+      and slider.maximum_value == 10
+      and slider.value_step == 1
+      and slider.discrete_values
+  )
+  check("showing the depot's priority", slider.slider_value == 5 and row.jatz_depot_priority_value.caption == "5")
+  slider.slider_value = 8
+  fire("on_gui_value_changed", { player_index = 11, element = slider })
+  check("moving it sets the priority", logistics.get_priority(provider) == 8)
+  check("and the number beside it", row.jatz_depot_priority_value.caption == "8")
+  logistics.set_priority(provider, 3)
+  nth[30]()
+  check("the open panel isn't rebuilt every refresh", relative.jatz_request_frame == frame)
+  check("but follows a priority changed elsewhere", slider.slider_value == 3)
+
+  player.get_main_inventory = function() end
+  local buffer = depot(220)
+  buffer.name = "jatz-buffer-depot"
+  fire("on_built_entity", { entity = buffer })
+  fire("on_gui_opened", { player_index = 11, entity = buffer })
+  local inner = relative.jatz_request_frame.children[1]
+  check("a buffer depot's panel has its request", inner.request_row and inner.request_row.jatz_request_status)
+  check("and a priority slider", inner.priority_row and inner.priority_row.jatz_depot_priority)
+  inner.priority_row.jatz_depot_priority.slider_value = 2
+  fire("on_gui_value_changed", { player_index = 11, element = inner.priority_row.jatz_depot_priority })
+  check("which sets the buffer depot's priority", logistics.get_priority(buffer) == 2)
+  nth[30]()
+  check("a buffer panel isn't rebuilt either", relative.jatz_request_frame.children[1] == inner)
+
+  local request = depot(230)
+  request.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = request })
+  fire("on_gui_opened", { player_index = 11, entity = request })
+  inner = relative.jatz_request_frame.children[1]
+  check("a request depot's panel has no priority", inner.request_row and not inner.priority_row)
+  nth[30]()
+  check("and isn't rebuilt for lacking one", relative.jatz_request_frame.children[1] == inner)
+end
+
+do -- Priority in blueprints: kept for provider and buffer depots, and restored when built.
+  local logistics = require("scripts.logistics")
+  local provider, plain, buffer = depot(240), depot(250), depot(260)
+  buffer.name = "jatz-buffer-depot"
+  for _, entity in ipairs({ provider, plain, buffer }) do
+    fire("on_built_entity", { entity = entity })
+  end
+  assert(logistics.set_priority(provider, 8) and logistics.set_priority(buffer, 2))
+  assert(logistics.set_request(buffer, "wood", 5))
+  local saved
+  local blueprint = {
+    valid = true,
+    object_name = "LuaItemStack",
+    valid_for_read = true,
+    is_blueprint = true,
+    get_blueprint_entities = function()
+      return {
+        { entity_number = 1, name = "jatz-provider-depot", position = { x = 0, y = 0 } },
+        { entity_number = 2, name = "jatz-provider-depot", position = { x = 4, y = 0 } },
+        { entity_number = 3, name = "jatz-buffer-depot", position = { x = 8, y = 0 } },
+      }
+    end,
+    set_blueprint_entities = function(entities)
+      saved = entities
+    end,
+  }
+  logistics.setup_blueprint(blueprint, { provider, plain, buffer })
+  check("a provider's priority is kept", saved[1].tags and saved[1].tags.jatz_priority == 8)
+  check("one left at 5 has no tags", saved[2].tags == nil)
+  check(
+    "a buffer depot keeps its priority and its request",
+    saved[3].tags and saved[3].tags.jatz_priority == 2 and saved[3].tags.jatz_request.item == "wood"
+  )
+  local built, built_buffer, odd = depot(270), depot(280), depot(290)
+  built_buffer.name = "jatz-buffer-depot"
+  fire("on_robot_built_entity", { entity = built, tags = saved[1].tags })
+  fire("on_robot_built_entity", { entity = built_buffer, tags = saved[3].tags })
+  fire("on_robot_built_entity", { entity = odd, tags = { jatz_priority = "high" } })
+  check("a provider built from it gets the priority", logistics.get_priority(built) == 8)
+  check("so does a buffer depot", logistics.get_priority(built_buffer) == 2)
+  check("a malformed priority tag is ignored", logistics.get_priority(odd) == 5)
 end
 
 print("all control event checks passed")

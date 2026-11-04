@@ -5,10 +5,10 @@
 -- freighters that fetch it: up to 100 of them, in its freighter slot. Once a second, while what it
 -- still needs (less what freighters are already bringing) is more than nothing, it sends one more
 -- freighter, so freighters leave one after another rather than all at once. Each goes from the
--- depot's loading zone to the provider depot nearest by road that has some of the item not
--- already promised to another freighter, and promises itself what it will load there (up to ten
--- stacks); once one provider's stock is all promised, the next freighter goes to the next
--- provider, so a large request is gathered from several. Road distance comes from the engine's pathfinder (surface.request_path, with the
+-- depot's loading zone to the provider depot with the highest priority (1 to 10), nearest by road
+-- among equals, that has some of the item not already promised to another freighter, and promises
+-- itself what it will load there (up to ten stacks); once one provider's stock is all promised,
+-- the next freighter goes to the next provider, so a large request is gathered from several. Road distance comes from the engine's pathfinder (surface.request_path, with the
 -- freighter's own size and collision mask), asked one provider at a time in order of straight-line
 -- distance until no remaining provider could be nearer by road than the best found; a provider
 -- with no road route at all is skipped for a while, and no freighter is sent towards it. The freighter
@@ -37,6 +37,11 @@ local REQUEST = "jatz-request-depot"
 -- freighters only fetch from provider depots; request depots set to "request from buffer depots"
 -- also fetch from them.
 local BUFFER = "jatz-buffer-depot"
+-- Provider and buffer depots have a priority from 1 to 10: a requesting depot fetches from the
+-- highest it can reach by road, nearest first among equals. Priority only orders depots of one
+-- kind: buffer depots (for request depots that request from them) still all come before providers.
+local PRIORITY_MIN, PRIORITY_MAX, PRIORITY_DEFAULT = 1, 10, 5
+logistics.priority = { min = PRIORITY_MIN, max = PRIORITY_MAX, default = PRIORITY_DEFAULT }
 local ROAD = "jatz-road"
 -- The road a depot lays under its own loading zone (scripts/depot-road.lua).
 local DEPOT_ROAD = "jatz-depot-road"
@@ -243,6 +248,19 @@ function logistics.get_request(entity)
   return depot and depot.request and { item = depot.request.item, count = depot.request.count }
 end
 
+-- Drop the searches under way for a requesting depot, which were for the old set or order of depots
+-- to fetch from: its own, and those of its freighters being rerouted. Both start afresh at the next
+-- once-a-second check.
+local function restart_depot_searches(depot)
+  cancel_search(depot)
+  for id in pairs(trips_of(depot)) do
+    local trip = storage.trips[id]
+    if trip and trip.searching then
+      trip.search_token, trip.searching = nil, game.tick - SEARCH_TIMEOUT
+    end
+  end
+end
+
 -- Whether a request depot also fetches from buffer depots, like a requester chest's "request from
 -- buffer chests". Only request depots have it: buffer depots fetch from providers alone.
 function logistics.get_from_buffers(entity)
@@ -259,16 +277,20 @@ function logistics.set_from_buffers(entity, from_buffers)
   depot.from_buffers = from_buffers == true
   depot.cooldowns = {}
   depot.retry_at = 0
-  -- Searches under way were for the old set of depots: the depot's own, and those of its
-  -- freighters being rerouted (dropped now and started afresh at the next once-a-second check).
-  cancel_search(depot)
-  for id in pairs(trips_of(depot)) do
-    local trip = storage.trips[id]
-    if trip and trip.searching then
-      trip.search_token, trip.searching = nil, game.tick - SEARCH_TIMEOUT
-    end
-  end
+  restart_depot_searches(depot)
   return true
+end
+
+-- The depots with a priority: provider and buffer depots, which freighters fetch from.
+local function supplying_depot(entity)
+  local depot = entity and entity.valid and entity.unit_number and storage.depots[entity.unit_number]
+  return depot and (depot.role == "provider" or depot.role == "buffer") and depot or nil
+end
+
+-- A provider or buffer depot's priority (1 to 10, PRIORITY_DEFAULT if never set), or nil.
+function logistics.get_priority(entity)
+  local depot = supplying_depot(entity)
+  return depot and (depot.priority or PRIORITY_DEFAULT) or nil
 end
 
 -- Set a request depot's request, or clear it with a nil item. Returns false, changing nothing,
@@ -327,8 +349,8 @@ end
 -- Every depot that could serve a requesting depot: provider depots, and for a request depot set to
 -- request from buffer depots, buffer depots too, which come first however near a provider is (a
 -- buffer depot itself fetches only from providers); on the same surface and force, with road at
--- its loading zone, holding the item and not on cooldown for this request; within each rank,
--- nearest first in a straight line from `from`. Also says whether one was skipped for cooldown.
+-- its loading zone, holding the item and not on cooldown for this request. Within each kind, the
+-- highest priority first; within each priority, nearest first in a straight line from `from`. Also says whether one was skipped for cooldown.
 local function candidates(depot, from)
   local entity = depot.entity
   local found, waiting = {}, false
@@ -352,8 +374,11 @@ local function candidates(depot, from)
             id = unit_number,
             position = position,
             distance = math.sqrt(dx * dx + dy * dy),
-            -- With "request from buffer depots", buffer depots come first, nearer providers or not.
-            rank = provider.role == "buffer" and 0 or 1,
+            -- With "request from buffer depots", buffer depots come first, nearer providers or not,
+            -- whatever either's priority; then the higher priority, nearer or not.
+            rank = (provider.role == "buffer" and 0 or PRIORITY_MAX)
+              + PRIORITY_MAX
+              - (provider.priority or PRIORITY_DEFAULT),
           }
         end
       end
@@ -837,6 +862,24 @@ local function restart_searches(surface_index)
   end
 end
 
+-- Set a provider or buffer depot's priority, a whole number from 1 to 10 (others are rounded and
+-- clamped). Returns false, changing nothing, for anything else or a priority that isn't a number.
+function logistics.set_priority(entity, priority)
+  local depot = supplying_depot(entity)
+  priority = tonumber(priority)
+  if not depot or not priority or priority ~= priority then
+    return false
+  end
+  priority = math.max(PRIORITY_MIN, math.min(PRIORITY_MAX, math.floor(priority + 0.5)))
+  if priority == (depot.priority or PRIORITY_DEFAULT) then
+    return true
+  end
+  depot.priority = priority
+  -- Searches under way on its surface ranked depots by the old priority.
+  restart_searches(depot.entity.surface_index)
+  return true
+end
+
 -- Road was laid (`added`) or removed or covered (`removed`) on a surface.
 function logistics.on_roads_changed(surface_index, added, removed)
   if not storage.depots then
@@ -978,8 +1021,8 @@ function logistics.on_script_path_request_finished(event)
   end
   -- A road is never shorter than the straight line, so stop at the first candidate that is
   -- already farther away in a straight line than the best road found. Candidates come in ranks
-  -- (buffer depots before providers, for a request depot that requests from buffers): once one of
-  -- a rank has a road, the next rank isn't asked at all.
+  -- (buffer depots before providers, for a request depot that requests from buffers; then by
+  -- priority): once one of a rank has a road, the next rank isn't asked at all.
   search.index = search.index + 1
   local next_candidate = search.candidates[search.index]
   if
@@ -1078,12 +1121,16 @@ function logistics.on_object_destroyed(event)
   end
 end
 
--- Copy one request depot's request onto another (Copy and Paste settings, and clones).
+-- Copy one depot's settings onto another (Copy and Paste settings, and clones): a request depot's
+-- request, and a provider or buffer depot's priority.
 local function copy_request(source, destination)
   if request_depot(source) and request_depot(destination) then
     local request = logistics.get_request(source)
     logistics.set_request(destination, request and request.item, request and request.count)
     logistics.set_from_buffers(destination, logistics.get_from_buffers(source))
+  end
+  if supplying_depot(source) and supplying_depot(destination) then
+    logistics.set_priority(destination, logistics.get_priority(source))
   end
 end
 
@@ -1488,6 +1535,7 @@ end
 local REQUEST_TAG = "jatz_request"
 local FREIGHTERS_TAG = "jatz_freighters"
 local FROM_BUFFERS_TAG = "jatz_from_buffers"
+local PRIORITY_TAG = "jatz_priority"
 logistics.request_tag = REQUEST_TAG
 
 function logistics.setup_blueprint(blueprint, mapping)
@@ -1499,10 +1547,21 @@ function logistics.setup_blueprint(blueprint, mapping)
   for _, planned in pairs(entities) do
     local entity = mapping[planned.entity_number]
     local depot = entity and entity.valid and request_depot(entity)
+    local supplying = entity and entity.valid and supplying_depot(entity)
+    if supplying and not depot then
+      -- A provider depot: its priority, unless it's the one every new depot has.
+      planned.tags = planned.tags or {}
+      planned.tags[PRIORITY_TAG] = supplying.priority ~= PRIORITY_DEFAULT and supplying.priority or nil
+      if next(planned.tags) == nil then
+        planned.tags = nil
+      end
+      changed = changed + 1
+    end
     if depot then
       -- The depot's settings as they are now, replacing any from setting this blueprint up
       -- before; other tags and other items' insert plans are kept.
       planned.tags = planned.tags or {}
+      planned.tags[PRIORITY_TAG] = supplying and supplying.priority ~= PRIORITY_DEFAULT and supplying.priority or nil
       planned.tags[REQUEST_TAG] = depot.request and { item = depot.request.item, count = depot.request.count } or nil
       -- Its own tag, so it's kept even with no item requested.
       planned.tags[FROM_BUFFERS_TAG] = depot.from_buffers or nil
@@ -1576,14 +1635,21 @@ function logistics.on_player_setup_blueprint(event)
   end
 end
 
--- A request depot built from a blueprint ghost takes its request from the ghost's tags (its
--- freighters arrive through the ghost's insert plan).
+-- A depot built from a blueprint ghost takes its settings from the ghost's tags: a provider or
+-- buffer depot its priority, a request or buffer depot its request (its freighters arrive through
+-- the ghost's insert plan).
 function logistics.apply_tags(entity, tags)
-  local depot = tags and request_depot(entity)
-  if not depot then
+  if not tags then
     return
   end
   -- Tags can come from anywhere (other mods, edited blueprint strings): use them only if well formed.
+  if type(tags[PRIORITY_TAG]) == "number" then
+    logistics.set_priority(entity, tags[PRIORITY_TAG])
+  end
+  local depot = request_depot(entity)
+  if not depot then
+    return
+  end
   local request = tags[REQUEST_TAG]
   if type(request) == "table" and type(request.item) == "string" and type(request.count) == "number" then
     logistics.set_request(entity, request.item, request.count)
@@ -1833,6 +1899,9 @@ function logistics.register()
     get_status = logistics.get_status,
     set_from_buffers = logistics.set_from_buffers,
     get_from_buffers = logistics.get_from_buffers,
+    -- A provider or buffer depot's priority, 1 to 10.
+    set_priority = logistics.set_priority,
+    get_priority = logistics.get_priority,
     -- Give a request depot new freighters, within its slot's limit (counting freighters out);
     -- returns how many it took. And read its freighter counts.
     add_freighters = function(entity, count)

@@ -1,8 +1,9 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- The request panel: attached to the right of a request depot's inventory window, it chooses
 -- the item to keep in stock and how many, holds the depot's freighters, and shows what the depot is
--- doing as a status light (hover it for the status in words). Changes apply as they are made. Factorio shows the panel only with request depots'
--- windows.
+-- doing as a status light (hover it for the status in words). Buffer depots have the same panel,
+-- with a priority slider too; provider depots have a panel with only that slider. Changes apply as
+-- they are made. Factorio shows the panel only with these depots' windows.
 --
 -- The freighter slot works like an inventory slot: click with freighters in hand to put them in
 -- (right-click: one), click with an empty hand to take them all (right-click: half), and
@@ -24,13 +25,26 @@ local SLOT = "jatz_request_freighters"
 local SLOT_LABEL = "jatz_request_freighters_label"
 local REQUEST = "jatz-request-depot"
 local FROM_BUFFERS = "jatz_request_from_buffers"
--- The depots with this panel: request and buffer depots.
+local PRIORITY = "jatz_depot_priority"
+local PRIORITY_VALUE = "jatz_depot_priority_value"
+local PROVIDER = "jatz-provider-depot"
+-- The depots with a request, freighters and status: request and buffer depots.
 local REQUESTING = logistics.requesting
-local REQUESTING_NAMES = {}
+-- The depots with this panel: those, and provider depots (priority only).
+local PANELLED = { [PROVIDER] = true }
+local PANELLED_NAMES = {}
 for name in pairs(REQUESTING) do
-  REQUESTING_NAMES[#REQUESTING_NAMES + 1] = name
+  PANELLED[name] = true
 end
-table.sort(REQUESTING_NAMES)
+for name in pairs(PANELLED) do
+  PANELLED_NAMES[#PANELLED_NAMES + 1] = name
+end
+table.sort(PANELLED_NAMES)
+local TITLES = {
+  [REQUEST] = "jatz-gui.request-title",
+  ["jatz-buffer-depot"] = "jatz-gui.buffer-title",
+  [PROVIDER] = "jatz-gui.provider-title",
+}
 
 local function frame_of(player)
   return player.gui.relative[FRAME]
@@ -97,24 +111,63 @@ local function show_freighters(inner, entity)
   row[SLOT_LABEL].tooltip = breakdown
 end
 
+-- Show a provider or buffer depot's priority on its slider and beside it.
+local function show_priority(inner, entity)
+  local row = inner.priority_row
+  local priority = row and logistics.get_priority(entity)
+  if priority then
+    row[PRIORITY].slider_value = priority
+    row[PRIORITY_VALUE].caption = tostring(priority)
+  end
+end
+
+-- The priority slider of provider and buffer depots: 1 to 10, higher first.
+local function add_priority(inner, entity)
+  local range = logistics.priority
+  local row = inner.add({ type = "flow", name = "priority_row", direction = "horizontal" })
+  row.style.vertical_align = "center"
+  local tooltip = { "jatz-gui.priority-tooltip-" .. logistics.depots[entity.name] }
+  row.add({ type = "label", caption = { "jatz-gui.priority" }, tooltip = tooltip })
+  row.add({
+    type = "slider",
+    name = PRIORITY,
+    minimum_value = range.min,
+    maximum_value = range.max,
+    value = logistics.get_priority(entity) or range.default,
+    value_step = 1,
+    discrete_values = true,
+    tooltip = tooltip,
+  })
+  local value = row.add({ type = "label", name = PRIORITY_VALUE, tooltip = tooltip })
+  value.style.minimal_width = 20
+  value.style.horizontal_align = "right"
+  show_priority(inner, entity)
+end
+
 local function open(player, entity)
   local old = frame_of(player)
   if old then
     old.destroy()
   end
-  local request = logistics.get_request(entity) or {}
   local frame = player.gui.relative.add({
     type = "frame",
     name = FRAME,
-    caption = { entity.name == REQUEST and "jatz-gui.request-title" or "jatz-gui.buffer-title" },
+    caption = { TITLES[entity.name] },
     direction = "vertical",
     anchor = {
       gui = defines.relative_gui_type.container_gui,
       position = defines.relative_gui_position.right,
-      names = REQUESTING_NAMES,
+      names = PANELLED_NAMES,
     },
   })
   local inner = frame.add({ type = "frame", style = "inside_shallow_frame_with_padding", direction = "vertical" })
+  storage.request_gui = storage.request_gui or {}
+  storage.request_gui[player.index] = entity
+  if not REQUESTING[entity.name] then
+    add_priority(inner, entity)
+    return
+  end
+  local request = logistics.get_request(entity) or {}
   local row = inner.add({ type = "flow", name = "request_row", direction = "horizontal" })
   row.style.vertical_align = "center"
   row.add({
@@ -146,6 +199,8 @@ local function open(player, entity)
       caption = { "jatz-gui.request-from-buffers" },
       tooltip = { "jatz-gui.request-from-buffers-tooltip" },
     })
+  else
+    add_priority(inner, entity)
   end
   local freighters = inner.add({ type = "flow", name = "freighter_row", direction = "horizontal" })
   freighters.style.vertical_align = "center"
@@ -161,13 +216,12 @@ local function open(player, entity)
   })
   freighters.add({ type = "label", name = SLOT_LABEL })
   show_freighters(inner, entity)
-  storage.request_gui = storage.request_gui or {}
-  storage.request_gui[player.index] = entity
 end
 
-local function opened_depot(player)
+-- The depot whose panel a player has open: any, or (`requesting`) only a request or buffer depot.
+local function opened_depot(player, requesting)
   local entity = storage.request_gui and storage.request_gui[player.index]
-  return entity and entity.valid and entity or nil
+  return entity and entity.valid and (not requesting or REQUESTING[entity.name]) and entity or nil
 end
 
 -- Freighters a player carries: in their inventory and in their cursor. Moving them between the
@@ -190,7 +244,9 @@ end
 
 local function on_gui_opened(event)
   local entity = event.entity
-  if entity and entity.valid and REQUESTING[entity.name] then
+  if entity and entity.valid and entity.name == PROVIDER then
+    open(game.get_player(event.player_index), entity)
+  elseif entity and entity.valid and REQUESTING[entity.name] then
     local player = game.get_player(event.player_index)
     -- Before the player can put any freighters in by hand: note what the depot's freighter
     -- requests are for, so a request Factorio drops when partly filled is asked again.
@@ -334,10 +390,10 @@ function request_gui.on_player_main_inventory_changed(event)
     return
   end
   local selected = player.selected
-  local entity = opened_depot(player) or (selected and selected.valid and REQUESTING[selected.name] and selected)
+  local entity = opened_depot(player, true) or (selected and selected.valid and REQUESTING[selected.name] and selected)
   if entity then
     local taken = logistics.take_in_freighters(entity, pockets, before - now)
-    local frame = taken > 0 and opened_depot(player) == entity and frame_of(player)
+    local frame = taken > 0 and opened_depot(player, true) == entity and frame_of(player)
     if frame then
       show_freighters(frame.children[1], entity)
     end
@@ -361,7 +417,18 @@ local function on_gui_checked_state_changed(event)
   end
 end
 
--- Keep the status line current while the window is open.
+local function on_gui_value_changed(event)
+  if event.element.name ~= PRIORITY then
+    return
+  end
+  local entity = opened_depot(game.get_player(event.player_index))
+  if entity then
+    logistics.set_priority(entity, event.element.slider_value)
+    show_priority(event.element.parent.parent, entity)
+  end
+end
+
+-- Keep the status line and priority current while the window is open.
 local function refresh()
   if not storage.request_gui then
     return
@@ -370,15 +437,21 @@ local function refresh()
     local player = game.get_player(index)
     local frame = player and player.valid and frame_of(player)
     if frame and entity.valid then
-      local row = frame.children[1].request_row
-      if not (row and row[STATUS]) then
+      local inner = frame.children[1]
+      local requesting = REQUESTING[entity.name]
+      if
+        not (inner.priority_row or entity.name == REQUEST)
+        or (requesting and not (inner.request_row and inner.request_row[STATUS]))
+      then
         -- A panel opened before an update that changed its layout: build it again.
         open(player, entity)
-        frame = frame_of(player)
-        row = frame.children[1].request_row
+        inner = frame_of(player).children[1]
       end
-      show_status(row[STATUS], entity)
-      show_freighters(frame.children[1], entity)
+      if requesting then
+        show_status(inner.request_row[STATUS], entity)
+        show_freighters(inner, entity)
+      end
+      show_priority(inner, entity)
     else
       storage.request_gui[index] = nil
     end
@@ -392,6 +465,7 @@ function request_gui.register()
   script.on_event(defines.events.on_gui_text_changed, on_gui_text_changed)
   script.on_event(defines.events.on_gui_click, on_gui_click)
   script.on_event(defines.events.on_gui_checked_state_changed, on_gui_checked_state_changed)
+  script.on_event(defines.events.on_gui_value_changed, on_gui_value_changed)
   script.on_event(defines.events.on_gui_hover, on_gui_hover)
   script.on_event(defines.events.on_gui_leave, on_gui_leave)
   script.on_event("jatz-pipette", on_pipette)
