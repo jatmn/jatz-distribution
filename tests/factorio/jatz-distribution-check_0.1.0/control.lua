@@ -446,7 +446,7 @@ local function setup_deliveries(surface, result)
   -- Freighters put in a request depot's chest move into its slot.
   deliveries.absorbing = depot(surface, "request", -12.5, 28.5, 0)
   assert(deliveries.absorbing.insert({ name = FREIGHTER, count = 2 }) == 2, "cannot put freighters in the chest")
-  -- A request depot destroyed leaves its freighters on the ground: a full slot (3, plus 7 added),
+  -- A request depot destroyed leaves its freighters on the ground: a full slot (3, plus 97 added),
   -- and 2 put in its chest that can't move into the full slot.
   deliveries.dying = depot(surface, "request", 60.5, 28.5, 3)
   assert(deliveries.dying.insert({ name = FREIGHTER, count = 2 }) == 2, "cannot put freighters in the chest")
@@ -462,15 +462,119 @@ local function setup_deliveries(surface, result)
   local remote_depot = depot(surface, "request", 30.5, 28.5, 1)
   deliveries.remote = remote_depot
   result.requested = remote.call("jatz-distribution", "request_freighters", remote_depot, 4)
-  -- Never more than fits: 1 in the slot and 4 requested leave room for 5 of a stack of 10.
-  result.requested_beyond_limit = remote.call("jatz-distribution", "request_freighters", remote_depot, 20)
+  -- Never more than fits: 1 in the slot and 4 requested leave room for 95 of the 100 a depot holds.
+  result.requested_beyond_limit = remote.call("jatz-distribution", "request_freighters", remote_depot, 200)
   result.cancelled = remote.call("jatz-distribution", "cancel_freighter_requests", remote_depot)
   result.requested_again = remote.call("jatz-distribution", "request_freighters", remote_depot, 3)
   -- Taking freighters away is cancellable too: the one marked goes back into the slot.
   result.removal_marked = remote.call("jatz-distribution", "remove_freighters", remote_depot, 1)
   result.removal_cancelled = remote.call("jatz-distribution", "cancel_freighter_removal", remote_depot)
-  -- The freighter slot can't be overfilled through the remote interface: 7 more fill the stack of 10.
-  result.add_beyond_limit = remote.call("jatz-distribution", "add_freighters", deliveries.dying, 20)
+  -- Blueprints (and copy and paste) keep a request depot's request and freighters. Out of the
+  -- roboport's reach, so requests stay pending to be counted. A depot asking for 7 wood, with 3
+  -- freighters, is blueprinted, and a ghost from the blueprint is built.
+  local source = depot(surface, "request", -66.5, -66.5, 3)
+  assert(remote.call("jatz-distribution", "set_request", source, "wood", 7), "wood: refused")
+  local holder = game.create_inventory(1)
+  holder.insert({ name = "blueprint" })
+  local blueprint = holder[1]
+  local mapping =
+    blueprint.create_blueprint({ surface = surface, force = "player", area = { { -68, -68 }, { -65, -65 } } })
+  result.blueprinted = remote.call("jatz-distribution", "setup_blueprint", blueprint, mapping)
+  local planned = blueprint.get_blueprint_entities()[1]
+  result.blueprint_tag = planned.tags and planned.tags.jatz_request and planned.tags.jatz_request.item
+  result.blueprint_freighters = planned.items and planned.items[1].items.in_inventory[1].count
+  local revived
+  for _, ghost in pairs(blueprint.build_blueprint({ surface = surface, force = "player", position = { -56.5, -66.5 } })) do
+    local _, entity = ghost.revive({ raise_revive = true })
+    revived = entity or revived
+  end
+  local copied = revived and remote.call("jatz-distribution", "get_request", revived)
+  result.built_request = copied and (copied.item .. " x" .. copied.count) or "none"
+  result.built_freighters_requested = revived and remote.call("jatz-distribution", "requested_freighters", revived)
+  -- Then filled by hand: the ghost's request for them goes away.
+  remote.call("jatz-distribution", "add_freighters", revived, 3)
+  deliveries.built = revived
+  -- Setting a blueprint up keeps other items' insert plans, stays off their chest stacks, and drops
+  -- settings the depot no longer has. Here the blueprint already asks for 5 iron plates in chest
+  -- stack 0.
+  local entities = blueprint.get_blueprint_entities()
+  entities[1].items = {
+    {
+      id = { name = "iron-plate", quality = "normal" },
+      items = { in_inventory = { { inventory = defines.inventory.chest, stack = 0, count = 5 } } },
+    },
+  }
+  blueprint.set_blueprint_entities(entities)
+  remote.call("jatz-distribution", "setup_blueprint", blueprint, mapping)
+  local kept_iron, freighter_stack = false, nil
+  for _, plan in pairs(blueprint.get_blueprint_entities()[1].items) do
+    local name = type(plan.id.name) == "string" and plan.id.name or plan.id.name.name
+    kept_iron = kept_iron or name == "iron-plate"
+    if name == FREIGHTER then
+      freighter_stack = plan.items.in_inventory[1].stack
+    end
+  end
+  result.blueprint_kept_other_items = kept_iron
+  result.blueprint_freighters_first_stack = freighter_stack
+  -- The same blueprint set up from a depot with no request and no freighters drops both.
+  local plain = depot(surface, "request", -66.5, -56.5, 0)
+  remote.call("jatz-distribution", "setup_blueprint", blueprint, { [1] = plain })
+  local stale = blueprint.get_blueprint_entities()[1]
+  result.blueprint_cleared = not (stale.tags and (stale.tags.jatz_request or stale.tags.jatz_freighters))
+  -- Freighters still in the source's chest count: 2 in its slot and 3 in its chest make 5.
+  local chested = depot(surface, "request", -56.5, -56.5, 2)
+  chested.insert({ name = FREIGHTER, count = 3 })
+  remote.call("jatz-distribution", "setup_blueprint", blueprint, { [1] = chested })
+  local counted = blueprint.get_blueprint_entities()[1]
+  result.blueprint_counts_chest = counted.tags and counted.tags.jatz_freighters
+  holder.destroy()
+  -- A ghost with malformed tags (from an edited blueprint string, say) still builds, untouched.
+  local odd = surface.create_entity({
+    name = "entity-ghost",
+    inner_name = "jatz-request-depot",
+    position = { -46.5, -56.5 },
+    force = "player",
+    tags = { jatz_request = 5, jatz_freighters = "many" },
+  })
+  local _, odd_depot = odd.revive({ raise_revive = true })
+  result.malformed_tags_built = odd_depot ~= nil and remote.call("jatz-distribution", "get_request", odd_depot) == nil
+  -- Pasting onto a depot asking for more than the source has: requests beyond it are cancelled.
+  local over = depot(surface, "request", -36.5, -56.5, 0)
+  remote.call("jatz-distribution", "request_freighters", over, 8)
+  remote.call("jatz-distribution", "match_freighters", over, 3)
+  result.matched_down = remote.call("jatz-distribution", "requested_freighters", over)
+  -- Freighters put in by hand cancel requests at once, before robots could bring more.
+  local at_once = depot(surface, "request", -26.5, -56.5, 0)
+  remote.call("jatz-distribution", "request_freighters", at_once, 5)
+  remote.call("jatz-distribution", "add_freighters", at_once, 5)
+  result.trimmed_at_once = remote.call("jatz-distribution", "requested_freighters", at_once)
+  -- Copy and Paste settings asks robots for the freighters the destination lacks: with 1, to match 3.
+  local pasted = depot(surface, "request", -46.5, -66.5, 1)
+  result.matched = remote.call("jatz-distribution", "match_freighters", pasted, 3)
+  -- Freighters put in by hand count towards what was requested; requests beyond it go: asked for
+  -- 6, given 7, nothing is left to request.
+  deliveries.trimmed = depot(surface, "request", -36.5, -66.5, 0)
+  remote.call("jatz-distribution", "request_freighters", deliveries.trimmed, 6)
+  remote.call("jatz-distribution", "add_freighters", deliveries.trimmed, 7)
+  -- A pasted depot asking for 5 freighters, filled with 5 by hand: its request clears.
+  deliveries.filled = depot(surface, "request", -26.5, -66.5, 0)
+  remote.call("jatz-distribution", "match_freighters", deliveries.filled, 5)
+  remote.call("jatz-distribution", "add_freighters", deliveries.filled, 5)
+  -- Given only 2 by hand: it still asks for the other 3.
+  deliveries.partly = depot(surface, "request", -16.5, -66.5, 0)
+  remote.call("jatz-distribution", "match_freighters", deliveries.partly, 5)
+  remote.call("jatz-distribution", "add_freighters", deliveries.partly, 2)
+  -- The freighter slot can't be overfilled through the remote interface: 97 more fill it to 100.
+  result.add_beyond_limit = remote.call("jatz-distribution", "add_freighters", deliveries.dying, 200)
+  -- More than a stack (freighters stack to 10) is requested and taken away a stack at a time: 25
+  -- requested spread over 3 chest stacks; 25 in the slot all marked for robots to take away.
+  local many = depot(surface, "request", -6.5, -66.5, 0)
+  result.requested_many = remote.call("jatz-distribution", "request_freighters", many, 25)
+  result.requested_many_pending = remote.call("jatz-distribution", "requested_freighters", many)
+  local leaving = depot(surface, "request", 6.5, -66.5, 25)
+  result.removing_many = remote.call("jatz-distribution", "remove_freighters", leaving, 25)
+  result.removing_many_pending = select(2, remote.call("jatz-distribution", "requested_freighters", leaving))
+  result.removing_many_left = remote.call("jatz-distribution", "freighter_counts", leaving)
 
   -- Requests are validated, and clones keep them.
   local original = depot(surface, "request", 60.5, 45.5)
@@ -723,6 +827,10 @@ local function deliveries_finished(surface, tick, result)
   result.multi_from_far = 40 - count(multi.far, "iron-stick")
   result.multi_freighters_home = remote.call("jatz-distribution", "freighter_counts", multi.request)
   result.no_trucks_status = status(deliveries.no_trucks)
+  result.trimmed_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.trimmed)
+  result.filled_by_hand_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.filled)
+  result.partly_filled_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.partly)
+  result.built_filled_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.built)
   result.robots_delivered = deliveries.robots_delivered
   result.robots_removal_marked = deliveries.removal_started
   result.slot_after_removal = remote.call("jatz-distribution", "freighter_counts", deliveries.remote)
@@ -730,7 +838,7 @@ local function deliveries_finished(surface, tick, result)
   result.absorbed = remote.call("jatz-distribution", "freighter_counts", deliveries.absorbing)
   result.absorbed_left_in_chest = count(deliveries.absorbing, FREIGHTER)
   -- Request depots removed by script or destroyed leave their freighters where they stood: the
-  -- orphaned one (2 in its slot, 1 out) and the dying one (10 in its slot, 2 in its chest).
+  -- orphaned one (2 in its slot, 1 out) and the dying one (100 in its slot, 2 in its chest).
   result.orphaned_freighters_dropped = on_ground(surface, { { 60, 18 }, { 66, 24 } })
   result.destroyed_freighters_dropped = on_ground(surface, { { 57, 25 }, { 64, 32 } })
   -- No cargo was left on the ground anywhere.

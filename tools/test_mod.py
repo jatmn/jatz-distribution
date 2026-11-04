@@ -66,12 +66,14 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # freighters put in the chest go to the slot; removed depots leave theirs behind.
             'multi_freighters_sent': 2, 'multi_received': 60, 'multi_from_near': 30, 'multi_from_far': 30,
             'multi_freighters_home': 5, 'no_trucks_status': 'no-trucks', 'absorbed': 2, 'absorbed_left_in_chest': 0,
-            'orphaned_freighters_dropped': 3, 'destroyed_freighters_dropped': 12,
-            # A slot holding 3 takes 7 more (its stack of 10), however many are asked for.
-            'add_beyond_limit': 7,
+            'orphaned_freighters_dropped': 3, 'destroyed_freighters_dropped': 102,
+            # A slot holding 3 takes 97 more (a depot holds 100), however many are asked for; more
+            # than a stack (10) is requested and taken away a stack at a time.
+            'add_beyond_limit': 97, 'requested_many': 25, 'requested_many_pending': 25, 'removing_many': 25,
+            'removing_many_pending': 25, 'removing_many_left': 0,
             # Freighters requested (as from remote view) within the slot's limit, cancelled and
             # requested again; construction robots bring the 3 from storage into the slot.
-            'requested': 4, 'requested_beyond_limit': 5, 'cancelled': 9, 'requested_again': 3,
+            'requested': 4, 'requested_beyond_limit': 95, 'cancelled': 99, 'requested_again': 3,
             'robots_delivered': 4,
             # Then 2 taken away again by robots (as by a right-click in remote view): 2 stay in
             # the slot, storage is back to 4. A removal marked and cancelled at the start put its
@@ -79,7 +81,21 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             'removal_marked': 1, 'removal_cancelled': 1, 'robots_removal_marked': 2, 'slot_after_removal': 2,
             'storage_after_removal': 4,
             # The request panel's status light: the game's four status indicator sprites exist.
-            'status_lights': 4}
+            'status_lights': 4,
+            # Blueprints keep a request depot's request (tag) and freighters (insert plan): the
+            # ghost built from one asks for 7 wood and has robots bring 3 freighters. Copy and Paste
+            # settings has robots bring what the destination lacks (1 -> 3). Freighters put in by
+            # hand count towards what was requested: requests beyond it go (6 asked, 7 put in ->
+            # 0; 5 asked, 5 put in -> 0; 5 asked, 2 put in -> 3; the blueprint's 3, put in -> 0).
+            'blueprinted': 1, 'blueprint_tag': 'wood', 'blueprint_freighters': 3, 'built_request': 'wood x7',
+            'built_freighters_requested': 3, 'matched': 2, 'trimmed_requests': 0, 'filled_by_hand_requests': 0,
+            'partly_filled_requests': 3, 'built_filled_requests': 0,
+            # Blueprint setup keeps other items' plans and their chest stacks, drops settings the
+            # depot no longer has, counts freighters still in the chest; malformed tags build
+            # harmlessly; pasting a smaller count cancels the excess requests; filling by hand
+            # trims at once.
+            'blueprint_kept_other_items': True, 'blueprint_freighters_first_stack': 1, 'blueprint_cleared': True,
+            'blueprint_counts_chest': 5, 'malformed_tags_built': True, 'matched_down': 3, 'trimmed_at_once': 0}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 

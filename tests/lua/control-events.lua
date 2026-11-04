@@ -42,7 +42,7 @@ script = {
   register_on_object_destroyed = function() end,
 }
 remote = { add_interface = function() end }
-prototypes = { decorative = {}, item = {}, entity = {} }
+prototypes = { decorative = {}, item = { ["jatz-quinityn-freighter"] = { stack_size = 10 } }, entity = {} }
 
 local tiles = {}
 local function cell(x, y)
@@ -98,6 +98,7 @@ local function script_inventory()
     is_empty = function()
       return slot.count == 0
     end,
+    resize = function() end,
   }
 end
 game = { tick = 0, surfaces = { [1] = surface }, create_inventory = script_inventory }
@@ -118,11 +119,16 @@ local function depot(x)
     surface_index = 1,
     force = "player",
     get_inventory = function()
-      return {
+      -- An empty chest of 48 stacks.
+      local chest = {
         get_item_count = function()
           return 0
         end,
       }
+      for index = 1, 48 do
+        chest[index] = { valid_for_read = false }
+      end
+      return chest
     end,
   }
 end
@@ -323,7 +329,7 @@ do -- The freighter slot's clicks: ghosts request freighters from robots; remote
   player.pipette = function(id, _, allow_ghost)
     picked = { id = id, ghost = allow_ghost }
   end
-  prototypes.item[freighter] = { name = freighter }
+  prototypes.item[freighter] = { name = freighter, stack_size = 10 }
   fire("on_gui_hover", { element = element, player_index = 1 })
   fire("jatz-pipette", { player_index = 1 })
   check(
@@ -400,6 +406,76 @@ do -- The line beside the freighter slot: how many are out on the road, always.
   -- Exactly the one localised "N out", nothing before or after it.
   check("none out still says so", #none == 2 and none[1] == "jatz-gui.freighters-out" and none[2] == 0)
   check("three out", #some == 2 and some[1] == "jatz-gui.freighters-out" and some[2] == 3)
+end
+
+do -- Copy and paste: settings, blueprints, and depots built from blueprint ghosts.
+  local logistics = require("scripts.logistics")
+  prototypes.item.wood = { name = "wood" }
+  local function request_depot(x)
+    local entity = depot(x)
+    entity.name = "jatz-request-depot"
+    fire("on_built_entity", { entity = entity })
+    return entity
+  end
+  local source, destination = request_depot(80), request_depot(90)
+  assert(logistics.set_request(source, "wood", 7))
+  storage.depots[source.unit_number].trucks = script_inventory()
+  storage.depots[source.unit_number].trucks[1].count = 3
+
+  -- Copy and Paste settings: the request, and robots asked for the source's 3 freighters.
+  local matched
+  logistics.match_freighters = function(entity, total)
+    matched = { entity = entity, total = total }
+    return total
+  end
+  fire("on_entity_settings_pasted", { source = source, destination = destination, player_index = 1 })
+  local copied = logistics.get_request(destination)
+  check("pasting settings copies the request", copied and copied.item == "wood" and copied.count == 7)
+  check("and asks for the source's freighters", matched and matched.entity == destination and matched.total == 3)
+
+  -- A blueprint of the source keeps its request (tag) and freighters (insert plan).
+  local saved
+  local blueprint = {
+    valid = true,
+    object_name = "LuaItemStack",
+    valid_for_read = true,
+    is_blueprint = true,
+    get_blueprint_entities = function()
+      return { { entity_number = 1, name = "jatz-request-depot", position = { x = 0, y = 0 } } }
+    end,
+    set_blueprint_entities = function(entities)
+      saved = entities
+    end,
+  }
+  game.get_player = function()
+    return { index = 3 }
+  end
+  fire("on_player_setup_blueprint", {
+    player_index = 3,
+    stack = blueprint,
+    mapping = {
+      valid = true,
+      get = function()
+        return { [1] = source }
+      end,
+    },
+  })
+  local planned = saved and saved[1]
+  check("a blueprint keeps the request as a tag", planned and planned.tags.jatz_request.item == "wood")
+  check(
+    "and the freighters as an insert plan into the chest",
+    planned.items[1].id.name == "jatz-quinityn-freighter" and planned.items[1].items.in_inventory[1].count == 3
+  )
+
+  -- A depot built from that ghost takes the request from its tags.
+  local built = depot(100)
+  built.name = "jatz-request-depot"
+  fire("on_robot_built_entity", { entity = built, tags = planned.tags })
+  local request = logistics.get_request(built)
+  check(
+    "a depot built from a blueprint ghost has its request",
+    request and request.item == "wood" and request.count == 7
+  )
 end
 
 print("all control event checks passed")

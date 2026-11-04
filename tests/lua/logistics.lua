@@ -451,14 +451,14 @@ do -- A freighter goes back into the slot after its trip; one destroyed on the w
   check("a freighter destroyed on the way is lost", in_slot == 1 and out == 0)
 end
 
-do -- The slot holds one stack, counting freighters out.
+do -- The slot holds 100 freighters, counting freighters out.
   local logistics = reset()
-  local request = supplied(logistics, 8)
+  local request = supplied(logistics, 98)
   logistics.on_tick()
   answer(logistics, 1, "route")
   local hand = stack("jatz-quinityn-freighter", 10)
   check(
-    "a full slot (7 here, 1 out) takes only 2 more",
+    "a nearly full slot (97 here, 1 out) takes only 2 more",
     logistics.put_freighters(request, hand) == 2 and hand.count == 8
   )
   check("other items are refused", logistics.put_freighters(request, stack("a", 5)) == 0)

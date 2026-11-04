@@ -27,6 +27,8 @@ local function on_built(event)
       settle(entity)
     end
     logistics.add(entity)
+    -- Built from a blueprint ghost: the request it was blueprinted with.
+    logistics.apply_tags(entity, event.tags)
     logistics.on_depot_changed(entity)
   end
 end
@@ -89,6 +91,8 @@ end
 script.on_event(defines.events.on_player_rotated_entity, on_turned)
 script.on_event(defines.events.on_player_flipped_entity, on_turned)
 script.on_event(defines.events.on_entity_settings_pasted, logistics.on_entity_settings_pasted)
+-- Blueprints and copy and paste of request depots keep their request and freighters.
+script.on_event(defines.events.on_player_setup_blueprint, logistics.on_player_setup_blueprint)
 
 -- A depot removed by any means takes the road it laid with it.
 script.on_event(defines.events.on_object_destroyed, function(event)
