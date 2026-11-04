@@ -145,13 +145,21 @@ local function opened_depot(player)
   return entity and entity.valid and entity or nil
 end
 
+-- Freighters a player carries: in their inventory and in their cursor. Moving them between the
+-- two changes nothing; putting some into a depot (from either) makes it smaller.
+local function carried(player)
+  local pockets = player.get_main_inventory()
+  local cursor = player.cursor_stack
+  local held = cursor and cursor.valid_for_read and cursor.name == logistics.freighter and cursor.count or 0
+  return (pockets and logistics.count_freighters(pockets) or 0) + held, pockets
+end
+
 -- Count a player's freighters before they can move any: when they open a request depot or point
 -- at one.
 local function count_pockets(player)
-  local pockets = player and player.get_main_inventory()
-  if pockets then
+  if player then
     storage.pocket_freighters = storage.pocket_freighters or {}
-    storage.pocket_freighters[player.index] = logistics.count_freighters(pockets)
+    storage.pocket_freighters[player.index] = carried(player)
   end
 end
 
@@ -274,10 +282,10 @@ local function on_pipette(event)
   end
 end
 
--- Freighters a player moves out of their inventory into a request depot (ctrl+click moves all of
--- them, shift+click a stack, in the depot's window; ctrl+click on the depot itself in the world) go
--- straight into its freighter slot, filling it; the rest go back to the player. How many they
--- moved is how many fewer freighters their inventory holds than when it last changed. The depot is
+-- Freighters a player moves into a request depot (ctrl+click moves all of them, shift+click a
+-- stack, in the depot's window; ctrl+click on the depot itself in the world; placed from the
+-- cursor) go straight into its freighter slot, filling it; the rest go back to the player. How many
+-- they moved is how many fewer freighters they carry (inventory and cursor) than last counted. The depot is
 -- the one whose window is open, or the one the player points at (ctrl+click in the world).
 -- Registered in control.lua.
 function request_gui.on_selected_entity_changed(event)
@@ -290,12 +298,11 @@ end
 
 function request_gui.on_player_main_inventory_changed(event)
   local player = game.get_player(event.player_index)
-  local pockets = player and player.get_main_inventory()
-  if not pockets then
+  if not player then
     return
   end
   storage.pocket_freighters = storage.pocket_freighters or {}
-  local now = logistics.count_freighters(pockets)
+  local now, pockets = carried(player)
   local before = storage.pocket_freighters[event.player_index]
   storage.pocket_freighters[event.player_index] = now
   if not before or now >= before then
@@ -311,8 +318,13 @@ function request_gui.on_player_main_inventory_changed(event)
     end
   end
   -- Freighters given back changed the inventory again; count from here.
-  storage.pocket_freighters[event.player_index] = logistics.count_freighters(pockets)
+  storage.pocket_freighters[event.player_index] = carried(player)
 end
+
+-- A freighter placed from the cursor into a request depot's chest (onto the ghost of a requested
+-- freighter, say) goes to its freighter slot at once too, so the chest slot shows the rest of the
+-- request again straight away rather than at the next dispatch.
+request_gui.on_player_cursor_stack_changed = request_gui.on_player_main_inventory_changed
 
 -- Keep the status line current while the window is open.
 local function refresh()

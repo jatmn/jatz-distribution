@@ -564,4 +564,45 @@ do -- /jatz-freighters describes the open request depot's freighter slot.
   check("it prints the open depot's freighter slot", printed == "described")
 end
 
+do -- A freighter placed from the cursor into an open request depot goes to its slot at once;
+  -- moving freighters between inventory and cursor takes nothing in.
+  local logistics = require("scripts.logistics")
+  local taken
+  logistics.take_in_freighters = function(entity, _, moved)
+    taken = { entity = entity, moved = moved }
+    return moved, 0
+  end
+  local entity = depot(130)
+  entity.name = "jatz-request-depot"
+  local pockets, in_pockets = {}, 5
+  logistics.count_freighters = function(inventory_)
+    return inventory_ == pockets and in_pockets or 0
+  end
+  local cursor = { valid_for_read = false }
+  local player = {
+    index = 6,
+    valid = true,
+    gui = { relative = {} },
+    cursor_stack = cursor,
+    get_main_inventory = function()
+      return pockets
+    end,
+  }
+  game.get_player = function()
+    return player
+  end
+  storage.request_gui = { [6] = entity }
+  storage.pocket_freighters = { [6] = 5 }
+  -- Picked up into the cursor: still carried.
+  in_pockets, taken = 0, nil
+  cursor.valid_for_read, cursor.name, cursor.count = true, "jatz-quinityn-freighter", 5
+  fire("on_player_main_inventory_changed", { player_index = 6 })
+  fire("on_player_cursor_stack_changed", { player_index = 6 })
+  check("moving freighters from inventory to cursor takes nothing in", taken == nil)
+  -- One placed into the depot's chest from the cursor.
+  cursor.count = 4
+  fire("on_player_cursor_stack_changed", { player_index = 6 })
+  check("one placed from the cursor goes to the slot at once", taken and taken.entity == entity and taken.moved == 1)
+end
+
 print("all control event checks passed")

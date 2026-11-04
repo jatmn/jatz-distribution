@@ -168,6 +168,7 @@ request_gui.register()
 -- freighter slot (scripts/request-gui.lua).
 script.on_event(defines.events.on_player_main_inventory_changed, request_gui.on_player_main_inventory_changed)
 script.on_event(defines.events.on_selected_entity_changed, request_gui.on_selected_entity_changed)
+script.on_event(defines.events.on_player_cursor_stack_changed, request_gui.on_player_cursor_stack_changed)
 
 local function setup()
   logistics.init()
