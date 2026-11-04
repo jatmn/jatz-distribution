@@ -60,7 +60,24 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             'depot_road_laid': 'jatz-depot-road', 'depot_road_hides': 'grass-1', 'connected_by_depot_roads': 5,
             'concrete_restored': 'concrete', 'grass_restored': 'grass-1', 'road_kept_on_build': 'jatz-road',
             'road_kept_on_removal': 'jatz-road', 'covered_kept': 'stone-path', 'water_left': 'water',
-            'shared_kept': 'jatz-depot-road', 'shared_restored': 'concrete'}
+            'shared_kept': 'jatz-depot-road', 'shared_restored': 'concrete',
+            # Request depots send their own freighters: as many as needed, one after another, from
+            # more than one provider, all back in the slot after; none without freighters;
+            # freighters put in the chest go to the slot; removed depots leave theirs behind.
+            'multi_freighters_sent': 2, 'multi_received': 60, 'multi_from_near': 30, 'multi_from_far': 30,
+            'multi_freighters_home': 5, 'no_trucks_status': 'no-trucks', 'absorbed': 2, 'absorbed_left_in_chest': 0,
+            'orphaned_freighters_dropped': 3, 'destroyed_freighters_dropped': 12,
+            # A slot holding 3 takes 7 more (its stack of 10), however many are asked for.
+            'add_beyond_limit': 7,
+            # Freighters requested (as from remote view) within the slot's limit, cancelled and
+            # requested again; construction robots bring the 3 from storage into the slot.
+            'requested': 4, 'requested_beyond_limit': 5, 'cancelled': 9, 'requested_again': 3,
+            'robots_delivered': 4,
+            # Then 2 taken away again by robots (as by a right-click in remote view): 2 stay in
+            # the slot, storage is back to 4. A removal marked and cancelled at the start put its
+            # freighter back.
+            'removal_marked': 1, 'removal_cancelled': 1, 'robots_removal_marked': 2, 'slot_after_removal': 2,
+            'storage_after_removal': 4}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 

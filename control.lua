@@ -72,6 +72,20 @@ script.on_event(defines.events.on_entity_cloned, function(event)
     end
   end
 end, clone_filters)
+-- A request depot mined by a player, robot or platform hands its freighters (in its slot and out
+-- on trips) to the miner; the mining buffer goes to their inventory.
+for _, event in ipairs({
+  defines.events.on_player_mined_entity,
+  defines.events.on_robot_mined_entity,
+  defines.events.on_space_platform_mined_entity,
+}) do
+  script.on_event(event, logistics.on_depot_mined, { { filter = "name", name = "jatz-request-depot" } })
+end
+-- One about to be destroyed (died, or removed by a script that says so) leaves all its freighters,
+-- including any still in its chest, where it stands.
+for _, event in ipairs({ defines.events.on_entity_died, defines.events.script_raised_destroy }) do
+  script.on_event(event, logistics.on_depot_destroyed, { { filter = "name", name = "jatz-request-depot" } })
+end
 script.on_event(defines.events.on_player_rotated_entity, on_turned)
 script.on_event(defines.events.on_player_flipped_entity, on_turned)
 script.on_event(defines.events.on_entity_settings_pasted, logistics.on_entity_settings_pasted)

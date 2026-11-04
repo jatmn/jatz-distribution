@@ -209,4 +209,114 @@ do -- Another mod's script sets a tile over the depot's road: it stays when the 
   check("a tile a script set over depot road stays", cell(40, 2).name == "refined-concrete")
 end
 
+do -- A request depot mined by a player, robot or platform hands its freighters to the miner.
+  for _, event in ipairs({ "on_player_mined_entity", "on_robot_mined_entity", "on_space_platform_mined_entity" }) do
+    local entity = depot(50)
+    entity.name = "jatz-request-depot"
+    fire("on_built_entity", { entity = entity })
+    local slot = { name = "jatz-quinityn-freighter", count = 4, valid_for_read = true }
+    function slot.clear()
+      slot.count, slot.valid_for_read = 0, false
+    end
+    storage.depots[entity.unit_number].trucks = { valid = true, [1] = slot, destroy = function() end }
+    local received = 0
+    local buffer = {
+      insert = function(stack)
+        received = received + stack.count
+        return stack.count
+      end,
+    }
+    fire(event, { entity = entity, buffer = buffer })
+    check(event .. " hands the freighters to the miner", received == 4 and not slot.valid_for_read)
+    removed(entity)
+  end
+end
+
+do -- The freighter slot's clicks: ghosts request freighters from robots; remote view moves nothing.
+  local logistics = require("scripts.logistics")
+  local calls = {}
+  local removing = 0
+  logistics.requested_freighters = function()
+    return 0, removing
+  end
+  for _, name in ipairs({
+    "request_freighters",
+    "cancel_freighter_requests",
+    "put_freighters",
+    "take_freighters",
+    "remove_freighters",
+    "cancel_freighter_removal",
+  }) do
+    logistics[name] = function(_, a, b)
+      calls[#calls + 1] = { name = name, a = a, b = b }
+      return 0
+    end
+  end
+  local entity = depot(60)
+  entity.name = "jatz-request-depot"
+  local player = { index = 1 }
+  game.get_player = function()
+    return player
+  end
+  storage.request_gui = { [1] = entity }
+  local inner = {}
+  local element = { name = "jatz_request_freighters", parent = { parent = inner } }
+  local function click(controller, ghost, held, button)
+    calls = {}
+    player.controller_type = controller
+    player.cursor_ghost = ghost and { name = { name = ghost } } or nil
+    player.cursor_stack = held and { valid_for_read = true, name = held, count = 5 } or { valid_for_read = false }
+    player.get_main_inventory = function()
+      return {}
+    end
+    fire("on_gui_click", {
+      element = element,
+      player_index = 1,
+      button = button or defines.mouse_button_type.left,
+      shift = false,
+    })
+    return calls[1] or {}
+  end
+  local remote_view, character = defines.controllers.remote, defines.controllers.character
+  local freighter = "jatz-quinityn-freighter"
+  local call = click(remote_view, freighter)
+  check(
+    "remote view: a freighter ghost asks robots to fill the slot",
+    call.name == "request_freighters" and call.a == nil
+  )
+  call = click(remote_view, freighter, nil, defines.mouse_button_type.right)
+  check("remote view: right-click asks for one more", call.name == "request_freighters" and call.a == 1)
+  call = click(remote_view)
+  check("remote view: an empty cursor cancels the requests", call.name == "cancel_freighter_requests")
+  call = click(remote_view, nil, freighter)
+  check("remote view: nothing is moved by hand from afar", call.name == nil)
+  call = click(character, freighter)
+  check("in person, a freighter ghost requests too", call.name == "request_freighters")
+  call = click(character, nil, freighter)
+  check("in person, freighters in hand go into the slot", call.name == "put_freighters")
+  local right = defines.mouse_button_type.right
+  call = click(remote_view, nil, nil, right)
+  check("remote view: right-click has robots take the freighters away", call.name == "remove_freighters")
+  removing = 3
+  call = click(remote_view, nil, nil, right)
+  check("remote view: right-click again cancels that", call.name == "cancel_freighter_removal")
+
+  -- Pipette over the slot picks up a freighter (or its ghost); elsewhere it's the game's own.
+  local picked
+  player.pipette = function(id, _, allow_ghost)
+    picked = { id = id, ghost = allow_ghost }
+  end
+  prototypes.item[freighter] = { name = freighter }
+  fire("on_gui_hover", { element = element, player_index = 1 })
+  fire("jatz-pipette", { player_index = 1 })
+  check(
+    "pipette over the slot picks up a freighter, or its ghost",
+    picked and picked.id.name == freighter and picked.ghost
+  )
+  picked = nil
+  fire("on_gui_leave", { element = element, player_index = 1 })
+  fire("jatz-pipette", { player_index = 1 })
+  check("pipette elsewhere is left to the game", picked == nil)
+end
+
 print("all control event checks passed")
