@@ -2,11 +2,11 @@
 
 **Automated freight trucks, depots and roads for Factorio.**
 
-Jat'z Distribution is a depot-based logistics system for Factorio. Place provider depots where goods are made, request depots where they are needed, connect them with road, and armored freighters will carry the cargo between them. Buffer depots hold stock in transit, fuel depots keep the fleet running, and liquid depots handle fluids.
+Jat'z Distribution is a depot-based logistics system for Factorio. Place provider depots where goods are made, request depots where they are needed, connect them with road, and armored freighters will carry the cargo between them. Buffer depots keep stock near where it is needed, fuel depots keep the fleet running, and liquid depots handle fluids.
 
 The gameplay is inspired by Klonan's [Transport Drones](https://mods.factorio.com/mod/Transport_Drones), with heavy freight trucks in place of drones. The rugged industrial look draws on the Yuoki mod family.
 
-> **Status: in development.** Everything can be crafted for free. Freighters already deliver items from provider to request depots over road. Buffer, fuel and liquid depots can be placed, but don't take part in deliveries yet. The mod is not yet available on the Factorio Mod Portal.
+> **Status: in development.** Everything can be crafted for free. Freighters already deliver items from provider and buffer depots to request depots over road. Fuel and liquid depots can be placed, but don't take part in deliveries yet. The mod is not yet available on the Factorio Mod Portal.
 
 ![The Quinityn freighter parked beside Provider, Request, Buffer and Fuel depots in Factorio](docs/images/depots-with-freighter.jpg)
 
@@ -33,7 +33,7 @@ Every depot sits on a 3×3 footprint and can be placed facing north, east, south
 | --- | --- | --- |
 | **Provider** | Sends dry cargo out to freighters | ![Provider depot in four rotations](assets/depots/provider/3/previews/four-directions.png) |
 | **Request** | Receives dry cargo from freighters | ![Request depot in four rotations](assets/depots/request/3/previews/four-directions.png) |
-| **Buffer** | Holds cargo in transit, with two loading lanes | ![Buffer depot in four rotations](assets/depots/buffer/3/previews/four-directions.png) |
+| **Buffer** | Keeps a stock of an item, fetched from providers; request depots can take from it | ![Buffer depot in four rotations](assets/depots/buffer/3/previews/four-directions.png) |
 | **Fuel** | Refuels freighters with solid or liquid fuel | ![Fuel depot in four rotations](assets/depots/fuel/3/previews/four-directions.png) |
 | **Liquid Provider** | Sends fluids out to freighters | ![Liquid Provider depot in four rotations](assets/depots/liquid-provider/3/previews/four-directions.png) |
 | **Liquid Request** | Receives fluids from freighters | ![Liquid Request depot in four rotations](assets/depots/liquid-request/3/previews/four-directions.png) |
@@ -43,7 +43,7 @@ Every depot sits on a 3×3 footprint and can be placed facing north, east, south
 
 Freighters drive only on **road**, a placeable floor tile in our crafting row. Every depot lays a road tile under its loading zone sign (the marked tile) when you build it, so you only need to bring road up to it: road that ends one tile away connects. Removing the depot takes that tile away again and puts back the ground that was there, unless you laid your own road or tile over it. Lay road between a provider depot's loading zone and a request depot's. Then open the request depot, choose an item and an amount to keep in stock, and put freighters in its freighter slot (up to 100; freighters dropped into the depot's chest move there too). The line beside the slot shows how many freighters are out, and a green "+N" while N more are on their way to the depot. Ctrl+click freighters in your inventory while the depot is open (or ctrl+click the depot) to fill the slot; any that don't fit stay with you. Other items ctrl+clicked in go into the depot's inventory as usual. In remote view, or with no freighters on you, click the slot with a freighter ghost in your cursor and construction robots bring them (right-click: one more; an empty-cursor click in remote view cancels). In remote view, right-click the slot to have robots take its freighters away (right-click again to cancel). Pipette (Q) over the slot picks up a freighter, or its ghost. Within a second, a freighter sets off along the road to the provider depot that has the item and is nearest **by road**: a provider just across a wall of concrete loses to one farther away with a shorter road. It loads what the depot still needs and has room for, up to ten stacks, and drives back to unload and park in the slot again. If one freighter isn't enough, or one provider doesn't have it all, the depot sends more, one a second, each to the next provider nearest by road that still has some. Mining a request depot gives you back all its freighters, including those out on deliveries. Items keep their data on the way: armor keeps its equipment, food how far it has spoiled. If no road route exists, no freighter is sent; the request depot shows why and tries another provider. A status light beside the request shows at a glance whether it can be filled: green (stocked, or on its way), yellow (the item is out there but something is in the way: no road route, no freighters, no room), red (no provider has it) or grey (nothing requested); hover it for the details. As soon as you lay road or build or turn a depot, it tries again; otherwise it tries again after 10 seconds. Removing road re-routes freighters straight away: if the road is cut behind a loaded freighter, it takes the cargo back to the provider. If a provider is removed while a freighter is heading there, the freighter goes on to the next one.
 
-Freighters need no fuel yet, and a freighter destroyed on the road is lost. Requests are for normal-quality items. Copy and Paste settings, copy and paste, and blueprints carry a request depot's request and its number of freighters: the new depot asks for the freighters (as a ghost request), and construction robots, or you by hand, bring them. Cloned depots keep their request. Buildings can still be placed on road; freighters drive through them.
+Freighters need no fuel yet, and a freighter destroyed on the road is lost. **Buffer depots** work like request depots, with their own request and freighters, but fetch only from provider depots and send nothing anywhere. A request depot with **Request from buffer depots** ticked (like a requester chest's "request from buffer chests") takes from buffer depots first, even when a provider is nearer, and from providers only for what no buffer can supply. Requests are for normal-quality items. Copy and Paste settings, copy and paste, and blueprints carry a request depot's request and its number of freighters: the new depot asks for the freighters (as a ghost request), and construction robots, or you by hand, bring them. Cloned depots keep their request. Buildings can still be placed on road; freighters drive through them.
 
 By default, provider depots are red, request depots blue, buffer depots green and the fuel depot amber. Every color can be changed.
 
@@ -55,7 +55,8 @@ More screenshots: [every depot in every rotation](docs/images/depots-all-rotatio
 - [x] Seven depot designs, tested in game with all rotations and pipe connections
 - [x] Playable mod: the freighter and all depots can be crafted (free for now), placed, rotated and driven
 - [x] Roads, and freighter deliveries from provider to request depots that stay on road
-- [ ] Buffer and liquid depots in deliveries, requests in blueprints, a freighter fleet in place of free freighters
+- [x] Buffer depots, and request depots that request from them first
+- [ ] Liquid depots in deliveries, and fuel for freighters
 - [ ] Solid and liquid refueling at the Fuel depot
 - [x] In-game icons for the freighter and every depot, made from the game sprites
 - [ ] Freighter wheel animation and final freighter stats

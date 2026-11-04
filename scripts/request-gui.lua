@@ -23,6 +23,14 @@ local STATUS = "jatz_request_status"
 local SLOT = "jatz_request_freighters"
 local SLOT_LABEL = "jatz_request_freighters_label"
 local REQUEST = "jatz-request-depot"
+local FROM_BUFFERS = "jatz_request_from_buffers"
+-- The depots with this panel: request and buffer depots.
+local REQUESTING = logistics.requesting
+local REQUESTING_NAMES = {}
+for name in pairs(REQUESTING) do
+  REQUESTING_NAMES[#REQUESTING_NAMES + 1] = name
+end
+table.sort(REQUESTING_NAMES)
 
 local function frame_of(player)
   return player.gui.relative[FRAME]
@@ -98,12 +106,12 @@ local function open(player, entity)
   local frame = player.gui.relative.add({
     type = "frame",
     name = FRAME,
-    caption = { "jatz-gui.request-title" },
+    caption = { entity.name == REQUEST and "jatz-gui.request-title" or "jatz-gui.buffer-title" },
     direction = "vertical",
     anchor = {
       gui = defines.relative_gui_type.container_gui,
       position = defines.relative_gui_position.right,
-      names = { REQUEST },
+      names = REQUESTING_NAMES,
     },
   })
   local inner = frame.add({ type = "frame", style = "inside_shallow_frame_with_padding", direction = "vertical" })
@@ -129,6 +137,16 @@ local function open(player, entity)
   })
   count.style.width = 80
   show_status(row.add({ type = "sprite", name = STATUS, style = "status_image" }), entity)
+  if entity.name == REQUEST then
+    -- Like a requester chest's "request from buffer chests".
+    inner.add({
+      type = "checkbox",
+      name = FROM_BUFFERS,
+      state = logistics.get_from_buffers(entity),
+      caption = { "jatz-gui.request-from-buffers" },
+      tooltip = { "jatz-gui.request-from-buffers-tooltip" },
+    })
+  end
   local freighters = inner.add({ type = "flow", name = "freighter_row", direction = "horizontal" })
   freighters.style.vertical_align = "center"
   freighters.add({
@@ -172,7 +190,7 @@ end
 
 local function on_gui_opened(event)
   local entity = event.entity
-  if entity and entity.valid and entity.name == REQUEST then
+  if entity and entity.valid and REQUESTING[entity.name] then
     local player = game.get_player(event.player_index)
     -- Before the player can put any freighters in by hand: note what the depot's freighter
     -- requests are for, so a request Factorio drops when partly filled is asked again.
@@ -298,7 +316,7 @@ end
 function request_gui.on_selected_entity_changed(event)
   local player = game.get_player(event.player_index)
   local selected = player and player.selected
-  if selected and selected.valid and selected.name == REQUEST then
+  if selected and selected.valid and REQUESTING[selected.name] then
     count_pockets(player)
   end
 end
@@ -316,7 +334,7 @@ function request_gui.on_player_main_inventory_changed(event)
     return
   end
   local selected = player.selected
-  local entity = opened_depot(player) or (selected and selected.valid and selected.name == REQUEST and selected)
+  local entity = opened_depot(player) or (selected and selected.valid and REQUESTING[selected.name] and selected)
   if entity then
     local taken = logistics.take_in_freighters(entity, pockets, before - now)
     local frame = taken > 0 and opened_depot(player) == entity and frame_of(player)
@@ -332,6 +350,16 @@ end
 -- freighter, say) goes to its freighter slot at once too, so the chest slot shows the rest of the
 -- request again straight away rather than at the next dispatch.
 request_gui.on_player_cursor_stack_changed = request_gui.on_player_main_inventory_changed
+
+local function on_gui_checked_state_changed(event)
+  if event.element.name ~= FROM_BUFFERS then
+    return
+  end
+  local entity = opened_depot(game.get_player(event.player_index))
+  if entity then
+    logistics.set_from_buffers(entity, event.element.state)
+  end
+end
 
 -- Keep the status line current while the window is open.
 local function refresh()
@@ -363,6 +391,7 @@ function request_gui.register()
   script.on_event(defines.events.on_gui_elem_changed, on_gui_elem_changed)
   script.on_event(defines.events.on_gui_text_changed, on_gui_text_changed)
   script.on_event(defines.events.on_gui_click, on_gui_click)
+  script.on_event(defines.events.on_gui_checked_state_changed, on_gui_checked_state_changed)
   script.on_event(defines.events.on_gui_hover, on_gui_hover)
   script.on_event(defines.events.on_gui_leave, on_gui_leave)
   script.on_event("jatz-pipette", on_pipette)

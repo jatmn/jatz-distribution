@@ -114,6 +114,11 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             'untagged_requested_again': 4,
             # /jatz-freighters describes a depot's freighter slot from the real request proxies.
             'described': True,
+            # Buffer depots: a request depot set to request from them takes its 20 from a buffer 20
+            # tiles away rather than a provider 10 away; a buffer fills from the provider (15), not
+            # from the other buffer; buffers have no request-from-buffers setting.
+            'buffered_request': 20, 'buffer_taken_from': 20, 'buffer_filled': 15, 'buffer_provider_left': 85,
+            'buffer_has_no_from_buffers': False,
             # A hand-placed freighter lowers the same request proxy (5 -> 4) instead of replacing
             # it, so an open window keeps showing the request.
             'hand_fill_same_proxy': True, 'hand_fill_requested': 4}

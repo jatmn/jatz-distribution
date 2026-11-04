@@ -611,4 +611,57 @@ do -- A freighter placed from the cursor into an open request depot goes to its 
   check("one placed from the cursor goes to the slot at once", taken and taken.entity == entity and taken.moved == 1)
 end
 
+do -- The "request from buffer depots" checkbox, and Copy and Paste settings carrying it.
+  local logistics = require("scripts.logistics")
+  local function requesting(x, name)
+    local entity = depot(x)
+    entity.name = name
+    fire("on_built_entity", { entity = entity })
+    return entity
+  end
+  local source, destination = requesting(160, "jatz-request-depot"), requesting(170, "jatz-request-depot")
+  local player = { index = 10, valid = true }
+  game.get_player = function()
+    return player
+  end
+  storage.request_gui = { [10] = source }
+  fire("on_gui_checked_state_changed", {
+    player_index = 10,
+    element = { name = "jatz_request_from_buffers", state = true },
+  })
+  check("ticking the checkbox has the depot request from buffers", logistics.get_from_buffers(source))
+  fire("on_entity_settings_pasted", { source = source, destination = destination, player_index = 10 })
+  check("Copy and Paste settings carries it", logistics.get_from_buffers(destination))
+  local buffer = requesting(180, "jatz-buffer-depot")
+  check("buffer depots take requests too", logistics.set_request(buffer, "wood", 5))
+  check("but not the request-from-buffers setting", not logistics.set_from_buffers(buffer, true))
+end
+
+do -- "Request from buffer depots" survives a blueprint even with no item requested.
+  local logistics = require("scripts.logistics")
+  local entity = depot(190)
+  entity.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = entity })
+  assert(logistics.set_from_buffers(entity, true))
+  local saved
+  local blueprint = {
+    valid = true,
+    object_name = "LuaItemStack",
+    valid_for_read = true,
+    is_blueprint = true,
+    get_blueprint_entities = function()
+      return { { entity_number = 1, name = "jatz-request-depot", position = { x = 0, y = 0 } } }
+    end,
+    set_blueprint_entities = function(entities)
+      saved = entities
+    end,
+  }
+  logistics.setup_blueprint(blueprint, { [1] = entity })
+  check("the setting is kept with no item requested", saved[1].tags and saved[1].tags.jatz_from_buffers == true)
+  local built = depot(200)
+  built.name = "jatz-request-depot"
+  fire("on_robot_built_entity", { entity = built, tags = saved[1].tags })
+  check("and restored on the depot built from it", logistics.get_from_buffers(built))
+end
+
 print("all control event checks passed")
