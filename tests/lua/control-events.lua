@@ -209,4 +209,27 @@ do -- Another mod's script sets a tile over the depot's road: it stays when the 
   check("a tile a script set over depot road stays", cell(40, 2).name == "refined-concrete")
 end
 
+do -- A request depot mined by a player, robot or platform hands its freighters to the miner.
+  for _, event in ipairs({ "on_player_mined_entity", "on_robot_mined_entity", "on_space_platform_mined_entity" }) do
+    local entity = depot(50)
+    entity.name = "jatz-request-depot"
+    fire("on_built_entity", { entity = entity })
+    local slot = { name = "jatz-quinityn-freighter", count = 4, valid_for_read = true }
+    function slot.clear()
+      slot.count, slot.valid_for_read = 0, false
+    end
+    storage.depots[entity.unit_number].trucks = { valid = true, [1] = slot, destroy = function() end }
+    local received = 0
+    local buffer = {
+      insert = function(stack)
+        received = received + stack.count
+        return stack.count
+      end,
+    }
+    fire(event, { entity = entity, buffer = buffer })
+    check(event .. " hands the freighters to the miner", received == 4 and not slot.valid_for_read)
+    removed(entity)
+  end
+end
+
 print("all control event checks passed")
