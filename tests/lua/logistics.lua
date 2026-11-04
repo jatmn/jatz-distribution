@@ -556,4 +556,18 @@ do -- A buffer depot fetches only from providers, never from another buffer.
   check("a buffer depot asks only about providers", #requests == 1 and requests[1].goal.x == 40.5)
 end
 
+do -- Changing "request from buffer depots" restarts searches under way, freighters' included, and
+  -- applies at once, without waiting out a retry delay.
+  local logistics = reset()
+  local request, _, trip = rerouting(logistics)
+  local depot = storage.depots[request.unit_number]
+  depot.retry_at = game.tick + 600
+  assert(logistics.set_from_buffers(request, true))
+  check("a retry delay doesn't hold the change back", depot.retry_at == 0)
+  answer(logistics, 2, "route")
+  check("the freighter's old reroute search is dropped", trip.searching ~= nil and trip.provider ~= nil)
+  logistics.on_tick()
+  check("and started afresh at the next check", #requests == 3)
+end
+
 print("all logistics checks passed")

@@ -637,4 +637,31 @@ do -- The "request from buffer depots" checkbox, and Copy and Paste settings car
   check("but not the request-from-buffers setting", not logistics.set_from_buffers(buffer, true))
 end
 
+do -- "Request from buffer depots" survives a blueprint even with no item requested.
+  local logistics = require("scripts.logistics")
+  local entity = depot(190)
+  entity.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = entity })
+  assert(logistics.set_from_buffers(entity, true))
+  local saved
+  local blueprint = {
+    valid = true,
+    object_name = "LuaItemStack",
+    valid_for_read = true,
+    is_blueprint = true,
+    get_blueprint_entities = function()
+      return { { entity_number = 1, name = "jatz-request-depot", position = { x = 0, y = 0 } } }
+    end,
+    set_blueprint_entities = function(entities)
+      saved = entities
+    end,
+  }
+  logistics.setup_blueprint(blueprint, { [1] = entity })
+  check("the setting is kept with no item requested", saved[1].tags and saved[1].tags.jatz_from_buffers == true)
+  local built = depot(200)
+  built.name = "jatz-request-depot"
+  fire("on_robot_built_entity", { entity = built, tags = saved[1].tags })
+  check("and restored on the depot built from it", logistics.get_from_buffers(built))
+end
+
 print("all control event checks passed")

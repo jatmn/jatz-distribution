@@ -258,8 +258,16 @@ function logistics.set_from_buffers(entity, from_buffers)
   end
   depot.from_buffers = from_buffers == true
   depot.cooldowns = {}
-  -- A search under way was for the old set of depots.
+  depot.retry_at = 0
+  -- Searches under way were for the old set of depots: the depot's own, and those of its
+  -- freighters being rerouted (dropped now and started afresh at the next once-a-second check).
   cancel_search(depot)
+  for id in pairs(trips_of(depot)) do
+    local trip = storage.trips[id]
+    if trip and trip.searching then
+      trip.search_token, trip.searching = nil, game.tick - SEARCH_TIMEOUT
+    end
+  end
   return true
 end
 
@@ -1479,6 +1487,7 @@ end
 -- them, robots or a player bring them, and they move into the slot.
 local REQUEST_TAG = "jatz_request"
 local FREIGHTERS_TAG = "jatz_freighters"
+local FROM_BUFFERS_TAG = "jatz_from_buffers"
 logistics.request_tag = REQUEST_TAG
 
 function logistics.setup_blueprint(blueprint, mapping)
@@ -1494,9 +1503,9 @@ function logistics.setup_blueprint(blueprint, mapping)
       -- The depot's settings as they are now, replacing any from setting this blueprint up
       -- before; other tags and other items' insert plans are kept.
       planned.tags = planned.tags or {}
-      planned.tags[REQUEST_TAG] = depot.request
-          and { item = depot.request.item, count = depot.request.count, from_buffers = depot.from_buffers or nil }
-        or nil
+      planned.tags[REQUEST_TAG] = depot.request and { item = depot.request.item, count = depot.request.count } or nil
+      -- Its own tag, so it's kept even with no item requested.
+      planned.tags[FROM_BUFFERS_TAG] = depot.from_buffers or nil
       local freighters = freighter_total(entity)
       planned.tags[FREIGHTERS_TAG] = freighters > 0 and freighters or nil
       if next(planned.tags) == nil then
@@ -1578,7 +1587,9 @@ function logistics.apply_tags(entity, tags)
   local request = tags[REQUEST_TAG]
   if type(request) == "table" and type(request.item) == "string" and type(request.count) == "number" then
     logistics.set_request(entity, request.item, request.count)
-    logistics.set_from_buffers(entity, request.from_buffers == true)
+  end
+  if type(tags[FROM_BUFFERS_TAG]) == "boolean" then
+    logistics.set_from_buffers(entity, tags[FROM_BUFFERS_TAG])
   end
   -- The ghost's insert plan asks robots for the freighters; this is how many it is for.
   local freighters = tags[FREIGHTERS_TAG]
