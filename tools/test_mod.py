@@ -123,6 +123,14 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # at priority 2; providers start at 5; request depots have no priority.
             'priority_from_far': 10, 'priority_from_near': 0, 'priority_default': 5,
             'request_has_no_priority': False,
+            # Liquid depots: 1200 water in 500 loads from a liquid provider holding 2000; a liquid
+            # request depot set to request from buffers takes 300 steam from a liquid buffer, at its
+            # 500 degrees, not from a nearer provider; only liquid request depots get a truck chest;
+            # robots bring a liquid depot's 2 freighters through it; items and fluids don't mix.
+            'water_delivered': 1200, 'water_left': 800, 'truck_chests': 1, 'provider_truck_chests': 0,
+            'liquid_refuses_items': False, 'item_depot_refuses_fluids': False,
+            'steam_delivered': 300, 'steam_temperature': 500, 'steam_buffer_left': 700,
+            'steam_provider_left': 1000, 'liquid_requested': 2, 'liquid_robots_delivered': 2,
             # A hand-placed freighter lowers the same request proxy (5 -> 4) instead of replacing
             # it, so an open window keeps showing the request.
             'hand_fill_same_proxy': True, 'hand_fill_requested': 4}

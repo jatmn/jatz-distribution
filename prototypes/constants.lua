@@ -25,4 +25,6 @@ return {
   off_road_layer = "jatz_off_road",
   -- The freighter that drives itself between depots.
   freighter_drone = "jatz-freighter-drone",
+  -- The invisible chest robots bring freighters into for a liquid depot (prototypes/truck-chest.lua).
+  truck_chest = "jatz-truck-chest",
 }

@@ -17,6 +17,7 @@ defines = {
 prototypes = {
   entity = { ["jatz-freighter-drone"] = { collision_box = {}, collision_mask = {} } },
   item = { a = { stack_size = 50 }, b = { stack_size = 50 }, ["jatz-quinityn-freighter"] = { stack_size = 10 } },
+  fluid = { water = {}, steam = {} },
 }
 script = { register_on_object_destroyed = function() end }
 
@@ -104,6 +105,50 @@ local function entity(name, x, y, contents)
   }
 end
 
+-- A liquid depot: a storage tank of 25,000 holding one fluid, as far as deliveries use it.
+local function tank(name, x, y, fluid, amount, temperature)
+  local self = entity(name, x, y)
+  local held = { name = fluid, amount = amount or 0, temperature = temperature or 15 }
+  self.held = held
+  local function contents()
+    return held.amount > 0 and held.name or nil
+  end
+  function self.get_fluid_count(name_)
+    return contents() == name_ and held.amount or 0
+  end
+  function self.get_fluid_contents()
+    return contents() and { [held.name] = held.amount } or {}
+  end
+  function self.get_fluid_capacity()
+    return 25000
+  end
+  function self.get_fluid(index)
+    if index == 1 and contents() then
+      return { name = held.name, amount = held.amount, temperature = held.temperature }
+    end
+  end
+  function self.remove_fluid(index, wanted)
+    if index ~= 1 or not contents() then
+      return nil
+    end
+    local taken = math.min(wanted, held.amount)
+    held.amount = held.amount - taken
+    return { name = held.name, amount = taken, temperature = held.temperature }
+  end
+  function self.insert_fluid(spec)
+    if contents() and contents() ~= spec.name then
+      return 0
+    end
+    local put = math.min(spec.amount, 25000 - held.amount)
+    if put > 0 then
+      held.temperature = (held.temperature * held.amount + spec.temperature * put) / (held.amount + put)
+      held.name, held.amount = spec.name, held.amount + put
+    end
+    return put
+  end
+  return self
+end
+
 local function reset()
   next_unit = 0
   requests = {}
@@ -120,8 +165,10 @@ local function reset()
     surface.spilled[#surface.spilled + 1] = { name = parameters.stack.name, count = parameters.stack.count }
     return {}
   end
+  surface.created = {}
   function surface.create_entity(parameters)
     local drone = entity(parameters.name, parameters.position.x, parameters.position.y)
+    surface.created[#surface.created + 1] = drone
     drone.commands = {}
     drone.commandable = {
       set_command = function(command)
@@ -695,6 +742,188 @@ do -- Copy and paste, and clones, carry the priority between provider and buffer
   local clone = entity("jatz-provider-depot", 80.5, 0.5)
   logistics.on_cloned(near, clone)
   check("a clone keeps it", logistics.get_priority(clone) == 9)
+end
+
+-- Liquid depots: the same deliveries, for fluids, 500 at a time, between liquid depots only.
+local function liquids(logistics, wanted, trucks)
+  local request = tank("jatz-liquid-request-depot", 0.5, 0.5)
+  local provider = tank("jatz-liquid-provider-depot", 10.5, 0.5, "water", 1000, 60)
+  logistics.add(request)
+  logistics.add(provider)
+  assert(logistics.set_request(request, "water", wanted or 800))
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", trucks or 3)) == (trucks or 3))
+  return request, provider
+end
+
+local function arrive(logistics, trip, result)
+  logistics.on_ai_command_completed({
+    unit_number = trip.drone.unit_number,
+    result = result or defines.behavior_result.success,
+  })
+end
+
+do -- Requests: fluids for liquid depots, items for item depots.
+  local logistics = reset()
+  local request = tank("jatz-liquid-request-depot", 0.5, 0.5)
+  local item_depot = entity("jatz-request-depot", 20.5, 0.5)
+  logistics.add(request)
+  logistics.add(item_depot)
+  check("a liquid request depot takes a fluid", logistics.set_request(request, "water", 1000))
+  check("not an item", logistics.set_request(request, "a", 10) == false)
+  check("an item request depot takes no fluid", logistics.set_request(item_depot, "water", 10) == false)
+  local chest = surface.created[1]
+  check("a liquid request depot gets a truck chest", chest and chest.name == "jatz-truck-chest")
+  check("under its centre", chest.position.x == 0.5 and chest.position.y == 0.5)
+  local provider = tank("jatz-liquid-provider-depot", 10.5, 0.5)
+  logistics.add(provider)
+  check("a liquid provider needs none", #surface.created == 1)
+  check(
+    "liquid providers have a priority too",
+    logistics.set_priority(provider, 7) and logistics.get_priority(provider) == 7
+  )
+end
+
+do -- A fluid delivery: 500 per freighter, at the provider's temperature.
+  local logistics = reset()
+  local request, provider = liquids(logistics)
+  logistics.on_tick()
+  check("the liquid provider is asked about", #requests == 1 and requests[1].goal.x == 10.5)
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  check("a freighter promises 500, all it carries", trip and trip.planned == 500)
+  check("with fluid cargo, not an item inventory", trip.fluid and not trip.cargo)
+  arrive(logistics, trip)
+  check("it pumps 500 out of the provider", provider.held.amount == 500 and trip.fluid.amount == 500)
+  check("at the provider's temperature", trip.fluid.temperature == 60)
+  arrive(logistics, trip)
+  check("and into the request depot's tank", request.held.name == "water" and request.held.amount == 500)
+  check("hot", request.held.temperature == 60)
+  check("then parks in the slot again", logistics.freighter_counts(request) == 3)
+  game.tick = 60
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  check("the next freighter fetches the remaining 300", trips_from(request)[1].planned == 300)
+end
+
+do -- A large request: several freighters, one a second, each promising what it can carry.
+  local logistics = reset()
+  local request = liquids(logistics, 900)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  game.tick = 60
+  logistics.on_tick()
+  answer(logistics, 2, "route")
+  local trips = trips_from(request)
+  check("two freighters for 900", #trips == 2 and trips[1].planned == 500 and trips[2].planned == 400)
+end
+
+do -- Items and fluids never meet.
+  local logistics = reset()
+  local request = tank("jatz-liquid-request-depot", 0.5, 0.5)
+  local item_provider = entity("jatz-provider-depot", 10.5, 0.5, { water = 100 })
+  logistics.add(request)
+  logistics.add(item_provider)
+  assert(logistics.set_request(request, "water", 100))
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+  logistics.on_tick()
+  check("a liquid request depot never asks an item provider", #requests == 0)
+  check("and says no provider has it", logistics.get_status(request) == "no-provider")
+  assert(logistics.set_request(request, nil)) -- only the item request depot asks from here on
+  local item_request = entity("jatz-request-depot", 0.5, 20.5)
+  local liquid_provider = tank("jatz-liquid-provider-depot", 10.5, 20.5, "water", 1000)
+  liquid_provider.get_fluid_count = function()
+    return 1000 -- even one that claims to hold anything
+  end
+  local real = entity("jatz-provider-depot", 40.5, 20.5, { a = 20 })
+  for _, depot in ipairs({ item_request, liquid_provider, real }) do
+    logistics.add(depot)
+  end
+  assert(logistics.set_request(item_request, "a", 10))
+  assert(logistics.put_freighters(item_request, stack("jatz-quinityn-freighter", 1)) == 1)
+  local before = #requests
+  logistics.on_tick()
+  check(
+    "an item request depot asks only item providers",
+    #requests == before + 1 and requests[#requests].goal.x == 40.5
+  )
+  local copy = tank("jatz-liquid-request-depot", 60.5, 0.5)
+  logistics.add(copy)
+  logistics.on_entity_settings_pasted({ source = item_request, destination = copy })
+  check("pasting from an item depot onto a liquid depot copies nothing", logistics.get_request(copy) == nil)
+end
+
+do -- Liquid buffer depots, and liquid request depots set to request from them.
+  local logistics = reset()
+  local request = tank("jatz-liquid-request-depot", 0.5, 0.5)
+  local provider = tank("jatz-liquid-provider-depot", 10.5, 0.5, "water", 1000)
+  local buffer = tank("jatz-liquid-buffer-depot", 40.5, 0.5, "water", 1000)
+  local item_buffer = entity("jatz-buffer-depot", 20.5, 0.5, { water = 100 })
+  for _, depot in ipairs({ request, provider, buffer, item_buffer }) do
+    logistics.add(depot)
+  end
+  assert(logistics.set_request(request, "water", 300))
+  check("liquid request depots can request from buffers", logistics.set_from_buffers(request, true))
+  check("liquid buffer depots can't", logistics.set_from_buffers(buffer, true) == false)
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+  logistics.on_tick()
+  check("the liquid buffer comes first, nearer provider or not", requests[1].goal.x == 40.5)
+  answer(logistics, 1, "route")
+  check("and the freighter goes there", trips_from(request)[1].provider == buffer.unit_number)
+  assert(logistics.set_request(buffer, "water", 2000))
+  assert(logistics.put_freighters(buffer, stack("jatz-quinityn-freighter", 1)) == 1)
+  game.tick = 60
+  local before = #requests
+  logistics.on_tick()
+  check(
+    "a liquid buffer fetches from the liquid provider only",
+    #requests == before + 1 and requests[#requests].goal.x == 10.5
+  )
+end
+
+do -- The tank holds another fluid: nothing is fetched until it is emptied.
+  local logistics = reset()
+  local request = liquids(logistics)
+  request.held.name, request.held.amount = "steam", 100
+  logistics.on_tick()
+  check("no freighter goes out", #requests == 0)
+  check("and the panel says why", logistics.get_status(request) == "other-fluid")
+end
+
+do -- Fluid that no longer fits goes back to the provider; a lost way back brings it back too.
+  local logistics = reset()
+  local request, provider = liquids(logistics)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  arrive(logistics, trip)
+  request.held.name, request.held.amount = "steam", 100 -- another fluid got in meanwhile
+  arrive(logistics, trip)
+  check("what doesn't fit heads back to the provider", trip.state == "returning" and trip.fluid.amount == 500)
+  arrive(logistics, trip)
+  check("and goes back into its tank", provider.held.amount == 1000 and not storage.trips[trip.drone.unit_number])
+  check("the freighter parks again", logistics.freighter_counts(request) == 3)
+  request.held.amount = 0
+  game.tick = 600
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  trip = trips_from(request)[1]
+  arrive(logistics, trip)
+  arrive(logistics, trip, defines.behavior_result.fail)
+  check("a loaded freighter whose way is lost brings the fluid back", trip.state == "returning")
+  arrive(logistics, trip)
+  check("into the provider", provider.held.amount == 1000)
+end
+
+do -- A liquid request depot mined: its freighters go to the miner, its truck chest goes.
+  local logistics = reset()
+  local request = liquids(logistics)
+  local chest = surface.created[1]
+  local buffer = script_inventory(4)
+  logistics.on_depot_mined({ entity = request, buffer = buffer })
+  check("mining a liquid request depot hands over its freighters", buffer.get_item_count() == 3)
+  request.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = request.unit_number })
+  check("and its truck chest is removed", chest.valid == false)
 end
 
 print("all logistics checks passed")

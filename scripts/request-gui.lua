@@ -2,7 +2,8 @@
 -- The request panel: attached to the right of a request depot's inventory window, it chooses
 -- the item to keep in stock and how many, holds the depot's freighters, and shows what the depot is
 -- doing as a status light (hover it for the status in words). Buffer depots have the same panel,
--- with a priority slider at the top; provider depots have a panel with only that slider. Changes apply as
+-- with a priority slider at the top; provider depots have a panel with only that slider. Liquid
+-- depots have the same panels, for a fluid, beside their storage tank window. Changes apply as
 -- they are made. Factorio shows the panel only with these depots' windows.
 --
 -- The freighter slot works like an inventory slot: click with freighters in hand to put them in
@@ -23,28 +24,23 @@ local COUNT = "jatz_request_count"
 local STATUS = "jatz_request_status"
 local SLOT = "jatz_request_freighters"
 local SLOT_LABEL = "jatz_request_freighters_label"
-local REQUEST = "jatz-request-depot"
 local FROM_BUFFERS = "jatz_request_from_buffers"
 local PRIORITY = "jatz_depot_priority"
 local PRIORITY_VALUE = "jatz_depot_priority_value"
-local PROVIDER = "jatz-provider-depot"
--- The depots with a request, freighters and status: request and buffer depots.
+-- The depots with a request, freighters and status: request and buffer depots, item and liquid.
 local REQUESTING = logistics.requesting
--- The depots with this panel: those, and provider depots (priority only).
-local PANELLED = { [PROVIDER] = true }
+-- Liquid depots: storage tanks, whose window is a storage tank window, requesting fluids.
+local LIQUID = logistics.liquid
+-- Every depot's role (provider, request or buffer): all have this panel, provider depots with only
+-- the priority slider. The fuel depot isn't in deliveries and has none.
+local ROLES = logistics.depots
 local PANELLED_NAMES = {}
-for name in pairs(REQUESTING) do
-  PANELLED[name] = true
-end
-for name in pairs(PANELLED) do
+for name in pairs(ROLES) do
   PANELLED_NAMES[#PANELLED_NAMES + 1] = name
 end
 table.sort(PANELLED_NAMES)
-local TITLES = {
-  [REQUEST] = "jatz-gui.request-title",
-  ["jatz-buffer-depot"] = "jatz-gui.buffer-title",
-  [PROVIDER] = "jatz-gui.provider-title",
-}
+-- A new fluid request starts at this amount, as a new item request starts at one stack.
+local FLUID_START = 1000
 
 local function frame_of(player)
   return player.gui.relative[FRAME]
@@ -58,7 +54,8 @@ end
 -- this item?". Hovering it shows the status in words.
 -- * green: stocked, or on its way (a freighter out, or finding the provider nearest by road);
 -- * yellow: the item is there, but something is in the way (no road route right now, no
---   freighters, loading zone not on road, the depot full, a freighter couldn't be sent);
+--   freighters, loading zone not on road, the depot full or its tank holding another fluid, a
+--   freighter couldn't be sent);
 -- * red: no provider depot has the item;
 -- * grey: nothing requested.
 local LIGHTS = {
@@ -70,6 +67,7 @@ local LIGHTS = {
   ["no-road"] = "utility/status_yellow",
   full = "utility/status_yellow",
   ["no-freighter"] = "utility/status_yellow",
+  ["other-fluid"] = "utility/status_yellow",
   ["no-provider"] = "utility/status_not_working",
   none = "utility/status_inactive",
 }
@@ -152,10 +150,11 @@ local function open(player, entity)
   local frame = player.gui.relative.add({
     type = "frame",
     name = FRAME,
-    caption = { TITLES[entity.name] },
+    caption = { "jatz-gui." .. (LIQUID[entity.name] and "liquid-" or "") .. ROLES[entity.name] .. "-title" },
     direction = "vertical",
     anchor = {
-      gui = defines.relative_gui_type.container_gui,
+      gui = LIQUID[entity.name] and defines.relative_gui_type.storage_tank_gui
+        or defines.relative_gui_type.container_gui,
       position = defines.relative_gui_position.right,
       names = PANELLED_NAMES,
     },
@@ -164,7 +163,7 @@ local function open(player, entity)
   storage.request_gui = storage.request_gui or {}
   storage.request_gui[player.index] = entity
   -- Provider and buffer depots: the priority slider first, above the request.
-  if entity.name ~= REQUEST then
+  if ROLES[entity.name] ~= "request" then
     add_priority(inner, entity)
   end
   if not REQUESTING[entity.name] then
@@ -176,10 +175,11 @@ local function open(player, entity)
   row.add({
     type = "choose-elem-button",
     name = ITEM,
-    elem_type = "item",
-    item = request.item,
+    elem_type = LIQUID[entity.name] and "fluid" or "item",
+    item = not LIQUID[entity.name] and request.item or nil,
+    fluid = LIQUID[entity.name] and request.item or nil,
     elem_filters = { { filter = "hidden", invert = true }, { filter = "is-parameter", invert = true, mode = "and" } },
-    tooltip = { "jatz-gui.request-item-tooltip" },
+    tooltip = { LIQUID[entity.name] and "jatz-gui.request-fluid-tooltip" or "jatz-gui.request-item-tooltip" },
   })
   local count = row.add({
     type = "textfield",
@@ -189,11 +189,11 @@ local function open(player, entity)
     allow_decimal = false,
     allow_negative = false,
     lose_focus_on_confirm = true,
-    tooltip = { "jatz-gui.request-count-tooltip" },
+    tooltip = { LIQUID[entity.name] and "jatz-gui.request-amount-tooltip" or "jatz-gui.request-count-tooltip" },
   })
   count.style.width = 80
   show_status(row.add({ type = "sprite", name = STATUS, style = "status_image" }), entity)
-  if entity.name == REQUEST then
+  if ROLES[entity.name] == "request" then
     -- Like a requester chest's "request from buffer chests".
     inner.add({
       type = "checkbox",
@@ -245,7 +245,7 @@ end
 
 local function on_gui_opened(event)
   local entity = event.entity
-  if entity and entity.valid and entity.name == PROVIDER then
+  if entity and entity.valid and ROLES[entity.name] == "provider" then
     open(game.get_player(event.player_index), entity)
   elseif entity and entity.valid and REQUESTING[entity.name] then
     local player = game.get_player(event.player_index)
@@ -278,9 +278,10 @@ local function on_gui_elem_changed(event)
   local item = event.element.elem_value
   local field = event.element.parent[COUNT]
   local amount = tonumber(field.text) or 0
-  -- A newly chosen item starts at one stack, so the request does something straight away.
+  -- A newly chosen item starts at one stack (a fluid at FLUID_START), so the request does
+  -- something straight away.
   if item and amount == 0 then
-    amount = prototypes.item[item].stack_size
+    amount = LIQUID[entity.name] and FLUID_START or prototypes.item[item].stack_size
     field.text = tostring(amount)
   end
   logistics.set_request(entity, item, amount)
@@ -441,7 +442,7 @@ local function refresh()
       local inner = frame.children[1]
       local requesting = REQUESTING[entity.name]
       if
-        not (inner.priority_row or entity.name == REQUEST)
+        not (inner.priority_row or ROLES[entity.name] == "request")
         or (requesting and not (inner.request_row and inner.request_row[STATUS]))
       then
         -- A panel opened before an update that changed its layout: build it again.

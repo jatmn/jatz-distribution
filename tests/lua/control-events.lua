@@ -49,7 +49,12 @@ commands = {
     console[name] = handler
   end,
 }
-prototypes = { decorative = {}, item = { ["jatz-quinityn-freighter"] = { stack_size = 10 } }, entity = {} }
+prototypes = {
+  decorative = {},
+  item = { ["jatz-quinityn-freighter"] = { stack_size = 10 }, wood = { stack_size = 100 } },
+  fluid = { water = {} },
+  entity = {},
+}
 
 local tiles = {}
 local function cell(x, y)
@@ -90,6 +95,29 @@ function surface.find_decoratives_filtered()
 end
 function surface.find_entities_filtered()
   return {}
+end
+-- Entities scripts create: here, liquid depots' truck chests (ten empty stacks).
+surface.created = {}
+function surface.create_entity(spec)
+  local stacks = {}
+  for index = 1, 10 do
+    stacks[index] = { valid_for_read = false }
+  end
+  local created = {
+    valid = true,
+    name = spec.name,
+    position = spec.position,
+    force = spec.force,
+    surface = surface,
+    get_inventory = function()
+      return stacks
+    end,
+    destroy = function(self)
+      self.valid = false
+    end,
+  }
+  surface.created[#surface.created + 1] = created
+  return created
 end
 
 storage = {}
@@ -767,6 +795,93 @@ do -- Priority in blueprints: kept for provider and buffer depots, and restored 
   check("a provider built from it gets the priority", logistics.get_priority(built) == 8)
   check("so does a buffer depot", logistics.get_priority(built_buffer) == 2)
   check("a malformed priority tag is ignored", logistics.get_priority(odd) == 5)
+end
+
+do -- Liquid depots: the same panels, beside the storage tank window, choosing a fluid.
+  local logistics = require("scripts.logistics")
+  local relative = element()
+  local player = { index = 12, valid = true, gui = { relative = relative }, get_main_inventory = function() end }
+  game.get_player = function()
+    return player
+  end
+  storage.request_gui = {}
+  local function liquid(x, name)
+    local entity = depot(x)
+    entity.name = name
+    entity.get_fluid_count = function()
+      return 0
+    end
+    entity.get_fluid_contents = function()
+      return {}
+    end
+    fire("on_built_entity", { entity = entity })
+    return entity
+  end
+  local request = liquid(300, "jatz-liquid-request-depot")
+  check("a liquid request depot gets a truck chest", surface.created[#surface.created].name == "jatz-truck-chest")
+  fire("on_gui_opened", { player_index = 12, entity = request })
+  local frame = relative.jatz_request_frame
+  check("its panel is beside the storage tank window", frame.anchor.gui == "relative_gui_type.storage_tank_gui")
+  check("titled for a liquid request depot", frame.caption[1] == "jatz-gui.liquid-request-title")
+  local inner = frame.children[1]
+  local chooser = inner.request_row.jatz_request_item
+  check("it chooses a fluid", chooser.elem_type == "fluid")
+  check("with the request-from-buffers checkbox", inner.jatz_request_from_buffers ~= nil)
+  check("and no priority", inner.priority_row == nil)
+  check("and a freighter slot", inner.freighter_row and inner.freighter_row.jatz_request_freighters)
+  chooser.elem_value = "water"
+  fire("on_gui_elem_changed", { player_index = 12, element = chooser })
+  local request_set = logistics.get_request(request)
+  check("a fluid chosen starts at 1000", request_set and request_set.item == "water" and request_set.count == 1000)
+
+  local buffer = liquid(310, "jatz-liquid-buffer-depot")
+  fire("on_gui_opened", { player_index = 12, entity = buffer })
+  inner = relative.jatz_request_frame.children[1]
+  check("a liquid buffer depot has its priority above its request", inner.children[1] == inner.priority_row)
+  local provider = liquid(320, "jatz-liquid-provider-depot")
+  fire("on_gui_opened", { player_index = 12, entity = provider })
+  frame = relative.jatz_request_frame
+  check(
+    "a liquid provider depot gets the priority panel",
+    frame.caption[1] == "jatz-gui.liquid-provider-title" and frame.children[1].priority_row ~= nil
+  )
+  nth[30]()
+  check("which refresh leaves alone", relative.jatz_request_frame == frame)
+
+  -- Blueprints: the request and freighters as tags, no insert plan (a storage tank has no chest);
+  -- the depot built from it asks robots for its freighters into its truck chest.
+  local saved
+  local blueprint = {
+    valid = true,
+    object_name = "LuaItemStack",
+    valid_for_read = true,
+    is_blueprint = true,
+    get_blueprint_entities = function()
+      return { { entity_number = 1, name = "jatz-liquid-request-depot", position = { x = 0, y = 0 } } }
+    end,
+    set_blueprint_entities = function(entities)
+      saved = entities
+    end,
+  }
+  local slot = script_inventory()
+  slot[1].count = 4 -- four freighters in its slot
+  storage.depots[request.unit_number].trucks = slot
+  logistics.setup_blueprint(blueprint, { request })
+  local tags = saved[1].tags
+  check("a liquid request depot's blueprint keeps its request", tags and tags.jatz_request.item == "water")
+  check("and how many freighters", tags.jatz_freighters == 4)
+  check("without an insert plan", saved[1].items == nil)
+  local asked
+  local match = logistics.match_freighters
+  logistics.match_freighters = function(entity, count)
+    asked = { entity = entity, count = count }
+  end
+  local built = liquid(330, "jatz-liquid-request-depot")
+  built.valid = true
+  fire("on_robot_built_entity", { entity = built, tags = tags })
+  logistics.match_freighters = match
+  check("the depot built from it asks robots for them", asked and asked.entity == built and asked.count == 4)
+  check("and requests the fluid", logistics.get_request(built).item == "water")
 end
 
 print("all control event checks passed")

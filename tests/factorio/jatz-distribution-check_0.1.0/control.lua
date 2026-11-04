@@ -463,6 +463,37 @@ local function setup_deliveries(surface, result)
   result.request_has_no_priority = remote.call("jatz-distribution", "set_priority", prioritised.request, 9)
   assert(remote.call("jatz-distribution", "set_request", prioritised.request, "stone", 10), "stone: refused")
   deliveries.prioritised = prioritised
+  -- Liquid depots, on one road (loading zones at y -35): a liquid request depot with 3 freighters
+  -- asks for 1200 water from a liquid provider holding 2000, 500 a freighter.
+  local liquid = {
+    request = depot(surface, "liquid-request", 20.5, -36.5),
+    provider = depot(surface, "liquid-provider", 30.5, -36.5),
+  }
+  lay_road(surface, 20, -35, 30, -35)
+  assert(liquid.provider.insert_fluid({ name = "water", amount = 2000 }) == 2000, "water: cannot stock")
+  assert(remote.call("jatz-distribution", "add_freighters", liquid.request, 3) == 3, "liquid: no freighters")
+  result.liquid_refuses_items = remote.call("jatz-distribution", "set_request", liquid.request, "iron-plate", 10)
+  result.item_depot_refuses_fluids = remote.call("jatz-distribution", "set_request", prioritised.request, "water", 10)
+  assert(remote.call("jatz-distribution", "set_request", liquid.request, "water", 1200), "water: refused")
+  result.truck_chests = #surface.find_entities_filtered({ name = "jatz-truck-chest", position = { 20.5, -36.5 } })
+  result.provider_truck_chests =
+    #surface.find_entities_filtered({ name = "jatz-truck-chest", position = { 30.5, -36.5 } })
+  deliveries.liquid = liquid
+  -- Liquid buffers (loading zones at y -45): a liquid request depot set to request from buffer
+  -- depots asks for 300 steam; a liquid provider 10 tiles away holds 1000 at 165 degrees, a liquid
+  -- buffer 30 tiles away 1000 at 500 degrees. The steam comes from the buffer, still at 500.
+  local steam = {
+    request = depot(surface, "liquid-request", 20.5, -46.5),
+    provider = depot(surface, "liquid-provider", 30.5, -46.5),
+    buffer = depot(surface, "liquid-buffer", 50.5, -46.5),
+  }
+  lay_road(surface, 20, -45, 50, -45)
+  assert(steam.provider.insert_fluid({ name = "steam", amount = 1000, temperature = 165 }) == 1000, "steam")
+  assert(steam.buffer.insert_fluid({ name = "steam", amount = 1000, temperature = 500 }) == 1000, "hot steam")
+  assert(remote.call("jatz-distribution", "add_freighters", steam.request, 1) == 1, "steam: no freighters")
+  assert(remote.call("jatz-distribution", "set_from_buffers", steam.request, true), "steam: from buffers refused")
+  assert(remote.call("jatz-distribution", "set_request", steam.request, "steam", 300), "steam: refused")
+  deliveries.steam = steam
   -- Freighters, one after another, from more than one provider: a request depot with 5 freighters
   -- asks for 60 iron sticks; the provider 10 tiles away has 30, the one 30 tiles away 40.
   local multi = {
@@ -494,7 +525,8 @@ local function setup_deliveries(surface, result)
   surface.create_entity({ name = "electric-energy-interface", position = { 26, 30 }, force = "player" })
   surface.create_entity({ name = "medium-electric-pole", position = { 23.5, 30.5 }, force = "player" })
   deliveries.store = surface.create_entity({ name = "storage-chest", position = { 20.5, 26.5 }, force = "player" })
-  deliveries.store.insert({ name = FREIGHTER, count = 5 })
+  -- 5 for the request depot below, 2 for the liquid one.
+  deliveries.store.insert({ name = FREIGHTER, count = 7 })
   local remote_depot = depot(surface, "request", 30.5, 28.5, 1)
   deliveries.remote = remote_depot
   result.requested = remote.call("jatz-distribution", "request_freighters", remote_depot, 4)
@@ -505,6 +537,10 @@ local function setup_deliveries(surface, result)
   -- Taking freighters away is cancellable too: the one marked goes back into the slot.
   result.removal_marked = remote.call("jatz-distribution", "remove_freighters", remote_depot, 1)
   result.removal_cancelled = remote.call("jatz-distribution", "cancel_freighter_removal", remote_depot)
+  -- A liquid request depot (a storage tank, no chest): robots bring its 2 freighters into its
+  -- truck chest, and they move into its slot.
+  deliveries.liquid_remote = depot(surface, "liquid-request", 45.5, 28.5)
+  result.liquid_requested = remote.call("jatz-distribution", "request_freighters", deliveries.liquid_remote, 2)
   -- Blueprints (and copy and paste) keep a request depot's request and freighters. Out of the
   -- roboport's reach, so requests stay pending to be counted. A depot asking for 7 wood, with 3
   -- freighters, is blueprinted, and a ghost from the blueprint is built.
@@ -868,6 +904,9 @@ local function deliveries_finished(surface, tick, result)
     and count(deliveries.buffering.request, "copper-cable") == 20
     and count(deliveries.buffering.filling, "copper-cable") == 15
     and count(deliveries.prioritised.request, "stone") == 10
+    and deliveries.liquid.request.get_fluid_count("water") == 1200
+    and deliveries.steam.request.get_fluid_count("steam") == 300
+    and remote.call("jatz-distribution", "freighter_counts", deliveries.liquid_remote) == 2
     and deliveries.removal_started
     and select(2, remote.call("jatz-distribution", "requested_freighters", deliveries.remote)) == 0
     and deliveries.store.get_item_count(FREIGHTER) == 4
@@ -876,7 +915,7 @@ local function deliveries_finished(surface, tick, result)
     if tick >= DELIVERY_DEADLINE then
       error(
         string.format(
-          "deliveries did not finish in time: iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), pipes after mending %d (%s), bricks rerouted %d, buffered request %d (%s), buffer filled %d (%s), prioritised %d (%s), %d freighter(s) out",
+          "deliveries did not finish in time: iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), pipes after mending %d (%s), bricks rerouted %d, buffered request %d (%s), buffer filled %d (%s), prioritised %d (%s), water %d (%s), steam %d (%s), liquid robots %d, %d freighter(s) out",
           count(deliveries.connected),
           tostring(status(deliveries.connected)),
           count(armor.request, armor.item),
@@ -895,6 +934,11 @@ local function deliveries_finished(surface, tick, result)
           tostring(status(deliveries.buffering.filling)),
           count(deliveries.prioritised.request, "stone"),
           tostring(status(deliveries.prioritised.request)),
+          deliveries.liquid.request.get_fluid_count("water"),
+          tostring(status(deliveries.liquid.request)),
+          deliveries.steam.request.get_fluid_count("steam"),
+          tostring(status(deliveries.steam.request)),
+          remote.call("jatz-distribution", "freighter_counts", deliveries.liquid_remote),
           #surface.find_entities_filtered({ name = DRONE })
         )
       )
@@ -977,6 +1021,15 @@ local function deliveries_finished(surface, tick, result)
   local prioritised = deliveries.prioritised
   result.priority_from_far = 20 - count(prioritised.far, "stone")
   result.priority_from_near = 20 - count(prioritised.near, "stone")
+  local liquid = deliveries.liquid
+  result.water_delivered = liquid.request.get_fluid_count("water")
+  result.water_left = liquid.provider.get_fluid_count("water")
+  local steam = deliveries.steam
+  result.steam_delivered = steam.request.get_fluid_count("steam")
+  result.steam_temperature = math.floor(steam.request.get_fluid(1).temperature + 0.5)
+  result.steam_buffer_left = steam.buffer.get_fluid_count("steam")
+  result.steam_provider_left = steam.provider.get_fluid_count("steam")
+  result.liquid_robots_delivered = remote.call("jatz-distribution", "freighter_counts", deliveries.liquid_remote)
   result.trimmed_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.trimmed)
   result.dropped_requested_again = remote.call("jatz-distribution", "requested_freighters", deliveries.dropped)
   result.dropped_slot = remote.call("jatz-distribution", "freighter_counts", deliveries.dropped)
