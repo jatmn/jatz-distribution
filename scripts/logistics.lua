@@ -485,11 +485,7 @@ local function absorb_freighters(depot)
   local room = FREIGHTER_CAPACITY - slot.get_item_count() - out
   if room > 0 then
     -- Freighters waiting in the chest for robots to take them away stay there.
-    if
-      load(chest, slot, FREIGHTER, room, logistics.leaving(depot.entity), true) > 0 and logistics.on_freighters_moved
-    then
-      logistics.on_freighters_moved(depot.entity)
-    end
+    load(chest, slot, FREIGHTER, room, logistics.leaving(depot.entity), true)
   end
   -- What the chest holds now, so freighters a player puts in later can be told apart.
   depot.chest_seen = count_freighters(chest)
@@ -1176,10 +1172,6 @@ function freighter_requests(entity)
   return proxies, requested, removing, marked
 end
 
--- Called (with the depot) whenever freighters move out of a request depot's chest into its slot or
--- back to a player; scripts/request-gui.lua uses it to redraw the depot's window.
-logistics.on_freighters_moved = nil
-
 -- How many freighters a request depot has asked robots to bring, and to take away.
 function logistics.requested_freighters(entity)
   if not request_depot(entity) then
@@ -1355,6 +1347,50 @@ function logistics.match_freighters(entity, total)
   return 0
 end
 
+-- Lower a depot's freighter requests by `excess`, editing its request proxies' plans in place,
+-- from the last position back, rather than replacing them. An open container window keeps showing
+-- the requests of the proxy it opened with: replacing the proxy (cancel, then request anew) left
+-- the chest slot's ghost hidden until the window was reopened.
+local function reduce_freighter_requests(entity, excess)
+  local proxies = freighter_requests(entity)
+  for index = #proxies, 1, -1 do
+    if excess <= 0 then
+      break
+    end
+    local proxy = proxies[index]
+    local plans = proxy.insert_plan
+    for plan_index = #plans, 1, -1 do
+      local plan = plans[plan_index]
+      if excess > 0 and item_name(plan.id.name) == FREIGHTER then
+        local positions = plan.items.in_inventory or {}
+        for position_index = #positions, 1, -1 do
+          if excess <= 0 then
+            break
+          end
+          local count = positions[position_index].count or 1
+          local cut = math.min(count, excess)
+          excess = excess - cut
+          if cut >= count then
+            table.remove(positions, position_index)
+          else
+            positions[position_index].count = count - cut
+          end
+        end
+        if #positions == 0 then
+          table.remove(plans, plan_index)
+        else
+          plan.items.in_inventory = positions
+        end
+      end
+    end
+    if #plans == 0 and #proxy.removal_plan == 0 then
+      proxy.destroy()
+    else
+      proxy.insert_plan = plans
+    end
+  end
+end
+
 -- Keep a request depot's freighter requests to what they are for (`depot.freighter_target`: the
 -- total the depot should end up with), until it has them:
 -- * beyond the target (freighters arrived some other way, put in by hand, say): the excess
@@ -1376,14 +1412,6 @@ function logistics.trim_freighter_requests(entity)
   end
   local wanted = depot.freighter_target and math.min(depot.freighter_target, capacity)
   if not wanted then
-    if coming > 0 and total > capacity then
-      local keep = math.max(0, coming - (total - capacity))
-      logistics.cancel_freighter_requests(entity)
-      if keep > 0 then
-        logistics.request_freighters(entity, keep)
-      end
-      depot.freighter_target = nil
-    end
     return
   end
   if total - coming >= wanted then
@@ -1393,10 +1421,8 @@ function logistics.trim_freighter_requests(entity)
     end
     depot.freighter_target = nil
   elseif total > wanted then
-    -- More coming than still needed: cancel the excess (request_freighters sets the target
-    -- again, to the same total).
-    logistics.cancel_freighter_requests(entity)
-    logistics.request_freighters(entity, coming - (total - wanted))
+    -- More coming than still needed: lower the requests by the excess, in place.
+    reduce_freighter_requests(entity, total - wanted)
   elseif total < wanted then
     -- Short, with nothing requested to cover it: ask again for the rest.
     logistics.request_freighters(entity, wanted - total)
@@ -1618,9 +1644,6 @@ function logistics.take_in_freighters(entity, give_back, moved)
   depot.chest_seen = count_freighters(chest)
   if taken > 0 then
     logistics.trim_freighter_requests(entity)
-  end
-  if (taken > 0 or returned > 0) and logistics.on_freighters_moved then
-    logistics.on_freighters_moved(entity)
   end
   return taken, returned
 end

@@ -608,6 +608,19 @@ local function setup_deliveries(surface, result)
     assert(fine_taken == 2, "uncommon freighters stayed out of the slot")
     result.ctrl_click_any_quality = fine_taken
   end
+  -- A freighter put by hand onto a requested slot, then moved to the slot: the depot's request is
+  -- lowered in place (the same request proxy, now for 4), so an open window keeps showing it.
+  local kept_proxy = depot(surface, "request", -16.5, -36.5, 0)
+  remote.call("jatz-distribution", "match_freighters", kept_proxy, 5)
+  local function proxy_of(entity)
+    return surface.find_entities_filtered({ name = "item-request-proxy", position = entity.position })[1]
+  end
+  local before_proxy = proxy_of(kept_proxy)
+  kept_proxy.get_inventory(defines.inventory.chest)[1].set_stack({ name = FREIGHTER, count = 1 })
+  remote.call("jatz-distribution", "take_in_freighters", kept_proxy, pockets, 1)
+  local after_proxy = proxy_of(kept_proxy)
+  result.hand_fill_same_proxy = before_proxy ~= nil and after_proxy == before_proxy
+  result.hand_fill_requested = remote.call("jatz-distribution", "requested_freighters", kept_proxy)
   pockets.destroy()
   -- A pasted depot asking for 5 gets 1 by hand, and Factorio drops the request (it does when a player
   -- fills one by hand, even partly): the other 4 are requested again.

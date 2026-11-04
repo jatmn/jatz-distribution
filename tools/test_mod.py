@@ -113,7 +113,10 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # The same for a depot built over a blueprint ghost without its tags (as by hand).
             'untagged_requested_again': 4,
             # /jatz-freighters describes a depot's freighter slot from the real request proxies.
-            'described': True}
+            'described': True,
+            # A hand-placed freighter lowers the same request proxy (5 -> 4) instead of replacing
+            # it, so an open window keeps showing the request.
+            'hand_fill_same_proxy': True, 'hand_fill_requested': 4}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 
