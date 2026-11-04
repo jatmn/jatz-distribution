@@ -80,7 +80,7 @@ logistics.status = {
 local TO_PROVIDER, TO_REQUEST, RETURNING = "to-provider", "to-request", "returning"
 
 -- Defined further down; dispatch and the search need them first.
-local end_trip, load
+local end_trip, load, freighter_requests
 
 local function init_storage()
   storage.depots = storage.depots or {}
@@ -454,7 +454,13 @@ local function absorb_freighters(depot)
   end
   local room = prototypes.item[FREIGHTER].stack_size - slot.get_item_count() - out
   if room > 0 then
-    load(chest, slot, FREIGHTER, room)
+    -- Freighters waiting in the chest for robots to take them away stay there.
+    local _, _, _, marked = freighter_requests(depot.entity)
+    local skip = {}
+    for stack in pairs(marked) do
+      skip[stack + 1] = true
+    end
+    load(chest, slot, FREIGHTER, room, skip)
   end
 end
 
@@ -519,14 +525,15 @@ end
 
 -- Move up to `limit` items of `item` (normal quality) from one inventory into another, stack by
 -- stack, keeping each stack's data. Returns how many moved.
-function load(from, to, item, limit)
+-- `skip`, if given, is a set of `from` stack indices to leave alone.
+function load(from, to, item, limit, skip)
   local moved = 0
   for index = 1, #from do
     local stack = from[index]
     if moved >= limit then
       break
     end
-    if stack.valid_for_read and stack.name == item and stack.quality.name == QUALITY then
+    if stack.valid_for_read and stack.name == item and stack.quality.name == QUALITY and not (skip and skip[index]) then
       for slot = 1, #to do
         local target = to[slot]
         if moved >= limit or not stack.valid_for_read then
@@ -1092,9 +1099,10 @@ local function item_name(id)
   return type(id) == "string" and id or id.name
 end
 
--- The item request proxies targeting a request depot, and how many freighters they still ask for.
-local function freighter_requests(entity)
-  local proxies, requested = {}, 0
+-- The item request proxies targeting a request depot; how many freighters they still ask robots to
+-- bring, and to take away; and the chest stacks (0-based) freighters are to be taken from.
+function freighter_requests(entity)
+  local proxies, requested, removing, marked = {}, 0, 0, {}
   local x, y = entity.position.x, entity.position.y
   for _, proxy in
     pairs(entity.surface.find_entities_filtered({
@@ -1109,18 +1117,68 @@ local function freighter_requests(entity)
           requested = requested + request.count
         end
       end
+      for _, plan in pairs(proxy.removal_plan) do
+        if item_name(plan.id.name) == FREIGHTER then
+          for _, position in pairs(plan.items.in_inventory or {}) do
+            removing = removing + (position.count or 1)
+            marked[position.stack] = true
+          end
+        end
+      end
     end
   end
-  return proxies, requested
+  return proxies, requested, removing, marked
 end
 
--- How many freighters a request depot has asked robots for, still on their way.
+-- How many freighters a request depot has asked robots to bring, and to take away.
 function logistics.requested_freighters(entity)
   if not request_depot(entity) then
-    return 0
+    return 0, 0
   end
-  local _, requested = freighter_requests(entity)
-  return requested
+  local _, requested, removing = freighter_requests(entity)
+  return requested, removing
+end
+
+-- A chest stack (0-based) that is empty and not already in any request's plan, or nil.
+local function free_chest_stack(chest, proxies)
+  local taken = {}
+  for _, proxy in ipairs(proxies) do
+    for _, plans in ipairs({ proxy.insert_plan, proxy.removal_plan }) do
+      for _, plan in pairs(plans) do
+        for _, position in pairs(plan.items.in_inventory or {}) do
+          taken[position.stack] = true
+        end
+      end
+    end
+  end
+  for index = 1, #chest do
+    if not chest[index].valid_for_read and not taken[index - 1] then
+      return index - 1
+    end
+  end
+end
+
+-- Add an insert or removal plan to a depot's request proxy, making one if it has none.
+local function add_plan(entity, proxies, plan, removal)
+  local proxy = proxies[1]
+  if proxy then
+    local plans = removal and proxy.removal_plan or proxy.insert_plan
+    plans[#plans + 1] = plan
+    if removal then
+      proxy.removal_plan = plans
+    else
+      proxy.insert_plan = plans
+    end
+  else
+    entity.surface.create_entity({
+      name = PROXY,
+      position = entity.position,
+      force = entity.force,
+      target = entity,
+      modules = removal and {} or { plan },
+      removal_plan = removal and { plan } or nil,
+    })
+  end
 end
 
 -- Ask construction robots to bring `count` freighters (or as many as the slot has room for,
@@ -1132,50 +1190,75 @@ function logistics.request_freighters(entity, count)
     return 0
   end
   local chest = inventory(entity)
-  local proxies, requested = freighter_requests(entity)
-  local room = capacity - in_slot - out - requested - chest.get_item_count(item_id(FREIGHTER))
+  local proxies, requested, removing = freighter_requests(entity)
+  -- Freighters in the chest count, except those waiting to be taken away.
+  local in_chest = chest.get_item_count(item_id(FREIGHTER)) - removing
+  local room = capacity - in_slot - out - requested - in_chest
   local amount = math.min(math.floor(tonumber(count) or room), room)
   if amount <= 0 then
     return 0
   end
-  -- An empty chest stack no other request is filling (insert plans use 0-based stack indices).
   -- The slot holds one stack, so one chest stack always takes the whole request.
-  local taken = {}
-  for _, proxy in ipairs(proxies) do
-    for _, plan in pairs(proxy.insert_plan) do
-      for _, position in pairs(plan.items.in_inventory or {}) do
-        taken[position.stack] = true
-      end
-    end
-  end
-  local stack
-  for index = 1, #chest do
-    if not chest[index].valid_for_read and not taken[index - 1] then
-      stack = index - 1
-      break
-    end
-  end
+  local stack = free_chest_stack(chest, proxies)
   if not stack then
     return 0
   end
-  local plan = {
+  add_plan(entity, proxies, {
     id = { name = FREIGHTER, quality = QUALITY },
     items = { in_inventory = { { inventory = defines.inventory.chest, stack = stack, count = amount } } },
-  }
-  if proxies[1] then
-    local plans = proxies[1].insert_plan
-    plans[#plans + 1] = plan
-    proxies[1].insert_plan = plans
-  else
-    entity.surface.create_entity({
-      name = PROXY,
-      position = entity.position,
-      force = entity.force,
-      target = entity,
-      modules = { plan },
-    })
-  end
+  })
   return amount
+end
+
+-- Have construction robots take `count` freighters (or all) out of a request depot's slot, as
+-- from remote view: they move into an empty chest stack marked for removal, and robots carry them
+-- to storage. Returns how many were marked.
+function logistics.remove_freighters(entity, count)
+  local depot = request_depot(entity)
+  local slot = depot and trucks_of(depot)[1]
+  if not (slot and slot.valid_for_read) then
+    return 0
+  end
+  local chest = inventory(entity)
+  local proxies = freighter_requests(entity)
+  local index = free_chest_stack(chest, proxies)
+  if not index then
+    return 0
+  end
+  local amount = math.min(math.floor(tonumber(count) or slot.count), slot.count)
+  if amount <= 0 then
+    return 0
+  end
+  chest[index + 1].transfer_stack(slot, amount)
+  amount = chest[index + 1].count
+  add_plan(entity, proxies, {
+    id = { name = FREIGHTER, quality = QUALITY },
+    items = { in_inventory = { { inventory = defines.inventory.chest, stack = index, count = amount } } },
+  }, true)
+  return amount
+end
+
+-- Cancel the robots' removal of a request depot's freighters; they go back into its slot at the
+-- next dispatch. Returns how many were waiting to be taken.
+function logistics.cancel_freighter_removal(entity)
+  if not request_depot(entity) then
+    return 0
+  end
+  local proxies, _, removing = freighter_requests(entity)
+  for _, proxy in ipairs(proxies) do
+    local kept = {}
+    for _, plan in pairs(proxy.removal_plan) do
+      if item_name(plan.id.name) ~= FREIGHTER then
+        kept[#kept + 1] = plan
+      end
+    end
+    if #kept == 0 and #proxy.insert_plan == 0 then
+      proxy.destroy()
+    else
+      proxy.removal_plan = kept
+    end
+  end
+  return removing
 end
 
 -- Cancel a request depot's freighter requests (other requests on it stay). Returns how many.
@@ -1268,6 +1351,8 @@ function logistics.register()
     request_freighters = logistics.request_freighters,
     requested_freighters = logistics.requested_freighters,
     cancel_freighter_requests = logistics.cancel_freighter_requests,
+    remove_freighters = logistics.remove_freighters,
+    cancel_freighter_removal = logistics.cancel_freighter_removal,
   })
 end
 

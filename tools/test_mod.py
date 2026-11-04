@@ -72,7 +72,12 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # Freighters requested (as from remote view) within the slot's limit, cancelled and
             # requested again; construction robots bring the 3 from storage into the slot.
             'requested': 4, 'requested_beyond_limit': 5, 'cancelled': 9, 'requested_again': 3,
-            'robots_delivered': 4, 'storage_left': 2}
+            'robots_delivered': 4,
+            # Then 2 taken away again by robots (as by a right-click in remote view): 2 stay in
+            # the slot, storage is back to 4. A removal marked and cancelled at the start put its
+            # freighter back.
+            'removal_marked': 1, 'removal_cancelled': 1, 'robots_removal_marked': 2, 'slot_after_removal': 2,
+            'storage_after_removal': 4}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 

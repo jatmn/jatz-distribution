@@ -466,6 +466,9 @@ local function setup_deliveries(surface, result)
   result.requested_beyond_limit = remote.call("jatz-distribution", "request_freighters", remote_depot, 20)
   result.cancelled = remote.call("jatz-distribution", "cancel_freighter_requests", remote_depot)
   result.requested_again = remote.call("jatz-distribution", "request_freighters", remote_depot, 3)
+  -- Taking freighters away is cancellable too: the one marked goes back into the slot.
+  result.removal_marked = remote.call("jatz-distribution", "remove_freighters", remote_depot, 1)
+  result.removal_cancelled = remote.call("jatz-distribution", "cancel_freighter_removal", remote_depot)
   -- The freighter slot can't be overfilled through the remote interface: 7 more fill the stack of 10.
   result.add_beyond_limit = remote.call("jatz-distribution", "add_freighters", deliveries.dying, 20)
 
@@ -527,6 +530,15 @@ local function interfere(surface)
     roads.shared_b.destroy()
   end
   local deliveries = storage.deliveries
+  -- Once robots have brought the 3 requested freighters, have them take 2 away again.
+  if not deliveries.removal_started then
+    local in_slot = remote.call("jatz-distribution", "freighter_counts", deliveries.remote)
+    local requested = remote.call("jatz-distribution", "requested_freighters", deliveries.remote)
+    if in_slot == 4 and requested == 0 then
+      deliveries.robots_delivered = in_slot
+      deliveries.removal_started = remote.call("jatz-distribution", "remove_freighters", deliveries.remote, 2)
+    end
+  end
   local multi = deliveries.multi
   for _, drone in pairs(surface.find_entities_filtered({ name = DRONE, position = { -66.5, 30.5 }, radius = 1 })) do
     multi.seen[drone.unit_number] = multi.seen[drone.unit_number] or game.tick
@@ -616,8 +628,9 @@ local function deliveries_finished(surface, tick, result)
     and count(deliveries.shortest.request, "coal") == 10
     and count(storage.depot_roads.request, "small-electric-pole") == 5
     and count(deliveries.multi.request, "iron-stick") == 60
-    and remote.call("jatz-distribution", "freighter_counts", deliveries.remote) == 4
-    and remote.call("jatz-distribution", "requested_freighters", deliveries.remote) == 0
+    and deliveries.removal_started
+    and select(2, remote.call("jatz-distribution", "requested_freighters", deliveries.remote)) == 0
+    and deliveries.store.get_item_count(FREIGHTER) == 4
     and #surface.find_entities_filtered({ name = DRONE }) == 0
   if not done or tick < DELIVERY_SETTLE then
     if tick >= DELIVERY_DEADLINE then
@@ -710,8 +723,10 @@ local function deliveries_finished(surface, tick, result)
   result.multi_from_far = 40 - count(multi.far, "iron-stick")
   result.multi_freighters_home = remote.call("jatz-distribution", "freighter_counts", multi.request)
   result.no_trucks_status = status(deliveries.no_trucks)
-  result.robots_delivered = remote.call("jatz-distribution", "freighter_counts", deliveries.remote)
-  result.storage_left = deliveries.store.get_item_count(FREIGHTER)
+  result.robots_delivered = deliveries.robots_delivered
+  result.robots_removal_marked = deliveries.removal_started
+  result.slot_after_removal = remote.call("jatz-distribution", "freighter_counts", deliveries.remote)
+  result.storage_after_removal = deliveries.store.get_item_count(FREIGHTER)
   result.absorbed = remote.call("jatz-distribution", "freighter_counts", deliveries.absorbing)
   result.absorbed_left_in_chest = count(deliveries.absorbing, FREIGHTER)
   -- Request depots removed by script or destroyed leave their freighters where they stood: the

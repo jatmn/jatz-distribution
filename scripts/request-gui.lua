@@ -8,8 +8,10 @@
 -- (right-click: one), click with an empty hand to take them all (right-click: half), and
 -- shift-click to move them to your inventory. It holds one stack, counting freighters out on trips.
 -- With a freighter ghost in the cursor (remote view, or no freighters in hand), clicking asks
--- construction robots to bring freighters instead (right-click: one more); in remote view, where
--- items can't be moved by hand, clicking with an empty cursor cancels those requests.
+-- construction robots to bring freighters instead (right-click: one more). In remote view, where
+-- items can't be moved by hand, a click with an empty cursor cancels those requests, and a
+-- right-click has robots take the slot's freighters away (again: cancel that). Pipette (Q) over
+-- the slot picks up a freighter, or its ghost, as over any inventory slot.
 local logistics = require("scripts.logistics")
 
 local request_gui = {}
@@ -38,7 +40,8 @@ local function show_freighters(inner, entity)
     return
   end
   row[SLOT].number = in_slot > 0 and in_slot or nil
-  row[SLOT_LABEL].caption = { "jatz-gui.freighters", in_slot, out, logistics.requested_freighters(entity), capacity }
+  local requested, removing = logistics.requested_freighters(entity)
+  row[SLOT_LABEL].caption = { "jatz-gui.freighters", in_slot, out, requested, removing, capacity }
 end
 
 local function open(player, entity)
@@ -88,6 +91,9 @@ local function open(player, entity)
     style = "inventory_slot",
     sprite = "item/" .. logistics.freighter,
     tooltip = { "jatz-gui.freighter-slot-tooltip" },
+    -- The freighter's own tooltip, and hover events so pipette works over the slot.
+    elem_tooltip = { type = "item", name = logistics.freighter },
+    raise_hover_events = true,
   })
   freighters.add({ type = "label", name = SLOT_LABEL })
   show_freighters(inner, entity)
@@ -111,6 +117,9 @@ end
 local function on_gui_closed(event)
   if event.entity and storage.request_gui then
     storage.request_gui[event.player_index] = nil
+  end
+  if storage.slot_hovered then
+    storage.slot_hovered[event.player_index] = nil
   end
 end
 
@@ -164,8 +173,18 @@ local function on_gui_click(event)
     -- A freighter ghost in the cursor: robots bring them.
     logistics.request_freighters(entity, right and 1 or nil)
   elseif player.controller_type == defines.controllers.remote then
-    -- Remote view: no items move by hand from afar; an empty-cursor click cancels requests.
-    if not cursor.valid_for_read then
+    -- Remote view: no items move by hand from afar. Robots do it: right-click has them take the
+    -- slot's freighters away (or cancels that), a click cancels freighters requested.
+    if cursor.valid_for_read then
+      return
+    elseif right then
+      local _, removing = logistics.requested_freighters(entity)
+      if removing > 0 then
+        logistics.cancel_freighter_removal(entity)
+      else
+        logistics.remove_freighters(entity)
+      end
+    else
       logistics.cancel_freighter_requests(entity)
     end
   elseif event.shift then
@@ -177,6 +196,29 @@ local function on_gui_click(event)
     logistics.take_freighters(entity, cursor, right and math.ceil(in_slot / 2) or nil)
   end
   show_freighters(event.element.parent.parent, entity)
+end
+
+-- Which players have the pointer over the freighter slot, for pipette.
+local function on_gui_hover(event)
+  if event.element.name == SLOT then
+    storage.slot_hovered = storage.slot_hovered or {}
+    storage.slot_hovered[event.player_index] = true
+  end
+end
+
+local function on_gui_leave(event)
+  if event.element.name == SLOT and storage.slot_hovered then
+    storage.slot_hovered[event.player_index] = nil
+  end
+end
+
+-- Pipette over the freighter slot: a freighter from the inventory, or its ghost if there is none
+-- (as in remote view), like pipette over any inventory slot.
+local function on_pipette(event)
+  local player = game.get_player(event.player_index)
+  if storage.slot_hovered and storage.slot_hovered[event.player_index] and opened_depot(player) then
+    player.pipette(prototypes.item[logistics.freighter], nil, true)
+  end
 end
 
 -- Keep the status line current while the window is open.
@@ -205,6 +247,9 @@ function request_gui.register()
   script.on_event(defines.events.on_gui_elem_changed, on_gui_elem_changed)
   script.on_event(defines.events.on_gui_text_changed, on_gui_text_changed)
   script.on_event(defines.events.on_gui_click, on_gui_click)
+  script.on_event(defines.events.on_gui_hover, on_gui_hover)
+  script.on_event(defines.events.on_gui_leave, on_gui_leave)
+  script.on_event("jatz-pipette", on_pipette)
   script.on_nth_tick(30, refresh)
 end
 

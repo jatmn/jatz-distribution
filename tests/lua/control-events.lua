@@ -235,7 +235,18 @@ end
 do -- The freighter slot's clicks: ghosts request freighters from robots; remote view moves nothing.
   local logistics = require("scripts.logistics")
   local calls = {}
-  for _, name in ipairs({ "request_freighters", "cancel_freighter_requests", "put_freighters", "take_freighters" }) do
+  local removing = 0
+  logistics.requested_freighters = function()
+    return 0, removing
+  end
+  for _, name in ipairs({
+    "request_freighters",
+    "cancel_freighter_requests",
+    "put_freighters",
+    "take_freighters",
+    "remove_freighters",
+    "cancel_freighter_removal",
+  }) do
     logistics[name] = function(_, a, b)
       calls[#calls + 1] = { name = name, a = a, b = b }
       return 0
@@ -283,6 +294,29 @@ do -- The freighter slot's clicks: ghosts request freighters from robots; remote
   check("in person, a freighter ghost requests too", call.name == "request_freighters")
   call = click(character, nil, freighter)
   check("in person, freighters in hand go into the slot", call.name == "put_freighters")
+  local right = defines.mouse_button_type.right
+  call = click(remote_view, nil, nil, right)
+  check("remote view: right-click has robots take the freighters away", call.name == "remove_freighters")
+  removing = 3
+  call = click(remote_view, nil, nil, right)
+  check("remote view: right-click again cancels that", call.name == "cancel_freighter_removal")
+
+  -- Pipette over the slot picks up a freighter (or its ghost); elsewhere it's the game's own.
+  local picked
+  player.pipette = function(id, _, allow_ghost)
+    picked = { id = id, ghost = allow_ghost }
+  end
+  prototypes.item[freighter] = { name = freighter }
+  fire("on_gui_hover", { element = element, player_index = 1 })
+  fire("jatz-pipette", { player_index = 1 })
+  check(
+    "pipette over the slot picks up a freighter, or its ghost",
+    picked and picked.id.name == freighter and picked.ghost
+  )
+  picked = nil
+  fire("on_gui_leave", { element = element, player_index = 1 })
+  fire("jatz-pipette", { player_index = 1 })
+  check("pipette elsewhere is left to the game", picked == nil)
 end
 
 print("all control event checks passed")
