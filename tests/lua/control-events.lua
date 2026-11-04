@@ -394,17 +394,11 @@ do -- A panel opened before an update that changed its layout is rebuilt, with i
   check("with its status light lit", light.sprite == "utility/status_inactive" and light.tooltip ~= nil)
 end
 
-do -- The line beside the freighter slot: only what's happening, and nothing when nothing is.
+do -- The line beside the freighter slot: how many are out on the road, always.
   local caption = require("scripts.request-gui").freighter_caption
-  local quiet = caption(0, 0, 0)
-  check("nothing happening shows no text", #quiet == 1 and quiet[1] == "")
-  local out = caption(3, 0, 0)
-  check("freighters on the road: '3 out'", #out == 2 and out[2][1] == "jatz-gui.freighters-out" and out[2][2] == 3)
-  local robots = caption(0, 2, 1)
-  check(
-    "robots bringing and taking: a green +2 and a red -1",
-    robots[2] == "[color=green]+2[/color]" and robots[3] == "  " and robots[4] == "[color=red]-1[/color]"
-  )
+  local none, some = caption(0), caption(3)
+  check("none out still says so", none[1] == "jatz-gui.freighters-out" and none[2] == 0)
+  check("three out", some[1] == "jatz-gui.freighters-out" and some[2] == 3)
 end
 
 print("all control event checks passed")
