@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 """Unit tests without Factorio: test_mod.py's expansion resolution and locale parsing, the English
 names, the icon size the prototypes declare, the depots' orientation and loading zones, and the
-dispatcher's provider searches (tests/lua/logistics-search.lua)."""
+dispatcher's provider searches and the depots' own road (tests/lua/)."""
 from pathlib import Path
 import re
 import shutil
@@ -133,6 +133,13 @@ class LogisticsSearchTests(unittest.TestCase):
                                 text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('all logistics search checks passed', result.stdout)
+
+    @unittest.skipUnless(shutil.which('lua5.2'), 'the Mod CI job installs Lua 5.2')
+    def test_depot_road_is_laid_and_lifted_only_where_the_depot_owns_it(self):
+        # tests/lua/depot-road.lua: turning, mining and covering by hand, shared tiles, upgrades.
+        result = subprocess.run(['lua5.2', 'tests/lua/depot-road.lua'], cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('all depot road checks passed', result.stdout)
 
 
 class LocaleTests(unittest.TestCase):

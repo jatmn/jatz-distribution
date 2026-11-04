@@ -27,6 +27,8 @@ local logistics = {}
 local PROVIDER = "jatz-provider-depot"
 local REQUEST = "jatz-request-depot"
 local ROAD = "jatz-road"
+-- The road a depot lays under its own loading zone (scripts/depot-road.lua).
+local DEPOT_ROAD = "jatz-depot-road"
 local DRONE = "jatz-freighter-drone"
 logistics.depots = { [PROVIDER] = "provider", [REQUEST] = "request" }
 logistics.drone = DRONE
@@ -92,7 +94,7 @@ end
 local function loading_tile(entity)
   local x, y = loading_zone.tile_centre(entity)
   local tile = entity.surface.get_tile(math.floor(x), math.floor(y))
-  return { x = x, y = y }, tile.valid and tile.name == ROAD
+  return { x = x, y = y }, tile.valid and (tile.name == ROAD or tile.name == DEPOT_ROAD)
 end
 
 -- Remember a provider or request depot. Safe to call again for one already known.
@@ -830,7 +832,6 @@ end
 function logistics.register()
   script.on_nth_tick(DISPATCH_INTERVAL, logistics.on_tick)
   script.on_event(defines.events.on_ai_command_completed, logistics.on_ai_command_completed)
-  script.on_event(defines.events.on_object_destroyed, logistics.on_object_destroyed)
   script.on_event(defines.events.on_script_path_request_finished, logistics.on_script_path_request_finished)
   remote.add_interface("jatz-distribution", {
     -- For other mods and the tests: read and write a request depot's request and status.

@@ -18,6 +18,8 @@ return {
   loading_zone = "__jatz-distribution__/assets/depots/loading-zone/loading-zone.png",
   -- The road tile, its item and recipe; Yuoki slag path art (assets/roads/README.md).
   road = "jatz-road",
+  -- The road a depot lays under its loading zone sign (prototypes/roads.lua, scripts/depot-road.lua).
+  depot_road = "jatz-depot-road",
   road_art = "assets/roads/yuoki-railways/",
   -- Collision layer on every tile except roads; the freighter drone collides with it alone.
   off_road_layer = "jatz_off_road",
