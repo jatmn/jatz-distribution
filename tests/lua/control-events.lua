@@ -38,6 +38,7 @@ script = {
     nth[ticks] = handler
   end,
   on_init = function() end,
+  on_load = function() end,
   on_configuration_changed = function() end,
   register_on_object_destroyed = function() end,
 }
@@ -603,6 +604,33 @@ do -- A freighter placed from the cursor into an open request depot goes to its 
   cursor.count = 4
   fire("on_player_cursor_stack_changed", { player_index = 6 })
   check("one placed from the cursor goes to the slot at once", taken and taken.entity == entity and taken.moved == 1)
+end
+
+do -- A change to a depot's requests reopens its window for viewers, closing on the next tick and
+  -- opening on the one after, so Factorio redraws the chest's requested-item ghosts.
+  local logistics = require("scripts.logistics")
+  local request_gui = require("scripts.request-gui")
+  check("request changes redraw the window", logistics.on_requests_changed == request_gui.redraw)
+  local entity = depot(150)
+  entity.name = "jatz-request-depot"
+  local player = { index = 9, valid = true, opened = entity }
+  game.get_player = function()
+    return player
+  end
+  storage.request_gui = { [9] = entity }
+  storage.reopen = nil
+  handlers.on_tick = nil
+  request_gui.redraw(entity)
+  check("the reopen waits for the next tick", player.opened == entity and handlers.on_tick ~= nil)
+  game.tick = game.tick + 1
+  handlers.on_tick({ tick = game.tick })
+  check("the window closes on the next tick", player.opened == nil)
+  fire("on_gui_closed", { player_index = 9, entity = entity })
+  check("the depot is still remembered as open", storage.request_gui[9] == entity)
+  game.tick = game.tick + 1
+  handlers.on_tick({ tick = game.tick })
+  check("and opens again on the one after", player.opened == entity)
+  check("then the tick handler stops", handlers.on_tick == nil)
 end
 
 print("all control event checks passed")

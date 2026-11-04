@@ -1181,6 +1181,11 @@ function logistics.requested_freighters(entity)
   return requested, removing
 end
 
+-- Called (with the depot) whenever the mod changes a depot's item requests: Factorio's open
+-- container window doesn't redraw a chest's requested-item ghosts for script changes, so
+-- scripts/request-gui.lua reopens the window for those viewing it.
+logistics.on_requests_changed = nil
+
 -- Chest stacks (0-based) that are empty and in no request's plan, as a list.
 local function free_chest_stacks(chest, proxies)
   local taken = {}
@@ -1238,6 +1243,9 @@ local function add_plan(entity, proxies, plan, removal)
       modules = removal and {} or { plan },
       removal_plan = removal and { plan } or nil,
     })
+  end
+  if logistics.on_requests_changed then
+    logistics.on_requests_changed(entity)
   end
 end
 
@@ -1388,6 +1396,9 @@ local function reduce_freighter_requests(entity, excess)
     else
       proxy.insert_plan = plans
     end
+  end
+  if logistics.on_requests_changed then
+    logistics.on_requests_changed(entity)
   end
 end
 
@@ -1557,6 +1568,9 @@ function logistics.cancel_freighter_removal(entity)
       proxy.removal_plan = kept
     end
   end
+  if logistics.on_requests_changed then
+    logistics.on_requests_changed(entity)
+  end
   return removing
 end
 
@@ -1580,6 +1594,9 @@ function logistics.cancel_freighter_requests(entity)
     else
       proxy.insert_plan = kept
     end
+  end
+  if logistics.on_requests_changed then
+    logistics.on_requests_changed(entity)
   end
   return requested
 end

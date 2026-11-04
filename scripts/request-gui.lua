@@ -176,7 +176,8 @@ local function on_gui_opened(event)
 end
 
 local function on_gui_closed(event)
-  if event.entity and storage.request_gui then
+  local reopening = storage.reopen and storage.reopen[event.player_index]
+  if event.entity and storage.request_gui and not reopening then
     storage.request_gui[event.player_index] = nil
   end
   if storage.slot_hovered then
@@ -325,6 +326,63 @@ end
 -- freighter, say) goes to its freighter slot at once too, so the chest slot shows the rest of the
 -- request again straight away rather than at the next dispatch.
 request_gui.on_player_cursor_stack_changed = request_gui.on_player_main_inventory_changed
+
+-- Factorio's open container window doesn't redraw a chest's requested-item ghosts when a script
+-- changes the requests (a hand-filled freighter request kept showing 5 for 4 until reopened), and
+-- closing and reopening in one tick does nothing (the window is the same at the tick's start and
+-- end). So the window is closed on the next tick and opened again on the one after: a gap of one
+-- tick. The tick handler runs only while that is pending.
+local REOPEN_CLOSE, REOPEN_OPEN = 1, 2
+
+function request_gui.on_tick(event)
+  for index, pending in pairs(storage.reopen or {}) do
+    local player = game.get_player(index)
+    local entity = pending.entity
+    if not (player and player.valid and entity.valid) then
+      storage.reopen[index] = nil
+    elseif pending.step == REOPEN_CLOSE and event.tick >= pending.tick then
+      if player.opened == entity then
+        player.opened = nil
+        pending.step, pending.tick = REOPEN_OPEN, event.tick + 1
+      else
+        storage.reopen[index] = nil
+      end
+    elseif pending.step == REOPEN_OPEN and event.tick >= pending.tick then
+      storage.reopen[index] = nil
+      if player.opened == nil then
+        player.opened = entity
+      end
+    end
+  end
+  if not next(storage.reopen or {}) then
+    script.on_event(defines.events.on_tick, nil)
+  end
+end
+
+-- Listen to ticks again after loading a save with a reopen pending (control.lua's on_load).
+function request_gui.on_load()
+  if storage.reopen and next(storage.reopen) then
+    script.on_event(defines.events.on_tick, request_gui.on_tick)
+  end
+end
+
+function request_gui.redraw(entity)
+  local scheduled = false
+  for index, open_entity in pairs(storage.request_gui or {}) do
+    local player = game.get_player(index)
+    if open_entity == entity and player and player.valid and player.opened == entity then
+      storage.reopen = storage.reopen or {}
+      if not storage.reopen[index] then
+        storage.reopen[index] = { entity = entity, step = REOPEN_CLOSE, tick = game.tick + 1 }
+        scheduled = true
+      end
+    end
+  end
+  if scheduled then
+    script.on_event(defines.events.on_tick, request_gui.on_tick)
+  end
+end
+logistics.on_requests_changed = request_gui.redraw
 
 -- Keep the status line current while the window is open.
 local function refresh()
