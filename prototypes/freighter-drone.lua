@@ -5,9 +5,9 @@
 -- players and other freighters, and runs without fuel for now. scripts/logistics.lua creates
 -- one per delivery and removes it when the delivery is done.
 local constants = require("prototypes.constants")
-local make_animation = require("assets.quinityn-freighter.factorio.freighter-animation")
+local art = require("prototypes.freighter-art")
 
-local animation = make_animation(constants.mod_name, nil, constants.freighter_sheets)
+local animation = art.animation()
 
 data:extend({
   {
@@ -24,7 +24,8 @@ data:extend({
       layers = { [constants.off_road_layer] = true },
       colliding_with_tiles_only = true,
     },
-    selection_box = { { -0.8, -0.8 }, { 0.8, 0.8 } },
+    -- The middle of the body, so it is easy to point at while it turns.
+    selection_box = art.box(0.8, 0.8),
     selection_priority = 60,
     run_animation = animation,
     movement_speed = 0.2,

@@ -47,7 +47,12 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # Road and depot changes take effect at once: a mended road is used, a removed provider
             # is replaced by the next one, a removed request depot's freighter leaves.
             'rerouted_received': 10, 'rerouted_from_farther': 10, 'orphaned_provider_left': 10,
-            'rerouted_same_freighter': True}
+            'rerouted_same_freighter': True,
+            # The provider nearest by road wins over the one nearest in a straight line, and a
+            # request with no road route to any provider sends no freighter at all.
+            'shortest_from_far': 10, 'shortest_from_near': 0, 'island_freighter_sent': False,
+            # The freighter is drawn at 75% of the artwork's scale (1.5 x 4.5 tiles measured).
+            'freighter_box': [1.125, 3.375]}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 

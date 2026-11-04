@@ -335,6 +335,22 @@ local function setup_deliveries(surface, result)
   deliveries.rerouted = pair(-46, 20, 20, "stone-brick", 10, 10)
   deliveries.rerouted.nearer = depot(surface, "provider", -37.5, 20.5)
   assert(deliveries.rerouted.nearer.insert({ name = "stone-brick", count = 10 }) == 10, "brick: cannot stock")
+  -- Nearest by road, not in a straight line: the request depot's nearer provider (8 tiles away) is
+  -- reachable only by a 34-tile U; a farther one (16 tiles) has a straight 16-tile road. The
+  -- freighter must use the farther one.
+  local shortest = {
+    request = depot(surface, "request", 30.5, 45.5),
+    near = depot(surface, "provider", 22.5, 45.5),
+    far = depot(surface, "provider", 46.5, 45.5),
+  }
+  lay_road(surface, 30, 47, 46, 47)
+  lay_road(surface, 22, 47, 22, 60)
+  lay_road(surface, 22, 60, 30, 60)
+  lay_road(surface, 30, 47, 30, 60)
+  assert(shortest.near.insert({ name = "coal", count = 10 }) == 10, "coal: cannot stock")
+  assert(shortest.far.insert({ name = "coal", count = 10 }) == 10, "coal: cannot stock")
+  assert(remote.call("jatz-distribution", "set_request", shortest.request, "coal", 10), "coal: request refused")
+  deliveries.shortest = shortest
   -- The request depot is removed while its freighter heads out: the freighter leaves, nothing moves.
   deliveries.orphaned = pair(50, 20, 12, "wooden-chest", 10, 10)
 
@@ -429,6 +445,10 @@ local function interfere(surface)
     })
     return drones[1]
   end
+  -- No freighter is ever sent from the isolated road tile: the route is known missing beforehand.
+  if freighter_of(deliveries.island) then
+    deliveries.island_sent = true
+  end
   local rerouted = deliveries.rerouted
   if not rerouted.done and status(rerouted.request) == "delivering" then
     rerouted.freighter = freighter_of(rerouted.request)
@@ -465,6 +485,7 @@ local function deliveries_finished(surface, tick, result)
     and deliveries.mended.delivered
     and count(deliveries.rerouted.request, "stone-brick") == 10
     and deliveries.orphaned.left
+    and count(deliveries.shortest.request, "coal") == 10
     and #surface.find_entities_filtered({ name = DRONE }) == 0
   if not done or tick < DELIVERY_SETTLE then
     if tick >= DELIVERY_DEADLINE then
@@ -525,6 +546,9 @@ local function deliveries_finished(surface, tick, result)
   result.rerouted_received = count(deliveries.rerouted.request, "stone-brick")
   result.rerouted_from_farther = 10 - count(deliveries.rerouted.provider, "stone-brick")
   result.orphaned_provider_left = count(deliveries.orphaned.provider, "wooden-chest")
+  result.shortest_from_far = 10 - count(deliveries.shortest.far, "coal")
+  result.shortest_from_near = 10 - count(deliveries.shortest.near, "coal")
+  result.island_freighter_sent = deliveries.island_sent == true
   -- The freighter heading for the removed provider went on to the other one itself.
   result.rerouted_same_freighter = not deliveries.rerouted.replaced
   -- The freighter of a removed request depot left at once, rather than driving on.
@@ -569,6 +593,9 @@ script.on_init(function()
   check_loading_zone_clearing(surface, result)
 
   check_recipe(FREIGHTER, result)
+  -- Drawn at 75% of the artwork's scale, with the boxes scaled to match.
+  local box = prototypes.entity[FREIGHTER].collision_box
+  result.freighter_box = { box.right_bottom.x - box.left_top.x, box.right_bottom.y - box.left_top.y }
   check_road(result)
   check_road_placement(surface, result)
   check_menu_placement(result)

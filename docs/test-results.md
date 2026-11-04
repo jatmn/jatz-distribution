@@ -13,7 +13,7 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | Full rotation of every placed depot (112 steps) | Passed |
 | All 20 pipe ports connect; containers hold items, tanks hold fluid | Passed |
 | A character enters the fuelled freighter and drives it (28.5 tiles in 2 seconds) | Passed |
-| New freighter collision box (1.5 × 4.5 tiles, measured from the sprites) in the graphical client | Untested |
+| Freighter at 75% size (sprites and boxes; box 1.125 × 3.375 tiles, checked headless) in the graphical client | Untested |
 | New 64 px icons in the graphical client: depots face south and the freighter heads south-east | **Passed:** checked by the owner on November 3, 2026, in the inventory and Factoriopedia |
 | Loading zone marking in the graphical client: one tile beyond the footprint on the loading side, south when placed unrotated, worn rather than bright white | **Passed:** checked by the owner on November 3, 2026 (Provider depots on desert) |
 | Marking drawn above decoratives (plants, ground cover): moved from `decals` to `ground-patch-higher2` after the owner saw plants drawn over it | Untested since the change |
@@ -30,6 +30,8 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | Mending a gap in a road: delivery done 195 ticks (about 3 s, round trip included) after the repair, instead of waiting out the retry cooldown | Passed |
 | Nearer of two providers removed mid-trip: the same freighter goes on to the other one and delivers | Passed |
 | Request depot removed mid-trip: its freighter leaves at once and the provider keeps its stock | Passed |
+| Provider nearest by road chosen: 8 tiles away in a straight line but 34 by road loses to 16 tiles on a straight road (all 10 coal from the farther one) | Passed |
+| No road route to any provider: no freighter is sent at all | Passed |
 | Nothing left on the ground by any check | Passed |
 | Unknown items and non-numeric counts are refused without changing the request; a cloned request depot keeps its request; clearing works | Passed |
 | Road laid from a ghost on grass; refused on water | Passed |
@@ -71,7 +73,7 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | Tint isolation (default, alternate, white, black and each layer alone) | Passed |
 | Shadows at eight compass headings and at night | Passed |
 | Driving forward, in full circles and in reverse | Passed |
-| Selection and collision boxes | **Failed** in this artwork fixture, which inherits the base car's boxes (they cover only the middle of the truck). The mod's freighter now uses a 1.5 × 4.5 tile box measured from the sprites; that still needs a graphical check (see Mod above). |
+| Selection and collision boxes | **Failed** in this artwork fixture, which inherits the base car's boxes (they cover only the middle of the truck). The mod's freighter now uses a 1.5 × 4.5 tile box measured from the sprites (scaled with the sprites to 75% in game); that still needs a graphical check (see Mod above). |
 | Wheel animation | Not implemented yet (one static frame per direction) |
 
 ![Default and alternate trucks driving](images/freighter-driving.jpg)

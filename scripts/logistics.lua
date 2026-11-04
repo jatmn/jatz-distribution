@@ -3,7 +3,11 @@
 --
 -- A request depot asks to keep at least `count` of one item (normal quality). Once a second,
 -- each request depot that is short, has room for more and has no freighter on the way sends a
--- freighter from its loading zone to the nearest provider depot holding that item. The freighter
+-- freighter from its loading zone to the provider depot holding that item that is nearest by
+-- road. Road distance comes from the engine's pathfinder (surface.request_path, with the
+-- freighter's own size and collision mask), asked one provider at a time in order of straight-line
+-- distance until no remaining provider could be nearer by road than the best found; a provider
+-- with no road route at all is skipped for a while, and no freighter is sent towards it. The freighter
 -- loads what is needed (no more than fits at the request depot, and at most ten stacks), drives
 -- back, unloads and leaves the map. Freighters are units whose only collision layer is on every
 -- tile except roads (prototypes/off-road.lua), so the engine's pathfinder keeps them on roads;
@@ -37,6 +41,9 @@ local CAPACITY_STACKS = 10
 local RETRY_TICKS = 10 * 60
 -- How close a freighter must get to a loading zone's centre to load or unload there.
 local ARRIVAL_RADIUS = 0.5
+-- A search for the nearest provider by road that hasn't answered in this long (a save loaded
+-- mid-search, say) is started again.
+local SEARCH_TIMEOUT = 10 * 60
 -- Requests are for normal-quality items.
 local QUALITY = "normal"
 
@@ -49,6 +56,7 @@ logistics.status = {
   no_provider = "no-provider",
   unreachable = "unreachable",
   no_freighter = "no-freighter",
+  searching = "searching",
   delivering = "delivering",
 }
 
@@ -56,9 +64,14 @@ logistics.status = {
 -- back to the provider after the way to the request depot was lost.
 local TO_PROVIDER, TO_REQUEST, RETURNING = "to-provider", "to-request", "returning"
 
+-- Defined further down; dispatch and the search need it first.
+local end_trip
+
 local function init_storage()
   storage.depots = storage.depots or {}
   storage.trips = storage.trips or {}
+  -- Provider searches waiting for the pathfinder, by path request id.
+  storage.searches = storage.searches or {}
 end
 
 local function inventory(entity)
@@ -154,11 +167,12 @@ local function need(depot)
   return wanted, math.min(wanted, chest.get_insertable_count(id))
 end
 
--- The nearest provider on the same surface and force, with road at its loading zone, holding the
--- item and not on cooldown for this request. Also says whether one was skipped for cooldown.
-local function find_provider(depot, from)
+-- Every provider that could serve a request depot: on the same surface and force, with road at its
+-- loading zone, holding the item and not on cooldown for this request; nearest first in a straight
+-- line from `from`. Also says whether one was skipped for cooldown.
+local function candidates(depot, from)
   local entity, id = depot.entity, item_id(depot.request.item)
-  local best, best_distance, waiting = nil, math.huge, false
+  local found, waiting = {}, false
   for unit_number, provider in pairs(storage.depots) do
     local candidate = provider.entity
     if
@@ -174,15 +188,15 @@ local function find_provider(depot, from)
           waiting = true
         else
           local dx, dy = position.x - from.x, position.y - from.y
-          local distance = dx * dx + dy * dy
-          if distance < best_distance then
-            best, best_distance = provider, distance
-          end
+          found[#found + 1] = { id = unit_number, position = position, distance = math.sqrt(dx * dx + dy * dy) }
         end
       end
     end
   end
-  return best, waiting
+  table.sort(found, function(a, b)
+    return a.distance < b.distance or (a.distance == b.distance and a.id < b.id)
+  end)
+  return found, waiting
 end
 
 local function drive(trip, destination)
@@ -221,6 +235,56 @@ local function start_trip(depot, provider, from)
   return true
 end
 
+-- Ask the pathfinder for the road route from the search's start to its current candidate, as the
+-- freighter would drive it.
+local function ask_route(search, surface, force)
+  local drone = prototypes.entity[DRONE]
+  local id = surface.request_path({
+    bounding_box = drone.collision_box,
+    collision_mask = drone.collision_mask,
+    start = search.from,
+    goal = search.candidates[search.index].position,
+    force = force,
+    radius = ARRIVAL_RADIUS,
+    pathfind_flags = { no_break = true },
+  })
+  storage.searches[id] = search
+end
+
+-- Start looking for the provider nearest by road. With `trip`, the search is for a freighter
+-- already out (its provider was removed) and starts where it stands. Returns false, with whether
+-- a provider was skipped for cooldown, if there is nothing to look for.
+local function search_providers(depot, from, trip)
+  local found, waiting = candidates(depot, from)
+  if #found == 0 then
+    return false, waiting
+  end
+  local search = {
+    request = depot.entity.unit_number,
+    item = depot.request.item,
+    from = from,
+    candidates = found,
+    index = 1,
+    trip = trip,
+    started = game.tick,
+  }
+  if not trip then
+    depot.searching = game.tick
+  end
+  ask_route(search, depot.entity.surface, depot.entity.force)
+  return true
+end
+
+local function path_length(from, path)
+  local length, x, y = 0, from.x, from.y
+  for _, waypoint in ipairs(path) do
+    local position = waypoint.position
+    length = length + math.sqrt((position.x - x) ^ 2 + (position.y - y) ^ 2)
+    x, y = position.x, position.y
+  end
+  return length
+end
+
 local function dispatch(depot)
   if depot.trip then
     depot.status = logistics.status.delivering
@@ -244,18 +308,25 @@ local function dispatch(depot)
     depot.status = logistics.status.no_freighter
     return
   end
-  local provider, waiting = find_provider(depot, from)
-  if not provider then
-    depot.status = waiting and logistics.status.unreachable or logistics.status.no_provider
-  elseif start_trip(depot, provider, from) then
-    depot.status = logistics.status.delivering
+  if depot.searching and game.tick - depot.searching < SEARCH_TIMEOUT then
+    return
+  end
+  local started, waiting = search_providers(depot, from)
+  if started then
+    depot.status = logistics.status.searching
   else
-    depot.retry_at = game.tick + RETRY_TICKS
-    depot.status = logistics.status.no_freighter
+    depot.searching = nil
+    depot.status = waiting and logistics.status.unreachable or logistics.status.no_provider
   end
 end
 
 function logistics.on_tick()
+  -- A freighter waiting for a reroute search that never answered gives up.
+  for id, trip in pairs(storage.trips) do
+    if trip.searching and game.tick - trip.searching >= SEARCH_TIMEOUT then
+      end_trip(id, trip)
+    end
+  end
   for id, depot in pairs(storage.depots) do
     if not depot.entity.valid then
       storage.depots[id] = nil
@@ -338,7 +409,7 @@ local function upgrade(trip)
   return trip
 end
 
-local function end_trip(id, trip)
+function end_trip(id, trip)
   storage.trips[id] = nil
   local depot = storage.depots[trip.request]
   if depot and depot.trip == id then
@@ -507,18 +578,96 @@ local function depot_removed(id)
         end_trip(trip_id, trip)
       end
     elseif trip.provider == id and trip.state == TO_PROVIDER then
-      -- On to the next nearest provider with the item; with none, the freighter leaves.
+      -- On to the provider nearest by road from where the freighter is; it waits while that is
+      -- worked out, and leaves if there is none.
       local depot = storage.depots[trip.request]
       local request = depot and depot.entity.valid and depot.request
-      local provider = request and request.item == trip.item and find_provider(depot, trip.drone.position)
-      if provider then
-        trip.provider = provider.entity.unit_number
-        replan(trip)
+      if request and request.item == trip.item and search_providers(depot, trip.drone.position, trip_id) then
+        trip.searching = game.tick
+        trip.drone.commandable.set_command({ type = defines.command.stop, distraction = defines.distraction.none })
       else
         end_trip(trip_id, trip)
       end
     end
   end
+end
+
+-- The search is over: send a freighter to the provider nearest by road (or redirect the freighter
+-- the search was for), if the request still wants the item.
+local function finish_search(depot, search)
+  local provider = search.best and storage.depots[search.best]
+  local still = depot.request
+    and depot.request.item == search.item
+    and provider
+    and provider.entity.valid
+    and inventory(provider.entity).get_item_count(item_id(search.item)) > 0
+  if search.trip then
+    local trip = storage.trips[search.trip]
+    if trip and trip.searching then
+      trip.searching = nil
+      if still then
+        trip.provider = search.best
+        drive(trip, (loading_tile(provider.entity)))
+      else
+        end_trip(search.trip, trip)
+      end
+    end
+    return
+  end
+  if depot.searching ~= search.started then
+    return
+  end
+  depot.searching = nil
+  if not search.best then
+    -- No provider with the item has a road route: each is on cooldown now.
+    depot.status = logistics.status.unreachable
+    return
+  end
+  local from, on_road = loading_tile(depot.entity)
+  local _, room = need(depot)
+  if not still or depot.trip or not on_road or room <= 0 then
+    -- Something changed while searching; the next dispatch looks again.
+    return
+  end
+  if start_trip(depot, provider, from) then
+    depot.status = logistics.status.delivering
+  else
+    depot.retry_at = game.tick + RETRY_TICKS
+    depot.status = logistics.status.no_freighter
+  end
+end
+
+function logistics.on_script_path_request_finished(event)
+  local search = storage.searches and storage.searches[event.id]
+  if not search then
+    return
+  end
+  storage.searches[event.id] = nil
+  local depot = storage.depots[search.request]
+  if not (depot and depot.entity.valid) then
+    return
+  end
+  if event.try_again_later then
+    -- The pathfinder was busy: ask again.
+    return ask_route(search, depot.entity.surface, depot.entity.force)
+  end
+  local candidate = search.candidates[search.index]
+  if event.path then
+    local length = path_length(search.from, event.path)
+    if length < (search.best_length or math.huge) then
+      search.best, search.best_length = candidate.id, length
+    end
+  else
+    depot.cooldowns[candidate.id] = game.tick + RETRY_TICKS
+  end
+  -- A road is never shorter than the straight line, so stop at the first candidate that is
+  -- already farther away in a straight line than the best road found.
+  search.index = search.index + 1
+  local next_candidate = search.candidates[search.index]
+  if next_candidate and next_candidate.distance < (search.best_length or math.huge) then
+    return ask_route(search, depot.entity.surface, depot.entity.force)
+  end
+  finish_search(depot, search)
 end
 
 function logistics.on_object_destroyed(event)
@@ -571,7 +720,10 @@ function logistics.add_all()
       logistics.add(entity)
     end
   end
+  -- Searches still waiting for the pathfinder start again from scratch.
+  storage.searches = {}
   for id, depot in pairs(storage.depots) do
+    depot.searching = nil
     if not depot.entity.valid then
       storage.depots[id] = nil
     elseif depot.request and not prototypes.item[depot.request.item] then
@@ -583,7 +735,7 @@ function logistics.add_all()
     upgrade(trip)
     -- Trips whose freighter, cargo or item is gone end; the engine already removed any cargo of
     -- a removed item from the cargo inventory.
-    if not (trip.drone.valid and trip.cargo.valid and prototypes.item[trip.item]) then
+    if trip.searching or not (trip.drone.valid and trip.cargo.valid and prototypes.item[trip.item]) then
       if trip.drone.valid and trip.cargo.valid then
         spill(trip)
       end
@@ -613,6 +765,7 @@ function logistics.register()
   script.on_nth_tick(DISPATCH_INTERVAL, logistics.on_tick)
   script.on_event(defines.events.on_ai_command_completed, logistics.on_ai_command_completed)
   script.on_event(defines.events.on_object_destroyed, logistics.on_object_destroyed)
+  script.on_event(defines.events.on_script_path_request_finished, logistics.on_script_path_request_finished)
   remote.add_interface("jatz-distribution", {
     -- For other mods and the tests: read and write a request depot's request and status.
     set_request = logistics.set_request,
