@@ -232,4 +232,57 @@ do -- A request depot mined by a player, robot or platform hands its freighters 
   end
 end
 
+do -- The freighter slot's clicks: ghosts request freighters from robots; remote view moves nothing.
+  local logistics = require("scripts.logistics")
+  local calls = {}
+  for _, name in ipairs({ "request_freighters", "cancel_freighter_requests", "put_freighters", "take_freighters" }) do
+    logistics[name] = function(_, a, b)
+      calls[#calls + 1] = { name = name, a = a, b = b }
+      return 0
+    end
+  end
+  local entity = depot(60)
+  entity.name = "jatz-request-depot"
+  local player = { index = 1 }
+  game.get_player = function()
+    return player
+  end
+  storage.request_gui = { [1] = entity }
+  local inner = {}
+  local element = { name = "jatz_request_freighters", parent = { parent = inner } }
+  local function click(controller, ghost, held, button)
+    calls = {}
+    player.controller_type = controller
+    player.cursor_ghost = ghost and { name = { name = ghost } } or nil
+    player.cursor_stack = held and { valid_for_read = true, name = held, count = 5 } or { valid_for_read = false }
+    player.get_main_inventory = function()
+      return {}
+    end
+    fire("on_gui_click", {
+      element = element,
+      player_index = 1,
+      button = button or defines.mouse_button_type.left,
+      shift = false,
+    })
+    return calls[1] or {}
+  end
+  local remote_view, character = defines.controllers.remote, defines.controllers.character
+  local freighter = "jatz-quinityn-freighter"
+  local call = click(remote_view, freighter)
+  check(
+    "remote view: a freighter ghost asks robots to fill the slot",
+    call.name == "request_freighters" and call.a == nil
+  )
+  call = click(remote_view, freighter, nil, defines.mouse_button_type.right)
+  check("remote view: right-click asks for one more", call.name == "request_freighters" and call.a == 1)
+  call = click(remote_view)
+  check("remote view: an empty cursor cancels the requests", call.name == "cancel_freighter_requests")
+  call = click(remote_view, nil, freighter)
+  check("remote view: nothing is moved by hand from afar", call.name == nil)
+  call = click(character, freighter)
+  check("in person, a freighter ghost requests too", call.name == "request_freighters")
+  call = click(character, nil, freighter)
+  check("in person, freighters in hand go into the slot", call.name == "put_freighters")
+end
+
 print("all control event checks passed")

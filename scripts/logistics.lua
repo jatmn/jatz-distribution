@@ -1083,6 +1083,123 @@ function logistics.freighter_counts(entity)
   return trucks_of(depot).get_item_count(), out, prototypes.item[FREIGHTER].stack_size
 end
 
+-- Freighters can also be requested, like modules or fuel: an item request proxy asks construction
+-- robots to deliver them into the depot's chest, from where they move into the slot. This is how a
+-- player in remote view (or anywhere without freighters in hand) stocks a depot.
+local PROXY = "item-request-proxy"
+
+local function item_name(id)
+  return type(id) == "string" and id or id.name
+end
+
+-- The item request proxies targeting a request depot, and how many freighters they still ask for.
+local function freighter_requests(entity)
+  local proxies, requested = {}, 0
+  local x, y = entity.position.x, entity.position.y
+  for _, proxy in
+    pairs(entity.surface.find_entities_filtered({
+      name = PROXY,
+      area = { { x - 0.5, y - 0.5 }, { x + 0.5, y + 0.5 } },
+    }))
+  do
+    if proxy.proxy_target == entity then
+      proxies[#proxies + 1] = proxy
+      for _, request in pairs(proxy.item_requests) do
+        if item_name(request.name) == FREIGHTER then
+          requested = requested + request.count
+        end
+      end
+    end
+  end
+  return proxies, requested
+end
+
+-- How many freighters a request depot has asked robots for, still on their way.
+function logistics.requested_freighters(entity)
+  if not request_depot(entity) then
+    return 0
+  end
+  local _, requested = freighter_requests(entity)
+  return requested
+end
+
+-- Ask construction robots to bring `count` freighters (or as many as the slot has room for,
+-- counting freighters out, in the chest and already requested) into a request depot's chest.
+-- Returns how many were requested.
+function logistics.request_freighters(entity, count)
+  local in_slot, out, capacity = logistics.freighter_counts(entity)
+  if not in_slot then
+    return 0
+  end
+  local chest = inventory(entity)
+  local proxies, requested = freighter_requests(entity)
+  local room = capacity - in_slot - out - requested - chest.get_item_count(item_id(FREIGHTER))
+  local amount = math.min(math.floor(tonumber(count) or room), room)
+  if amount <= 0 then
+    return 0
+  end
+  -- An empty chest stack no other request is filling (insert plans use 0-based stack indices).
+  -- The slot holds one stack, so one chest stack always takes the whole request.
+  local taken = {}
+  for _, proxy in ipairs(proxies) do
+    for _, plan in pairs(proxy.insert_plan) do
+      for _, position in pairs(plan.items.in_inventory or {}) do
+        taken[position.stack] = true
+      end
+    end
+  end
+  local stack
+  for index = 1, #chest do
+    if not chest[index].valid_for_read and not taken[index - 1] then
+      stack = index - 1
+      break
+    end
+  end
+  if not stack then
+    return 0
+  end
+  local plan = {
+    id = { name = FREIGHTER, quality = QUALITY },
+    items = { in_inventory = { { inventory = defines.inventory.chest, stack = stack, count = amount } } },
+  }
+  if proxies[1] then
+    local plans = proxies[1].insert_plan
+    plans[#plans + 1] = plan
+    proxies[1].insert_plan = plans
+  else
+    entity.surface.create_entity({
+      name = PROXY,
+      position = entity.position,
+      force = entity.force,
+      target = entity,
+      modules = { plan },
+    })
+  end
+  return amount
+end
+
+-- Cancel a request depot's freighter requests (other requests on it stay). Returns how many.
+function logistics.cancel_freighter_requests(entity)
+  if not request_depot(entity) then
+    return 0
+  end
+  local proxies, requested = freighter_requests(entity)
+  for _, proxy in ipairs(proxies) do
+    local kept = {}
+    for _, plan in pairs(proxy.insert_plan) do
+      if item_name(plan.id.name) ~= FREIGHTER then
+        kept[#kept + 1] = plan
+      end
+    end
+    if #kept == 0 and #proxy.removal_plan == 0 then
+      proxy.destroy()
+    else
+      proxy.insert_plan = kept
+    end
+  end
+  return requested
+end
+
 -- Put freighters from `stack` (a player's cursor, say) into a request depot's slot: `count` of
 -- them, or all, as far as it has room counting those out on trips. Returns how many went in.
 function logistics.put_freighters(entity, stack, count)
@@ -1147,6 +1264,10 @@ function logistics.register()
       return amount > 0 and trucks_of(depot).insert({ name = FREIGHTER, count = amount }) or 0
     end,
     freighter_counts = logistics.freighter_counts,
+    -- Ask construction robots to bring freighters (as from remote view), and cancel that.
+    request_freighters = logistics.request_freighters,
+    requested_freighters = logistics.requested_freighters,
+    cancel_freighter_requests = logistics.cancel_freighter_requests,
   })
 end
 

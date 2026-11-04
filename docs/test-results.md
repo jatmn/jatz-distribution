@@ -38,7 +38,9 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | Depot road art blending into player road, in the graphical client | Untested |
 | Freighter slot: two freighters sent 60 ticks apart, one to each of two providers (30 + 30 sticks), all 5 back in the slot; no freighters, no trips (status "Waiting: no freighters"); freighters in the chest move to the slot; a destroyed request depot drops all 12 of its freighters (full slot plus 2 still in its chest) and a script-removed one its 3; the remote interface adds only up to the slot's limit | Passed |
 | Mining a request depot hands all its freighters (slot and out) to the miner; the slot's one-stack limit counts freighters out; a freighter destroyed on the road is lost (Lua checks against a fake runtime) | Passed headless |
-| Freighter slot in the request panel (click, right-click, shift-click), in the graphical client | Untested |
+| Freighters requested as from remote view: 4 requested, a further request capped at the 5 that fit, cancelled (9) and 3 requested again; construction robots deliver them from storage into the slot (4 there, 2 left in storage) | Passed |
+| Slot clicks routed through control.lua: a freighter ghost requests (right-click: one), an empty cursor in remote view cancels, remote view never moves items by hand (Lua checks against a fake runtime) | Passed headless |
+| Freighter slot in the request panel (click, right-click, shift-click, ghost requests in remote view), in the graphical client | Untested |
 | Nothing left on the ground by any check | Passed |
 | Unknown items and non-numeric counts are refused without changing the request; a cloned request depot keeps its request; clearing works | Passed |
 | Road laid from a ghost on grass; refused on water | Passed |

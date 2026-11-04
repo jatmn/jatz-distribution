@@ -68,7 +68,11 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             'multi_freighters_home': 5, 'no_trucks_status': 'no-trucks', 'absorbed': 2, 'absorbed_left_in_chest': 0,
             'orphaned_freighters_dropped': 3, 'destroyed_freighters_dropped': 12,
             # A slot holding 3 takes 7 more (its stack of 10), however many are asked for.
-            'add_beyond_limit': 7}
+            'add_beyond_limit': 7,
+            # Freighters requested (as from remote view) within the slot's limit, cancelled and
+            # requested again; construction robots bring the 3 from storage into the slot.
+            'requested': 4, 'requested_beyond_limit': 5, 'cancelled': 9, 'requested_again': 3,
+            'robots_delivered': 4, 'storage_left': 2}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 

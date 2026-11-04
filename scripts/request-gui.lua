@@ -7,6 +7,9 @@
 -- The freighter slot works like an inventory slot: click with freighters in hand to put them in
 -- (right-click: one), click with an empty hand to take them all (right-click: half), and
 -- shift-click to move them to your inventory. It holds one stack, counting freighters out on trips.
+-- With a freighter ghost in the cursor (remote view, or no freighters in hand), clicking asks
+-- construction robots to bring freighters instead (right-click: one more); in remote view, where
+-- items can't be moved by hand, clicking with an empty cursor cancels those requests.
 local logistics = require("scripts.logistics")
 
 local request_gui = {}
@@ -35,7 +38,7 @@ local function show_freighters(inner, entity)
     return
   end
   row[SLOT].number = in_slot > 0 and in_slot or nil
-  row[SLOT_LABEL].caption = { "jatz-gui.freighters", in_slot, out, capacity }
+  row[SLOT_LABEL].caption = { "jatz-gui.freighters", in_slot, out, logistics.requested_freighters(entity), capacity }
 end
 
 local function open(player, entity)
@@ -155,7 +158,17 @@ local function on_gui_click(event)
     return
   end
   local right = event.button == defines.mouse_button_type.right
-  if event.shift then
+  local ghost = player.cursor_ghost
+  local ghost_name = ghost and (type(ghost.name) == "string" and ghost.name or ghost.name.name)
+  if ghost_name == logistics.freighter then
+    -- A freighter ghost in the cursor: robots bring them.
+    logistics.request_freighters(entity, right and 1 or nil)
+  elseif player.controller_type == defines.controllers.remote then
+    -- Remote view: no items move by hand from afar; an empty-cursor click cancels requests.
+    if not cursor.valid_for_read then
+      logistics.cancel_freighter_requests(entity)
+    end
+  elseif event.shift then
     logistics.take_freighters(entity, nil, nil, player.get_main_inventory())
   elseif cursor.valid_for_read then
     logistics.put_freighters(entity, cursor, right and 1 or nil)
