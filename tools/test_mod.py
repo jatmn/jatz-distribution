@@ -52,7 +52,15 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # request with no road route to any provider sends no freighter at all.
             'shortest_from_far': 10, 'shortest_from_near': 0, 'island_freighter_sent': False,
             # The freighter is drawn at 75% of the artwork's scale (1.5 x 4.5 tiles measured).
-            'freighter_box': [1.125, 3.375]}
+            'freighter_box': [1.125, 3.375],
+            # Depots lay road under their loading zone, connecting road a tile away, and take it
+            # away when removed, putting back what it covered; road that was already there, or
+            # laid over theirs, stays; a shared tile keeps road until the last depot goes; nothing
+            # is laid on water.
+            'depot_road_laid': 'jatz-depot-road', 'depot_road_hides': 'grass-1', 'connected_by_depot_roads': 5,
+            'concrete_restored': 'concrete', 'grass_restored': 'grass-1', 'road_kept_on_build': 'jatz-road',
+            'road_kept_on_removal': 'jatz-road', 'covered_kept': 'stone-path', 'water_left': 'water',
+            'shared_kept': 'jatz-depot-road', 'shared_restored': 'concrete'}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 

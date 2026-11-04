@@ -258,6 +258,58 @@ local function depot(surface, role, x, y)
   })
 end
 
+-- Every depot lays road under its loading zone sign, and takes it away again when removed, but
+-- only road it laid itself. Row at y 9.5 (loading zones at y 11), west of the freighter's drive.
+local function setup_depot_roads(surface, result)
+  local function zone_tile(x, name)
+    surface.set_tiles({ { name = name, position = { x, 11 } } })
+  end
+  local roads = {}
+  storage.depot_roads = roads
+  -- Road one tile short of each depot's loading zone still connects: a provider and a request
+  -- depot on grass, with road between their zones but not on them.
+  zone_tile(-67, "grass-1")
+  zone_tile(-57, "grass-1")
+  roads.provider = depot(surface, "provider", -66.5, 9.5)
+  roads.request = depot(surface, "request", -56.5, 9.5)
+  lay_road(surface, -66, 11, -58, 11)
+  result.depot_road_laid = surface.get_tile(-67, 11).name
+  result.depot_road_hides = surface.get_hidden_tile({ -67, 11 })
+  assert(roads.provider.insert({ name = "small-electric-pole", count = 5 }) == 5, "poles: cannot stock")
+  assert(remote.call("jatz-distribution", "set_request", roads.request, "small-electric-pole", 5), "poles: refused")
+  -- Removing a depot puts back what its road covered: concrete, and grass.
+  roads.on_concrete = depot(surface, "provider", -46.5, 9.5)
+  zone_tile(-41, "grass-1")
+  roads.on_grass = depot(surface, "provider", -40.5, 9.5)
+  -- Road already there isn't the depot's: it stays.
+  zone_tile(-35, "jatz-road")
+  roads.on_road = depot(surface, "provider", -34.5, 9.5)
+  result.road_kept_on_build = surface.get_tile(-35, 11).name
+  -- A tile placed over the depot's road is the player's: it stays.
+  roads.covered = depot(surface, "provider", -28.5, 9.5)
+  surface.set_tiles({ { name = "stone-path", position = { -29, 11 } } })
+  -- Nothing is laid on water.
+  zone_tile(-23, "water")
+  roads.on_water = depot(surface, "provider", -22.5, 9.5)
+  result.water_left = surface.get_tile(-23, 11).name
+  for _, key in ipairs({ "on_concrete", "on_grass", "on_road", "covered", "on_water" }) do
+    roads[key].destroy()
+  end
+  -- Two depots loading from one tile: the road stays until the second goes.
+  roads.shared_a = depot(surface, "provider", 40.5, 9.5)
+  roads.shared_b = depot(surface, "provider", 40.5, 13.5)
+  roads.shared_b.direction = defines.direction.south
+  roads.shared_b.destroy()
+  roads.shared_b = surface.create_entity({
+    name = "jatz-provider-depot",
+    position = { 40.5, 13.5 },
+    direction = defines.direction.south,
+    force = "player",
+    raise_built = true,
+  })
+  roads.shared_a.destroy()
+end
+
 -- Requests built as a player would, south and north-west of the other checks. Each uses its own
 -- item, so no request can be served by another check's provider.
 -- * connected: provider and request depots 20 tiles apart, joined by a U-shaped road that
@@ -277,6 +329,9 @@ local function setup_deliveries(surface, result)
   local island = depot(surface, "request", -20.5, 45.5)
   lay_road(surface, -21, 47, -21, 47)
   local unpaved = depot(surface, "request", -20.5, 60.5)
+  -- Depots lay road under their loading zone; cover it, as a player paving over it would.
+  assert(surface.get_tile(-21, 62).name == "jatz-depot-road", "unpaved: depot laid no road")
+  surface.set_tiles({ { name = "concrete", position = { -21, 62 } } })
   assert(provider.insert({ name = "iron-plate", count = 50 }) == 50, "provider: cannot stock")
   assert(remote.call("jatz-distribution", "set_request", connected, "iron-plate", 30), "request: not registered")
   assert(remote.call("jatz-distribution", "set_request", island, "iron-plate", 10), "island: not registered")
@@ -384,7 +439,7 @@ local function check_freighters_on_road(surface)
     }) do
       local tile = surface.get_tile(math.floor(corner[1]), math.floor(corner[2]))
       assert(
-        tile.name == ROAD,
+        tile.name == ROAD or tile.name == "jatz-depot-road",
         string.format("freighter off road on %s at (%.2f, %.2f)", tile.name, drone.position.x, drone.position.y)
       )
     end
@@ -405,6 +460,12 @@ end
 
 -- Interfere with trips as they happen: destroy one freighter, change one request, cut one road.
 local function interfere(surface)
+  local roads = storage.depot_roads
+  if game.tick == 30 then
+    -- The first of two depots sharing a loading tile went at tick 0: the road is still there.
+    roads.shared_kept = surface.get_tile(40, 11).name
+    roads.shared_b.destroy()
+  end
   local deliveries = storage.deliveries
   local destroyed = deliveries.destroyed
   if not destroyed.done and status(destroyed.request) == "delivering" then
@@ -486,6 +547,7 @@ local function deliveries_finished(surface, tick, result)
     and count(deliveries.rerouted.request, "stone-brick") == 10
     and deliveries.orphaned.left
     and count(deliveries.shortest.request, "coal") == 10
+    and count(storage.depot_roads.request, "small-electric-pole") == 5
     and #surface.find_entities_filtered({ name = DRONE }) == 0
   if not done or tick < DELIVERY_SETTLE then
     if tick >= DELIVERY_DEADLINE then
@@ -549,6 +611,14 @@ local function deliveries_finished(surface, tick, result)
   result.shortest_from_far = 10 - count(deliveries.shortest.far, "coal")
   result.shortest_from_near = 10 - count(deliveries.shortest.near, "coal")
   result.island_freighter_sent = deliveries.island_sent == true
+  local roads = storage.depot_roads
+  result.connected_by_depot_roads = count(roads.request, "small-electric-pole")
+  result.concrete_restored = surface.get_tile(-47, 11).name
+  result.grass_restored = surface.get_tile(-41, 11).name
+  result.road_kept_on_removal = surface.get_tile(-35, 11).name
+  result.covered_kept = surface.get_tile(-29, 11).name
+  result.shared_kept = roads.shared_kept
+  result.shared_restored = surface.get_tile(40, 11).name
   -- The freighter heading for the removed provider went on to the other one itself.
   result.rerouted_same_freighter = not deliveries.rerouted.replaced
   -- The freighter of a removed request depot left at once, rather than driving on.
@@ -598,6 +668,7 @@ script.on_init(function()
   result.freighter_box = { box.right_bottom.x - box.left_top.x, box.right_bottom.y - box.left_top.y }
   check_road(result)
   check_road_placement(surface, result)
+  setup_depot_roads(surface, result)
   check_menu_placement(result)
   setup_deliveries(surface, result)
   local start = { 0.5, 30.5 }

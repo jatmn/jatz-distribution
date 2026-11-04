@@ -52,9 +52,23 @@ local road = {
   trigger_effect = stone_path.trigger_effect,
 }
 
+-- The road a depot lays under its loading zone sign when built, so a road one tile away
+-- connects (scripts/depot-road.lua). It looks and drives like road and blends into it, but has
+-- no item: it can't be placed by hand, and mining it gives nothing (the script puts back the
+-- ground it covered). It is a separate tile so that only road the depot laid is removed with the
+-- depot; road a player lays there is theirs to keep.
+local depot_road = table.deepcopy(road)
+depot_road.name = constants.depot_road
+depot_road.order = "d[road]-b[depot]"
+depot_road.hidden = true
+depot_road.minable = { mining_time = 0.1 }
+depot_road.layer = 62
+depot_road.transition_merges_with_tile = name
+
 data:extend({
   { type = "collision-layer", name = constants.off_road_layer },
   road,
+  depot_road,
   {
     type = "item",
     name = name,
