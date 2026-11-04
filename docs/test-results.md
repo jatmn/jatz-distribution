@@ -42,6 +42,7 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | Freighters taken away by robots (remote-view right-click): a removal marked and cancelled puts its freighter back; 2 marked are carried back to storage (slot 2, storage 4) | Passed |
 | Slot clicks routed through control.lua: a freighter ghost requests (right-click: one), an empty cursor in remote view cancels, a remote right-click removes (again: cancels), remote view never moves items by hand; pipette over the slot picks up a freighter or its ghost, and only over the slot (Lua checks against a fake runtime) | Passed headless |
 | Status light in the request panel (green, yellow, red, grey, with the status as tooltip), in the graphical client | Untested |
+| Compact freighter line beside the slot ("3 out", green "+2", red "-1", empty when idle; full breakdown as tooltip), in the graphical client | Untested |
 | Freighter slot in the request panel in the graphical client: ghost requests and robot removal in remote view, pipette (Q) over the slot | **Passed:** checked by the owner on November 3, 2026 |
 | Nothing left on the ground by any check | Passed |
 | Unknown items and non-numeric counts are refused without changing the request; a cloned request depot keeps its request; clearing works | Passed |

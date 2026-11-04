@@ -59,16 +59,43 @@ local function show_status(light, entity)
   light.tooltip = status_caption(entity)
 end
 
--- Show the slot's freighters and how many are out.
+-- The short line beside the freighter slot (whose own number is the freighters in it): only
+-- what is happening, and only when it isn't nothing. "3 out" on the road, a green "+2" being
+-- brought by robots, a red "-1" being taken away by them. The full breakdown is the tooltip.
+function request_gui.freighter_caption(out, coming, leaving)
+  local caption = { "" }
+  local function part(text)
+    if #caption > 1 then
+      caption[#caption + 1] = "  "
+    end
+    caption[#caption + 1] = text
+  end
+  if out > 0 then
+    part({ "jatz-gui.freighters-out", out })
+  end
+  if coming > 0 then
+    part("[color=green]+" .. coming .. "[/color]")
+  end
+  if leaving > 0 then
+    part("[color=red]-" .. leaving .. "[/color]")
+  end
+  return caption
+end
+
+-- Show the slot's freighters: the count on the slot, what's happening beside it, and the full
+-- breakdown when hovering either.
 local function show_freighters(inner, entity)
   local in_slot, out, capacity = logistics.freighter_counts(entity)
   local row = inner.freighter_row
   if not (row and in_slot) then
     return
   end
+  local coming, leaving = logistics.requested_freighters(entity)
+  local breakdown = { "jatz-gui.freighters", in_slot, out, coming, leaving, capacity }
   row[SLOT].number = in_slot > 0 and in_slot or nil
-  local requested, removing = logistics.requested_freighters(entity)
-  row[SLOT_LABEL].caption = { "jatz-gui.freighters", in_slot, out, requested, removing, capacity }
+  row[SLOT].tooltip = { "", breakdown, "\n\n", { "jatz-gui.freighter-slot-tooltip" } }
+  row[SLOT_LABEL].caption = request_gui.freighter_caption(out, coming, leaving)
+  row[SLOT_LABEL].tooltip = breakdown
 end
 
 local function open(player, entity)
