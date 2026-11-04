@@ -129,6 +129,7 @@ for _, event in ipairs({
   script.on_event(event, on_tiles_mined)
 end
 -- Scripts report only the new tiles: road among them was laid; anything else may have covered road.
+-- Another tile set over a depot's road by a script is that script's: the depot won't restore it.
 script.on_event(defines.events.script_raised_set_tiles, function(event)
   local added, other = false, false
   for _, tile in pairs(event.tiles) do
@@ -136,6 +137,9 @@ script.on_event(defines.events.script_raised_set_tiles, function(event)
       added = true
     else
       other = true
+    end
+    if tile.name ~= depot_road.name then
+      depot_road.covered(event.surface_index, tile.position)
     end
   end
   logistics.on_roads_changed(event.surface_index, added, other)

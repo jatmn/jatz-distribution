@@ -141,6 +141,15 @@ class LogisticsSearchTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('all depot road checks passed', result.stdout)
 
+    @unittest.skipUnless(shutil.which('lua5.2'), 'the Mod CI job installs Lua 5.2')
+    def test_control_routes_game_events_to_depot_roads(self):
+        # tests/lua/control-events.lua loads the real control.lua and fires the game's events at
+        # the handlers it registers: build, turn, flip, remove, and tiles placed, mined or set over
+        # a depot's road by players, robots and scripts.
+        result = subprocess.run(['lua5.2', 'tests/lua/control-events.lua'], cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('all control event checks passed', result.stdout)
+
 
 class LocaleTests(unittest.TestCase):
     def test_keys_are_section_qualified(self):

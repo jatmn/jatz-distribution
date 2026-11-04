@@ -40,6 +40,17 @@ local function sharing(surface_index, x, y, except)
   end
 end
 
+-- Put the ground a record covered back on its tile: the tile and exactly the hidden tiles there
+-- were (laying road may have hidden the ground under it).
+local function put_back(surface, record)
+  local position = { record.x, record.y }
+  surface.set_tiles({ { name = record.tile, position = position } }, true, false, true, false)
+  surface.set_hidden_tile(position, record.hidden)
+  if record.hidden then
+    surface.set_double_hidden_tile(position, record.double)
+  end
+end
+
 -- Put back the ground a record covered, if the depot's road is still there and no other depot
 -- loads from that tile. Returns true if road was removed.
 local function restore(unit_number, record)
@@ -50,27 +61,22 @@ local function restore(unit_number, record)
   if not surface or not record.tile then
     return false
   end
-  local position = { record.x, record.y }
   if surface.get_tile(record.x, record.y).name ~= DEPOT_ROAD then
     return false
   end
-  surface.set_tiles({ { name = record.tile, position = position } }, true, false, true, false)
-  -- Exactly the hidden tiles there were: laying road may have hidden the ground under it.
-  surface.set_hidden_tile(position, record.hidden)
-  if record.hidden then
-    surface.set_double_hidden_tile(position, record.double)
-  end
+  put_back(surface, record)
   return true
 end
 
 -- Remove the road a depot laid (removed or turned depot). Returns the surface index if road went.
 function depot_road.lift(unit_number)
   local record = records()[unit_number]
+  -- Forget the depot whether or not it still owns road (`false`: the player took the spot).
+  records()[unit_number] = nil
   if not record then
     return nil
   end
-  records()[unit_number] = nil
-  return record and restore(unit_number, record) and record.surface or nil
+  return restore(unit_number, record) and record.surface or nil
 end
 
 -- Lay road under a depot's loading zone sign, first lifting any it laid elsewhere (a turned
@@ -93,14 +99,14 @@ function depot_road.lay(entity)
     -- (from a cloned area, say) is adopted, with the ground hidden under it as what it covered.
     local other = sharing(surface.index, x, y, unit_number)
     local position = { x, y }
-    records()[unit_number] = {
-      surface = surface.index,
-      x = x,
-      y = y,
-      tile = other and other.tile or surface.get_hidden_tile(position),
-      hidden = other and other.hidden or surface.get_double_hidden_tile(position),
-      double = other and other.double or nil,
-    }
+    local record = { surface = surface.index, x = x, y = y }
+    if other then
+      -- Copied as they are, nil included: a missing hidden tile must stay missing.
+      record.tile, record.hidden, record.double = other.tile, other.hidden, other.double
+    else
+      record.tile, record.hidden = surface.get_hidden_tile(position), surface.get_double_hidden_tile(position)
+    end
+    records()[unit_number] = record
     return nil, removed
   end
   local position = { x, y }
@@ -116,18 +122,21 @@ function depot_road.lay(entity)
   return surface.index, removed
 end
 
+-- Tile positions arrive as { x = .., y = .. } from the game, and may be { x, y } from scripts.
+local function xy(position)
+  return position.x or position[1], position.y or position[2]
+end
+
 -- The depot's road was mined by hand: put back the ground it covered (mining reveals only the
 -- hidden tile, which would lose concrete laid there before the depot), and forget it.
 function depot_road.mined(surface_index, position)
+  local x, y = xy(position)
   for unit_number, record in pairs(records()) do
-    if record and record.surface == surface_index and record.x == position.x and record.y == position.y then
+    if record and record.surface == surface_index and record.x == x and record.y == y then
       records()[unit_number] = false
       local surface = game.surfaces[surface_index]
-      if surface and record.tile and surface.get_tile(record.x, record.y).name ~= record.tile then
-        surface.set_tiles({ { name = record.tile, position = { record.x, record.y } } }, true, false, true, false)
-        if record.hidden then
-          surface.set_hidden_tile({ record.x, record.y }, record.hidden)
-        end
+      if surface and record.tile then
+        put_back(surface, record)
       end
     end
   end
@@ -135,8 +144,9 @@ end
 
 -- A player placed a tile over the depot's road: it's theirs now, so never put the old ground back.
 function depot_road.covered(surface_index, position)
+  local x, y = xy(position)
   for unit_number, record in pairs(records()) do
-    if record and record.surface == surface_index and record.x == position.x and record.y == position.y then
+    if record and record.surface == surface_index and record.x == x and record.y == y then
       records()[unit_number] = false
     end
   end

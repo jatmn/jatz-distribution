@@ -189,4 +189,41 @@ do -- A save from before depots laid road: existing depots get theirs once.
   check("only once", next(roads.lay_all({})) == nil)
 end
 
+do -- Mining it by hand puts back every layer, double-hidden tile included.
+  local roads = reset()
+  local cell = surface.cell(0, 2)
+  cell.name, cell.hidden, cell.double = "concrete", "landfill", "water"
+  roads.lay(depot())
+  cell.name = "landfill" -- mining reveals the hidden tile
+  roads.mined(1, { 0, 2 }) -- positions from scripts may be arrays
+  check(
+    "mining restores tile, hidden and double-hidden tiles",
+    cell.name == "concrete" and cell.hidden == "landfill" and cell.double == "water"
+  )
+end
+
+do -- A shared tile with no hidden tile keeps none, even if one lies deeper.
+  local roads = reset()
+  local cell = surface.cell(0, 2)
+  cell.name = "concrete"
+  local first, second = depot(0.5, 0.5), depot(0.5, 4.5, defines.direction.south)
+  roads.lay(first)
+  cell.double = "water" -- something deeper appears; the record says there was no hidden tile
+  roads.lay(second)
+  roads.lift(first.unit_number)
+  roads.lift(second.unit_number)
+  check("the shared record's missing hidden tile stays missing", cell.name == "concrete" and cell.hidden == nil)
+end
+
+do -- Records of depots whose road the player took are dropped when those depots go.
+  local roads = reset()
+  for index = 1, 3 do
+    local entity = depot(index * 10 + 0.5, 0.5)
+    roads.lay(entity)
+    roads.covered(1, { x = index * 10, y = 2 })
+    roads.lift(entity.unit_number)
+  end
+  check("no records are left behind", next(storage.depot_roads) == nil)
+end
+
 print("all depot road checks passed")
