@@ -866,8 +866,8 @@ end
 -- clamped). Returns false, changing nothing, for anything else or a priority that isn't a number.
 function logistics.set_priority(entity, priority)
   local depot = supplying_depot(entity)
-  priority = tonumber(priority)
-  if not depot or not priority or priority ~= priority then
+  -- A number, not text that reads as one (remote callers and blueprint tags can pass anything).
+  if not depot or type(priority) ~= "number" or priority ~= priority then
     return false
   end
   priority = math.max(PRIORITY_MIN, math.min(PRIORITY_MAX, math.floor(priority + 0.5)))

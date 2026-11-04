@@ -595,6 +595,7 @@ do -- Settings: provider and buffer depots only, 1 to 10, 5 until set.
   check("request depots have none", logistics.get_priority(request) == nil)
   check("and can't be given one", logistics.set_priority(request, 3) == false)
   check("a priority must be a number", logistics.set_priority(near, "high") == false)
+  check("not text that reads as one", logistics.set_priority(near, "8") == false and logistics.get_priority(near) == 5)
   check("not NaN either", logistics.set_priority(near, 0 / 0) == false and logistics.get_priority(near) == 5)
   logistics.set_priority(near, 0)
   check("below 1 is 1", logistics.get_priority(near) == 1)
