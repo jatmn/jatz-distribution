@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- The Quinityn freighter: the base car's driving behavior with the freighter artwork.
 local constants = require("prototypes.constants")
-local make_animation = require("assets.quinityn-freighter.factorio.freighter-animation")
+local art = require("prototypes.freighter-art")
 
 local name = "jatz-quinityn-freighter"
 
@@ -10,14 +10,15 @@ freighter.name = name
 freighter.icon = constants.freighter_icon
 freighter.icon_size = constants.icon_size
 freighter.minable = { mining_time = 0.5, result = name }
-freighter.animation = make_animation(constants.mod_name, nil, constants.freighter_sheets)
+freighter.animation = art.animation()
 -- No gun turret, and the car's lamp sprite doesn't fit this body.
 freighter.turret_animation = nil
 freighter.light_animation = nil
 freighter.guns = nil
--- Measured from the rendered sprites: about 4.6 tiles long and 1.5 wide, centered on the pivot.
-freighter.collision_box = { { -0.75, -2.25 }, { 0.75, 2.25 } }
-freighter.selection_box = { { -0.8, -2.3 }, { 0.8, 2.3 } }
+-- Measured from the rendered sprites at the artwork's scale (about 4.6 tiles long and 1.5 wide,
+-- centred on the pivot), then scaled with the sprites: about 3.4 by 1.1 tiles in game.
+freighter.collision_box = art.box(0.75, 2.25)
+freighter.selection_box = art.box(0.8, 2.3)
 
 data:extend({
   freighter,

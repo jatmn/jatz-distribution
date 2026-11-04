@@ -47,7 +47,7 @@ prototype.animation = make_animation("your-mod-name", {
 ```
 
 - **Directions:** each atlas is an 8×8 grid read left to right, top to bottom. Direction 0 is north, and each step turns 5.625° clockwise (16 = east, 32 = south, 48 = west). `apply_projection` must stay `false`; the frames are already evenly spaced.
-- **Scale:** 0.395. The body is about 4.6 tiles long and 1.5 wide inside a 6.32-tile frame. Collision and selection boxes, speed and capacity belong to the mod prototype.
+- **Scale:** 0.395. The body is about 4.6 tiles long and 1.5 wide inside a 6.32-tile frame. Collision and selection boxes, speed and capacity belong to the mod prototype. The mod draws the freighter at 75% of this scale (`prototypes/freighter-art.lua`), so it is about 3.4 by 1.1 tiles in game; this helper and its checksum stay unchanged.
 - **Tint:** palette colors are per prototype. Factorio's runtime vehicle color is one shared tint, so per-entity control of all three colors needs extra mod logic.
 - **Animation:** there is one static frame per direction, with no wheel-rolling animation yet.
 
