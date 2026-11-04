@@ -485,7 +485,11 @@ local function absorb_freighters(depot)
   local room = FREIGHTER_CAPACITY - slot.get_item_count() - out
   if room > 0 then
     -- Freighters waiting in the chest for robots to take them away stay there.
-    load(chest, slot, FREIGHTER, room, logistics.leaving(depot.entity), true)
+    if
+      load(chest, slot, FREIGHTER, room, logistics.leaving(depot.entity), true) > 0 and logistics.on_freighters_moved
+    then
+      logistics.on_freighters_moved(depot.entity)
+    end
   end
   -- What the chest holds now, so freighters a player puts in later can be told apart.
   depot.chest_seen = count_freighters(chest)
@@ -1172,6 +1176,10 @@ function freighter_requests(entity)
   return proxies, requested, removing, marked
 end
 
+-- Called (with the depot) whenever freighters move out of a request depot's chest into its slot or
+-- back to a player; scripts/request-gui.lua uses it to redraw the depot's window.
+logistics.on_freighters_moved = nil
+
 -- How many freighters a request depot has asked robots to bring, and to take away.
 function logistics.requested_freighters(entity)
   if not request_depot(entity) then
@@ -1610,6 +1618,9 @@ function logistics.take_in_freighters(entity, give_back, moved)
   depot.chest_seen = count_freighters(chest)
   if taken > 0 then
     logistics.trim_freighter_requests(entity)
+  end
+  if (taken > 0 or returned > 0) and logistics.on_freighters_moved then
+    logistics.on_freighters_moved(entity)
   end
   return taken, returned
 end

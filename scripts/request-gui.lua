@@ -326,6 +326,30 @@ end
 -- request again straight away rather than at the next dispatch.
 request_gui.on_player_cursor_stack_changed = request_gui.on_player_main_inventory_changed
 
+-- Freighters moved out of a depot's chest by script: Factorio's open container window doesn't
+-- redraw the chest's requested-item ghosts for that (a requested freighter placed by hand stays
+-- hidden, as if the request were met, until the window is reopened). So reopen it for everyone
+-- who has it open: same tick, so nothing visibly closes.
+function request_gui.redraw(entity)
+  if not (storage.request_gui and entity.valid) then
+    return
+  end
+  -- Reopening raises on_gui_closed and on_gui_opened, which change storage.request_gui, so find the
+  -- players first.
+  local viewers = {}
+  for index, open_entity in pairs(storage.request_gui) do
+    local player = game.get_player(index)
+    if open_entity == entity and player and player.valid and player.opened == entity then
+      viewers[#viewers + 1] = player
+    end
+  end
+  for _, player in ipairs(viewers) do
+    player.opened = nil
+    player.opened = entity
+  end
+end
+logistics.on_freighters_moved = request_gui.redraw
+
 -- Keep the status line current while the window is open.
 local function refresh()
   if not storage.request_gui then

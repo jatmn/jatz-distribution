@@ -605,4 +605,38 @@ do -- A freighter placed from the cursor into an open request depot goes to its 
   check("one placed from the cursor goes to the slot at once", taken and taken.entity == entity and taken.moved == 1)
 end
 
+do -- Freighters moved out of the chest by script reopen the depot's window for those viewing it, so
+  -- Factorio redraws the chest's requested-item ghosts.
+  local logistics = require("scripts.logistics")
+  local request_gui = require("scripts.request-gui")
+  check("moved freighters redraw the window", logistics.on_freighters_moved == request_gui.redraw)
+  local entity = depot(140)
+  entity.name = "jatz-request-depot"
+  local sets = {}
+  local player = setmetatable({ index = 8, valid = true }, {
+    __index = function(_, key)
+      if key == "opened" then
+        if #sets == 0 then
+          return entity
+        end
+        return sets[#sets] or nil
+      end
+    end,
+    __newindex = function(_, key, value)
+      if key == "opened" then
+        if value == nil then
+          value = false
+        end
+        sets[#sets + 1] = value
+      end
+    end,
+  })
+  game.get_player = function()
+    return player
+  end
+  storage.request_gui = { [8] = entity }
+  request_gui.redraw(entity)
+  check("the window is closed and opened again", #sets == 2 and sets[1] == false and sets[2] == entity)
+end
+
 print("all control event checks passed")
