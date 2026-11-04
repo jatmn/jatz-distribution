@@ -42,7 +42,7 @@ script = {
   register_on_object_destroyed = function() end,
 }
 remote = { add_interface = function() end }
-prototypes = { decorative = {}, item = {}, entity = {} }
+prototypes = { decorative = {}, item = { ["jatz-quinityn-freighter"] = { stack_size = 10 } }, entity = {} }
 
 local tiles = {}
 local function cell(x, y)
@@ -98,6 +98,7 @@ local function script_inventory()
     is_empty = function()
       return slot.count == 0
     end,
+    resize = function() end,
   }
 end
 game = { tick = 0, surfaces = { [1] = surface }, create_inventory = script_inventory }
@@ -323,7 +324,7 @@ do -- The freighter slot's clicks: ghosts request freighters from robots; remote
   player.pipette = function(id, _, allow_ghost)
     picked = { id = id, ghost = allow_ghost }
   end
-  prototypes.item[freighter] = { name = freighter }
+  prototypes.item[freighter] = { name = freighter, stack_size = 10 }
   fire("on_gui_hover", { element = element, player_index = 1 })
   fire("jatz-pipette", { player_index = 1 })
   check(

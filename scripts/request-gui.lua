@@ -6,7 +6,7 @@
 --
 -- The freighter slot works like an inventory slot: click with freighters in hand to put them in
 -- (right-click: one), click with an empty hand to take them all (right-click: half), and
--- shift-click to move them to your inventory. It holds one stack, counting freighters out on trips.
+-- shift-click to move them to your inventory. It holds 100, counting freighters out on trips.
 -- With a freighter ghost in the cursor (remote view, or no freighters in hand), clicking asks
 -- construction robots to bring freighters instead (right-click: one more). In remote view, where
 -- items can't be moved by hand, a click with an empty cursor cancels those requests, and a

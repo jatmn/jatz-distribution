@@ -2,7 +2,7 @@
 -- Deliveries between provider and request depots.
 --
 -- A request depot asks to keep at least `count` of one item (normal quality), and holds the
--- freighters that fetch it: one stack of them, in its freighter slot. Once a second, while what it
+-- freighters that fetch it: up to 100 of them, in its freighter slot. Once a second, while what it
 -- still needs (less what freighters are already bringing) is more than nothing, it sends one more
 -- freighter, so freighters leave one after another rather than all at once. Each goes from the
 -- depot's loading zone to the provider depot nearest by road that has some of the item not
@@ -39,6 +39,9 @@ local DEPOT_ROAD = "jatz-depot-road"
 local DRONE = "jatz-freighter-drone"
 -- The freighter item: what a request depot's freighter slot holds.
 local FREIGHTER = "jatz-quinityn-freighter"
+-- A request depot holds up to this many freighters (in its slot and out on trips together). The
+-- freighter item stacks to 10, so the slot is that many stacks, shown as one slot in the panel.
+local FREIGHTER_CAPACITY = 100
 logistics.depots = { [PROVIDER] = "provider", [REQUEST] = "request" }
 logistics.drone = DRONE
 logistics.freighter = FREIGHTER
@@ -141,12 +144,26 @@ function logistics.add(entity)
   script.register_on_object_destroyed(entity)
 end
 
--- A request depot's freighter slot: one stack of freighters, kept as real items.
+-- A request depot's freighter slot: room for FREIGHTER_CAPACITY freighters, as real items, in as
+-- many stacks as that takes. Slots from saves when it held one stack are made bigger.
 local function trucks_of(depot)
+  local stacks = math.ceil(FREIGHTER_CAPACITY / prototypes.item[FREIGHTER].stack_size)
   if not (depot.trucks and depot.trucks.valid) then
-    depot.trucks = game.create_inventory(1)
+    depot.trucks = game.create_inventory(stacks)
+  elseif #depot.trucks < stacks then
+    depot.trucks.resize(stacks)
   end
   return depot.trucks
+end
+
+-- The first stack of freighters in a depot's slot, or nil.
+local function a_freighter(depot)
+  local slot = trucks_of(depot)
+  for index = 1, #slot do
+    if slot[index].valid_for_read then
+      return slot[index]
+    end
+  end
 end
 
 -- The ids of a request depot's trips. Saves from before depots sent several freighters kept one.
@@ -305,8 +322,8 @@ end
 
 -- Send one of a request depot's freighters to `provider`, to load `planned` of the item.
 local function start_trip(depot, provider, from, planned)
-  local slot = trucks_of(depot)[1]
-  if not slot.valid_for_read then
+  local slot = a_freighter(depot)
+  if not slot then
     return false
   end
   local drone = depot.entity.surface.create_entity({
@@ -452,7 +469,7 @@ local function absorb_freighters(depot)
       out = out + 1
     end
   end
-  local room = prototypes.item[FREIGHTER].stack_size - slot.get_item_count() - out
+  local room = FREIGHTER_CAPACITY - slot.get_item_count() - out
   if room > 0 then
     -- Freighters waiting in the chest for robots to take them away stay there.
     local _, _, _, marked = freighter_requests(depot.entity)
@@ -915,7 +932,9 @@ end
 local function refund(depot, buffer, chest)
   local stacks = {}
   if depot.trucks and depot.trucks.valid then
-    stacks[#stacks + 1] = depot.trucks[1]
+    for index = 1, #depot.trucks do
+      stacks[#stacks + 1] = depot.trucks[index]
+    end
   end
   -- Freighters still in the chest of a depot about to be destroyed (its slot may be full).
   if chest then
@@ -1085,7 +1104,7 @@ function logistics.add_all()
 end
 
 -- A request depot's freighters: how many are in its slot, how many are out on trips, and the most
--- it can hold in all (one stack). Nil for anything but a request depot.
+-- it can hold in all (FREIGHTER_CAPACITY). Nil for anything but a request depot.
 function logistics.freighter_counts(entity)
   local depot = request_depot(entity)
   if not depot then
@@ -1098,7 +1117,7 @@ function logistics.freighter_counts(entity)
       out = out + 1
     end
   end
-  return trucks_of(depot).get_item_count(), out, prototypes.item[FREIGHTER].stack_size
+  return trucks_of(depot).get_item_count(), out, FREIGHTER_CAPACITY
 end
 
 -- Freighters can also be requested, like modules or fuel: an item request proxy asks construction
@@ -1150,8 +1169,8 @@ function logistics.requested_freighters(entity)
   return requested, removing
 end
 
--- A chest stack (0-based) that is empty and not already in any request's plan, or nil.
-local function free_chest_stack(chest, proxies)
+-- Chest stacks (0-based) that are empty and in no request's plan, as a list.
+local function free_chest_stacks(chest, proxies)
   local taken = {}
   for _, proxy in ipairs(proxies) do
     for _, plans in ipairs({ proxy.insert_plan, proxy.removal_plan }) do
@@ -1162,11 +1181,29 @@ local function free_chest_stack(chest, proxies)
       end
     end
   end
+  local free = {}
   for index = 1, #chest do
     if not chest[index].valid_for_read and not taken[index - 1] then
-      return index - 1
+      free[#free + 1] = index - 1
     end
   end
+  return free
+end
+
+-- Positions for `amount` freighters, a stack at a time, in the given chest stacks (0-based); the
+-- amount that fits, and the positions.
+local function spread(amount, stacks)
+  local stack_size = prototypes.item[FREIGHTER].stack_size
+  local positions, placed = {}, 0
+  for _, stack in ipairs(stacks) do
+    if placed >= amount then
+      break
+    end
+    local count = math.min(stack_size, amount - placed)
+    positions[#positions + 1] = { inventory = defines.inventory.chest, stack = stack, count = count }
+    placed = placed + count
+  end
+  return placed, positions
 end
 
 -- Add an insert or removal plan to a depot's request proxy, making one if it has none.
@@ -1209,14 +1246,15 @@ function logistics.request_freighters(entity, count)
   if amount <= 0 then
     return 0
   end
-  -- The slot holds one stack, so one chest stack always takes the whole request.
-  local stack = free_chest_stack(chest, proxies)
-  if not stack then
+  -- A stack at a time, into chest stacks that are empty and in no other plan.
+  local positions
+  amount, positions = spread(amount, free_chest_stacks(chest, proxies))
+  if amount <= 0 then
     return 0
   end
   add_plan(entity, proxies, {
     id = { name = FREIGHTER, quality = QUALITY },
-    items = { in_inventory = { { inventory = defines.inventory.chest, stack = stack, count = amount } } },
+    items = { in_inventory = positions },
   })
   -- What these requests are for: the depot ending up with this many. Freighters arriving some
   -- other way (put in by hand) count towards it, and requests beyond it are cancelled.
@@ -1229,27 +1267,39 @@ end
 -- to storage. Returns how many were marked.
 function logistics.remove_freighters(entity, count)
   local depot = request_depot(entity)
-  local slot = depot and trucks_of(depot)[1]
-  if not (slot and slot.valid_for_read) then
+  if not depot then
+    return 0
+  end
+  local slot = trucks_of(depot)
+  local wanted = math.min(math.floor(tonumber(count) or slot.get_item_count()), slot.get_item_count())
+  if wanted <= 0 then
     return 0
   end
   local chest = inventory(entity)
   local proxies = freighter_requests(entity)
-  local index = free_chest_stack(chest, proxies)
-  if not index then
-    return 0
+  -- A stack at a time from the slot into empty chest stacks, each marked for removal.
+  local positions, moved = {}, 0
+  for _, index in ipairs(free_chest_stacks(chest, proxies)) do
+    local from = a_freighter(depot)
+    if moved >= wanted or not from then
+      break
+    end
+    local into = chest[index + 1]
+    into.transfer_stack(from, math.min(from.count, wanted - moved))
+    if into.valid_for_read then
+      positions[#positions + 1] = { inventory = defines.inventory.chest, stack = index, count = into.count }
+      moved = moved + into.count
+    end
   end
-  local amount = math.min(math.floor(tonumber(count) or slot.count), slot.count)
-  if amount <= 0 then
-    return 0
+  if moved > 0 then
+    add_plan(
+      entity,
+      proxies,
+      { id = { name = FREIGHTER, quality = QUALITY }, items = { in_inventory = positions } },
+      true
+    )
   end
-  chest[index + 1].transfer_stack(slot, amount)
-  amount = chest[index + 1].count
-  add_plan(entity, proxies, {
-    id = { name = FREIGHTER, quality = QUALITY },
-    items = { in_inventory = { { inventory = defines.inventory.chest, stack = index, count = amount } } },
-  }, true)
-  return amount
+  return moved
 end
 
 -- Cancel the robots' removal of a request depot's freighters; they go back into its slot at the
@@ -1323,12 +1373,12 @@ function logistics.setup_blueprint(blueprint, mapping)
         -- The count as a tag too, so freighters put in by hand count towards it once built.
         planned.tags = planned.tags or {}
         planned.tags[FREIGHTERS_TAG] = freighters
-        planned.items = {
-          {
-            id = { name = FREIGHTER, quality = QUALITY },
-            items = { in_inventory = { { inventory = defines.inventory.chest, stack = 0, count = freighters } } },
-          },
-        }
+        local stacks = {}
+        for index = 0, math.ceil(freighters / prototypes.item[FREIGHTER].stack_size) - 1 do
+          stacks[#stacks + 1] = index
+        end
+        local _, positions = spread(freighters, stacks)
+        planned.items = { { id = { name = FREIGHTER, quality = QUALITY }, items = { in_inventory = positions } } }
       end
       changed = changed + 1
     end
@@ -1445,31 +1495,56 @@ function logistics.put_freighters(entity, stack, count)
   if amount <= 0 then
     return 0
   end
-  local before = stack.count
-  trucks_of(request_depot(entity))[1].transfer_stack(stack, amount)
-  return before - (stack.valid_for_read and stack.count or 0)
+  local slot, moved = trucks_of(request_depot(entity)), 0
+  for index = 1, #slot do
+    local into = slot[index]
+    if moved >= amount or not stack.valid_for_read then
+      break
+    end
+    if not into.valid_for_read or into.name == stack.name then
+      local before = stack.count
+      into.transfer_stack(stack, math.min(before, amount - moved))
+      moved = moved + before - (stack.valid_for_read and stack.count or 0)
+    end
+  end
+  return moved
 end
 
 -- Take freighters out of a request depot's slot: `count` of them (or all) into `stack` (a
 -- player's cursor), or all into `into` (an inventory). Returns how many came out.
 function logistics.take_freighters(entity, stack, count, into)
   local depot = request_depot(entity)
-  local slot = depot and trucks_of(depot)[1]
-  if not (slot and slot.valid_for_read) then
+  if not depot then
     return 0
   end
-  local before = slot.count
-  if into then
-    local inserted = into.insert(slot)
-    if inserted >= slot.count then
-      slot.clear()
-    else
-      slot.count = slot.count - inserted
+  local slot = trucks_of(depot)
+  local before = slot.get_item_count()
+  local wanted = math.min(count or before, before)
+  for index = 1, #slot do
+    local from = slot[index]
+    local taken = before - slot.get_item_count()
+    if taken >= wanted then
+      break
     end
-  else
-    stack.transfer_stack(slot, math.min(count or before, before))
+    if from.valid_for_read then
+      if into then
+        local inserted = into.insert(from)
+        if inserted >= from.count then
+          from.clear()
+        else
+          from.count = from.count - inserted
+        end
+      else
+        -- Into the cursor: as much as it takes, at most one stack.
+        local had = stack.valid_for_read and stack.count or 0
+        stack.transfer_stack(from, math.min(from.count, wanted - taken))
+        if (stack.valid_for_read and stack.count or 0) == had then
+          break
+        end
+      end
+    end
   end
-  return before - (slot.valid_for_read and slot.count or 0)
+  return before - slot.get_item_count()
 end
 
 function logistics.init()

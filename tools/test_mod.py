@@ -66,12 +66,14 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # freighters put in the chest go to the slot; removed depots leave theirs behind.
             'multi_freighters_sent': 2, 'multi_received': 60, 'multi_from_near': 30, 'multi_from_far': 30,
             'multi_freighters_home': 5, 'no_trucks_status': 'no-trucks', 'absorbed': 2, 'absorbed_left_in_chest': 0,
-            'orphaned_freighters_dropped': 3, 'destroyed_freighters_dropped': 12,
-            # A slot holding 3 takes 7 more (its stack of 10), however many are asked for.
-            'add_beyond_limit': 7,
+            'orphaned_freighters_dropped': 3, 'destroyed_freighters_dropped': 102,
+            # A slot holding 3 takes 97 more (a depot holds 100), however many are asked for; more
+            # than a stack (10) is requested and taken away a stack at a time.
+            'add_beyond_limit': 97, 'requested_many': 25, 'requested_many_pending': 25, 'removing_many': 25,
+            'removing_many_pending': 25, 'removing_many_left': 0,
             # Freighters requested (as from remote view) within the slot's limit, cancelled and
             # requested again; construction robots bring the 3 from storage into the slot.
-            'requested': 4, 'requested_beyond_limit': 5, 'cancelled': 9, 'requested_again': 3,
+            'requested': 4, 'requested_beyond_limit': 95, 'cancelled': 99, 'requested_again': 3,
             'robots_delivered': 4,
             # Then 2 taken away again by robots (as by a right-click in remote view): 2 stay in
             # the slot, storage is back to 4. A removal marked and cancelled at the start put its

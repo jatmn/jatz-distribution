@@ -31,7 +31,7 @@ data:extend({
     -- After the seven depots ("b[depot]-..."): last in our row.
     order = "c[freighter]",
     place_result = name,
-    -- Request depots hold one stack of freighters in their freighter slot.
+    -- Freighters stack to 10; a request depot's freighter slot holds 100 (scripts/logistics.lua).
     stack_size = 10,
   },
   {
