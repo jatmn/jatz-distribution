@@ -1023,7 +1023,7 @@ local function deliveries_finished(surface, tick, result)
   result.priority_from_near = 20 - count(prioritised.near, "stone")
   local liquid = deliveries.liquid
   result.water_delivered = liquid.request.get_fluid_count("water")
-  result.water_left = liquid.provider.get_fluid_count("water")
+  result.water_provider_left = liquid.provider.get_fluid_count("water")
   local steam = deliveries.steam
   result.steam_delivered = steam.request.get_fluid_count("steam")
   result.steam_temperature = math.floor(steam.request.get_fluid(1).temperature + 0.5)

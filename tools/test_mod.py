@@ -127,7 +127,7 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # request depot set to request from buffers takes 300 steam from a liquid buffer, at its
             # 500 degrees, not from a nearer provider; only liquid request depots get a truck chest;
             # robots bring a liquid depot's 2 freighters through it; items and fluids don't mix.
-            'water_delivered': 1200, 'water_left': 800, 'truck_chests': 1, 'provider_truck_chests': 0,
+            'water_delivered': 1200, 'water_provider_left': 800, 'truck_chests': 1, 'provider_truck_chests': 0,
             'liquid_refuses_items': False, 'item_depot_refuses_fluids': False,
             'steam_delivered': 300, 'steam_temperature': 500, 'steam_buffer_left': 700,
             'steam_provider_left': 1000, 'liquid_requested': 2, 'liquid_robots_delivered': 2,
