@@ -527,6 +527,17 @@ local function setup_deliveries(surface, result)
   remote.call("jatz-distribution", "setup_blueprint", blueprint, { [1] = chested })
   local counted = blueprint.get_blueprint_entities()[1]
   result.blueprint_counts_chest = counted.tags and counted.tags.jatz_freighters
+  -- A depot built over a blueprint ghost by hand gets no tags (the game passes none on), only the
+  -- ghost's request for 5 freighters: it must still remember those 5 when a player fills it partly.
+  depot(surface, "request", -6.5, -46.5, 5)
+  local five_mapping =
+    blueprint.create_blueprint({ surface = surface, force = "player", area = { { -8, -48 }, { -5, -45 } } })
+  remote.call("jatz-distribution", "setup_blueprint", blueprint, five_mapping)
+  for _, ghost in pairs(blueprint.build_blueprint({ surface = surface, force = "player", position = { -66.5, -36.5 } })) do
+    ghost.tags = nil
+    local _, built = ghost.revive({ raise_revive = true })
+    deliveries.untagged = built or deliveries.untagged
+  end
   holder.destroy()
   -- A ghost with malformed tags (from an edited blueprint string, say) still builds, untouched.
   local odd = surface.create_entity({
@@ -682,6 +693,15 @@ end
 
 -- Interfere with trips as they happen: destroy one freighter, change one request, cut one road.
 local function interfere(surface)
+  if game.tick == 65 then
+    -- After the first dispatch, a player puts 1 of the 5 freighters in by hand, and Factorio drops
+    -- the request.
+    local untagged = storage.deliveries.untagged
+    untagged.insert({ name = FREIGHTER, count = 1 })
+    for _, proxy in pairs(surface.find_entities_filtered({ name = "item-request-proxy", position = untagged.position })) do
+      proxy.destroy()
+    end
+  end
   local roads = storage.depot_roads
   if game.tick == 30 then
     -- The first of two depots sharing a loading tile went at tick 0: the road is still there.
@@ -886,6 +906,7 @@ local function deliveries_finished(surface, tick, result)
   result.dropped_requested_again = remote.call("jatz-distribution", "requested_freighters", deliveries.dropped)
   result.dropped_slot = remote.call("jatz-distribution", "freighter_counts", deliveries.dropped)
   result.sent_away_requested = remote.call("jatz-distribution", "requested_freighters", deliveries.sent_away)
+  result.untagged_requested_again = remote.call("jatz-distribution", "requested_freighters", deliveries.untagged)
   result.filled_by_hand_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.filled)
   result.partly_filled_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.partly)
   result.built_filled_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.built)

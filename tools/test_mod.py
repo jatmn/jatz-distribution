@@ -109,7 +109,9 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             'ctrl_click_marked_left': 5,
             # A request Factorio dropped when part of it was filled by hand (5 asked, 1 put in) is
             # asked again for the rest (4); taking freighters away stops topping up (3 stay).
-            'dropped_requested_again': 4, 'dropped_slot': 1, 'sent_away_requested': 3}
+            'dropped_requested_again': 4, 'dropped_slot': 1, 'sent_away_requested': 3,
+            # The same for a depot built over a blueprint ghost without its tags (as by hand).
+            'untagged_requested_again': 4}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 

@@ -1360,6 +1360,12 @@ end
 function logistics.trim_freighter_requests(entity)
   local depot = request_depot(entity)
   local total, capacity, coming = freighter_total(entity)
+  if not depot.freighter_target and coming > 0 then
+    -- Freighters requested without a target: Factorio's own request from a blueprint ghost (a
+    -- player building over a ghost doesn't pass its tags on), or one set by another mod. What the
+    -- depot has and is asking for is what it should end up with.
+    depot.freighter_target = total
+  end
   local wanted = depot.freighter_target and math.min(depot.freighter_target, capacity)
   if not wanted then
     if coming > 0 and total > capacity then

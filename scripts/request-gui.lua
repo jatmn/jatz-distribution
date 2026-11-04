@@ -159,6 +159,9 @@ local function on_gui_opened(event)
   local entity = event.entity
   if entity and entity.valid and entity.name == REQUEST then
     local player = game.get_player(event.player_index)
+    -- Before the player can put any freighters in by hand: note what the depot's freighter
+    -- requests are for, so a request Factorio drops when partly filled is asked again.
+    logistics.trim_freighter_requests(entity)
     open(player, entity)
     count_pockets(player)
   end
