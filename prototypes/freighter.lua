@@ -31,7 +31,8 @@ data:extend({
     -- After the seven depots ("b[depot]-..."): last in our row.
     order = "c[freighter]",
     place_result = name,
-    stack_size = 1,
+    -- Request depots hold one stack of freighters in their freighter slot.
+    stack_size = 10,
   },
   {
     -- Free while the mod is in development.

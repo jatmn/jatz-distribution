@@ -60,7 +60,13 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             'depot_road_laid': 'jatz-depot-road', 'depot_road_hides': 'grass-1', 'connected_by_depot_roads': 5,
             'concrete_restored': 'concrete', 'grass_restored': 'grass-1', 'road_kept_on_build': 'jatz-road',
             'road_kept_on_removal': 'jatz-road', 'covered_kept': 'stone-path', 'water_left': 'water',
-            'shared_kept': 'jatz-depot-road', 'shared_restored': 'concrete'}
+            'shared_kept': 'jatz-depot-road', 'shared_restored': 'concrete',
+            # Request depots send their own freighters: as many as needed, one after another, from
+            # more than one provider, all back in the slot after; none without freighters;
+            # freighters put in the chest go to the slot; removed depots leave theirs behind.
+            'multi_freighters_sent': 2, 'multi_received': 60, 'multi_from_near': 30, 'multi_from_far': 30,
+            'multi_freighters_home': 5, 'no_trucks_status': 'no-trucks', 'absorbed': 2, 'absorbed_left_in_chest': 0,
+            'orphaned_freighters_dropped': 3, 'destroyed_freighters_dropped': 3}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 

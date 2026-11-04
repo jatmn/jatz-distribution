@@ -249,13 +249,32 @@ local function lay_road(surface, x1, y1, x2, y2)
   surface.set_tiles(tiles)
 end
 
-local function depot(surface, role, x, y)
-  return surface.create_entity({
+-- Request depots get `trucks` freighters in their slot (3 unless given).
+local function depot(surface, role, x, y, trucks)
+  local entity = surface.create_entity({
     name = "jatz-" .. role .. "-depot",
     position = { x, y },
     force = "player",
     raise_built = true,
   })
+  if role == "request" and (trucks or 3) > 0 then
+    local slot = remote.call("jatz-distribution", "freighters", entity)
+    assert(slot.insert({ name = FREIGHTER, count = trucks or 3 }) == (trucks or 3), "cannot stock freighters")
+  end
+  return entity
+end
+
+-- Freighters lying on the ground in an area, and other items there.
+local function on_ground(surface, area)
+  local freighters, other = 0, 0
+  for _, item in pairs(surface.find_entities_filtered({ type = "item-entity", area = area })) do
+    if item.stack.name == FREIGHTER then
+      freighters = freighters + item.stack.count
+    else
+      other = other + 1
+    end
+  end
+  return freighters, other
 end
 
 -- Every depot lays road under its loading zone sign, and takes it away again when removed, but
@@ -408,6 +427,27 @@ local function setup_deliveries(surface, result)
   deliveries.shortest = shortest
   -- The request depot is removed while its freighter heads out: the freighter leaves, nothing moves.
   deliveries.orphaned = pair(50, 20, 12, "wooden-chest", 10, 10)
+  -- Freighters, one after another, from more than one provider: a request depot with 5 freighters
+  -- asks for 60 iron sticks; the provider 10 tiles away has 30, the one 30 tiles away 40.
+  local multi = {
+    request = depot(surface, "request", -66.5, 28.5, 5),
+    near = depot(surface, "provider", -56.5, 28.5),
+    far = depot(surface, "provider", -36.5, 28.5),
+    seen = {},
+  }
+  lay_road(surface, -67, 30, -37, 30)
+  assert(multi.near.insert({ name = "iron-stick", count = 30 }) == 30, "sticks: cannot stock")
+  assert(multi.far.insert({ name = "iron-stick", count = 40 }) == 40, "sticks: cannot stock")
+  assert(remote.call("jatz-distribution", "set_request", multi.request, "iron-stick", 60), "sticks: refused")
+  deliveries.multi = multi
+  -- No freighters: nothing is sent, and the depot says so.
+  deliveries.no_trucks = depot(surface, "request", -20.5, 28.5, 0)
+  assert(remote.call("jatz-distribution", "set_request", deliveries.no_trucks, "wood", 5), "wood: refused")
+  -- Freighters put in a request depot's chest move into its slot.
+  deliveries.absorbing = depot(surface, "request", -12.5, 28.5, 0)
+  assert(deliveries.absorbing.insert({ name = FREIGHTER, count = 2 }) == 2, "cannot put freighters in the chest")
+  -- A request depot destroyed leaves its freighters on the ground.
+  deliveries.dying = depot(surface, "request", 60.5, 28.5, 3)
 
   -- Requests are validated, and clones keep them.
   local original = depot(surface, "request", 60.5, 45.5)
@@ -467,6 +507,13 @@ local function interfere(surface)
     roads.shared_b.destroy()
   end
   local deliveries = storage.deliveries
+  local multi = deliveries.multi
+  for _, drone in pairs(surface.find_entities_filtered({ name = DRONE, position = { -66.5, 30.5 }, radius = 1 })) do
+    multi.seen[drone.unit_number] = multi.seen[drone.unit_number] or game.tick
+  end
+  if game.tick == 10 and deliveries.dying.valid then
+    deliveries.dying.die()
+  end
   local destroyed = deliveries.destroyed
   if not destroyed.done and status(destroyed.request) == "delivering" then
     local drones = surface.find_entities_filtered({ name = DRONE, position = { 32.5, 4.5 }, radius = 3 })
@@ -548,6 +595,7 @@ local function deliveries_finished(surface, tick, result)
     and deliveries.orphaned.left
     and count(deliveries.shortest.request, "coal") == 10
     and count(storage.depot_roads.request, "small-electric-pole") == 5
+    and count(deliveries.multi.request, "iron-stick") == 60
     and #surface.find_entities_filtered({ name = DRONE }) == 0
   if not done or tick < DELIVERY_SETTLE then
     if tick >= DELIVERY_DEADLINE then
@@ -624,8 +672,31 @@ local function deliveries_finished(surface, tick, result)
   -- The freighter of a removed request depot left at once, rather than driving on.
   result.orphaned_left_after = deliveries.orphaned.left - deliveries.orphaned.done
   assert(result.orphaned_left_after <= 2, "orphaned freighter kept driving: " .. result.orphaned_left_after .. " ticks")
-  -- Nothing was left on the ground anywhere.
-  result.spilled = surface.count_entities_filtered({ type = "item-entity" })
+  -- Several freighters, sent one after another, from both providers, all back in the slot.
+  local multi = deliveries.multi
+  local departures = {}
+  for _, departed in pairs(multi.seen) do
+    departures[#departures + 1] = departed
+  end
+  table.sort(departures)
+  result.multi_freighters_sent = #departures
+  result.multi_spacing = departures[2] and departures[2] - departures[1] or 0
+  -- One dispatch (60 ticks) between departures; the drone is sampled each tick near the zone.
+  assert(result.multi_spacing >= 50, "freighters left together: " .. result.multi_spacing .. " ticks apart")
+  result.multi_received = count(multi.request, "iron-stick")
+  result.multi_from_near = 30 - count(multi.near, "iron-stick")
+  result.multi_from_far = 40 - count(multi.far, "iron-stick")
+  result.multi_freighters_home = remote.call("jatz-distribution", "freighter_counts", multi.request)
+  result.no_trucks_status = status(deliveries.no_trucks)
+  result.absorbed = remote.call("jatz-distribution", "freighter_counts", deliveries.absorbing)
+  result.absorbed_left_in_chest = count(deliveries.absorbing, FREIGHTER)
+  -- Request depots removed by script or destroyed leave their freighters where they stood: the
+  -- orphaned one (2 in its slot, 1 out) and the dying one (3).
+  result.orphaned_freighters_dropped = on_ground(surface, { { 60, 18 }, { 66, 24 } })
+  result.destroyed_freighters_dropped = on_ground(surface, { { 57, 25 }, { 64, 32 } })
+  -- No cargo was left on the ground anywhere.
+  local _, other = on_ground(surface, { { -80, -80 }, { 80, 80 } })
+  result.spilled = other
   return true
 end
 

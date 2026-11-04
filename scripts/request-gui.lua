@@ -1,7 +1,12 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- The request panel: attached to the right of a request depot's inventory window, it chooses
--- the item to keep in stock and how many, and shows what the depot is doing. Changes apply as
--- they are made. Factorio shows the panel only with request depots' windows.
+-- the item to keep in stock and how many, holds the depot's freighters, and shows what the depot is
+-- doing. Changes apply as they are made. Factorio shows the panel only with request depots'
+-- windows.
+--
+-- The freighter slot works like an inventory slot: click with freighters in hand to put them in
+-- (right-click: one), click with an empty hand to take them all (right-click: half), and
+-- shift-click to move them to your inventory. It holds one stack, counting freighters out on trips.
 local logistics = require("scripts.logistics")
 
 local request_gui = {}
@@ -10,6 +15,8 @@ local FRAME = "jatz_request_frame"
 local ITEM = "jatz_request_item"
 local COUNT = "jatz_request_count"
 local STATUS = "jatz_request_status"
+local SLOT = "jatz_request_freighters"
+local SLOT_LABEL = "jatz_request_freighters_label"
 local REQUEST = "jatz-request-depot"
 
 local function frame_of(player)
@@ -18,6 +25,17 @@ end
 
 local function status_caption(entity)
   return { "jatz-request-status." .. (logistics.get_status(entity) or "none") }
+end
+
+-- Show the slot's freighters and how many are out.
+local function show_freighters(inner, entity)
+  local in_slot, out, capacity = logistics.freighter_counts(entity)
+  local row = inner.freighter_row
+  if not (row and in_slot) then
+    return
+  end
+  row[SLOT].number = in_slot > 0 and in_slot or nil
+  row[SLOT_LABEL].caption = { "jatz-gui.freighters", in_slot, out, capacity }
 end
 
 local function open(player, entity)
@@ -59,6 +77,17 @@ local function open(player, entity)
     tooltip = { "jatz-gui.request-count-tooltip" },
   })
   count.style.width = 80
+  local freighters = inner.add({ type = "flow", name = "freighter_row", direction = "horizontal" })
+  freighters.style.vertical_align = "center"
+  freighters.add({
+    type = "sprite-button",
+    name = SLOT,
+    style = "inventory_slot",
+    sprite = "item/" .. logistics.freighter,
+    tooltip = { "jatz-gui.freighter-slot-tooltip" },
+  })
+  freighters.add({ type = "label", name = SLOT_LABEL })
+  show_freighters(inner, entity)
   inner.add({ type = "label", name = STATUS, caption = status_caption(entity) })
   storage.request_gui = storage.request_gui or {}
   storage.request_gui[player.index] = entity
@@ -114,6 +143,29 @@ local function on_gui_text_changed(event)
   end
 end
 
+-- The freighter slot clicked: put freighters in from the cursor, or take them out.
+local function on_gui_click(event)
+  if event.element.name ~= SLOT then
+    return
+  end
+  local player = game.get_player(event.player_index)
+  local entity = opened_depot(player)
+  local cursor = player.cursor_stack
+  if not (entity and cursor) then
+    return
+  end
+  local right = event.button == defines.mouse_button_type.right
+  if event.shift then
+    logistics.take_freighters(entity, nil, nil, player.get_main_inventory())
+  elseif cursor.valid_for_read then
+    logistics.put_freighters(entity, cursor, right and 1 or nil)
+  else
+    local in_slot = logistics.freighter_counts(entity)
+    logistics.take_freighters(entity, cursor, right and math.ceil(in_slot / 2) or nil)
+  end
+  show_freighters(event.element.parent.parent, entity)
+end
+
 -- Keep the status line current while the window is open.
 local function refresh()
   if not storage.request_gui then
@@ -127,6 +179,7 @@ local function refresh()
       if status then
         status.caption = status_caption(entity)
       end
+      show_freighters(frame.children[1], entity)
     else
       storage.request_gui[index] = nil
     end
@@ -138,6 +191,7 @@ function request_gui.register()
   script.on_event(defines.events.on_gui_closed, on_gui_closed)
   script.on_event(defines.events.on_gui_elem_changed, on_gui_elem_changed)
   script.on_event(defines.events.on_gui_text_changed, on_gui_text_changed)
+  script.on_event(defines.events.on_gui_click, on_gui_click)
   script.on_nth_tick(30, refresh)
 end
 

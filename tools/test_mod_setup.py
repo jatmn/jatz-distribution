@@ -126,13 +126,13 @@ class OrientationTests(unittest.TestCase):
 
 class LogisticsSearchTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('lua5.2'), 'the Mod CI job installs Lua 5.2')
-    def test_provider_searches_survive_engine_callback_races(self):
-        # tests/lua/logistics-search.lua plays out search races (stale answers after a request or
-        # road change, a busy pathfinder, timeouts, reroutes) against a fake runtime.
-        result = subprocess.run(['lua5.2', 'tests/lua/logistics-search.lua'], cwd=ROOT, capture_output=True,
-                                text=True)
+    def test_deliveries_survive_callback_races_and_keep_their_freighters(self):
+        # tests/lua/logistics.lua plays out search races (stale answers after a request or road
+        # change, a busy pathfinder, timeouts, reroutes) and request depots' freighters (several in
+        # series, across providers, returned, lost, handed back when mined) against a fake runtime.
+        result = subprocess.run(['lua5.2', 'tests/lua/logistics.lua'], cwd=ROOT, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn('all logistics search checks passed', result.stdout)
+        self.assertIn('all logistics checks passed', result.stdout)
 
     @unittest.skipUnless(shutil.which('lua5.2'), 'the Mod CI job installs Lua 5.2')
     def test_depot_road_is_laid_and_lifted_only_where_the_depot_owns_it(self):

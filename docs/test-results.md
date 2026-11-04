@@ -36,6 +36,9 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | Depot road removed with its depot, putting back concrete and grass; existing road and a tile laid over depot road stay; a shared tile keeps its road until the second depot goes; nothing laid on water | Passed |
 | Depot road when turning a depot, and mining or covering it by hand (Lua checks against a fake runtime; needs a player in game) | Passed headless; untested in the graphical client |
 | Depot road art blending into player road, in the graphical client | Untested |
+| Freighter slot: two freighters sent 60 ticks apart, one to each of two providers (30 + 30 sticks), all 5 back in the slot; no freighters, no trips (status "Waiting: no freighters"); freighters in the chest move to the slot; destroyed and script-removed request depots drop all their freighters (3 each) | Passed |
+| Mining a request depot hands all its freighters (slot and out) to the miner; the slot's one-stack limit counts freighters out; a freighter destroyed on the road is lost (Lua checks against a fake runtime) | Passed headless |
+| Freighter slot in the request panel (click, right-click, shift-click), in the graphical client | Untested |
 | Nothing left on the ground by any check | Passed |
 | Unknown items and non-numeric counts are refused without changing the request; a cloned request depot keeps its request; clearing works | Passed |
 | Road laid from a ghost on grass; refused on water | Passed |
