@@ -51,8 +51,9 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # The provider nearest by road wins over the one nearest in a straight line, and a
             # request with no road route to any provider sends no freighter at all.
             'shortest_from_far': 10, 'shortest_from_near': 0, 'island_freighter_sent': False,
-            # The freighter is drawn at 75% of the artwork's scale (1.5 x 4.5 tiles measured).
-            'freighter_box': [1.125, 3.375],
+            # The freighter is drawn at 60% of the artwork's scale (1.5 x 4.5 tiles measured): 0.9 x 2.7,
+            # as the engine stores it, in 1/256 tiles rounded towards the centre.
+            'freighter_box': [0.8984375, 2.6953125],
             # Depots lay road under their loading zone, connecting road a tile away, and take it
             # away when removed, putting back what it covered; road that was already there, or
             # laid over theirs, stays; a shared tile keeps road until the last depot goes; nothing

@@ -59,7 +59,7 @@ Check:
 2. **Colors:** compare the default truck (violet cab, orange clamps, slate-blue cargo) with the alternate one. Glass, tires, steel, copper and the violet lenses must not change color. To stress one layer, edit its tint in `tests/factorio/freighter-art-check_0.1.0/data.lua` and rerun the runner.
 3. **Shadow and night:** the shadow stays attached at every heading. Check again at night.
 4. **Driving:** drive forward, turn in a full circle and reverse. The body and shadow move together.
-5. **This art fixture only:** its truck keeps the base car's selection and collision boxes, which cover only the middle of the truck. The mod's freighter (`prototypes/freighter.lua`) is drawn at 75% of this fixture's scale, with a box fitted to the body (1.5 × 4.5 tiles measured on the art, about 1.1 × 3.4 in game); check it in a save from `tools/test_mod.py`.
+5. **This art fixture only:** its truck keeps the base car's selection and collision boxes, which cover only the middle of the truck. The mod's freighter (`prototypes/freighter.lua`) is drawn at 60% of this fixture's scale, with a box fitted to the body (1.5 × 4.5 tiles measured on the art, about 0.9 × 2.7 in game); check it in a save from `tools/test_mod.py`.
 
 ## Depots
 

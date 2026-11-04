@@ -1088,7 +1088,7 @@ script.on_init(function()
   check_loading_zone_clearing(surface, result)
 
   check_recipe(FREIGHTER, result)
-  -- Drawn at 75% of the artwork's scale, with the boxes scaled to match.
+  -- Drawn at 60% of the artwork's scale, with the boxes scaled to match.
   local box = prototypes.entity[FREIGHTER].collision_box
   result.freighter_box = { box.right_bottom.x - box.left_top.x, box.right_bottom.y - box.left_top.y }
   check_road(result)
