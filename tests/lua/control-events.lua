@@ -38,10 +38,17 @@ script = {
     nth[ticks] = handler
   end,
   on_init = function() end,
+  on_load = function() end,
   on_configuration_changed = function() end,
   register_on_object_destroyed = function() end,
 }
 remote = { add_interface = function() end }
+local console = {}
+commands = {
+  add_command = function(name, _, handler)
+    console[name] = handler
+  end,
+}
 prototypes = { decorative = {}, item = { ["jatz-quinityn-freighter"] = { stack_size = 10 } }, entity = {} }
 
 local tiles = {}
@@ -400,12 +407,17 @@ do -- A panel opened before an update that changed its layout is rebuilt, with i
   check("with its status light lit", light.sprite == "utility/status_inactive" and light.tooltip ~= nil)
 end
 
-do -- The line beside the freighter slot: how many are out on the road, always.
+do -- The line beside the freighter slot: how many are out on the road, always, and a green "+N"
+  -- while N more are requested.
   local caption = require("scripts.request-gui").freighter_caption
-  local none, some = caption(0), caption(3)
-  -- Exactly the one localised "N out", nothing before or after it.
-  check("none out still says so", #none == 2 and none[1] == "jatz-gui.freighters-out" and none[2] == 0)
-  check("three out", #some == 2 and some[1] == "jatz-gui.freighters-out" and some[2] == 3)
+  local none, some = caption(0, 0), caption(3, 0)
+  check(
+    "none out still says so, and nothing else",
+    #none == 2 and none[2][1] == "jatz-gui.freighters-out" and none[2][2] == 0
+  )
+  check("three out", #some == 2 and some[2][2] == 3)
+  local coming = caption(0, 4)
+  check("four requested: a green +4 after it", #coming == 3 and coming[3] == "  [color=green]+4[/color]")
 end
 
 do -- Copy and paste: settings, blueprints, and depots built from blueprint ghosts.
@@ -476,6 +488,127 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
     "a depot built from a blueprint ghost has its request",
     request and request.item == "wood" and request.count == 7
   )
+end
+
+do -- Freighters moved out of the player's inventory into a request depot (ctrl+ or shift+click in
+  -- its window, ctrl+click on it in the world) go to its slot; unrelated inventory changes don't.
+  local logistics = require("scripts.logistics")
+  local taken
+  logistics.take_in_freighters = function(entity, give_back, moved)
+    taken = { entity = entity, give_back = give_back, moved = moved }
+    return 0, 0
+  end
+  local entity = depot(110)
+  entity.name = "jatz-request-depot"
+  local pocket_count = 12
+  local pockets = {}
+  logistics.count_freighters = function(inventory_)
+    return inventory_ == pockets and pocket_count or 0
+  end
+  local player = {
+    index = 4,
+    valid = true,
+    get_main_inventory = function()
+      return pockets
+    end,
+  }
+  game.get_player = function()
+    return player
+  end
+  local function changed(count)
+    taken, pocket_count = nil, count
+    fire("on_player_main_inventory_changed", { player_index = 4 })
+  end
+  -- The depot's window is open, and the player's 12 freighters were counted when it opened.
+  storage.request_gui = { [4] = entity }
+  storage.pocket_freighters = { [4] = 12 }
+  changed(2)
+  check(
+    "ctrl+click of 10 freighters into an open depot takes those 10 in, overflow back to the player",
+    taken and taken.entity == entity and taken.moved == 10 and taken.give_back == pockets
+  )
+  changed(5)
+  check("freighters coming into the inventory take nothing in", taken == nil)
+  changed(5)
+  check("nor does an unrelated change", taken == nil)
+  -- Ctrl+click on a depot in the world: the one the player points at.
+  storage.request_gui = {}
+  player.selected = entity
+  fire("on_selected_entity_changed", { player_index = 4 })
+  changed(1)
+  check(
+    "ctrl+click of 4 freighters onto a depot in the world takes those in",
+    taken and taken.entity == entity and taken.moved == 4 and taken.give_back == pockets
+  )
+  player.selected = nil
+  changed(0)
+  check("with no depot open or pointed at, nothing", taken == nil)
+end
+
+do -- /jatz-freighters describes the open request depot's freighter slot.
+  local logistics = require("scripts.logistics")
+  local entity = depot(120)
+  entity.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = entity })
+  local printed
+  local player = {
+    index = 5,
+    opened = entity,
+    print = function(text)
+      printed = text
+    end,
+  }
+  entity.object_name = "LuaEntity"
+  game.get_player = function()
+    return player
+  end
+  logistics.describe_freighters = function(described)
+    return described == entity and "described" or nil
+  end
+  check("the command is registered", console["jatz-freighters"] ~= nil)
+  console["jatz-freighters"]({ player_index = 5 })
+  check("it prints the open depot's freighter slot", printed == "described")
+end
+
+do -- A freighter placed from the cursor into an open request depot goes to its slot at once;
+  -- moving freighters between inventory and cursor takes nothing in.
+  local logistics = require("scripts.logistics")
+  local taken
+  logistics.take_in_freighters = function(entity, _, moved)
+    taken = { entity = entity, moved = moved }
+    return moved, 0
+  end
+  local entity = depot(130)
+  entity.name = "jatz-request-depot"
+  local pockets, in_pockets = {}, 5
+  logistics.count_freighters = function(inventory_)
+    return inventory_ == pockets and in_pockets or 0
+  end
+  local cursor = { valid_for_read = false }
+  local player = {
+    index = 6,
+    valid = true,
+    gui = { relative = {} },
+    cursor_stack = cursor,
+    get_main_inventory = function()
+      return pockets
+    end,
+  }
+  game.get_player = function()
+    return player
+  end
+  storage.request_gui = { [6] = entity }
+  storage.pocket_freighters = { [6] = 5 }
+  -- Picked up into the cursor: still carried.
+  in_pockets, taken = 0, nil
+  cursor.valid_for_read, cursor.name, cursor.count = true, "jatz-quinityn-freighter", 5
+  fire("on_player_main_inventory_changed", { player_index = 6 })
+  fire("on_player_cursor_stack_changed", { player_index = 6 })
+  check("moving freighters from inventory to cursor takes nothing in", taken == nil)
+  -- One placed into the depot's chest from the cursor.
+  cursor.count = 4
+  fire("on_player_cursor_stack_changed", { player_index = 6 })
+  check("one placed from the cursor goes to the slot at once", taken and taken.entity == entity and taken.moved == 1)
 end
 
 print("all control event checks passed")

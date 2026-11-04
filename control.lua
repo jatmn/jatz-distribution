@@ -164,6 +164,11 @@ script.on_event(defines.events.script_raised_set_tiles, function(event)
 end)
 logistics.register()
 request_gui.register()
+-- Freighters ctrl+ or shift+clicked from a player's inventory into a request depot fill its
+-- freighter slot (scripts/request-gui.lua).
+script.on_event(defines.events.on_player_main_inventory_changed, request_gui.on_player_main_inventory_changed)
+script.on_event(defines.events.on_selected_entity_changed, request_gui.on_selected_entity_changed)
+script.on_event(defines.events.on_player_cursor_stack_changed, request_gui.on_player_cursor_stack_changed)
 
 local function setup()
   logistics.init()
@@ -180,3 +185,16 @@ local function setup()
 end
 script.on_init(setup)
 script.on_configuration_changed(setup)
+
+-- /jatz-freighters: what the freighter slot's requests are worked out from, for the request depot
+-- the player has open or points at.
+commands.add_command("jatz-freighters", { "jatz-gui.freighters-command-help" }, function(command)
+  local player = command.player_index and game.get_player(command.player_index)
+  if not player then
+    return
+  end
+  local opened = player.opened
+  local entity = (opened and opened.object_name == "LuaEntity" and opened) or player.selected
+  local description = entity and entity.valid and logistics.describe_freighters(entity)
+  player.print(description or { "jatz-gui.freighters-command-none" })
+end)

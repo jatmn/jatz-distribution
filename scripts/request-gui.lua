@@ -60,10 +60,17 @@ local function show_status(light, entity)
 end
 
 -- The line beside the freighter slot, whose own number is the freighters at home: how many are
--- out on the road, always, so home and out read at a glance. Everything else (robots bringing or
--- taking freighters, the slot's limit) is in the tooltip.
-function request_gui.freighter_caption(out)
-  return { "jatz-gui.freighters-out", out }
+-- out on the road, always, so home and out read at a glance, and a green "+N" while N more are
+-- requested (from robots, or by a pasted depot). The chest's own requested-item ghosts don't
+-- redraw while the depot's window is open (Factorio's container window only draws them when
+-- opened), so this is where a request that changes meanwhile shows. Everything else (freighters
+-- being taken away, the slot's limit) is in the tooltip.
+function request_gui.freighter_caption(out, coming)
+  local caption = { "", { "jatz-gui.freighters-out", out } }
+  if coming and coming > 0 then
+    caption[#caption + 1] = "  [color=green]+" .. coming .. "[/color]"
+  end
+  return caption
 end
 
 -- Show the slot's freighters: the count on the slot, what's happening beside it, and the full
@@ -78,7 +85,7 @@ local function show_freighters(inner, entity)
   local breakdown = { "jatz-gui.freighters", in_slot, out, coming, leaving, capacity }
   row[SLOT].number = in_slot > 0 and in_slot or nil
   row[SLOT].tooltip = { "", breakdown, "\n\n", { "jatz-gui.freighter-slot-tooltip" } }
-  row[SLOT_LABEL].caption = request_gui.freighter_caption(out)
+  row[SLOT_LABEL].caption = request_gui.freighter_caption(out, coming)
   row[SLOT_LABEL].tooltip = breakdown
 end
 
@@ -145,10 +152,33 @@ local function opened_depot(player)
   return entity and entity.valid and entity or nil
 end
 
+-- Freighters a player carries: in their inventory and in their cursor. Moving them between the
+-- two changes nothing; putting some into a depot (from either) makes it smaller.
+local function carried(player)
+  local pockets = player.get_main_inventory()
+  local cursor = player.cursor_stack
+  local held = cursor and cursor.valid_for_read and cursor.name == logistics.freighter and cursor.count or 0
+  return (pockets and logistics.count_freighters(pockets) or 0) + held, pockets
+end
+
+-- Count a player's freighters before they can move any: when they open a request depot or point
+-- at one.
+local function count_pockets(player)
+  if player then
+    storage.pocket_freighters = storage.pocket_freighters or {}
+    storage.pocket_freighters[player.index] = carried(player)
+  end
+end
+
 local function on_gui_opened(event)
   local entity = event.entity
   if entity and entity.valid and entity.name == REQUEST then
-    open(game.get_player(event.player_index), entity)
+    local player = game.get_player(event.player_index)
+    -- Before the player can put any freighters in by hand: note what the depot's freighter
+    -- requests are for, so a request Factorio drops when partly filled is asked again.
+    logistics.trim_freighter_requests(entity)
+    open(player, entity)
+    count_pockets(player)
   end
 end
 
@@ -258,6 +288,50 @@ local function on_pipette(event)
     player.pipette(prototypes.item[logistics.freighter], nil, true)
   end
 end
+
+-- Freighters a player moves into a request depot (ctrl+click moves all of them, shift+click a
+-- stack, in the depot's window; ctrl+click on the depot itself in the world; placed from the
+-- cursor) go straight into its freighter slot, filling it; the rest go back to the player. How many
+-- they moved is how many fewer freighters they carry (inventory and cursor) than last counted. The depot is
+-- the one whose window is open, or the one the player points at (ctrl+click in the world).
+-- Registered in control.lua.
+function request_gui.on_selected_entity_changed(event)
+  local player = game.get_player(event.player_index)
+  local selected = player and player.selected
+  if selected and selected.valid and selected.name == REQUEST then
+    count_pockets(player)
+  end
+end
+
+function request_gui.on_player_main_inventory_changed(event)
+  local player = game.get_player(event.player_index)
+  if not player then
+    return
+  end
+  storage.pocket_freighters = storage.pocket_freighters or {}
+  local now, pockets = carried(player)
+  local before = storage.pocket_freighters[event.player_index]
+  storage.pocket_freighters[event.player_index] = now
+  if not before or now >= before then
+    return
+  end
+  local selected = player.selected
+  local entity = opened_depot(player) or (selected and selected.valid and selected.name == REQUEST and selected)
+  if entity then
+    local taken = logistics.take_in_freighters(entity, pockets, before - now)
+    local frame = taken > 0 and opened_depot(player) == entity and frame_of(player)
+    if frame then
+      show_freighters(frame.children[1], entity)
+    end
+  end
+  -- Freighters given back changed the inventory again; count from here.
+  storage.pocket_freighters[event.player_index] = carried(player)
+end
+
+-- A freighter placed from the cursor into a request depot's chest (onto the ghost of a requested
+-- freighter, say) goes to its freighter slot at once too, so the chest slot shows the rest of the
+-- request again straight away rather than at the next dispatch.
+request_gui.on_player_cursor_stack_changed = request_gui.on_player_main_inventory_changed
 
 -- Keep the status line current while the window is open.
 local function refresh()

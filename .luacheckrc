@@ -17,12 +17,12 @@ files["settings*.lua"].globals = {"data"}
 files["prototypes/**"].globals = {"data"}
 files["prototypes/**"].read_globals = {"pipecoverspictures"}
 files["control.lua"].globals = {"game", "storage"}
-files["control.lua"].read_globals = {"script", "prototypes", "helpers", "remote", "rendering"}
+files["control.lua"].read_globals = {"script", "prototypes", "helpers", "remote", "rendering", "commands"}
 files["scripts/**"].globals = {"game", "storage"}
 files["scripts/**"].read_globals = {"script", "prototypes", "helpers", "remote", "rendering"}
 
 -- Lua unit tests run outside Factorio and stand in for its runtime globals.
-files["tests/lua/**"].globals = {"defines", "prototypes", "script", "storage", "game", "remote"}
+files["tests/lua/**"].globals = {"defines", "prototypes", "script", "storage", "game", "remote", "commands"}
 
 -- Artwork test fixtures: each tests/factorio/<mod>/ is a complete mod with the same stage split.
 -- pipecoverspictures is a data-stage helper defined by the base game.

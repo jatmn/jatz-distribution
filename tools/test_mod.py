@@ -95,7 +95,28 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # harmlessly; pasting a smaller count cancels the excess requests; filling by hand
             # trims at once.
             'blueprint_kept_other_items': True, 'blueprint_freighters_first_stack': 1, 'blueprint_cleared': True,
-            'blueprint_counts_chest': 5, 'malformed_tags_built': True, 'matched_down': 3, 'trimmed_at_once': 0}
+            'blueprint_counts_chest': 5, 'malformed_tags_built': True, 'matched_down': 3, 'trimmed_at_once': 0,
+            # Ctrl+click of freighters into a depot's window fills the slot (95 -> 100) and gives
+            # the rest back (10), leaving none in the chest.
+            'ctrl_click_taken': 5, 'ctrl_click_returned': 10, 'ctrl_click_slot': 100, 'ctrl_click_left_in_chest': 0,
+            'ctrl_click_pockets': 10,
+            # Other items moved in the same way stay in the depot's chest, as in any container.
+            'ctrl_click_other_items_kept': 20, 'ctrl_click_other_items_returned': 0,
+            # Only freighters the player just moved: ones already in the chest stay (2 new ones
+            # back, 3 old ones kept); newcomers merged into a stack waiting for robots go to the
+            # slot (3), the 5 waiting stay.
+            'ctrl_click_only_new_returned': 2, 'ctrl_click_existing_kept': 3, 'ctrl_click_merged_taken': 3,
+            'ctrl_click_marked_left': 5,
+            # A request Factorio dropped when part of it was filled by hand (5 asked, 1 put in) is
+            # asked again for the rest (4); taking freighters away stops topping up (3 stay).
+            'dropped_requested_again': 4, 'dropped_slot': 1, 'sent_away_requested': 3,
+            # The same for a depot built over a blueprint ghost without its tags (as by hand).
+            'untagged_requested_again': 4,
+            # /jatz-freighters describes a depot's freighter slot from the real request proxies.
+            'described': True,
+            # A hand-placed freighter lowers the same request proxy (5 -> 4) instead of replacing
+            # it, so an open window keeps showing the request.
+            'hand_fill_same_proxy': True, 'hand_fill_requested': 4}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 
