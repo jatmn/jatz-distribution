@@ -589,6 +589,20 @@ local function setup_deliveries(surface, result)
     result.ctrl_click_any_quality = fine_taken
   end
   pockets.destroy()
+  -- A pasted depot asking for 5 gets 1 by hand, and Factorio drops the request (it does when a player
+  -- fills one by hand, even partly): the other 4 are requested again.
+  deliveries.dropped = depot(surface, "request", -36.5, -46.5, 0)
+  remote.call("jatz-distribution", "match_freighters", deliveries.dropped, 5)
+  deliveries.dropped.insert({ name = FREIGHTER, count = 1 })
+  for _, proxy in pairs(surface.find_entities_filtered({ name = "item-request-proxy", position = { -36.5, -46.5 } })) do
+    proxy.destroy()
+  end
+  -- Taking freighters away on purpose stops topping up: asked for 5, given 2, then those 2 sent
+  -- away by robots: only the 3 still requested stay requested.
+  deliveries.sent_away = depot(surface, "request", -26.5, -46.5, 0)
+  remote.call("jatz-distribution", "match_freighters", deliveries.sent_away, 5)
+  remote.call("jatz-distribution", "add_freighters", deliveries.sent_away, 2)
+  remote.call("jatz-distribution", "remove_freighters", deliveries.sent_away, 2)
   -- Copy and Paste settings asks robots for the freighters the destination lacks: with 1, to match 3.
   local pasted = depot(surface, "request", -46.5, -66.5, 1)
   result.matched = remote.call("jatz-distribution", "match_freighters", pasted, 3)
@@ -869,6 +883,9 @@ local function deliveries_finished(surface, tick, result)
   result.multi_freighters_home = remote.call("jatz-distribution", "freighter_counts", multi.request)
   result.no_trucks_status = status(deliveries.no_trucks)
   result.trimmed_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.trimmed)
+  result.dropped_requested_again = remote.call("jatz-distribution", "requested_freighters", deliveries.dropped)
+  result.dropped_slot = remote.call("jatz-distribution", "freighter_counts", deliveries.dropped)
+  result.sent_away_requested = remote.call("jatz-distribution", "requested_freighters", deliveries.sent_away)
   result.filled_by_hand_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.filled)
   result.partly_filled_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.partly)
   result.built_filled_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.built)

@@ -46,6 +46,7 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | Copy and Paste settings, blueprint setup and building from a tagged ghost, routed through control.lua (Lua checks against a fake runtime) | Passed headless |
 | Copy and Paste settings, copy and paste, and blueprints of request depots, in the graphical client | Untested |
 | Ctrl+click of freighters into a request depot: 95 + 15 fills the slot to 100 and gives 10 back, none left in the chest; iron plates moved in with them stay in the chest; routed through control.lua for inventory changes and ctrl+click on the depot | Passed headless |
+| A freighter request Factorio drops when part of it is filled by hand (5 asked, 1 put in) is requested again for the rest (4); taking freighters away stops topping up | Passed |
 | Ctrl+click of freighters, and of other items, into a request depot, in the graphical client | Untested |
 | Compact freighter line: the slot shows freighters at home, the line beside it how many are out ("3 out", always); full breakdown as tooltip, in the graphical client | Untested |
 | Freighter slot in the request panel in the graphical client: ghost requests and robot removal in remote view, pipette (Q) over the slot | **Passed:** checked by the owner on November 3, 2026 |

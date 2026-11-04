@@ -106,7 +106,10 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # back, 3 old ones kept); newcomers merged into a stack waiting for robots go to the
             # slot (3), the 5 waiting stay.
             'ctrl_click_only_new_returned': 2, 'ctrl_click_existing_kept': 3, 'ctrl_click_merged_taken': 3,
-            'ctrl_click_marked_left': 5}
+            'ctrl_click_marked_left': 5,
+            # A request Factorio dropped when part of it was filled by hand (5 asked, 1 put in) is
+            # asked again for the rest (4); taking freighters away stops topping up (3 stay).
+            'dropped_requested_again': 4, 'dropped_slot': 1, 'sent_away_requested': 3}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 

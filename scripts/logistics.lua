@@ -1282,6 +1282,8 @@ function logistics.remove_freighters(entity, count)
   if not depot then
     return 0
   end
+  -- Taking freighters away on purpose: no longer top the depot up to an earlier target.
+  depot.freighter_target = nil
   local slot = trucks_of(depot)
   local wanted = math.min(math.floor(tonumber(count) or slot.get_item_count()), slot.get_item_count())
   if wanted <= 0 then
@@ -1345,25 +1347,45 @@ function logistics.match_freighters(entity, total)
   return 0
 end
 
--- Freighters requested from robots beyond what they were requested for (the depot's
--- freighter_target, or the slot's limit) are cancelled: freighters that arrived some other way
--- (put in by hand, say) count towards the target, so robots never bring more than it, nor
--- overfill the slot, and a request already met by hand disappears. Runs with every dispatch.
+-- Keep a request depot's freighter requests to what they are for (`depot.freighter_target`: the
+-- total the depot should end up with), until it has them:
+-- * beyond the target (freighters arrived some other way, put in by hand, say): the excess
+--   requests are cancelled, so robots never bring more, nor overfill the slot;
+-- * short of it with nothing requested to cover it: the shortfall is requested again. Factorio
+--   drops an item request a player fills by hand even when they only put in part of it; the
+--   target is what remembers the rest;
+-- * once the depot has them all: the target is forgotten.
+-- Without a target, requests are only kept within the slot's limit. Runs with every dispatch and
+-- whenever freighters are put in by hand.
 function logistics.trim_freighter_requests(entity)
   local depot = request_depot(entity)
   local total, capacity, coming = freighter_total(entity)
-  if coming == 0 then
+  local wanted = depot.freighter_target and math.min(depot.freighter_target, capacity)
+  if not wanted then
+    if coming > 0 and total > capacity then
+      local keep = math.max(0, coming - (total - capacity))
+      logistics.cancel_freighter_requests(entity)
+      if keep > 0 then
+        logistics.request_freighters(entity, keep)
+      end
+      depot.freighter_target = nil
+    end
+    return
+  end
+  if total - coming >= wanted then
+    -- All there, without the requests: they are done.
+    if coming > 0 then
+      logistics.cancel_freighter_requests(entity)
+    end
     depot.freighter_target = nil
-    return
-  end
-  local limit = math.min(capacity, depot.freighter_target or capacity)
-  if total <= limit then
-    return
-  end
-  local keep = math.max(0, coming - (total - limit))
-  logistics.cancel_freighter_requests(entity)
-  if keep > 0 then
-    logistics.request_freighters(entity, keep)
+  elseif total > wanted then
+    -- More coming than still needed: cancel the excess (request_freighters sets the target
+    -- again, to the same total).
+    logistics.cancel_freighter_requests(entity)
+    logistics.request_freighters(entity, coming - (total - wanted))
+  elseif total < wanted then
+    -- Short, with nothing requested to cover it: ask again for the rest.
+    logistics.request_freighters(entity, wanted - total)
   end
 end
 
@@ -1626,6 +1648,8 @@ function logistics.take_freighters(entity, stack, count, into)
   if not depot then
     return 0
   end
+  -- Taking freighters out on purpose: no longer top the depot up to an earlier target.
+  depot.freighter_target = nil
   local slot = trucks_of(depot)
   local before = slot.get_item_count()
   local wanted = math.min(count or before, before)
