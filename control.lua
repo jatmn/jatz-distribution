@@ -164,6 +164,10 @@ script.on_event(defines.events.script_raised_set_tiles, function(event)
 end)
 logistics.register()
 request_gui.register()
+-- Freighters ctrl+ or shift+clicked from a player's inventory into a request depot fill its
+-- freighter slot (scripts/request-gui.lua).
+script.on_event(defines.events.on_player_main_inventory_changed, request_gui.on_player_main_inventory_changed)
+script.on_event(defines.events.on_selected_entity_changed, request_gui.on_selected_entity_changed)
 
 local function setup()
   logistics.init()

@@ -478,16 +478,21 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
   )
 end
 
-do -- Freighters moved in from the player's inventory, or by ctrl+click on the depot, go to the slot.
+do -- Freighters moved out of the player's inventory into a request depot (ctrl+ or shift+click in
+  -- its window, ctrl+click on it in the world) go to its slot; unrelated inventory changes don't.
   local logistics = require("scripts.logistics")
   local taken
-  logistics.take_in_freighters = function(entity, give_back)
-    taken = { entity = entity, give_back = give_back }
+  logistics.take_in_freighters = function(entity, give_back, moved)
+    taken = { entity = entity, give_back = give_back, moved = moved }
     return 0, 0
   end
   local entity = depot(110)
   entity.name = "jatz-request-depot"
+  local pocket_count = 12
   local pockets = {}
+  logistics.count_freighters = function(inventory_)
+    return inventory_ == pockets and pocket_count or 0
+  end
   local player = {
     index = 4,
     valid = true,
@@ -498,21 +503,34 @@ do -- Freighters moved in from the player's inventory, or by ctrl+click on the d
   game.get_player = function()
     return player
   end
+  local function changed(count)
+    taken, pocket_count = nil, count
+    fire("on_player_main_inventory_changed", { player_index = 4 })
+  end
+  -- The depot's window is open, and the player's 12 freighters were counted when it opened.
   storage.request_gui = { [4] = entity }
-  fire("on_player_main_inventory_changed", { player_index = 4 })
+  storage.pocket_freighters = { [4] = 12 }
+  changed(2)
   check(
-    "inventory changes with a request depot open take freighters in",
-    taken and taken.entity == entity and taken.give_back == pockets
+    "ctrl+click of 10 freighters into an open depot takes those 10 in, overflow back to the player",
+    taken and taken.entity == entity and taken.moved == 10 and taken.give_back == pockets
   )
-  taken = nil
+  changed(5)
+  check("freighters coming into the inventory take nothing in", taken == nil)
+  changed(5)
+  check("nor does an unrelated change", taken == nil)
+  -- Ctrl+click on a depot in the world: the one the player points at.
   storage.request_gui = {}
-  fire("on_player_main_inventory_changed", { player_index = 4 })
-  check("with no request depot open, nothing", taken == nil)
-  fire("on_player_fast_transferred", { player_index = 4, entity = entity, from_player = true })
-  check("ctrl+click on the depot takes freighters in", taken and taken.entity == entity)
-  taken = nil
-  fire("on_player_fast_transferred", { player_index = 4, entity = entity, from_player = false })
-  check("taking things out of it doesn't", taken == nil)
+  player.selected = entity
+  fire("on_selected_entity_changed", { player_index = 4 })
+  changed(1)
+  check(
+    "ctrl+click of 4 freighters onto a depot in the world takes those in",
+    taken and taken.entity == entity and taken.moved == 4 and taken.give_back == pockets
+  )
+  player.selected = nil
+  changed(0)
+  check("with no depot open or pointed at, nothing", taken == nil)
 end
 
 print("all control event checks passed")

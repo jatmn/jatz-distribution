@@ -101,7 +101,12 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             'ctrl_click_taken': 5, 'ctrl_click_returned': 10, 'ctrl_click_slot': 100, 'ctrl_click_left_in_chest': 0,
             'ctrl_click_pockets': 10,
             # Other items moved in the same way stay in the depot's chest, as in any container.
-            'ctrl_click_other_items_kept': 20, 'ctrl_click_other_items_returned': 0}
+            'ctrl_click_other_items_kept': 20, 'ctrl_click_other_items_returned': 0,
+            # Only freighters the player just moved: ones already in the chest stay (2 new ones
+            # back, 3 old ones kept); newcomers merged into a stack waiting for robots go to the
+            # slot (3), the 5 waiting stay.
+            'ctrl_click_only_new_returned': 2, 'ctrl_click_existing_kept': 3, 'ctrl_click_merged_taken': 3,
+            'ctrl_click_marked_left': 5}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 

@@ -556,13 +556,38 @@ local function setup_deliveries(surface, result)
   -- Other items ctrl+clicked in alongside stay in the chest, as in any container.
   nearly_full.insert({ name = "iron-plate", count = 20 })
   local pockets = game.create_inventory(20)
-  local taken, returned = remote.call("jatz-distribution", "take_in_freighters", nearly_full, pockets)
+  local taken, returned = remote.call("jatz-distribution", "take_in_freighters", nearly_full, pockets, 15)
   result.ctrl_click_taken, result.ctrl_click_returned = taken, returned
   result.ctrl_click_slot = remote.call("jatz-distribution", "freighter_counts", nearly_full)
   result.ctrl_click_left_in_chest = nearly_full.get_inventory(defines.inventory.chest).get_item_count(FREIGHTER)
   result.ctrl_click_pockets = pockets.get_item_count(FREIGHTER)
   result.ctrl_click_other_items_kept = nearly_full.get_inventory(defines.inventory.chest).get_item_count("iron-plate")
   result.ctrl_click_other_items_returned = pockets.get_item_count("iron-plate")
+  -- Only freighters the player just moved: 3 already in a full depot's chest (an inserter's, say)
+  -- stay through an unrelated inventory change, and when 2 more are moved in, those 2 go back.
+  local full = depot(surface, "request", -66.5, -46.5, 100)
+  full.insert({ name = FREIGHTER, count = 3 })
+  remote.call("jatz-distribution", "take_in_freighters", full, pockets, 0)
+  pockets.clear()
+  full.insert({ name = FREIGHTER, count = 2 })
+  local _, back = remote.call("jatz-distribution", "take_in_freighters", full, pockets, 2)
+  result.ctrl_click_only_new_returned = back
+  result.ctrl_click_existing_kept = full.get_inventory(defines.inventory.chest).get_item_count(FREIGHTER)
+  -- Freighters merged into a chest stack waiting for robots to take it away: the newcomers go to
+  -- the slot, the 5 waiting stay.
+  local marked = depot(surface, "request", -56.5, -46.5, 5)
+  remote.call("jatz-distribution", "remove_freighters", marked, 5)
+  marked.insert({ name = FREIGHTER, count = 3 })
+  result.ctrl_click_merged_taken = remote.call("jatz-distribution", "take_in_freighters", marked, pockets, 3)
+  result.ctrl_click_marked_left = marked.get_inventory(defines.inventory.chest).get_item_count(FREIGHTER)
+  -- Freighters of any quality fill the slot (Space Age has other qualities).
+  if prototypes.quality.uncommon then
+    local fine = depot(surface, "request", -46.5, -46.5, 0)
+    fine.insert({ name = FREIGHTER, quality = "uncommon", count = 2 })
+    local fine_taken = remote.call("jatz-distribution", "take_in_freighters", fine, pockets, 2)
+    assert(fine_taken == 2, "uncommon freighters stayed out of the slot")
+    result.ctrl_click_any_quality = fine_taken
+  end
   pockets.destroy()
   -- Copy and Paste settings asks robots for the freighters the destination lacks: with 1, to match 3.
   local pasted = depot(surface, "request", -46.5, -66.5, 1)
