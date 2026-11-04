@@ -184,7 +184,6 @@ local function setup()
   loading_zone.clear_all()
 end
 script.on_init(setup)
-script.on_load(request_gui.on_load)
 script.on_configuration_changed(setup)
 
 -- /jatz-freighters: what the freighter slot's requests are worked out from, for the request depot

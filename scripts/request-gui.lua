@@ -60,10 +60,17 @@ local function show_status(light, entity)
 end
 
 -- The line beside the freighter slot, whose own number is the freighters at home: how many are
--- out on the road, always, so home and out read at a glance. Everything else (robots bringing or
--- taking freighters, the slot's limit) is in the tooltip.
-function request_gui.freighter_caption(out)
-  return { "jatz-gui.freighters-out", out }
+-- out on the road, always, so home and out read at a glance, and a green "+N" while N more are
+-- requested (from robots, or by a pasted depot). The chest's own requested-item ghosts don't
+-- redraw while the depot's window is open (Factorio's container window only draws them when
+-- opened), so this is where a request that changes meanwhile shows. Everything else (freighters
+-- being taken away, the slot's limit) is in the tooltip.
+function request_gui.freighter_caption(out, coming)
+  local caption = { "", { "jatz-gui.freighters-out", out } }
+  if coming and coming > 0 then
+    caption[#caption + 1] = "  [color=green]+" .. coming .. "[/color]"
+  end
+  return caption
 end
 
 -- Show the slot's freighters: the count on the slot, what's happening beside it, and the full
@@ -78,7 +85,7 @@ local function show_freighters(inner, entity)
   local breakdown = { "jatz-gui.freighters", in_slot, out, coming, leaving, capacity }
   row[SLOT].number = in_slot > 0 and in_slot or nil
   row[SLOT].tooltip = { "", breakdown, "\n\n", { "jatz-gui.freighter-slot-tooltip" } }
-  row[SLOT_LABEL].caption = request_gui.freighter_caption(out)
+  row[SLOT_LABEL].caption = request_gui.freighter_caption(out, coming)
   row[SLOT_LABEL].tooltip = breakdown
 end
 
@@ -176,8 +183,7 @@ local function on_gui_opened(event)
 end
 
 local function on_gui_closed(event)
-  local reopening = storage.reopen and storage.reopen[event.player_index]
-  if event.entity and storage.request_gui and not reopening then
+  if event.entity and storage.request_gui then
     storage.request_gui[event.player_index] = nil
   end
   if storage.slot_hovered then
@@ -326,63 +332,6 @@ end
 -- freighter, say) goes to its freighter slot at once too, so the chest slot shows the rest of the
 -- request again straight away rather than at the next dispatch.
 request_gui.on_player_cursor_stack_changed = request_gui.on_player_main_inventory_changed
-
--- Factorio's open container window doesn't redraw a chest's requested-item ghosts when a script
--- changes the requests (a hand-filled freighter request kept showing 5 for 4 until reopened), and
--- closing and reopening in one tick does nothing (the window is the same at the tick's start and
--- end). So the window is closed on the next tick and opened again on the one after: a gap of one
--- tick. The tick handler runs only while that is pending.
-local REOPEN_CLOSE, REOPEN_OPEN = 1, 2
-
-function request_gui.on_tick(event)
-  for index, pending in pairs(storage.reopen or {}) do
-    local player = game.get_player(index)
-    local entity = pending.entity
-    if not (player and player.valid and entity.valid) then
-      storage.reopen[index] = nil
-    elseif pending.step == REOPEN_CLOSE and event.tick >= pending.tick then
-      if player.opened == entity then
-        player.opened = nil
-        pending.step, pending.tick = REOPEN_OPEN, event.tick + 1
-      else
-        storage.reopen[index] = nil
-      end
-    elseif pending.step == REOPEN_OPEN and event.tick >= pending.tick then
-      storage.reopen[index] = nil
-      if player.opened == nil then
-        player.opened = entity
-      end
-    end
-  end
-  if not next(storage.reopen or {}) then
-    script.on_event(defines.events.on_tick, nil)
-  end
-end
-
--- Listen to ticks again after loading a save with a reopen pending (control.lua's on_load).
-function request_gui.on_load()
-  if storage.reopen and next(storage.reopen) then
-    script.on_event(defines.events.on_tick, request_gui.on_tick)
-  end
-end
-
-function request_gui.redraw(entity)
-  local scheduled = false
-  for index, open_entity in pairs(storage.request_gui or {}) do
-    local player = game.get_player(index)
-    if open_entity == entity and player and player.valid and player.opened == entity then
-      storage.reopen = storage.reopen or {}
-      if not storage.reopen[index] then
-        storage.reopen[index] = { entity = entity, step = REOPEN_CLOSE, tick = game.tick + 1 }
-        scheduled = true
-      end
-    end
-  end
-  if scheduled then
-    script.on_event(defines.events.on_tick, request_gui.on_tick)
-  end
-end
-logistics.on_requests_changed = request_gui.redraw
 
 -- Keep the status line current while the window is open.
 local function refresh()
