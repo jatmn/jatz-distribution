@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- The request panel: attached to the right of a request depot's inventory window, it chooses
 -- the item to keep in stock and how many, holds the depot's freighters, and shows what the depot is
--- doing. Changes apply as they are made. Factorio shows the panel only with request depots'
+-- doing as a status light (hover it for the status in words). Changes apply as they are made. Factorio shows the panel only with request depots'
 -- windows.
 --
 -- The freighter slot works like an inventory slot: click with freighters in hand to put them in
@@ -30,6 +30,33 @@ end
 
 local function status_caption(entity)
   return { "jatz-request-status." .. (logistics.get_status(entity) or "none") }
+end
+
+-- The status light beside the request: the game's own status indicators, answering "can I get
+-- this item?". Hovering it shows the status in words.
+-- * green: stocked, or on its way (a freighter out, or finding the provider nearest by road);
+-- * yellow: the item is there, but something is in the way (no road route right now, no
+--   freighters, loading zone not on road, the depot full, a freighter couldn't be sent);
+-- * red: no provider depot has the item;
+-- * grey: nothing requested.
+local LIGHTS = {
+  satisfied = "utility/status_working",
+  delivering = "utility/status_working",
+  searching = "utility/status_working",
+  unreachable = "utility/status_yellow",
+  ["no-trucks"] = "utility/status_yellow",
+  ["no-road"] = "utility/status_yellow",
+  full = "utility/status_yellow",
+  ["no-freighter"] = "utility/status_yellow",
+  ["no-provider"] = "utility/status_not_working",
+  none = "utility/status_inactive",
+}
+request_gui.lights = LIGHTS
+
+local function show_status(light, entity)
+  local status = logistics.get_status(entity) or "none"
+  light.sprite = LIGHTS[status] or "utility/status_inactive"
+  light.tooltip = status_caption(entity)
 end
 
 -- Show the slot's freighters and how many are out.
@@ -62,7 +89,7 @@ local function open(player, entity)
     },
   })
   local inner = frame.add({ type = "frame", style = "inside_shallow_frame_with_padding", direction = "vertical" })
-  local row = inner.add({ type = "flow", direction = "horizontal" })
+  local row = inner.add({ type = "flow", name = "request_row", direction = "horizontal" })
   row.style.vertical_align = "center"
   row.add({
     type = "choose-elem-button",
@@ -83,6 +110,7 @@ local function open(player, entity)
     tooltip = { "jatz-gui.request-count-tooltip" },
   })
   count.style.width = 80
+  show_status(row.add({ type = "sprite", name = STATUS, style = "status_image" }), entity)
   local freighters = inner.add({ type = "flow", name = "freighter_row", direction = "horizontal" })
   freighters.style.vertical_align = "center"
   freighters.add({
@@ -97,7 +125,6 @@ local function open(player, entity)
   })
   freighters.add({ type = "label", name = SLOT_LABEL })
   show_freighters(inner, entity)
-  inner.add({ type = "label", name = STATUS, caption = status_caption(entity) })
   storage.request_gui = storage.request_gui or {}
   storage.request_gui[player.index] = entity
 end
@@ -230,10 +257,14 @@ local function refresh()
     local player = game.get_player(index)
     local frame = player and player.valid and frame_of(player)
     if frame and entity.valid then
-      local status = frame.children[1][STATUS]
-      if status then
-        status.caption = status_caption(entity)
+      local row = frame.children[1].request_row
+      if not (row and row[STATUS]) then
+        -- A panel opened before an update that changed its layout: build it again.
+        open(player, entity)
+        frame = frame_of(player)
+        row = frame.children[1].request_row
       end
+      show_status(row[STATUS], entity)
       show_freighters(frame.children[1], entity)
     else
       storage.request_gui[index] = nil

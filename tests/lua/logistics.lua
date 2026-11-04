@@ -401,6 +401,29 @@ do -- A rerouted freighter promises only what its new provider has unpromised.
   check("promising only the 10 not already promised there", trips[1].planned == 10)
 end
 
+do -- "On its way" means a freighter is bringing the item: not one driving home empty, nor one
+  -- taking its cargo back to the provider.
+  local logistics = reset()
+  local request = supplied(logistics, 5)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  local success, fail = defines.behavior_result.success, defines.behavior_result.fail
+  logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = success }) -- nothing to load
+  game.tick = 60
+  logistics.on_tick()
+  check("a freighter driving home empty isn't 'on its way'", logistics.get_status(request) ~= "delivering")
+  -- A loaded freighter whose way to the depot is cut takes its cargo back to the provider.
+  local other = trips_from(request)[2] or trips_from(request)[1]
+  other.state = "to-request"
+  other.cargo[1].name, other.cargo[1].count, other.cargo[1].valid_for_read = "a", 10, true
+  logistics.on_ai_command_completed({ unit_number = other.drone.unit_number, result = fail })
+  check("setup: the loaded freighter heads back to the provider", other.state == "returning")
+  game.tick = 120
+  logistics.on_tick()
+  check("nor is one taking its cargo back", logistics.get_status(request) ~= "delivering")
+end
+
 do -- No freighters: nothing is sent, and the panel says why.
   local logistics = reset()
   local request = supplied(logistics, 0)
