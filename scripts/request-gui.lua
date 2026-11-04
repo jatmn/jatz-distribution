@@ -2,7 +2,7 @@
 -- The request panel: attached to the right of a request depot's inventory window, it chooses
 -- the item to keep in stock and how many, holds the depot's freighters, and shows what the depot is
 -- doing as a status light (hover it for the status in words). Buffer depots have the same panel,
--- with a priority slider too; provider depots have a panel with only that slider. Changes apply as
+-- with a priority slider at the top; provider depots have a panel with only that slider. Changes apply as
 -- they are made. Factorio shows the panel only with these depots' windows.
 --
 -- The freighter slot works like an inventory slot: click with freighters in hand to put them in
@@ -163,8 +163,11 @@ local function open(player, entity)
   local inner = frame.add({ type = "frame", style = "inside_shallow_frame_with_padding", direction = "vertical" })
   storage.request_gui = storage.request_gui or {}
   storage.request_gui[player.index] = entity
-  if not REQUESTING[entity.name] then
+  -- Provider and buffer depots: the priority slider first, above the request.
+  if entity.name ~= REQUEST then
     add_priority(inner, entity)
+  end
+  if not REQUESTING[entity.name] then
     return
   end
   local request = logistics.get_request(entity) or {}
@@ -199,8 +202,6 @@ local function open(player, entity)
       caption = { "jatz-gui.request-from-buffers" },
       tooltip = { "jatz-gui.request-from-buffers-tooltip" },
     })
-  else
-    add_priority(inner, entity)
   end
   local freighters = inner.add({ type = "flow", name = "freighter_row", direction = "horizontal" })
   freighters.style.vertical_align = "center"

@@ -709,6 +709,7 @@ do -- The priority slider: provider depots get a panel with only it; buffer depo
   local inner = relative.jatz_request_frame.children[1]
   check("a buffer depot's panel has its request", inner.request_row and inner.request_row.jatz_request_status)
   check("and a priority slider", inner.priority_row and inner.priority_row.jatz_depot_priority)
+  check("above the request", inner.children[1] == inner.priority_row and inner.children[2] == inner.request_row)
   inner.priority_row.jatz_depot_priority.slider_value = 2
   fire("on_gui_value_changed", { player_index = 11, element = inner.priority_row.jatz_depot_priority })
   check("which sets the buffer depot's priority", logistics.get_priority(buffer) == 2)
