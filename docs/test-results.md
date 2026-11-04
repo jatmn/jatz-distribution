@@ -13,7 +13,8 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | Full rotation of every placed depot (112 steps) | Passed |
 | All 20 pipe ports connect; containers hold items, tanks hold fluid | Passed |
 | A character enters the fuelled freighter and drives it (28.5 tiles in 2 seconds) | Passed |
-| Freighter at 75% size (sprites and boxes; box 1.125 × 3.375 tiles, checked headless) in the graphical client | Untested |
+| Freighter at 75% size in the graphical client | Seen in play by the owner up to November 3, 2026, who then asked for 60% |
+| Freighter at 60% size (sprites and boxes; box 0.9 × 2.7 tiles, stored by the engine as 0.898 × 2.695, checked headless) in the graphical client | Untested |
 | New 64 px icons in the graphical client: depots face south and the freighter heads south-east | **Passed:** checked by the owner on November 3, 2026, in the inventory and Factoriopedia |
 | Loading zone marking in the graphical client: one tile beyond the footprint on the loading side, south when placed unrotated, worn rather than bright white | **Passed:** checked by the owner on November 3, 2026 (Provider depots on desert) |
 | Marking drawn above decoratives (plants, ground cover): moved from `decals` to `ground-patch-higher2` after the owner saw plants drawn over it | Untested since the change |
@@ -100,7 +101,7 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | Tint isolation (default, alternate, white, black and each layer alone) | Passed |
 | Shadows at eight compass headings and at night | Passed |
 | Driving forward, in full circles and in reverse | Passed |
-| Selection and collision boxes | **Failed** in this artwork fixture, which inherits the base car's boxes (they cover only the middle of the truck). The mod's freighter now uses a 1.5 × 4.5 tile box measured from the sprites (scaled with the sprites to 75% in game); that still needs a graphical check (see Mod above). |
+| Selection and collision boxes | **Failed** in this artwork fixture, which inherits the base car's boxes (they cover only the middle of the truck). The mod's freighter now uses a 1.5 × 4.5 tile box measured from the sprites (scaled with the sprites to 60% in game); that still needs a graphical check (see Mod above). |
 | Wheel animation | Not implemented yet (one static frame per direction) |
 
 ![Default and alternate trucks driving](images/freighter-driving.jpg)

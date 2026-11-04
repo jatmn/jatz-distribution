@@ -4,8 +4,8 @@ return {
   mod_name = "jatz-distribution",
   subgroup = "jatz-distribution",
   freighter_sheets = "assets/quinityn-freighter/sheets/",
-  -- The freighter is drawn at 75% of the artwork's scale (prototypes/freighter-art.lua).
-  freighter_scale = 0.75,
+  -- The freighter is drawn at 60% of the artwork's scale (prototypes/freighter-art.lua).
+  freighter_scale = 0.6,
   -- string.format pattern taking (role, size), relative to the mod root.
   depot_sheets = "assets/depots/%s/%d/sheets/",
   connector_sheets = "assets/depots/connectors/sheets/",

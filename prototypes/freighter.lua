@@ -16,7 +16,7 @@ freighter.turret_animation = nil
 freighter.light_animation = nil
 freighter.guns = nil
 -- Measured from the rendered sprites at the artwork's scale (about 4.6 tiles long and 1.5 wide,
--- centred on the pivot), then scaled with the sprites: about 3.4 by 1.1 tiles in game.
+-- centred on the pivot), then scaled with the sprites: about 2.7 by 0.9 tiles in game.
 freighter.collision_box = art.box(0.75, 2.25)
 freighter.selection_box = art.box(0.8, 2.3)
 
