@@ -319,4 +319,17 @@ do -- The freighter slot's clicks: ghosts request freighters from robots; remote
   check("pipette elsewhere is left to the game", picked == nil)
 end
 
+do -- Every status the dispatcher can report has a status light, one of the game's own.
+  local lights = require("scripts.request-gui").lights
+  local game_lights = {
+    ["utility/status_working"] = true,
+    ["utility/status_yellow"] = true,
+    ["utility/status_not_working"] = true,
+    ["utility/status_inactive"] = true,
+  }
+  for _, status in pairs(require("scripts.logistics").status) do
+    check("status " .. status .. " has a status light", game_lights[lights[status]])
+  end
+end
+
 print("all control event checks passed")

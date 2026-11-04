@@ -77,7 +77,9 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # the slot, storage is back to 4. A removal marked and cancelled at the start put its
             # freighter back.
             'removal_marked': 1, 'removal_cancelled': 1, 'robots_removal_marked': 2, 'slot_after_removal': 2,
-            'storage_after_removal': 4}
+            'storage_after_removal': 4,
+            # The request panel's status light: the game's four status indicator sprites exist.
+            'status_lights': 4}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 

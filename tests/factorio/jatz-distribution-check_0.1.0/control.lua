@@ -778,6 +778,17 @@ script.on_init(function()
   result.freighter_box = { box.right_bottom.x - box.left_top.x, box.right_bottom.y - box.left_top.y }
   check_road(result)
   check_road_placement(surface, result)
+  -- The request panel's status light uses the game's own status indicators.
+  result.status_lights = 0
+  for _, sprite in ipairs({
+    "utility/status_working",
+    "utility/status_yellow",
+    "utility/status_not_working",
+    "utility/status_inactive",
+  }) do
+    assert(helpers.is_valid_sprite_path(sprite), sprite .. " is not a sprite")
+    result.status_lights = result.status_lights + 1
+  end
   setup_depot_roads(surface, result)
   check_menu_placement(result)
   setup_deliveries(surface, result)
