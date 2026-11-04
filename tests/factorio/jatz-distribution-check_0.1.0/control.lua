@@ -446,6 +446,23 @@ local function setup_deliveries(surface, result)
   assert(remote.call("jatz-distribution", "set_request", buffering.filling, "copper-cable", 15), "buffer: refused")
   result.buffer_has_no_from_buffers = remote.call("jatz-distribution", "set_from_buffers", buffering.filling, true)
   deliveries.buffering = buffering
+  -- Priority, on one road (loading zones at y -25): a request depot for 10 stone, a provider 10
+  -- tiles away at priority 2 and one 30 tiles away at priority 9, each holding 20. The freighter
+  -- goes to the farther one, for its higher priority.
+  local prioritised = {
+    request = depot(surface, "request", 20.5, -26.5, 1),
+    near = depot(surface, "provider", 30.5, -26.5),
+    far = depot(surface, "provider", 50.5, -26.5),
+  }
+  lay_road(surface, 20, -25, 50, -25)
+  assert(prioritised.near.insert({ name = "stone", count = 20 }) == 20, "stone: cannot stock")
+  assert(prioritised.far.insert({ name = "stone", count = 20 }) == 20, "stone: cannot stock")
+  result.priority_default = remote.call("jatz-distribution", "get_priority", prioritised.near)
+  assert(remote.call("jatz-distribution", "set_priority", prioritised.near, 2), "priority: refused")
+  assert(remote.call("jatz-distribution", "set_priority", prioritised.far, 9), "priority: refused")
+  result.request_has_no_priority = remote.call("jatz-distribution", "set_priority", prioritised.request, 9)
+  assert(remote.call("jatz-distribution", "set_request", prioritised.request, "stone", 10), "stone: refused")
+  deliveries.prioritised = prioritised
   -- Freighters, one after another, from more than one provider: a request depot with 5 freighters
   -- asks for 60 iron sticks; the provider 10 tiles away has 30, the one 30 tiles away 40.
   local multi = {
@@ -850,6 +867,7 @@ local function deliveries_finished(surface, tick, result)
     and count(deliveries.multi.request, "iron-stick") == 60
     and count(deliveries.buffering.request, "copper-cable") == 20
     and count(deliveries.buffering.filling, "copper-cable") == 15
+    and count(deliveries.prioritised.request, "stone") == 10
     and deliveries.removal_started
     and select(2, remote.call("jatz-distribution", "requested_freighters", deliveries.remote)) == 0
     and deliveries.store.get_item_count(FREIGHTER) == 4
@@ -858,7 +876,7 @@ local function deliveries_finished(surface, tick, result)
     if tick >= DELIVERY_DEADLINE then
       error(
         string.format(
-          "deliveries did not finish in time: iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), pipes after mending %d (%s), bricks rerouted %d, buffered request %d (%s), buffer filled %d (%s), %d freighter(s) out",
+          "deliveries did not finish in time: iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), pipes after mending %d (%s), bricks rerouted %d, buffered request %d (%s), buffer filled %d (%s), prioritised %d (%s), %d freighter(s) out",
           count(deliveries.connected),
           tostring(status(deliveries.connected)),
           count(armor.request, armor.item),
@@ -875,6 +893,8 @@ local function deliveries_finished(surface, tick, result)
           tostring(status(deliveries.buffering.request)),
           count(deliveries.buffering.filling, "copper-cable"),
           tostring(status(deliveries.buffering.filling)),
+          count(deliveries.prioritised.request, "stone"),
+          tostring(status(deliveries.prioritised.request)),
           #surface.find_entities_filtered({ name = DRONE })
         )
       )
@@ -954,6 +974,9 @@ local function deliveries_finished(surface, tick, result)
   result.buffer_taken_from = 30 - count(buffering.stocked, "copper-cable")
   result.buffer_filled = count(buffering.filling, "copper-cable")
   result.buffer_provider_left = count(buffering.provider, "copper-cable")
+  local prioritised = deliveries.prioritised
+  result.priority_from_far = 20 - count(prioritised.far, "stone")
+  result.priority_from_near = 20 - count(prioritised.near, "stone")
   result.trimmed_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.trimmed)
   result.dropped_requested_again = remote.call("jatz-distribution", "requested_freighters", deliveries.dropped)
   result.dropped_slot = remote.call("jatz-distribution", "freighter_counts", deliveries.dropped)

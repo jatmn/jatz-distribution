@@ -119,6 +119,10 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # from the other buffer; buffers have no request-from-buffers setting.
             'buffered_request': 20, 'buffer_taken_from': 20, 'buffer_filled': 15, 'buffer_provider_left': 85,
             'buffer_has_no_from_buffers': False,
+            # Priority: a provider 30 tiles away at priority 9 supplies all 10, not one 10 tiles away
+            # at priority 2; providers start at 5; request depots have no priority.
+            'priority_from_far': 10, 'priority_from_near': 0, 'priority_default': 5,
+            'request_has_no_priority': False,
             # A hand-placed freighter lowers the same request proxy (5 -> 4) instead of replacing
             # it, so an open window keeps showing the request.
             'hand_fill_same_proxy': True, 'hand_fill_requested': 4}

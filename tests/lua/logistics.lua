@@ -570,4 +570,131 @@ do -- Changing "request from buffer depots" restarts searches under way, freight
   check("and started afresh at the next check", #requests == 3)
 end
 
+-- Priority: within each kind of depot, the highest priority it can reach by road first, however
+-- near a lower one is; buffer depots still all come before providers.
+local function prioritised(logistics, from_buffers)
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  local near = entity("jatz-provider-depot", 10.5, 0.5, { a = 30 })
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 30 })
+  for _, depot in ipairs({ request, near, far }) do
+    logistics.add(depot)
+  end
+  assert(logistics.set_request(request, "a", 10))
+  assert(logistics.set_from_buffers(request, from_buffers or false))
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 2)) == 2)
+  return request, near, far
+end
+
+do -- Settings: provider and buffer depots only, 1 to 10, 5 until set.
+  local logistics = reset()
+  local request, near = prioritised(logistics)
+  local buffer = entity("jatz-buffer-depot", 20.5, 0.5)
+  logistics.add(buffer)
+  check("a new provider depot has priority 5", logistics.get_priority(near) == 5)
+  check("and so does a new buffer depot", logistics.get_priority(buffer) == 5)
+  check("request depots have none", logistics.get_priority(request) == nil)
+  check("and can't be given one", logistics.set_priority(request, 3) == false)
+  check("a priority must be a number", logistics.set_priority(near, "high") == false)
+  check("not text that reads as one", logistics.set_priority(near, "8") == false and logistics.get_priority(near) == 5)
+  check("not NaN either", logistics.set_priority(near, 0 / 0) == false and logistics.get_priority(near) == 5)
+  logistics.set_priority(near, 0)
+  check("below 1 is 1", logistics.get_priority(near) == 1)
+  logistics.set_priority(near, 42)
+  check("above 10 is 10", logistics.get_priority(near) == 10)
+  logistics.set_priority(buffer, 6.6)
+  check("a fraction is rounded", logistics.get_priority(buffer) == 7)
+end
+
+do -- A farther provider with a higher priority wins over a nearer one.
+  local logistics = reset()
+  local request, _, far = prioritised(logistics)
+  assert(logistics.set_priority(far, 8))
+  logistics.on_tick()
+  check("the higher priority provider is asked about first", requests[1].goal.x == 40.5)
+  answer(logistics, 1, "route")
+  check("with a road to it, the nearer one isn't asked", #requests == 1)
+  check("and the freighter goes to it", trips_from(request)[1].provider == far.unit_number)
+end
+
+do -- The higher priority provider can't be reached by road: the lower one instead.
+  local logistics = reset()
+  local request, near, far = prioritised(logistics)
+  assert(logistics.set_priority(far, 8))
+  logistics.on_tick()
+  answer(logistics, 1, "none")
+  check("then the lower priority provider is asked", #requests == 2 and requests[2].goal.x == 10.5)
+  answer(logistics, 2, "route")
+  check("and the freighter goes there", trips_from(request)[1].provider == near.unit_number)
+  check("the unreachable one is on cooldown", storage.depots[request.unit_number].cooldowns[far.unit_number])
+end
+
+do -- Equal priorities: nearest first, as before.
+  local logistics = reset()
+  local request, near, far = prioritised(logistics)
+  assert(logistics.set_priority(near, 8) and logistics.set_priority(far, 8))
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  check("equal priorities go to the nearest", trips_from(request)[1].provider == near.unit_number)
+end
+
+do -- Buffers: the higher priority first too; and any buffer before any provider.
+  local logistics = reset()
+  local request = prioritised(logistics, true)
+  local near_buffer = entity("jatz-buffer-depot", 20.5, 0.5, { a = 30 })
+  local far_buffer = entity("jatz-buffer-depot", 60.5, 0.5, { a = 30 })
+  logistics.add(near_buffer)
+  logistics.add(far_buffer)
+  for _, provider in pairs(storage.depots) do
+    if provider.role == "provider" then
+      assert(logistics.set_priority(provider.entity, 10))
+    end
+  end
+  assert(logistics.set_priority(near_buffer, 1) and logistics.set_priority(far_buffer, 2))
+  logistics.on_tick()
+  check("a priority 2 buffer comes before a nearer priority 1 one", requests[1].goal.x == 60.5)
+  answer(logistics, 1, "none")
+  check("then the priority 1 buffer, before priority 10 providers", requests[2].goal.x == 20.5)
+  answer(logistics, 2, "route")
+  check("and the freighter goes to it", trips_from(request)[1].provider == near_buffer.unit_number)
+end
+
+do -- A priority changed while a search waits: the search starts again with the new order.
+  local logistics = reset()
+  local request, _, far = prioritised(logistics)
+  logistics.on_tick()
+  check("first the nearer provider is asked about", requests[1].goal.x == 10.5)
+  assert(logistics.set_priority(far, 9))
+  answer(logistics, 1, "route")
+  check("the old search's answer sends nobody", not has_trip(request))
+  game.tick = game.tick + 60
+  logistics.on_tick()
+  check("the new search asks about the higher priority one", requests[2].goal.x == 40.5)
+  answer(logistics, 2, "route")
+  check("and the freighter goes there", trips_from(request)[1].provider == far.unit_number)
+end
+
+do -- Setting the priority it already has restarts nothing.
+  local logistics = reset()
+  local request, near = prioritised(logistics)
+  logistics.on_tick()
+  assert(logistics.set_priority(near, 5))
+  answer(logistics, 1, "route")
+  check("an unchanged priority leaves the search be", has_trip(request))
+end
+
+do -- Copy and paste, and clones, carry the priority between provider and buffer depots.
+  local logistics = reset()
+  local _, near, far = prioritised(logistics)
+  local buffer = entity("jatz-buffer-depot", 20.5, 0.5)
+  logistics.add(buffer)
+  assert(logistics.set_priority(near, 9))
+  logistics.on_entity_settings_pasted({ source = near, destination = far })
+  check("pasting copies a provider's priority", logistics.get_priority(far) == 9)
+  logistics.on_entity_settings_pasted({ source = near, destination = buffer })
+  check("onto a buffer depot too", logistics.get_priority(buffer) == 9)
+  local clone = entity("jatz-provider-depot", 80.5, 0.5)
+  logistics.on_cloned(near, clone)
+  check("a clone keeps it", logistics.get_priority(clone) == 9)
+end
+
 print("all logistics checks passed")
