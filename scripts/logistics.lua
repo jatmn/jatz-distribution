@@ -51,18 +51,41 @@ local FREIGHTER = "jatz-quinityn-freighter"
 -- A request depot holds up to this many freighters (in its slot and out on trips together). The
 -- freighter item stacks to 10, so the slot is that many stacks, shown as one slot in the panel.
 local FREIGHTER_CAPACITY = 100
-logistics.depots = { [PROVIDER] = "provider", [REQUEST] = "request", [BUFFER] = "buffer" }
--- Depots that request (send freighters out for an item): request and buffer depots.
+-- Liquid depots work like the item depots of the same role, for fluids: a liquid request depot
+-- keeps a fluid in stock, fetched from liquid provider depots (and liquid buffer depots, if set to);
+-- a liquid buffer depot fetches from liquid providers only. Items and fluids never meet: item
+-- depots deal only with item depots, liquid depots only with liquid depots.
+local LIQUID_PROVIDER = "jatz-liquid-provider-depot"
+local LIQUID_REQUEST = "jatz-liquid-request-depot"
+local LIQUID_BUFFER = "jatz-liquid-buffer-depot"
+logistics.depots = {
+  [PROVIDER] = "provider",
+  [REQUEST] = "request",
+  [BUFFER] = "buffer",
+  [LIQUID_PROVIDER] = "provider",
+  [LIQUID_REQUEST] = "request",
+  [LIQUID_BUFFER] = "buffer",
+}
+local LIQUID = { [LIQUID_PROVIDER] = true, [LIQUID_REQUEST] = true, [LIQUID_BUFFER] = true }
+logistics.liquid = LIQUID
+-- Depots that request (send freighters out for an item or fluid): request and buffer depots.
 local REQUESTING = { request = true, buffer = true }
-logistics.requesting = { [REQUEST] = true, [BUFFER] = true }
+logistics.requesting = { [REQUEST] = true, [BUFFER] = true, [LIQUID_REQUEST] = true, [LIQUID_BUFFER] = true }
 logistics.drone = DRONE
 logistics.freighter = FREIGHTER
+-- Liquid depots are storage tanks, with no item inventory: robots bring their freighters into
+-- this invisible chest under them instead (prototypes/truck-chest.lua).
+local TRUCK_CHEST = "jatz-truck-chest"
+logistics.truck_chest = TRUCK_CHEST
 
 local DISPATCH_INTERVAL = 60
 -- A request depot sends at most one freighter this often, so they leave one after another.
 local SEND_SPACING = 60
--- A freighter carries at most this many stacks.
+-- A freighter carries at most this many stacks, or this much fluid (Transport Drones' default
+-- drone fluid capacity).
 local CAPACITY_STACKS = 10
+local FLUID_CAPACITY = 500
+logistics.fluid_capacity = FLUID_CAPACITY
 -- After a provider can't be reached, a request depot ignores it for this long; after a freighter
 -- can't be created, the depot waits this long before trying again. Laying road, or building or
 -- turning a depot, ends every wait on that surface at once (logistics.on_roads_changed and
@@ -88,6 +111,8 @@ logistics.status = {
   no_trucks = "no-trucks",
   searching = "searching",
   delivering = "delivering",
+  -- A liquid depot's tank holds another fluid than the one requested.
+  other_fluid = "other-fluid",
 }
 
 -- Trip states: driving out to the provider, bringing cargo to the request depot, or taking cargo
@@ -95,7 +120,7 @@ logistics.status = {
 local TO_PROVIDER, TO_REQUEST, RETURNING = "to-provider", "to-request", "returning"
 
 -- Defined further down; dispatch and the search need them first.
-local end_trip, load, freighter_requests
+local end_trip, load, freighter_requests, load_fluid, unload_fluid
 
 local function init_storage()
   storage.depots = storage.depots or {}
@@ -112,6 +137,36 @@ end
 
 local function inventory(entity)
   return entity.get_inventory(defines.inventory.chest)
+end
+
+-- Where a requesting depot's freighters arrive as items, and robots bring them: its own chest, or
+-- for a liquid depot the truck chest under it (made if missing: a save from before liquid depots
+-- delivered, or one removed by another mod).
+local function truck_chest(entity)
+  if not LIQUID[entity.name] then
+    return entity
+  end
+  local depot = storage.depots and storage.depots[entity.unit_number]
+  if not depot then
+    return entity
+  end
+  if not (depot.chest and depot.chest.valid) then
+    depot.chest = entity.surface.create_entity({
+      name = TRUCK_CHEST,
+      position = entity.position,
+      force = entity.force,
+      create_build_effect_smoke = false,
+    })
+    if depot.chest then
+      depot.chest.destructible = false
+    end
+  end
+  return depot.chest or entity
+end
+
+-- The inventory a requesting depot's freighters arrive in (see truck_chest).
+local function freighter_chest(entity)
+  return inventory(truck_chest(entity))
 end
 
 local function item_id(item)
@@ -164,8 +219,13 @@ function logistics.add(entity)
     trips = {},
     trucks = nil,
     status = logistics.status.none,
+    -- Liquid depots deal in fluids, with liquid depots only.
+    fluid = LIQUID[entity.name] or nil,
   }
   script.register_on_object_destroyed(entity)
+  if LIQUID[entity.name] and REQUESTING[role] then
+    truck_chest(entity)
+  end
 end
 
 -- A request depot's freighter slot: room for FREIGHTER_CAPACITY freighters, as real items, in as
@@ -202,12 +262,28 @@ local function trips_of(depot)
   return depot.trips
 end
 
+-- A trip's cargo: item stacks in a script inventory (`trip.cargo`), or for a liquid depot's trip a
+-- fluid (`trip.fluid`: { amount, temperature }; fluids have no item data to keep).
+local function cargo_amount(trip)
+  if trip.fluid then
+    return trip.fluid.amount
+  end
+  return trip.cargo and trip.cargo.valid and trip.cargo.get_item_count(item_id(trip.item)) or 0
+end
+
+local function cargo_empty(trip)
+  if trip.fluid then
+    return trip.fluid.amount <= 0
+  end
+  return not (trip.cargo and trip.cargo.valid) or trip.cargo.is_empty()
+end
+
 -- What a trip will bring: what it promised to load while on its way out, its cargo on the way back.
 local function bringing(trip)
   if trip.state == TO_PROVIDER then
     return trip.planned or 0
-  elseif trip.state == TO_REQUEST and trip.cargo.valid then
-    return trip.cargo.get_item_count(item_id(trip.item))
+  elseif trip.state == TO_REQUEST then
+    return cargo_amount(trip)
   end
   return 0
 end
@@ -226,9 +302,17 @@ local function committed(depot, except)
   return total
 end
 
+-- How much of an item, or fluid, a depot holds.
+local function stock(entity, item, fluid)
+  if fluid then
+    return entity.get_fluid_count(item)
+  end
+  return inventory(entity).get_item_count(item_id(item))
+end
+
 -- How much of `item` a provider has that no freighter on its way there has promised to load.
 local function available(provider, item)
-  local count = inventory(provider.entity).get_item_count(item_id(item))
+  local count = stock(provider.entity, item, provider.fluid)
   for _, trip in pairs(storage.trips) do
     if trip.provider == provider.entity.unit_number and trip.item == item and trip.state == TO_PROVIDER then
       count = count - (trip.planned or 0)
@@ -304,7 +388,9 @@ function logistics.set_request(entity, item, count)
     depot.request = nil
   else
     count = tonumber(count or 0)
-    if type(item) ~= "string" or not prototypes.item[item] or not count then
+    -- An item for an item depot, a fluid for a liquid depot.
+    local kinds = depot.fluid and prototypes.fluid or prototypes.item
+    if type(item) ~= "string" or not kinds[item] or not count then
       return false
     end
     depot.request = { item = item, count = math.max(0, math.floor(count)) }
@@ -334,8 +420,25 @@ end
 -- what the depot can hold are filled as far as it can hold.
 local function need(depot, except)
   local request = depot.request
-  if not request or request.count <= 0 or not prototypes.item[request.item] then
+  if not request or request.count <= 0 or not (depot.fluid and prototypes.fluid or prototypes.item)[request.item] then
     return 0, 0
+  end
+  if depot.fluid then
+    local tank = depot.entity
+    local coming = committed(depot, except)
+    local wanted = request.count - tank.get_fluid_count(request.item) - coming
+    if wanted <= 0 then
+      return 0, 0
+    end
+    local held = 0
+    for name, amount in pairs(tank.get_fluid_contents()) do
+      if name ~= request.item and amount > 0 then
+        -- Another fluid fills the tank: nothing can go in until it is gone.
+        return wanted, 0, true
+      end
+      held = held + amount
+    end
+    return wanted, math.max(0, math.min(wanted, tank.get_fluid_capacity(1) - held - coming))
   end
   local chest, id = inventory(depot.entity), item_id(request.item)
   local coming = committed(depot, except)
@@ -359,6 +462,8 @@ local function candidates(depot, from)
     local candidate = provider.entity
     if
       (provider.role == "provider" or (buffers and provider.role == "buffer" and candidate ~= entity))
+      -- Items from item depots, fluids from liquid depots.
+      and provider.fluid == depot.fluid
       and candidate.valid
       and candidate.surface == entity.surface
       and candidate.force == entity.force
@@ -423,7 +528,8 @@ local function start_trip(depot, provider, from, planned)
     request = depot.entity.unit_number,
     provider = provider.entity.unit_number,
     item = depot.request.item,
-    cargo = game.create_inventory(CAPACITY_STACKS),
+    cargo = not depot.fluid and game.create_inventory(CAPACITY_STACKS) or nil,
+    fluid = depot.fluid and { amount = 0 } or nil,
     -- The freighter item it was, taken from the depot's slot; it goes back there afterwards.
     truck = game.create_inventory(1),
     planned = planned,
@@ -541,7 +647,7 @@ local function absorb_freighters(depot)
   if depot.request and depot.request.item == FREIGHTER then
     return
   end
-  local chest = inventory(depot.entity)
+  local chest = freighter_chest(depot.entity)
   if count_freighters(chest) == 0 then
     depot.chest_seen = 0
     return
@@ -569,14 +675,15 @@ local function dispatch(depot)
   -- "On its way" only while a freighter is bringing some of the requested item: not one taking
   -- cargo back to its provider, nor one driving home empty.
   local out = committed(depot) > 0
-  local wanted, room = need(depot)
+  local wanted, room, other_fluid = need(depot)
   if wanted <= 0 then
     depot.status = out and logistics.status.delivering
       or (depot.request and logistics.status.satisfied or logistics.status.none)
     return
   end
   if room <= 0 then
-    depot.status = out and logistics.status.delivering or logistics.status.full
+    depot.status = out and logistics.status.delivering
+      or (other_fluid and logistics.status.other_fluid or logistics.status.full)
     return
   end
   local from, on_road = loading_tile(depot.entity)
@@ -670,9 +777,46 @@ local function unload(cargo, into)
   end
 end
 
+-- Pump up to `limit` of a fluid trip's fluid out of a liquid depot's tank (its one fluid storage),
+-- at the tank's temperature.
+function load_fluid(entity, trip, limit)
+  local held = entity.get_fluid(1)
+  if limit <= 0 or not held or held.name ~= trip.item then
+    return 0
+  end
+  local removed = entity.remove_fluid(1, limit)
+  local taken = removed and removed.amount or 0
+  if taken > 0 then
+    local had = trip.fluid.amount
+    local temperature = trip.fluid.temperature or removed.temperature
+    trip.fluid.temperature = (temperature * had + removed.temperature * taken) / (had + taken)
+    trip.fluid.amount = had + taken
+  end
+  return taken
+end
+
+-- Pump a fluid trip's fluid into a liquid depot's tank, as far as it fits; the rest stays aboard.
+function unload_fluid(trip, entity)
+  if trip.fluid.amount <= 0 then
+    return 0
+  end
+  local put =
+    entity.insert_fluid({ name = trip.item, amount = trip.fluid.amount, temperature = trip.fluid.temperature })
+  trip.fluid.amount = trip.fluid.amount - put
+  return put
+end
+
 -- Leave anything still aboard on the ground, marked for deconstruction so construction robots
 -- can collect it.
 local function spill(trip, position)
+  if trip.fluid then
+    -- Fluid can't be left on the ground: it is lost.
+    trip.fluid.amount = 0
+    return
+  end
+  if not (trip.cargo and trip.cargo.valid) then
+    return
+  end
   local surface, force = trip.drone.surface, trip.drone.force
   for index = 1, #trip.cargo do
     local stack = trip.cargo[index]
@@ -734,7 +878,7 @@ function end_trip(id, trip, lost)
   if trip.truck and trip.truck.valid then
     trip.truck.destroy()
   end
-  if trip.cargo.valid then
+  if trip.cargo and trip.cargo.valid then
     trip.cargo.destroy()
   end
   if trip.drone.valid then
@@ -755,7 +899,12 @@ local function arrived_at_provider(id, trip, depot)
   if provider and request and request.item == trip.item then
     -- What it promised, as far as the depot (counting its other freighters) still needs it.
     local _, room = need(depot, id)
-    load(inventory(provider), trip.cargo, trip.item, math.min(trip.planned or room, room))
+    local limit = math.min(trip.planned or room, room)
+    if trip.fluid then
+      load_fluid(provider, trip, math.min(limit, FLUID_CAPACITY))
+    else
+      load(inventory(provider), trip.cargo, trip.item, limit)
+    end
   end
   trip.planned = nil
   if not (depot and depot.entity.valid) then
@@ -768,6 +917,18 @@ end
 
 local function arrived_at_request(id, trip, depot)
   local entity = depot and depot.entity.valid and depot.entity
+  if trip.fluid then
+    if entity then
+      unload_fluid(trip, entity)
+    end
+    -- Fluid that didn't fit (another fluid got into the tank meanwhile, say) goes back.
+    local provider = depot_entity(trip.provider)
+    if trip.fluid.amount > 0 and provider then
+      trip.state = RETURNING
+      return drive(trip, (loading_tile(provider)))
+    end
+    return end_trip(id, trip)
+  end
   if entity then
     unload(trip.cargo, inventory(entity))
   end
@@ -778,7 +939,11 @@ end
 local function returned_to_provider(id, trip)
   local provider = depot_entity(trip.provider)
   if provider then
-    unload(trip.cargo, inventory(provider))
+    if trip.fluid then
+      unload_fluid(trip, provider)
+    else
+      unload(trip.cargo, inventory(provider))
+    end
   end
   spill(trip, provider and (loading_tile(provider)) or nil)
   end_trip(id, trip)
@@ -791,7 +956,7 @@ local function route_failed(id, trip, depot)
     depot.cooldowns[trip.provider] = game.tick + RETRY_TICKS
   end
   local provider = depot_entity(trip.provider)
-  if trip.state == TO_REQUEST and provider and not trip.cargo.is_empty() then
+  if trip.state == TO_REQUEST and provider and not cargo_empty(trip) then
     trip.state = RETURNING
     return drive(trip, (loading_tile(provider)))
   end
@@ -923,7 +1088,7 @@ local function depot_removed(id)
       if trip.state == TO_REQUEST and depot_entity(trip.provider) then
         trip.state = RETURNING
         replan(trip)
-      elseif trip.state == TO_PROVIDER or trip.cargo.is_empty() then
+      elseif trip.state == TO_PROVIDER or cargo_empty(trip) then
         end_trip(trip_id, trip)
       end
     elseif trip.provider == id and trip.state == RETURNING then
@@ -978,7 +1143,7 @@ local function finish_search(depot, search, owner)
   end
   -- This freighter promises to load what the depot still needs, as far as the provider has it
   -- unpromised and it can carry; the next freighter covers the rest, from here or elsewhere.
-  local capacity = CAPACITY_STACKS * prototypes.item[search.item].stack_size
+  local capacity = depot.fluid and FLUID_CAPACITY or CAPACITY_STACKS * prototypes.item[search.item].stack_size
   local planned = math.min(room, available(provider, search.item), capacity)
   if start_trip(depot, provider, from, planned) then
     depot.status = logistics.status.delivering
@@ -1086,15 +1251,16 @@ end
 function logistics.on_depot_destroyed(event)
   local depot = request_depot(event.entity)
   if depot then
-    refund(depot, nil, inventory(event.entity))
+    refund(depot, nil, freighter_chest(event.entity))
   end
 end
 
--- A request depot mined by a player, robot or platform: its freighters go with it.
+-- A request depot mined by a player, robot or platform: its freighters go with it, and for a
+-- liquid depot those waiting in its truck chest too (an item depot's chest is mined with it).
 function logistics.on_depot_mined(event)
   local depot = request_depot(event.entity)
   if depot then
-    refund(depot, event.buffer)
+    refund(depot, event.buffer, depot.fluid and freighter_chest(event.entity) or nil)
   end
 end
 
@@ -1108,10 +1274,13 @@ function logistics.on_object_destroyed(event)
   if depot then
     if REQUESTING[depot.role] then
       -- Destroyed rather than mined (or by a script): its freighters are left where it stood.
-      refund(depot, nil)
+      refund(depot, nil, depot.chest and depot.chest.valid and inventory(depot.chest) or nil)
       if depot.trucks and depot.trucks.valid then
         depot.trucks.destroy()
       end
+    end
+    if depot.chest and depot.chest.valid then
+      depot.chest.destroy()
     end
     storage.depots[id] = nil
     depot_removed(id)
@@ -1124,6 +1293,10 @@ end
 -- Copy one depot's settings onto another (Copy and Paste settings, and clones): a request depot's
 -- request, and a provider or buffer depot's priority.
 local function copy_request(source, destination)
+  -- Items and fluids don't mix: nothing is copied between an item depot and a liquid depot.
+  if (LIQUID[source.name] or false) ~= (LIQUID[destination.name] or false) then
+    return
+  end
   if request_depot(source) and request_depot(destination) then
     local request = logistics.get_request(source)
     logistics.set_request(destination, request and request.item, request and request.count)
@@ -1139,7 +1312,11 @@ end
 -- can fill them in by hand instead.
 function logistics.on_entity_settings_pasted(event)
   copy_request(event.source, event.destination)
-  if request_depot(event.source) and request_depot(event.destination) then
+  if
+    request_depot(event.source)
+    and request_depot(event.destination)
+    and (LIQUID[event.source.name] or false) == (LIQUID[event.destination.name] or false)
+  then
     -- All the source has or will have: slot, out, chest (not leaving) and coming.
     logistics.match_freighters(event.destination, logistics.freighter_total(event.source))
   end
@@ -1147,7 +1324,8 @@ end
 
 -- A cloned depot is a new depot with the original's request; a cloned freighter has no trip.
 function logistics.on_cloned(source, destination)
-  if destination.name == DRONE then
+  -- A cloned truck chest: the cloned depot makes its own (logistics.add).
+  if destination.name == DRONE or destination.name == TRUCK_CHEST then
     destination.destroy()
     return
   end
@@ -1174,17 +1352,30 @@ function logistics.add_all()
     cancel_search(depot)
     if not depot.entity.valid then
       storage.depots[id] = nil
-    elseif depot.request and not prototypes.item[depot.request.item] then
-      -- The requested item's mod was removed.
-      depot.request = nil
+    else
+      -- Saves from before liquid depots delivered: liquid depots learn their kind.
+      depot.fluid = LIQUID[depot.entity.name] or nil
+      if depot.request and not (depot.fluid and prototypes.fluid or prototypes.item)[depot.request.item] then
+        -- The requested item's or fluid's mod was removed.
+        depot.request = nil
+      end
+      if depot.fluid and REQUESTING[depot.role] then
+        truck_chest(depot.entity)
+      end
     end
   end
   for id, trip in pairs(storage.trips) do
     upgrade(trip)
     -- Trips whose freighter, cargo or item is gone end; the engine already removed any cargo of
     -- a removed item from the cargo inventory.
-    if not (trip.drone.valid and trip.cargo.valid and prototypes.item[trip.item]) then
-      if trip.drone.valid and trip.cargo.valid then
+    local kept
+    if trip.fluid then
+      kept = trip.drone.valid and prototypes.fluid[trip.item]
+    else
+      kept = trip.drone.valid and trip.cargo.valid and prototypes.item[trip.item]
+    end
+    if not kept then
+      if trip.drone.valid and (trip.fluid or trip.cargo.valid) then
         spill(trip)
       end
       end_trip(id, trip)
@@ -1245,6 +1436,8 @@ end
 -- bring, and to take away; and the chest stacks (0-based) freighters are to be taken from.
 function freighter_requests(entity)
   local proxies, requested, removing, marked = {}, 0, 0, {}
+  -- A liquid depot's requests are on its truck chest.
+  entity = truck_chest(entity)
   local x, y = entity.position.x, entity.position.y
   for _, proxy in
     pairs(entity.surface.find_entities_filtered({
@@ -1320,6 +1513,7 @@ end
 
 -- Add an insert or removal plan to a depot's request proxy, making one if it has none.
 local function add_plan(entity, proxies, plan, removal)
+  entity = truck_chest(entity)
   local proxy = proxies[1]
   if proxy then
     local plans = removal and proxy.removal_plan or proxy.insert_plan
@@ -1349,7 +1543,7 @@ function logistics.request_freighters(entity, count)
   if not in_slot then
     return 0
   end
-  local chest = inventory(entity)
+  local chest = freighter_chest(entity)
   local proxies, requested, removing = freighter_requests(entity)
   -- Freighters in the chest count, except those waiting to be taken away.
   local in_chest = count_freighters(chest) - removing
@@ -1389,7 +1583,7 @@ function logistics.remove_freighters(entity, count)
   if wanted <= 0 then
     return 0
   end
-  local chest = inventory(entity)
+  local chest = freighter_chest(entity)
   local proxies = freighter_requests(entity)
   -- A stack at a time from the slot into empty chest stacks, each marked for removal.
   local positions, moved = {}, 0
@@ -1423,7 +1617,7 @@ end
 local function freighter_total(entity)
   local in_slot, out, capacity = logistics.freighter_counts(entity)
   local _, coming, removing = freighter_requests(entity)
-  local in_chest = count_freighters(inventory(entity)) - removing
+  local in_chest = count_freighters(freighter_chest(entity)) - removing
   return in_slot + out + in_chest + coming, capacity, coming
 end
 logistics.freighter_total = freighter_total
@@ -1581,8 +1775,9 @@ function logistics.setup_blueprint(blueprint, mapping)
           end
         end
       end
-      if freighters > 0 then
-        -- Chest stacks the other plans don't use, a stack of freighters at a time.
+      if freighters > 0 and not depot.fluid then
+        -- Chest stacks the other plans don't use, a stack of freighters at a time. (A liquid
+        -- depot has no chest: its freighters are asked for when it is built, see apply_tags.)
         local stacks = {}
         for index = 0, #inventory(entity) - 1 do
           if not used[index] then
@@ -1657,10 +1852,16 @@ function logistics.apply_tags(entity, tags)
   if type(tags[FROM_BUFFERS_TAG]) == "boolean" then
     logistics.set_from_buffers(entity, tags[FROM_BUFFERS_TAG])
   end
-  -- The ghost's insert plan asks robots for the freighters; this is how many it is for.
   local freighters = tags[FREIGHTERS_TAG]
   if type(freighters) == "number" and freighters >= 0 then
-    depot.freighter_target = math.floor(freighters)
+    if depot.fluid then
+      -- A liquid depot's ghost can't carry an insert plan (a storage tank has no chest): ask
+      -- robots for its freighters now, into its truck chest.
+      logistics.match_freighters(entity, freighters)
+    else
+      -- The ghost's insert plan asks robots for the freighters; this is how many it is for.
+      depot.freighter_target = math.floor(freighters)
+    end
   end
 end
 
@@ -1733,7 +1934,7 @@ function logistics.take_in_freighters(entity, give_back, moved)
   if not depot or (depot.request and depot.request.item == FREIGHTER) then
     return 0, 0
   end
-  local chest = inventory(entity)
+  local chest = freighter_chest(entity)
   local now = count_freighters(chest)
   local new = math.min(math.max(0, now - (depot.chest_seen or 0)), math.floor(tonumber(moved) or 0))
   if new <= 0 then
@@ -1872,7 +2073,7 @@ function logistics.describe_freighters(entity)
     game.tick,
     in_slot,
     out,
-    count_freighters(inventory(entity)),
+    count_freighters(freighter_chest(entity)),
     coming,
     removing,
     tostring(depot.freighter_target),

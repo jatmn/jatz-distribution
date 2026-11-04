@@ -1,8 +1,9 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- The seven 3x3 depots. Cargo depots are rotatable containers; depots with pipe ports
 -- (Fuel and the liquid depots) are storage tanks. Each draws its loading zone marking on the
--- ground beside it, south when placed unrotated (prototypes/orientation.lua). Dispatch and
--- transfer come later.
+-- ground beside it, south when placed unrotated (prototypes/orientation.lua). Deliveries are in
+-- scripts/logistics.lua; liquid request and buffer depots get an invisible truck chest for their
+-- freighters (prototypes/truck-chest.lua).
 local util = require("util")
 local constants = require("prototypes.constants")
 local definitions = require("prototypes.depot-definitions")

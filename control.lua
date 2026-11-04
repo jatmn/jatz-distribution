@@ -56,12 +56,17 @@ for _, event in ipairs({
 }) do
   script.on_event(event, on_built, filters)
 end
-local clone_filters = { { filter = "name", name = logistics.drone } }
+-- Freighters and liquid depots' truck chests cloned along with an area are removed: they belong
+-- to the original's trips and depots, and a cloned liquid depot makes its own truck chest.
+local clone_filters = {
+  { filter = "name", name = logistics.drone },
+  { filter = "name", name = logistics.truck_chest },
+}
 for _, filter in ipairs(filters) do
   clone_filters[#clone_filters + 1] = filter
 end
 -- Another mod cloning a depot (or a whole area): the clone is a new depot with the original's
--- request. A cloned freighter has no trip, so it is removed.
+-- request. A cloned freighter has no trip, and a cloned truck chest no depot, so they are removed.
 script.on_event(defines.events.on_entity_cloned, function(event)
   local entity = event.destination
   if entity.valid then
