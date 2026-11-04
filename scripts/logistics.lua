@@ -1686,6 +1686,44 @@ function logistics.take_freighters(entity, stack, count, into)
   return before - slot.get_item_count()
 end
 
+-- Everything the freighter slot's requests are worked out from, for a request depot: for the
+-- /jatz-freighters console command, to see what the game did when something looks wrong.
+function logistics.describe_freighters(entity)
+  local depot = request_depot(entity)
+  if not depot then
+    return nil
+  end
+  local in_slot, out, capacity = logistics.freighter_counts(entity)
+  local proxies, coming, removing = freighter_requests(entity)
+  local plans = {}
+  for _, proxy in ipairs(proxies) do
+    for _, kind in ipairs({ "insert", "removal" }) do
+      for _, plan in pairs(kind == "insert" and proxy.insert_plan or proxy.removal_plan) do
+        local positions = {}
+        for _, position in pairs(plan.items.in_inventory or {}) do
+          positions[#positions + 1] = position.stack .. ":" .. (position.count or 1)
+        end
+        plans[#plans + 1] = kind .. " " .. item_name(plan.id.name) .. " [" .. table.concat(positions, " ") .. "]"
+      end
+    end
+  end
+  return string.format(
+    "depot %d tick %d: slot %d, out %d, chest %d, coming %d, leaving %d, target %s, total %d of %d; %d request proxies: %s",
+    entity.unit_number,
+    game.tick,
+    in_slot,
+    out,
+    count_freighters(inventory(entity)),
+    coming,
+    removing,
+    tostring(depot.freighter_target),
+    freighter_total(entity),
+    capacity,
+    #proxies,
+    #plans > 0 and table.concat(plans, "; ") or "none"
+  )
+end
+
 function logistics.init()
   init_storage()
   logistics.add_all()
@@ -1723,6 +1761,7 @@ function logistics.register()
     remove_freighters = logistics.remove_freighters,
     match_freighters = logistics.match_freighters,
     take_in_freighters = logistics.take_in_freighters,
+    describe_freighters = logistics.describe_freighters,
     setup_blueprint = logistics.setup_blueprint,
     cancel_freighter_removal = logistics.cancel_freighter_removal,
   })

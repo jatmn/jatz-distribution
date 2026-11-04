@@ -538,6 +538,15 @@ local function setup_deliveries(surface, result)
     local _, built = ghost.revive({ raise_revive = true })
     deliveries.untagged = built or deliveries.untagged
   end
+  -- /jatz-freighters describes it (real request proxies, plans and counts).
+  local described = remote.call("jatz-distribution", "describe_freighters", deliveries.untagged)
+  assert(
+    described
+      and described:find("coming 5", 1, true)
+      and described:find("insert jatz-quinityn-freighter [0:5]", 1, true),
+    "describe: " .. tostring(described)
+  )
+  result.described = true
   holder.destroy()
   -- A ghost with malformed tags (from an edited blueprint string, say) still builds, untouched.
   local odd = surface.create_entity({

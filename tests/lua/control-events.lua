@@ -42,6 +42,12 @@ script = {
   register_on_object_destroyed = function() end,
 }
 remote = { add_interface = function() end }
+local console = {}
+commands = {
+  add_command = function(name, _, handler)
+    console[name] = handler
+  end,
+}
 prototypes = { decorative = {}, item = { ["jatz-quinityn-freighter"] = { stack_size = 10 } }, entity = {} }
 
 local tiles = {}
@@ -531,6 +537,31 @@ do -- Freighters moved out of the player's inventory into a request depot (ctrl+
   player.selected = nil
   changed(0)
   check("with no depot open or pointed at, nothing", taken == nil)
+end
+
+do -- /jatz-freighters describes the open request depot's freighter slot.
+  local logistics = require("scripts.logistics")
+  local entity = depot(120)
+  entity.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = entity })
+  local printed
+  local player = {
+    index = 5,
+    opened = entity,
+    print = function(text)
+      printed = text
+    end,
+  }
+  entity.object_name = "LuaEntity"
+  game.get_player = function()
+    return player
+  end
+  logistics.describe_freighters = function(described)
+    return described == entity and "described" or nil
+  end
+  check("the command is registered", console["jatz-freighters"] ~= nil)
+  console["jatz-freighters"]({ player_index = 5 })
+  check("it prints the open depot's freighter slot", printed == "described")
 end
 
 print("all control event checks passed")

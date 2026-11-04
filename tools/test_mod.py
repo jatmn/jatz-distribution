@@ -111,7 +111,9 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # asked again for the rest (4); taking freighters away stops topping up (3 stay).
             'dropped_requested_again': 4, 'dropped_slot': 1, 'sent_away_requested': 3,
             # The same for a depot built over a blueprint ghost without its tags (as by hand).
-            'untagged_requested_again': 4}
+            'untagged_requested_again': 4,
+            # /jatz-freighters describes a depot's freighter slot from the real request proxies.
+            'described': True}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 
