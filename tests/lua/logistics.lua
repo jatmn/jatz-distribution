@@ -352,6 +352,55 @@ do -- Several freighters, one after another, across providers.
   check("nothing more is sent while those two cover the request", #requests == before)
 end
 
+do -- Even if dispatch runs early, a depot sends at most one freighter a second.
+  local logistics = reset()
+  local request = supplied(logistics, 5)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  game.tick = 30
+  logistics.on_tick()
+  check("no second freighter half a second after the first", #requests == 1 and #trips_from(request) == 1)
+  game.tick = 60
+  logistics.on_tick()
+  check("one a second after", #requests == 2)
+end
+
+do -- A changed request lets go of what its outbound freighters promised.
+  local logistics = reset()
+  local first, near = supplied(logistics, 5)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  check("the first depot's freighter promises all 30 at the near provider", trips_from(first)[1].planned == 30)
+  local second = entity("jatz-request-depot", 0.5, 10.5)
+  logistics.add(second)
+  assert(logistics.set_request(second, "a", 30))
+  assert(logistics.put_freighters(second, stack("jatz-quinityn-freighter", 1)) == 1)
+  assert(logistics.set_request(first, "b", 10))
+  check("changing the request drops the old promise", trips_from(first)[1].planned == 0)
+  game.tick = 60
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  local trip = trips_from(second)[1]
+  check("so another depot can have that stock", trip and trip.provider == near.unit_number and trip.planned == 30)
+end
+
+do -- A rerouted freighter promises only what its new provider has unpromised.
+  local logistics = reset()
+  local request, near, far = supplied(logistics, 5)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  game.tick = 60
+  logistics.on_tick()
+  answer(logistics, 2, "route")
+  local trips = trips_from(request)
+  check("setup: 30 promised at the near provider, 70 at the far one", trips[1].planned == 30 and trips[2].planned == 70)
+  near.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = near.unit_number })
+  answer(logistics, #requests, "route")
+  check("rerouted to the far provider", trips[1].provider == far.unit_number)
+  check("promising only the 10 not already promised there", trips[1].planned == 10)
+end
+
 do -- No freighters: nothing is sent, and the panel says why.
   local logistics = reset()
   local request = supplied(logistics, 0)

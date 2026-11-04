@@ -43,9 +43,9 @@ logistics.depots = { [PROVIDER] = "provider", [REQUEST] = "request" }
 logistics.drone = DRONE
 logistics.freighter = FREIGHTER
 
--- Each dispatch sends at most one freighter per request depot, so this is also the delay between
--- one freighter leaving and the next.
 local DISPATCH_INTERVAL = 60
+-- A request depot sends at most one freighter this often, so they leave one after another.
+local SEND_SPACING = 60
 -- A freighter carries at most this many stacks.
 local CAPACITY_STACKS = 10
 -- After a provider can't be reached, a request depot ignores it for this long; after a freighter
@@ -174,9 +174,11 @@ end
 -- What a request depot's freighters, except trip `except`, are bringing.
 local function committed(depot, except)
   local total = 0
+  local item = depot.request and depot.request.item
   for id in pairs(trips_of(depot)) do
     local trip = storage.trips[id]
-    if trip and id ~= except then
+    -- Trips for an item the depot no longer asks for bring nothing it needs.
+    if trip and id ~= except and trip.item == item then
       total = total + bringing(trip)
     end
   end
@@ -225,6 +227,14 @@ function logistics.set_request(entity, item, count)
   depot.retry_at = 0
   -- A search under way was for the old request.
   cancel_search(depot)
+  -- Freighters on their way out for another item will load nothing (arrived_at_provider checks
+  -- the request), so their promises no longer hold that provider's stock.
+  for id in pairs(trips_of(depot)) do
+    local trip = storage.trips[id]
+    if trip and trip.state == TO_PROVIDER and trip.item ~= (depot.request and depot.request.item) then
+      trip.planned = 0
+    end
+  end
   return true
 end
 
@@ -323,6 +333,7 @@ local function start_trip(depot, provider, from, planned)
   storage.trips[drone.unit_number] = trip
   script.register_on_object_destroyed(drone)
   trips_of(depot)[drone.unit_number] = true
+  depot.next_send = game.tick + SEND_SPACING
   drive(trip, (loading_tile(provider.entity)))
   return true
 end
@@ -471,6 +482,10 @@ local function dispatch(depot)
   end
   if trucks_of(depot).is_empty() then
     depot.status = out and logistics.status.delivering or logistics.status.no_trucks
+    return
+  end
+  if (depot.next_send or 0) > game.tick then
+    -- The last freighter left less than SEND_SPACING ago.
     return
   end
   if depot.searching and game.tick - depot.searching < SEARCH_TIMEOUT then
@@ -808,6 +823,9 @@ local function finish_search(depot, search, owner)
   if search.trip then
     if still then
       owner.search_token, owner.searching = nil, nil
+      -- Promise only what the new provider has unpromised (this trip's old promise was at the
+      -- removed provider, so `available` doesn't count it).
+      owner.planned = math.min(owner.planned or 0, available(provider, search.item))
       owner.provider = search.best
       drive(owner, (loading_tile(provider.entity)))
     else
@@ -884,10 +902,19 @@ end
 -- Hand over every freighter a request depot holds, in its slot and out on trips: into `buffer`
 -- (what a player or robot receives for mining it), or, without one or past its room, onto the
 -- ground where the depot stood. Freighters out finish their trips, then just leave.
-local function refund(depot, buffer)
+local function refund(depot, buffer, chest)
   local stacks = {}
   if depot.trucks and depot.trucks.valid then
     stacks[#stacks + 1] = depot.trucks[1]
+  end
+  -- Freighters still in the chest of a depot about to be destroyed (its slot may be full).
+  if chest then
+    for index = 1, #chest do
+      local stack = chest[index]
+      if stack.valid_for_read and stack.name == FREIGHTER then
+        stacks[#stacks + 1] = stack
+      end
+    end
   end
   for id in pairs(trips_of(depot)) do
     local trip = storage.trips[id]
@@ -914,6 +941,15 @@ local function refund(depot, buffer)
       })
     end
     stack.clear()
+  end
+end
+
+-- A request depot about to be destroyed (died, or a script raising script_raised_destroy): all its
+-- freighters, in the slot, out on trips and still in its chest, are left where it stands.
+function logistics.on_depot_destroyed(event)
+  local depot = request_depot(event.entity)
+  if depot then
+    refund(depot, nil, inventory(event.entity))
   end
 end
 
@@ -1099,10 +1135,16 @@ function logistics.register()
     set_request = logistics.set_request,
     get_request = logistics.get_request,
     get_status = logistics.get_status,
-    -- A request depot's freighter slot (a LuaInventory), and its freighter counts.
-    freighters = function(entity)
+    -- Give a request depot new freighters, within its slot's limit (counting freighters out);
+    -- returns how many it took. And read its freighter counts.
+    add_freighters = function(entity, count)
       local depot = request_depot(entity)
-      return depot and trucks_of(depot)
+      if not depot or type(count) ~= "number" then
+        return 0
+      end
+      local in_slot, out, capacity = logistics.freighter_counts(entity)
+      local amount = math.max(0, math.min(math.floor(count), capacity - in_slot - out))
+      return amount > 0 and trucks_of(depot).insert({ name = FREIGHTER, count = amount }) or 0
     end,
     freighter_counts = logistics.freighter_counts,
   })

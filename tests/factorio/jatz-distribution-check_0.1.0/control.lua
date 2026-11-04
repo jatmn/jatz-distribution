@@ -258,8 +258,8 @@ local function depot(surface, role, x, y, trucks)
     raise_built = true,
   })
   if role == "request" and (trucks or 3) > 0 then
-    local slot = remote.call("jatz-distribution", "freighters", entity)
-    assert(slot.insert({ name = FREIGHTER, count = trucks or 3 }) == (trucks or 3), "cannot stock freighters")
+    local added = remote.call("jatz-distribution", "add_freighters", entity, trucks or 3)
+    assert(added == (trucks or 3), "cannot stock freighters")
   end
   return entity
 end
@@ -446,8 +446,12 @@ local function setup_deliveries(surface, result)
   -- Freighters put in a request depot's chest move into its slot.
   deliveries.absorbing = depot(surface, "request", -12.5, 28.5, 0)
   assert(deliveries.absorbing.insert({ name = FREIGHTER, count = 2 }) == 2, "cannot put freighters in the chest")
-  -- A request depot destroyed leaves its freighters on the ground.
+  -- A request depot destroyed leaves its freighters on the ground: a full slot (3, plus 7 added),
+  -- and 2 put in its chest that can't move into the full slot.
   deliveries.dying = depot(surface, "request", 60.5, 28.5, 3)
+  assert(deliveries.dying.insert({ name = FREIGHTER, count = 2 }) == 2, "cannot put freighters in the chest")
+  -- The freighter slot can't be overfilled through the remote interface: 7 more fill the stack of 10.
+  result.add_beyond_limit = remote.call("jatz-distribution", "add_freighters", deliveries.dying, 20)
 
   -- Requests are validated, and clones keep them.
   local original = depot(surface, "request", 60.5, 45.5)
@@ -681,8 +685,8 @@ local function deliveries_finished(surface, tick, result)
   table.sort(departures)
   result.multi_freighters_sent = #departures
   result.multi_spacing = departures[2] and departures[2] - departures[1] or 0
-  -- One dispatch (60 ticks) between departures; the drone is sampled each tick near the zone.
-  assert(result.multi_spacing >= 50, "freighters left together: " .. result.multi_spacing .. " ticks apart")
+  -- At least a second between departures; the drone is sampled each tick near the zone.
+  assert(result.multi_spacing >= 60, "freighters left too close together: " .. result.multi_spacing .. " ticks apart")
   result.multi_received = count(multi.request, "iron-stick")
   result.multi_from_near = 30 - count(multi.near, "iron-stick")
   result.multi_from_far = 40 - count(multi.far, "iron-stick")
@@ -691,7 +695,7 @@ local function deliveries_finished(surface, tick, result)
   result.absorbed = remote.call("jatz-distribution", "freighter_counts", deliveries.absorbing)
   result.absorbed_left_in_chest = count(deliveries.absorbing, FREIGHTER)
   -- Request depots removed by script or destroyed leave their freighters where they stood: the
-  -- orphaned one (2 in its slot, 1 out) and the dying one (3).
+  -- orphaned one (2 in its slot, 1 out) and the dying one (10 in its slot, 2 in its chest).
   result.orphaned_freighters_dropped = on_ground(surface, { { 60, 18 }, { 66, 24 } })
   result.destroyed_freighters_dropped = on_ground(surface, { { 57, 25 }, { 64, 32 } })
   -- No cargo was left on the ground anywhere.

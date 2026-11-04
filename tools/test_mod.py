@@ -66,7 +66,9 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # freighters put in the chest go to the slot; removed depots leave theirs behind.
             'multi_freighters_sent': 2, 'multi_received': 60, 'multi_from_near': 30, 'multi_from_far': 30,
             'multi_freighters_home': 5, 'no_trucks_status': 'no-trucks', 'absorbed': 2, 'absorbed_left_in_chest': 0,
-            'orphaned_freighters_dropped': 3, 'destroyed_freighters_dropped': 3}
+            'orphaned_freighters_dropped': 3, 'destroyed_freighters_dropped': 12,
+            # A slot holding 3 takes 7 more (its stack of 10), however many are asked for.
+            'add_beyond_limit': 7}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 
