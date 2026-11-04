@@ -466,6 +466,7 @@ end
 
 local function dispatch(depot)
   absorb_freighters(depot)
+  logistics.trim_freighter_requests(depot.entity)
   -- "On its way" only while a freighter is bringing some of the requested item: not one taking
   -- cargo back to its provider, nor one driving home empty.
   local out = committed(depot) > 0
@@ -1001,8 +1002,16 @@ local function copy_request(source, destination)
   end
 end
 
+-- Copy and Paste settings: the request, and the freighters. The destination asks robots for as
+-- many more freighters as it takes to match the source's (in its slot, out and coming); a player
+-- can fill them in by hand instead.
 function logistics.on_entity_settings_pasted(event)
   copy_request(event.source, event.destination)
+  if request_depot(event.source) and request_depot(event.destination) then
+    local in_slot, out = logistics.freighter_counts(event.source)
+    local coming = logistics.requested_freighters(event.source)
+    logistics.match_freighters(event.destination, in_slot + out + coming)
+  end
 end
 
 -- A cloned depot is a new depot with the original's request; a cloned freighter has no trip.
@@ -1242,6 +1251,121 @@ end
 
 -- Cancel the robots' removal of a request depot's freighters; they go back into its slot at the
 -- next dispatch. Returns how many were waiting to be taken.
+-- Freighters a request depot has or will have: in its slot, out on trips, in its chest (except
+-- those being taken away) and coming. Also the slot's limit and how many are coming.
+local function freighter_total(entity)
+  local in_slot, out, capacity = logistics.freighter_counts(entity)
+  local _, coming, removing = freighter_requests(entity)
+  local in_chest = inventory(entity).get_item_count(item_id(FREIGHTER)) - removing
+  return in_slot + out + in_chest + coming, capacity, coming
+end
+
+-- Ask robots for as many freighters as it takes for a request depot to have `total` (within its
+-- slot's limit). Returns how many were requested.
+function logistics.match_freighters(entity, total)
+  if not request_depot(entity) then
+    return 0
+  end
+  local have = freighter_total(entity)
+  local wanted = math.floor(tonumber(total) or 0) - have
+  return wanted > 0 and logistics.request_freighters(entity, wanted) or 0
+end
+
+-- Freighters requested from robots that would no longer fit (the slot was filled some other way,
+-- by hand, say) are cancelled, so robots don't overfill it. Runs with every dispatch.
+function logistics.trim_freighter_requests(entity)
+  local total, capacity, coming = freighter_total(entity)
+  if coming == 0 or total <= capacity then
+    return
+  end
+  local keep = math.max(0, coming - (total - capacity))
+  logistics.cancel_freighter_requests(entity)
+  if keep > 0 then
+    logistics.request_freighters(entity, keep)
+  end
+end
+
+-- Blueprints (and copy and paste) of request depots keep their request, as a tag, and their
+-- freighters (in the slot, out and coming), as an insert plan into the chest: the ghost asks for
+-- them, robots or a player bring them, and they move into the slot.
+local REQUEST_TAG = "jatz_request"
+logistics.request_tag = REQUEST_TAG
+
+function logistics.setup_blueprint(blueprint, mapping)
+  local entities = blueprint and mapping and blueprint.get_blueprint_entities()
+  if not entities then
+    return 0
+  end
+  local changed = 0
+  for _, planned in pairs(entities) do
+    local entity = mapping[planned.entity_number]
+    local depot = entity and entity.valid and request_depot(entity)
+    if depot then
+      if depot.request then
+        planned.tags = planned.tags or {}
+        planned.tags[REQUEST_TAG] = { item = depot.request.item, count = depot.request.count }
+      end
+      local in_slot, out = logistics.freighter_counts(entity)
+      local freighters = in_slot + out + logistics.requested_freighters(entity)
+      if freighters > 0 then
+        planned.items = {
+          {
+            id = { name = FREIGHTER, quality = QUALITY },
+            items = { in_inventory = { { inventory = defines.inventory.chest, stack = 0, count = freighters } } },
+          },
+        }
+      end
+      changed = changed + 1
+    end
+  end
+  if changed > 0 then
+    blueprint.set_blueprint_entities(entities)
+  end
+  return changed
+end
+
+-- The blueprint being set up: a library record, the stack the event names, the one being set up,
+-- or the cursor (copy and paste), whichever holds the blueprint's entities.
+local function blueprint_of(candidate)
+  if not (candidate and candidate.valid) then
+    return nil
+  end
+  if candidate.object_name == "LuaItemStack" then
+    if not (candidate.valid_for_read and candidate.is_blueprint) then
+      return nil
+    end
+  elseif candidate.type ~= "blueprint" then
+    return nil
+  end
+  local entities = candidate.get_blueprint_entities()
+  return entities and #entities > 0 and candidate or nil
+end
+
+function logistics.on_player_setup_blueprint(event)
+  local player = game.get_player(event.player_index)
+  local mapping = event.mapping and event.mapping.valid and event.mapping.get()
+  if not (player and mapping) then
+    return
+  end
+  -- Any of these may be nil, so not ipairs (it stops at the first nil).
+  local sources = { event.record, event.stack, player.blueprint_to_setup, player.cursor_stack }
+  for index = 1, 4 do
+    local blueprint = blueprint_of(sources[index])
+    if blueprint then
+      return logistics.setup_blueprint(blueprint, mapping)
+    end
+  end
+end
+
+-- A request depot built from a blueprint ghost takes its request from the ghost's tags (its
+-- freighters arrive through the ghost's insert plan).
+function logistics.apply_tags(entity, tags)
+  local request = tags and tags[REQUEST_TAG]
+  if request and request_depot(entity) then
+    logistics.set_request(entity, request.item, request.count)
+  end
+end
+
 function logistics.cancel_freighter_removal(entity)
   if not request_depot(entity) then
     return 0
@@ -1354,6 +1478,8 @@ function logistics.register()
     requested_freighters = logistics.requested_freighters,
     cancel_freighter_requests = logistics.cancel_freighter_requests,
     remove_freighters = logistics.remove_freighters,
+    match_freighters = logistics.match_freighters,
+    setup_blueprint = logistics.setup_blueprint,
     cancel_freighter_removal = logistics.cancel_freighter_removal,
   })
 end

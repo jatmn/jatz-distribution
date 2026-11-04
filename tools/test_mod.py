@@ -79,7 +79,13 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             'removal_marked': 1, 'removal_cancelled': 1, 'robots_removal_marked': 2, 'slot_after_removal': 2,
             'storage_after_removal': 4,
             # The request panel's status light: the game's four status indicator sprites exist.
-            'status_lights': 4}
+            'status_lights': 4,
+            # Blueprints keep a request depot's request (tag) and freighters (insert plan): the
+            # ghost built from one asks for 7 wood and has robots bring 3 freighters. Copy and Paste
+            # settings has robots bring what the destination lacks (1 -> 3). Requests that no
+            # longer fit after filling by hand are trimmed (6 requested + 7 put in -> 3).
+            'blueprinted': 1, 'blueprint_tag': 'wood', 'blueprint_freighters': 3, 'built_request': 'wood x7',
+            'built_freighters_requested': 3, 'matched': 2, 'trimmed_requests': 3}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 

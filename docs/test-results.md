@@ -42,6 +42,9 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | Freighters taken away by robots (remote-view right-click): a removal marked and cancelled puts its freighter back; 2 marked are carried back to storage (slot 2, storage 4) | Passed |
 | Slot clicks routed through control.lua: a freighter ghost requests (right-click: one), an empty cursor in remote view cancels, a remote right-click removes (again: cancels), remote view never moves items by hand; pipette over the slot picks up a freighter or its ghost, and only over the slot (Lua checks against a fake runtime) | Passed headless |
 | Status light in the request panel (green, yellow, red, grey, with the status as tooltip), in the graphical client | Untested |
+| Blueprint of a request depot keeps its request (tag) and freighters (insert plan for 3); the ghost built from it asks for 7 wood with 3 freighters requested; matching 1 to 3 requests 2; requests over the limit after filling by hand are trimmed (6 + 7 in → 3) | Passed |
+| Copy and Paste settings, blueprint setup and building from a tagged ghost, routed through control.lua (Lua checks against a fake runtime) | Passed headless |
+| Copy and Paste settings, copy and paste, and blueprints of request depots, in the graphical client | Untested |
 | Compact freighter line: the slot shows freighters at home, the line beside it how many are out ("3 out", always); full breakdown as tooltip, in the graphical client | Untested |
 | Freighter slot in the request panel in the graphical client: ghost requests and robot removal in remote view, pipette (Q) over the slot | **Passed:** checked by the owner on November 3, 2026 |
 | Nothing left on the ground by any check | Passed |

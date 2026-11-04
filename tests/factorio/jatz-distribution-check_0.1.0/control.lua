@@ -469,6 +469,37 @@ local function setup_deliveries(surface, result)
   -- Taking freighters away is cancellable too: the one marked goes back into the slot.
   result.removal_marked = remote.call("jatz-distribution", "remove_freighters", remote_depot, 1)
   result.removal_cancelled = remote.call("jatz-distribution", "cancel_freighter_removal", remote_depot)
+  -- Blueprints (and copy and paste) keep a request depot's request and freighters. Out of the
+  -- roboport's reach, so requests stay pending to be counted. A depot asking for 7 wood, with 3
+  -- freighters, is blueprinted, and a ghost from the blueprint is built.
+  local source = depot(surface, "request", -66.5, -66.5, 3)
+  assert(remote.call("jatz-distribution", "set_request", source, "wood", 7), "wood: refused")
+  local holder = game.create_inventory(1)
+  holder.insert({ name = "blueprint" })
+  local blueprint = holder[1]
+  local mapping =
+    blueprint.create_blueprint({ surface = surface, force = "player", area = { { -68, -68 }, { -65, -65 } } })
+  result.blueprinted = remote.call("jatz-distribution", "setup_blueprint", blueprint, mapping)
+  local planned = blueprint.get_blueprint_entities()[1]
+  result.blueprint_tag = planned.tags and planned.tags.jatz_request and planned.tags.jatz_request.item
+  result.blueprint_freighters = planned.items and planned.items[1].items.in_inventory[1].count
+  local revived
+  for _, ghost in pairs(blueprint.build_blueprint({ surface = surface, force = "player", position = { -56.5, -66.5 } })) do
+    local _, entity = ghost.revive({ raise_revive = true })
+    revived = entity or revived
+  end
+  local copied = revived and remote.call("jatz-distribution", "get_request", revived)
+  result.built_request = copied and (copied.item .. " x" .. copied.count) or "none"
+  result.built_freighters_requested = revived and remote.call("jatz-distribution", "requested_freighters", revived)
+  holder.destroy()
+  -- Copy and Paste settings asks robots for the freighters the destination lacks: with 1, to match 3.
+  local pasted = depot(surface, "request", -46.5, -66.5, 1)
+  result.matched = remote.call("jatz-distribution", "match_freighters", pasted, 3)
+  -- Freighters requested that no longer fit (the slot was filled by hand) are cancelled: 6
+  -- requested, then 7 put in, leaves room for 3.
+  deliveries.trimmed = depot(surface, "request", -36.5, -66.5, 0)
+  remote.call("jatz-distribution", "request_freighters", deliveries.trimmed, 6)
+  remote.call("jatz-distribution", "add_freighters", deliveries.trimmed, 7)
   -- The freighter slot can't be overfilled through the remote interface: 7 more fill the stack of 10.
   result.add_beyond_limit = remote.call("jatz-distribution", "add_freighters", deliveries.dying, 20)
 
@@ -723,6 +754,7 @@ local function deliveries_finished(surface, tick, result)
   result.multi_from_far = 40 - count(multi.far, "iron-stick")
   result.multi_freighters_home = remote.call("jatz-distribution", "freighter_counts", multi.request)
   result.no_trucks_status = status(deliveries.no_trucks)
+  result.trimmed_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.trimmed)
   result.robots_delivered = deliveries.robots_delivered
   result.robots_removal_marked = deliveries.removal_started
   result.slot_after_removal = remote.call("jatz-distribution", "freighter_counts", deliveries.remote)
