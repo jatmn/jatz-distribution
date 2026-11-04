@@ -494,4 +494,66 @@ do -- Destroyed: its freighters are left on the ground where it stood.
   check("a destroyed request depot leaves all its freighters on the ground", dropped == 5)
 end
 
+-- Buffer depots: a request depot set to request from them takes from them first, however near a
+-- provider is; one not set to doesn't use them; a buffer depot fetches only from providers.
+local function buffered(logistics, from_buffers)
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  local provider = entity("jatz-provider-depot", 10.5, 0.5, { a = 30 })
+  local buffer = entity("jatz-buffer-depot", 40.5, 0.5, { a = 30 })
+  for _, depot in ipairs({ request, provider, buffer }) do
+    logistics.add(depot)
+  end
+  assert(logistics.set_request(request, "a", 10))
+  assert(logistics.set_from_buffers(request, from_buffers))
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 2)) == 2)
+  return request, provider, buffer
+end
+
+do -- Buffers first, nearer provider or not.
+  local logistics = reset()
+  local request, _, buffer = buffered(logistics, true)
+  logistics.on_tick()
+  check("the buffer depot is asked about first", requests[1].goal.x == 40.5)
+  answer(logistics, 1, "route")
+  check("with a road to it, the nearer provider isn't asked", #requests == 1)
+  check("and the freighter goes to the buffer", trips_from(request)[1].provider == buffer.unit_number)
+end
+
+do -- A buffer with no road route: the provider instead.
+  local logistics = reset()
+  local request, provider = buffered(logistics, true)
+  logistics.on_tick()
+  answer(logistics, 1, "none")
+  check("then the provider is asked", #requests == 2 and requests[2].goal.x == 10.5)
+  answer(logistics, 2, "route")
+  check("and the freighter goes there", trips_from(request)[1].provider == provider.unit_number)
+end
+
+do -- Not set to request from buffers: buffers are not used.
+  local logistics = reset()
+  local request, provider = buffered(logistics, false)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  check(
+    "a request depot not set to use buffers fetches from the provider",
+    trips_from(request)[1].provider == provider.unit_number
+  )
+  check("without asking about the buffer", #requests == 1)
+end
+
+do -- A buffer depot fetches only from providers, never from another buffer.
+  local logistics = reset()
+  local filling = entity("jatz-buffer-depot", 0.5, 0.5)
+  local provider = entity("jatz-provider-depot", 40.5, 0.5, { a = 30 })
+  local other = entity("jatz-buffer-depot", 10.5, 0.5, { a = 30 })
+  for _, depot in ipairs({ filling, provider, other }) do
+    logistics.add(depot)
+  end
+  assert(logistics.set_request(filling, "a", 10))
+  check("buffer depots have no request-from-buffers setting", logistics.set_from_buffers(filling, true) == false)
+  assert(logistics.put_freighters(filling, stack("jatz-quinityn-freighter", 2)) == 2)
+  logistics.on_tick()
+  check("a buffer depot asks only about providers", #requests == 1 and requests[1].goal.x == 40.5)
+end
+
 print("all logistics checks passed")

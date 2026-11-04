@@ -249,7 +249,7 @@ local function lay_road(surface, x1, y1, x2, y2)
   surface.set_tiles(tiles)
 end
 
--- Request depots get `trucks` freighters in their slot (3 unless given).
+-- Request and buffer depots get `trucks` freighters in their slot (3 unless given).
 local function depot(surface, role, x, y, trucks)
   local entity = surface.create_entity({
     name = "jatz-" .. role .. "-depot",
@@ -257,7 +257,7 @@ local function depot(surface, role, x, y, trucks)
     force = "player",
     raise_built = true,
   })
-  if role == "request" and (trucks or 3) > 0 then
+  if (role == "request" or role == "buffer") and (trucks or 3) > 0 then
     local added = remote.call("jatz-distribution", "add_freighters", entity, trucks or 3)
     assert(added == (trucks or 3), "cannot stock freighters")
   end
@@ -427,6 +427,25 @@ local function setup_deliveries(surface, result)
   deliveries.shortest = shortest
   -- The request depot is removed while its freighter heads out: the freighter leaves, nothing moves.
   deliveries.orphaned = pair(50, 20, 12, "wooden-chest", 10, 10)
+  -- Buffer depots, on one road (loading zones at y -25): a provider (100 copper cable), a request
+  -- depot 10 tiles away set to request from buffer depots, a buffer depot right beside it asking
+  -- for 15, and a buffer depot 20 tiles away holding 30 with no request of its own. The request
+  -- depot takes its 20 from the farther buffer, not the nearer provider; the asking buffer fills
+  -- from the provider only, never from the other buffer.
+  local buffering = {
+    provider = depot(surface, "provider", -66.5, -26.5),
+    request = depot(surface, "request", -56.5, -26.5, 2),
+    filling = depot(surface, "buffer", -46.5, -26.5, 2),
+    stocked = depot(surface, "buffer", -36.5, -26.5, 0),
+  }
+  lay_road(surface, -67, -25, -37, -25)
+  assert(buffering.provider.insert({ name = "copper-cable", count = 100 }) == 100, "cable: cannot stock")
+  assert(buffering.stocked.insert({ name = "copper-cable", count = 30 }) == 30, "cable: cannot stock buffer")
+  assert(remote.call("jatz-distribution", "set_request", buffering.request, "copper-cable", 20), "cable: refused")
+  assert(remote.call("jatz-distribution", "set_from_buffers", buffering.request, true), "from buffers: refused")
+  assert(remote.call("jatz-distribution", "set_request", buffering.filling, "copper-cable", 15), "buffer: refused")
+  result.buffer_has_no_from_buffers = remote.call("jatz-distribution", "set_from_buffers", buffering.filling, true)
+  deliveries.buffering = buffering
   -- Freighters, one after another, from more than one provider: a request depot with 5 freighters
   -- asks for 60 iron sticks; the provider 10 tiles away has 30, the one 30 tiles away 40.
   local multi = {
@@ -829,6 +848,8 @@ local function deliveries_finished(surface, tick, result)
     and count(deliveries.shortest.request, "coal") == 10
     and count(storage.depot_roads.request, "small-electric-pole") == 5
     and count(deliveries.multi.request, "iron-stick") == 60
+    and count(deliveries.buffering.request, "copper-cable") == 20
+    and count(deliveries.buffering.filling, "copper-cable") == 15
     and deliveries.removal_started
     and select(2, remote.call("jatz-distribution", "requested_freighters", deliveries.remote)) == 0
     and deliveries.store.get_item_count(FREIGHTER) == 4
@@ -837,7 +858,7 @@ local function deliveries_finished(surface, tick, result)
     if tick >= DELIVERY_DEADLINE then
       error(
         string.format(
-          "deliveries did not finish in time: iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), pipes after mending %d (%s), bricks rerouted %d, %d freighter(s) out",
+          "deliveries did not finish in time: iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), pipes after mending %d (%s), bricks rerouted %d, buffered request %d (%s), buffer filled %d (%s), %d freighter(s) out",
           count(deliveries.connected),
           tostring(status(deliveries.connected)),
           count(armor.request, armor.item),
@@ -850,6 +871,10 @@ local function deliveries_finished(surface, tick, result)
           count(deliveries.mended.request, "pipe"),
           tostring(status(deliveries.mended.request)),
           count(deliveries.rerouted.request, "stone-brick"),
+          count(deliveries.buffering.request, "copper-cable"),
+          tostring(status(deliveries.buffering.request)),
+          count(deliveries.buffering.filling, "copper-cable"),
+          tostring(status(deliveries.buffering.filling)),
           #surface.find_entities_filtered({ name = DRONE })
         )
       )
@@ -924,6 +949,11 @@ local function deliveries_finished(surface, tick, result)
   result.multi_from_far = 40 - count(multi.far, "iron-stick")
   result.multi_freighters_home = remote.call("jatz-distribution", "freighter_counts", multi.request)
   result.no_trucks_status = status(deliveries.no_trucks)
+  local buffering = deliveries.buffering
+  result.buffered_request = count(buffering.request, "copper-cable")
+  result.buffer_taken_from = 30 - count(buffering.stocked, "copper-cable")
+  result.buffer_filled = count(buffering.filling, "copper-cable")
+  result.buffer_provider_left = count(buffering.provider, "copper-cable")
   result.trimmed_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.trimmed)
   result.dropped_requested_again = remote.call("jatz-distribution", "requested_freighters", deliveries.dropped)
   result.dropped_slot = remote.call("jatz-distribution", "freighter_counts", deliveries.dropped)

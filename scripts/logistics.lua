@@ -33,6 +33,10 @@ local logistics = {}
 
 local PROVIDER = "jatz-provider-depot"
 local REQUEST = "jatz-request-depot"
+-- Buffer depots request like request depots (their own request, freighters and panel), but their
+-- freighters only fetch from provider depots; request depots set to "request from buffer depots"
+-- also fetch from them.
+local BUFFER = "jatz-buffer-depot"
 local ROAD = "jatz-road"
 -- The road a depot lays under its own loading zone (scripts/depot-road.lua).
 local DEPOT_ROAD = "jatz-depot-road"
@@ -42,7 +46,10 @@ local FREIGHTER = "jatz-quinityn-freighter"
 -- A request depot holds up to this many freighters (in its slot and out on trips together). The
 -- freighter item stacks to 10, so the slot is that many stacks, shown as one slot in the panel.
 local FREIGHTER_CAPACITY = 100
-logistics.depots = { [PROVIDER] = "provider", [REQUEST] = "request" }
+logistics.depots = { [PROVIDER] = "provider", [REQUEST] = "request", [BUFFER] = "buffer" }
+-- Depots that request (send freighters out for an item): request and buffer depots.
+local REQUESTING = { request = true, buffer = true }
+logistics.requesting = { [REQUEST] = true, [BUFFER] = true }
 logistics.drone = DRONE
 logistics.freighter = FREIGHTER
 
@@ -227,13 +234,33 @@ end
 
 local function request_depot(entity)
   local depot = entity and entity.valid and entity.unit_number and storage.depots[entity.unit_number]
-  return depot and depot.role == "request" and depot or nil
+  return depot and REQUESTING[depot.role] and depot or nil
 end
 
 -- The request of a request depot: { item = name, count = n }, or nil.
 function logistics.get_request(entity)
   local depot = request_depot(entity)
   return depot and depot.request and { item = depot.request.item, count = depot.request.count }
+end
+
+-- Whether a request depot also fetches from buffer depots, like a requester chest's "request from
+-- buffer chests". Only request depots have it: buffer depots fetch from providers alone.
+function logistics.get_from_buffers(entity)
+  local depot = request_depot(entity)
+  return depot and depot.role == "request" and depot.from_buffers == true or false
+end
+
+-- Returns false, changing nothing, for anything but a request depot.
+function logistics.set_from_buffers(entity, from_buffers)
+  local depot = request_depot(entity)
+  if not depot or depot.role ~= "request" then
+    return false
+  end
+  depot.from_buffers = from_buffers == true
+  depot.cooldowns = {}
+  -- A search under way was for the old set of depots.
+  cancel_search(depot)
+  return true
 end
 
 -- Set a request depot's request, or clear it with a nil item. Returns false, changing nothing,
@@ -289,16 +316,19 @@ local function need(depot, except)
   return wanted, math.max(0, math.min(wanted, chest.get_insertable_count(id) - coming))
 end
 
--- Every provider that could serve a request depot: on the same surface and force, with road at its
--- loading zone, holding the item and not on cooldown for this request; nearest first in a straight
--- line from `from`. Also says whether one was skipped for cooldown.
+-- Every depot that could serve a requesting depot: provider depots, and for a request depot set to
+-- request from buffer depots, buffer depots too, which come first however near a provider is (a
+-- buffer depot itself fetches only from providers); on the same surface and force, with road at
+-- its loading zone, holding the item and not on cooldown for this request; within each rank,
+-- nearest first in a straight line from `from`. Also says whether one was skipped for cooldown.
 local function candidates(depot, from)
   local entity = depot.entity
   local found, waiting = {}, false
+  local buffers = depot.role == "request" and depot.from_buffers
   for unit_number, provider in pairs(storage.depots) do
     local candidate = provider.entity
     if
-      provider.role == "provider"
+      (provider.role == "provider" or (buffers and provider.role == "buffer" and candidate ~= entity))
       and candidate.valid
       and candidate.surface == entity.surface
       and candidate.force == entity.force
@@ -310,12 +340,21 @@ local function candidates(depot, from)
           waiting = true
         else
           local dx, dy = position.x - from.x, position.y - from.y
-          found[#found + 1] = { id = unit_number, position = position, distance = math.sqrt(dx * dx + dy * dy) }
+          found[#found + 1] = {
+            id = unit_number,
+            position = position,
+            distance = math.sqrt(dx * dx + dy * dy),
+            -- With "request from buffer depots", buffer depots come first, nearer providers or not.
+            rank = provider.role == "buffer" and 0 or 1,
+          }
         end
       end
     end
   end
   table.sort(found, function(a, b)
+    if a.rank ~= b.rank then
+      return a.rank < b.rank
+    end
     return a.distance < b.distance or (a.distance == b.distance and a.id < b.id)
   end)
   return found, waiting
@@ -547,7 +586,7 @@ function logistics.on_tick()
   for id, depot in pairs(storage.depots) do
     if not depot.entity.valid then
       storage.depots[id] = nil
-    elseif depot.role == "request" then
+    elseif REQUESTING[depot.role] then
       dispatch(depot)
     end
   end
@@ -769,7 +808,7 @@ end
 -- Forget cooldowns of the request depots on a surface: their routes may exist now.
 local function retry_now(surface_index)
   for _, depot in pairs(storage.depots) do
-    if depot.role == "request" and depot.entity.valid and depot.entity.surface_index == surface_index then
+    if REQUESTING[depot.role] and depot.entity.valid and depot.entity.surface_index == surface_index then
       depot.cooldowns = {}
       depot.retry_at = 0
     end
@@ -924,16 +963,21 @@ function logistics.on_script_path_request_finished(event)
   if event.path then
     local length = path_length(search.from, event.path)
     if length < (search.best_length or math.huge) then
-      search.best, search.best_length = candidate.id, length
+      search.best, search.best_length, search.best_rank = candidate.id, length, candidate.rank
     end
   else
     depot.cooldowns[candidate.id] = game.tick + RETRY_TICKS
   end
   -- A road is never shorter than the straight line, so stop at the first candidate that is
-  -- already farther away in a straight line than the best road found.
+  -- already farther away in a straight line than the best road found. Candidates come in ranks
+  -- (buffer depots before providers, for a request depot that requests from buffers): once one of
+  -- a rank has a road, the next rank isn't asked at all.
   search.index = search.index + 1
   local next_candidate = search.candidates[search.index]
-  if next_candidate and next_candidate.distance < (search.best_length or math.huge) then
+  if
+    next_candidate
+    and (not search.best or (next_candidate.rank == search.best_rank and next_candidate.distance < search.best_length))
+  then
     return ask_route(search, depot.entity.surface, depot.entity.force)
   end
   finish_search(depot, search, owner)
@@ -1011,7 +1055,7 @@ function logistics.on_object_destroyed(event)
   end
   local depot = storage.depots[id]
   if depot then
-    if depot.role == "request" then
+    if REQUESTING[depot.role] then
       -- Destroyed rather than mined (or by a script): its freighters are left where it stood.
       refund(depot, nil)
       if depot.trucks and depot.trucks.valid then
@@ -1031,6 +1075,7 @@ local function copy_request(source, destination)
   if request_depot(source) and request_depot(destination) then
     local request = logistics.get_request(source)
     logistics.set_request(destination, request and request.item, request and request.count)
+    logistics.set_from_buffers(destination, logistics.get_from_buffers(source))
   end
 end
 
@@ -1103,7 +1148,7 @@ function logistics.add_all()
     end
   end
   for _, depot in pairs(storage.depots) do
-    if depot.role == "request" then
+    if REQUESTING[depot.role] then
       for id in pairs(trips_of(depot)) do
         if not storage.trips[id] then
           depot.trips[id] = nil
@@ -1449,7 +1494,9 @@ function logistics.setup_blueprint(blueprint, mapping)
       -- The depot's settings as they are now, replacing any from setting this blueprint up
       -- before; other tags and other items' insert plans are kept.
       planned.tags = planned.tags or {}
-      planned.tags[REQUEST_TAG] = depot.request and { item = depot.request.item, count = depot.request.count } or nil
+      planned.tags[REQUEST_TAG] = depot.request
+          and { item = depot.request.item, count = depot.request.count, from_buffers = depot.from_buffers or nil }
+        or nil
       local freighters = freighter_total(entity)
       planned.tags[FREIGHTERS_TAG] = freighters > 0 and freighters or nil
       if next(planned.tags) == nil then
@@ -1531,6 +1578,7 @@ function logistics.apply_tags(entity, tags)
   local request = tags[REQUEST_TAG]
   if type(request) == "table" and type(request.item) == "string" and type(request.count) == "number" then
     logistics.set_request(entity, request.item, request.count)
+    logistics.set_from_buffers(entity, request.from_buffers == true)
   end
   -- The ghost's insert plan asks robots for the freighters; this is how many it is for.
   local freighters = tags[FREIGHTERS_TAG]
@@ -1772,6 +1820,8 @@ function logistics.register()
     set_request = logistics.set_request,
     get_request = logistics.get_request,
     get_status = logistics.get_status,
+    set_from_buffers = logistics.set_from_buffers,
+    get_from_buffers = logistics.get_from_buffers,
     -- Give a request depot new freighters, within its slot's limit (counting freighters out);
     -- returns how many it took. And read its freighter counts.
     add_freighters = function(entity, count)
