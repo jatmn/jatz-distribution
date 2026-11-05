@@ -4,6 +4,12 @@
   "title": "Jat'z Distribution",
   "author": "jatmn",
   "factorio_version": "2.1",
-  "dependencies": ["base >= 2.1.0"],
+  "dependencies": [
+    "base >= 2.1.0",
+    "! Transport_Drones",
+    "! Transport_Drones_Continued_Fixed",
+    "! Transport_Drones_Continued_Unofficial",
+    "! Transport_Drones_Yunli"
+  ],
   "description": "Automated freight trucks, depots and roads. In development: freighters deliver items from provider to request depots, driving only on road. Buffer, fuel and liquid depots don't take part yet."
 }
