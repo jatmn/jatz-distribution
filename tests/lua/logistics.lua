@@ -174,6 +174,7 @@ local function reset()
   surface.created = {}
   function surface.create_entity(parameters)
     local drone = entity(parameters.name, parameters.position.x, parameters.position.y)
+    drone.target = parameters.target
     surface.created[#surface.created + 1] = drone
     drone.commands = {}
     drone.commandable = {
@@ -181,7 +182,7 @@ local function reset()
         drone.commands[#drone.commands + 1] = command
       end,
     }
-    drone.force = "player"
+    drone.force = parameters.force or "player"
     function drone.destroy()
       drone.valid = false
     end
@@ -1070,6 +1071,10 @@ do -- The cargo paint: grey out, the load's color from the provider home, the sa
   local empty = trip.drone
   check("a freighter sets off in the empty paint", empty.name == "jatz-freighter-drone")
   empty.orientation, empty.health = 0.25, 321
+  empty.stickers = {
+    { valid = true, name = "acid-sticker", force = "enemy", time_to_live = 240 },
+    { valid = false, name = "gone-sticker", force = "enemy", time_to_live = 10 },
+  }
   arrive(logistics, trip)
   local painted = trip.drone
   check(
@@ -1090,6 +1095,16 @@ do -- The cargo paint: grey out, the load's color from the provider home, the sa
       and not storage.trips[empty.unit_number]
       and trip_of(request) == trip
       and not storage.depots[request.unit_number].trips[empty.unit_number]
+  )
+  local stuck = {}
+  for _, created in ipairs(surface.created) do
+    if created.target == painted then
+      stuck[#stuck + 1] = created
+    end
+  end
+  check(
+    "with what was stuck to it, and the time it had left",
+    #stuck == 1 and stuck[1].name == "acid-sticker" and stuck[1].force == "enemy" and stuck[1].time_to_live == 240
   )
   local drive = painted.commands[#painted.commands]
   check("and drives home", drive and drive.type == defines.command.go_to_location and drive.destination.x == 0.5)

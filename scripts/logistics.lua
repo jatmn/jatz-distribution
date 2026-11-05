@@ -290,9 +290,9 @@ local function cargo_empty(trip)
   return not (trip.cargo and trip.cargo.valid) or trip.cargo.is_empty()
 end
 
--- Put trip `id`'s freighter in the paint for what it carries: the same freighter, where it stands
--- and facing the same way, as the drone prototype in that paint, and the trip moves to the new
--- unit_number. Only between commands: the new unit has none.
+-- Put trip `id`'s freighter in the paint for what it carries: the same freighter, where it stands,
+-- facing the same way, as damaged and with the same stickers, as the drone prototype in that
+-- paint, and the trip moves to the new unit_number. Only between commands: the new unit has none.
 local function repaint(id, trip)
   local old = trip.drone
   local name = cargo_empty(trip) and DRONE or paint.drone_for_cargo(trip.fluid ~= nil, trip.item)
@@ -305,6 +305,22 @@ local function repaint(id, trip)
   end
   drone.orientation = old.orientation
   drone.health = old.health
+  -- A paint is only a look: whatever is stuck to the freighter (fire, acid, slowdown) stays on it,
+  -- with the time it has left. Stickers are entities of their own, stuck to the old unit, and would
+  -- go with it.
+  for _, sticker in pairs(old.stickers or {}) do
+    if sticker.valid then
+      local kept = drone.surface.create_entity({
+        name = sticker.name,
+        position = drone.position,
+        target = drone,
+        force = sticker.force,
+      })
+      if kept then
+        kept.time_to_live = sticker.time_to_live
+      end
+    end
+  end
   local new = drone.unit_number
   storage.trips[id], storage.trips[new] = nil, trip
   local depot = storage.depots[trip.request]

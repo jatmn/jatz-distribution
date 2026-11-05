@@ -23,6 +23,8 @@ for r = 0, 5 do
 end
 -- Iron plates take iron ore's map color, water its own (prototypes/freighter-colors.lua).
 local IRON_PAINT, WATER_PAINT = DRONE .. "-233", DRONE .. "-023"
+-- Stuck to the connected pair's freighter as it reaches the provider, for this long (data.lua).
+local STICKER, STICKER_TICKS = "jatz-check-sticker", 300
 -- Deliveries have this long to finish; tools/test_mod.py runs a little longer.
 local DELIVERY_DEADLINE = 1700
 -- A failed route must have been tried and reported before the report is written.
@@ -849,6 +851,9 @@ local function interfere(surface)
     if stops.drone then
       stops.at_provider = game.tick
       stops.empty_paint = stops.drone.name
+      local sticker = surface.create_entity({ name = STICKER, position = stops.drone.position, target = stops.drone })
+      assert(sticker and sticker.sticked_to == stops.drone, "the test sticker did not stick")
+      sticker.time_to_live = STICKER_TICKS
     end
   end
   if stops.at_provider and not stops.loaded and count(deliveries.provider) < 50 then
@@ -863,6 +868,17 @@ local function interfere(surface)
     )
     stops.drone = painted
     stops.home_paint = painted.name
+    -- What was stuck to it is still stuck, with only the time since gone, and still hurts.
+    for _, sticker in pairs(painted.stickers or {}) do
+      if sticker.name == STICKER then
+        stops.sticker_left = sticker.time_to_live
+      end
+    end
+    stops.sticker_due = STICKER_TICKS - (game.tick - stops.at_provider)
+    stops.health_at_swap = painted.health
+  end
+  if stops.loaded and game.tick == stops.loaded + 10 and stops.drone and stops.drone.valid then
+    stops.health_after = stops.drone.health
   end
   if stops.at_provider and not stops.loaded then
     stops.standing = stops.drone.position
@@ -1055,6 +1071,8 @@ local function deliveries_finished(surface, tick, result)
   result.paint_out = stops.empty_paint
   result.paint_home = stops.home_paint
   result.paint_swapped = stops.swapped
+  result.sticker_kept = stops.sticker_left ~= nil and math.abs(stops.sticker_left - stops.sticker_due) <= 2
+  result.sticker_still_hurts = stops.health_after ~= nil and stops.health_after < stops.health_at_swap
   local paints = prototypes.mod_data["jatz-freighter-colors"].data
   result.paint_iron_plate = paints.items["iron-plate"] == IRON_PAINT
   result.paint_water = paints.fluids.water == WATER_PAINT
