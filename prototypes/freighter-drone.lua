@@ -28,7 +28,8 @@ data:extend({
     selection_box = art.box(0.8, 0.8),
     selection_priority = 60,
     run_animation = animation,
-    movement_speed = 0.2,
+    -- Tiles per tick: 0.1 is 6 tiles a second (21.6 km/h), half the 0.2 it started at.
+    movement_speed = 0.1,
     distance_per_frame = 1,
     rotation_speed = 0.05,
     vision_distance = 0,

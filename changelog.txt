@@ -3,6 +3,7 @@ Version: Unreleased
   Features:
     - Startup settings for the tank size of liquid provider depots and of liquid buffer depots, each 25,000 by default.
   Changes:
+    - Delivering freighters drive at half their previous speed: 6 tiles a second instead of 12.
     - Freighters stop for 1 second at a depot's loading zone to load and to unload, instead of loading and unloading the moment they arrive.
     - Request and liquid request depots with "Request from buffer depots" unticked now fall back to buffer depots for what no provider can supply, instead of ignoring them. Ticked, buffer depots still come first.
   Compatibility:

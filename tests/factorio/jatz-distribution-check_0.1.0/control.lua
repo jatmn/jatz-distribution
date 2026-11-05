@@ -938,7 +938,9 @@ local function deliveries_finished(surface, tick, result)
   local deliveries = storage.deliveries
   local armor, full, destroyed, changed, cut =
     deliveries.armor, deliveries.full, deliveries.destroyed, deliveries.changed, deliveries.cut
+  -- A depot's status updates at its next dispatch, up to a second after the last unload.
   local done = count(deliveries.connected) >= 30
+    and status(deliveries.connected) ~= "delivering"
     and count(armor.request, armor.item) == 1
     and (not deliveries.food or count(deliveries.food.request, "yumako") == 20)
     and destroyed.done
