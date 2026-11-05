@@ -20,7 +20,7 @@ Freighters drive **only on road**. Road is a floor tile you craft and place like
 
 - Every depot lays a road tile under its loading zone sign (the marked tile) when you build it, except on space platforms. You only need to bring road up to it: road that ends one tile away connects.
 - Removing the depot takes that tile away again and puts back the ground that was there, unless you laid your own road or tile over it.
-- Buildings can still be placed on road. Freighters drive through them.
+- Depots can't be built on road; only their loading zone can be on it. Other buildings can still be placed on road, and freighters drive through them.
 
 ## Setting up a delivery
 

@@ -5,6 +5,7 @@
 -- scripts/logistics.lua; liquid request and buffer depots get an invisible truck chest for their
 -- freighters (prototypes/truck-chest.lua).
 local util = require("util")
+local collision_mask_util = require("collision-mask-util")
 local constants = require("prototypes.constants")
 local definitions = require("prototypes.depot-definitions")
 local orientation = require("prototypes.orientation")
@@ -72,6 +73,10 @@ for index, role in ipairs(ORDER) do
   entity.tile_height = SIZE
   entity.selection_box = { { -SIZE / 2, -SIZE / 2 }, { SIZE / 2, SIZE / 2 } }
   entity.collision_box = { { -SIZE / 2 + 0.2, -SIZE / 2 + 0.2 }, { SIZE / 2 - 0.2, SIZE / 2 - 0.2 } }
+  -- Depots collide with road tiles (prototypes/roads.lua), so they can't be built on road. The
+  -- loading zone tile is outside this box, so it can be road: the depot's own, or a player's.
+  entity.collision_mask = collision_mask_util.get_mask(entity)
+  entity.collision_mask.layers[constants.road_layer] = true
   -- Ground marking on the loading side; it rotates, ghosts and disappears with the depot.
   entity.integration_patch = orientation.loading_zone({ filename = constants.loading_zone, size = 64, scale = 0.5 })
   entity.integration_patch_render_layer = orientation.loading_zone_render_layer

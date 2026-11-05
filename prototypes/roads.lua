@@ -6,12 +6,17 @@
 -- Every other tile gets the "jatz_off_road" collision layer (prototypes/off-road.lua, run in
 -- data-final-fixes so tiles from every mod are included), and the freighter drone collides
 -- with that layer only. The engine's own pathfinder then keeps freighters on roads.
+-- Both road tiles carry the "jatz_road" layer, which depots collide with (prototypes/depots.lua):
+-- a depot can't be built on road, only its loading zone can sit on it.
 local constants = require("prototypes.constants")
 local tile_collision_masks = require("__base__/prototypes/tile/tile-collision-masks")
 
 local name = constants.road
 local art = "__jatz-distribution__/" .. constants.road_art
 local stone_path = data.raw.tile["stone-path"]
+
+local collision_mask = tile_collision_masks.ground()
+collision_mask.layers[constants.road_layer] = true
 
 local road = {
   type = "tile",
@@ -21,7 +26,7 @@ local road = {
   needs_correction = false,
   minable = { mining_time = 0.1, result = name },
   mined_sound = stone_path.mined_sound,
-  collision_mask = tile_collision_masks.ground(),
+  collision_mask = collision_mask,
   walking_speed_modifier = 1.3,
   vehicle_friction_modifier = stone_path.vehicle_friction_modifier,
   -- Above base and Space Age floors (0-33, 60, 70 are taken), so roads laid over concrete or
@@ -67,6 +72,7 @@ depot_road.transition_merges_with_tile = name
 
 data:extend({
   { type = "collision-layer", name = constants.off_road_layer },
+  { type = "collision-layer", name = constants.road_layer },
   road,
   depot_road,
   {

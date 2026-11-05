@@ -252,6 +252,19 @@ local function check_road_placement(surface, result)
     end
     result[case[2]] = surface.get_tile(case[1], 66).name == ROAD
   end
+  -- Depots can't be built, nor their ghosts placed, on road; only their loading zone can be road
+  -- (here the road just laid at 66, 66, south of an unrotated depot at 66.5, 64.5).
+  local function can_place(y, check)
+    return surface.can_place_entity({
+      name = "jatz-request-depot",
+      position = { 66.5, y },
+      force = "player",
+      build_check_type = defines.build_check_type[check],
+    })
+  end
+  result.depot_on_road = can_place(66.5, "manual")
+  result.depot_ghost_on_road = can_place(66.5, "manual_ghost")
+  result.depot_zone_on_road = can_place(64.5, "manual")
 end
 
 -- Lay road over every tile from one corner to the other (inclusive).
