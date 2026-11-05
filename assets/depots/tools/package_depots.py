@@ -1,4 +1,9 @@
-"""Package neutral tint layers using the established freighter AOV pipeline."""
+"""Package neutral tint layers using the established freighter AOV pipeline.
+
+With --role, package that variant only and update its entry in validation.json, keeping the
+others' (their render masters aren't committed, so they can't all be packaged again here).
+"""
+import argparse
 import hashlib
 import importlib.util
 import json
@@ -22,9 +27,16 @@ def write_definitions():
 
 
 def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--role')
+    args=parser.parse_args()
     report=[]
     resolutions=set()
-    for metadata_path in sorted(ROOT.glob('*/3/asset.json')):
+    # The 3x3 depots, and the 1x1 road network monitor built in their finish.
+    variants=sorted(ROOT.glob('*/3/asset.json'))+sorted(ROOT.glob('road-monitor/1/asset.json'))
+    if args.role: variants=[p for p in variants if p.parents[1].name==args.role]
+    assert variants, 'No built depot masters found'
+    for metadata_path in variants:
         folder=metadata_path.parent
         meta=json.loads(metadata_path.read_text())
         inputs=json.loads((folder/'masters/render-inputs.json').read_text())
@@ -80,6 +92,11 @@ def main():
         (folder/'validation.json').write_text(json.dumps(result,indent=2)+'\n')
         print('PACKAGED AND VALIDATED',meta['role'],meta['size'],flush=True)
     write_definitions()
+    if args.role:
+        previous=json.loads((ROOT/'validation.json').read_text())
+        kept=[entry for entry in previous['results'] if entry['role']!=args.role]
+        report=sorted(kept+report,key=lambda entry:entry['role'])
+        resolutions|=set(previous['master_resolutions'])
     summary={'status':'passed','variants':len(report),'direction_sets':len(report)*4,'frame_layers_checked':len(report)*4*6,'master_layers_checked':len(report)*4*6,'atlas_cells_checked':len(report)*4*6,'master_resolutions':sorted(resolutions),'game_resolution':512,'results':report}
     (ROOT/'validation.json').write_text(json.dumps(summary,indent=2)+'\n')
 

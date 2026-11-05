@@ -41,6 +41,9 @@ def mod_files(root=REPO):
         files += [metadata.parent / f'sheets/{layer}.png' for layer in LAYERS]
         # One icon per depot, named from the depot itself, so a missing icon stops the build.
         files += [depots / f'icons/{json.loads(metadata.read_text())["role"]}-depot.png']
+    # The road network monitor draws its default-colour preview and shadow (prototypes/road-monitor.lua).
+    files += [depots / f'road-monitor/1/sheets/{layer}.png' for layer in ('preview', 'shadow')]
+    files += [depots / 'icons/road-monitor.png']
     files += [depots / f'connectors/sheets/{layer}.png' for layer in ('base', 'shadow')]
     files += [depots / 'loading-zone/loading-zone.png']
     # The road art is Yuoki's (CC BY-NC-SA 4.0), so its licence ships beside it.
