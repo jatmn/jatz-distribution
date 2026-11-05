@@ -138,8 +138,10 @@ local function tile_key(x, y)
   return x .. "," .. y
 end
 
--- Work out which delivery depots are on each monitor's road network on a surface: those of the
--- monitor's own force, as deliveries only use those. Its reading picks among them.
+-- Work out which delivery depots are on each monitor's road network on a surface, whatever their
+-- force: forces change without the road changing (game.merge_forces, a script setting
+-- LuaEntity.force), so the monitor checks the force each time it reads them (`contents`). Its
+-- reading picks among them.
 local function connect(surface, monitors)
   -- Depots by the tile they load from.
   local depots = {}
@@ -195,9 +197,7 @@ local function connect(surface, monitors)
       end
       for monitor in pairs(touching) do
         for unit_number in pairs(found) do
-          if storage.depots[unit_number].entity.force == monitor.entity.force then
-            monitor.depots[unit_number] = true
-          end
+          monitor.depots[unit_number] = true
         end
       end
     end
@@ -206,7 +206,7 @@ end
 
 -- A reading of the enabled depots among `members`, as constant combinator filters, and what each
 -- one added (by unit_number, counts by key).
-local function contents(members, reading)
+local function contents(members, reading, force)
   local roles = ROLES[reading or READINGS[1]]
   local totals, order, counted = {}, {}, {}
   local function add(unit_number, kind, name, quality, amount)
@@ -227,7 +227,17 @@ local function contents(members, reading)
   table.sort(ids)
   for _, unit_number in ipairs(ids) do
     local depot = storage.depots and storage.depots[unit_number]
-    if not (depot and depot.entity.valid and roles[depot.role] and logistics.enabled(depot)) then
+    if
+      not (
+        depot
+        and depot.entity.valid
+        -- Only the monitor's own force's, as deliveries only use those: checked now, not when the
+        -- road was last worked out, as forces merge and change.
+        and depot.entity.force == force
+        and roles[depot.role]
+        and logistics.enabled(depot)
+      )
+    then
       depot = nil
     end
     if depot and reading == "needs" then
@@ -330,7 +340,7 @@ end
 -- Show a monitor's reading now, remembering what it counted for each depot (and, the first time
 -- this tick, what its signals still show: what it counted before).
 local function refresh(monitor)
-  local filters, counted = contents(monitor.depots, monitor.reading)
+  local filters, counted = contents(monitor.depots, monitor.reading, monitor.entity.force)
   if monitor.counted_tick ~= game.tick then
     monitor.previous = monitor.counted
   end

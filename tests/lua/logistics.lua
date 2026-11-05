@@ -2043,15 +2043,18 @@ local function wire(target, red, green, sends)
 end
 
 local A = { type = "virtual", name = "signal-A" }
+-- A depot holding nothing, for conditions read straight from depot_circuit.allows.
+local function nothing()
+  return {}
+end
+local NOTHING_OWN = { held = nothing, sent = nothing, segment = nothing }
 
 do -- Conditions are compared like the game's: red and green added, signals or a constant.
   local circuit = require("scripts.depot-circuit")
   local target = {}
   local function holds(condition, red, green)
     wire(target, red, green)
-    return circuit.allows(target, true, circuit.condition(condition), nil, function()
-      return {}
-    end)
+    return circuit.allows(target, true, circuit.condition(condition), nil, NOTHING_OWN)
   end
   check(
     "red and green are added together",
@@ -2133,9 +2136,7 @@ do -- Conditions are compared like the game's: red and green added, signals or a
   wire(target, nil, nil)
   check(
     "without a wire the condition has no effect",
-    circuit.allows(target, true, circuit.condition({}), nil, function()
-      return {}
-    end)
+    circuit.allows(target, true, circuit.condition({}), nil, NOTHING_OWN)
   )
   check("unticked, it has none either", circuit.allows({}, false, nil))
 end
@@ -2261,6 +2262,42 @@ do -- Reading the circuit network, a depot leaves out the contents it sends itse
   wire(near, { ["item:a"] = 3100 }, nil, false)
   logistics.set_circuit(near, true, { first_signal = wood, comparator = ">", constant = 3000 })
   check("a depot not sending its contents reads the wire as it is", logistics.get_circuit(near).fulfilled)
+end
+
+do -- What a depot takes back out is what its wires carry: its contents as sampled when the tick
+  -- started, not after a transfer since (Pullfrog's review of 08bed57).
+  local logistics = reset()
+  local _, near = setup(logistics)
+  near.chest.contents.a = 1000
+  local wood = { type = "item", name = "a" }
+  -- Wired to a depot holding 2800: the wire carries both, 3800.
+  wire(near, { ["item:a"] = 3800 })
+  logistics.set_circuit(near, true, { first_signal = wood, comparator = ">", constant = 3000 }, "network")
+  check("setup: 2800 elsewhere is not more than 3000", not logistics.get_circuit(near).fulfilled)
+  game.tick = 1
+  logistics.sample_circuits()
+  -- 700 taken out this tick: the depot holds 300, the wire still carries the 1000.
+  near.chest.contents.a = 300
+  check("taken out this tick, still 2800 elsewhere", not logistics.get_circuit(near).fulfilled)
+  logistics.set_circuit(near, true, {
+    first_signal = { type = "virtual", name = "signal-everything" },
+    comparator = ">",
+    constant = 2900,
+  })
+  check("everything too: 2800 elsewhere", not logistics.get_circuit(near).fulfilled)
+  -- The next tick the wire carries the 300.
+  game.tick = 2
+  wire(near, { ["item:a"] = 3100 })
+  logistics.sample_circuits()
+  check("the next tick, sample and wire agree", not logistics.get_circuit(near).fulfilled)
+  logistics.set_circuit(near, true, { first_signal = wood, comparator = ">", constant = 2700 })
+  check("and 2800 is more than 2700", logistics.get_circuit(near).fulfilled)
+  check("a depot reading the network is sampled", storage.circuit_watch[near.unit_number])
+  logistics.set_circuit(near, true, nil, "contents")
+  check(
+    "one reading its own contents isn't",
+    not storage.circuit_watch[near.unit_number] and not storage.depots[near.unit_number].circuit_sample
+  )
 end
 
 do -- Reading its own contents, a depot needs no wire.

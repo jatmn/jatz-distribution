@@ -729,6 +729,45 @@ local function own_signals(depot)
   return counts
 end
 
+-- A storage tank's whole pipe segment's fluid, in whole units, as it sends it in that mode.
+local function segment_signals(depot)
+  local fluid = depot.fluid and depot.entity.get_fluid_segment_fluid(1)
+  return fluid and { [depot_circuit.key({ type = "fluid", name = fluid.name })] = math.floor(fluid.amount) } or {}
+end
+
+-- A depot whose condition reads the circuit network takes its own contents back out of what the
+-- wires carry. Their signals are what each entity sent at the previous tick's circuit update, and
+-- its contents can change before it is read this tick (inserters, robots, freighters, scripts:
+-- 700 wood taken out of 1000 still left 1000 on the wire, probed on 2.1.24). So its contents are
+-- sampled at the start of every tick, before anything moves (control.lua's on_tick, which the game
+-- raises before on_nth_tick and the entity updates), and that sample is what it takes out all tick
+-- (`circuit_sample`). Only depots reading the network are sampled (`storage.circuit_watch`, kept
+-- by set_circuit and on load). Changes the game applies before any mod's on_tick (a player's own
+-- transfers) and those of mods running earlier in the tick can't be told apart: for that one tick
+-- the sample already holds them.
+local function watch(depot)
+  storage.circuit_watch = storage.circuit_watch or {}
+  storage.circuit_watch[depot.entity.unit_number] = (depot.circuit_enabled and not depot.circuit_mode) or nil
+  if not storage.circuit_watch[depot.entity.unit_number] then
+    depot.circuit_sample = nil
+  end
+end
+
+function logistics.sample_circuits()
+  local watched = storage.circuit_watch
+  if not watched then
+    return
+  end
+  for unit_number in pairs(watched) do
+    local depot = storage.depots[unit_number]
+    if depot and depot.entity.valid and depot.circuit_enabled and not depot.circuit_mode then
+      depot.circuit_sample = { tick = game.tick, sent = own_signals(depot), segment = segment_signals(depot) }
+    else
+      watched[unit_number] = nil
+    end
+  end
+end
+
 -- Set by scripts/road-monitor.lua: what the road network monitors on a circuit network counted for
 -- a depot (counted(unit_number, network) gives a list of counts by key), for its condition to
 -- leave out.
@@ -737,18 +776,23 @@ logistics.monitor_counts = nil
 -- Whether a depot takes part in deliveries now: its circuit condition holds, or isn't in effect.
 local function enabled(depot)
   local counted = logistics.monitor_counts
-  return depot_circuit.allows(
-    depot.entity,
-    depot.circuit_enabled,
-    depot.circuit_condition,
-    depot.circuit_mode,
-    function()
+  -- What it put on its wires: this tick's sample, or (not sampled this tick: its condition was set
+  -- since) what it holds now.
+  local sample = depot.circuit_sample
+  sample = sample and sample.tick == game.tick and sample or nil
+  return depot_circuit.allows(depot.entity, depot.circuit_enabled, depot.circuit_condition, depot.circuit_mode, {
+    held = function()
       return own_signals(depot)
     end,
-    counted and function(network)
-      return counted(depot.entity.unit_number, network)
-    end
-  )
+    sent = function()
+      return sample and sample.sent or own_signals(depot)
+    end,
+    segment = function()
+      return sample and sample.segment or segment_signals(depot)
+    end,
+  }, counted and function(network)
+    return counted(depot.entity.unit_number, network)
+  end)
 end
 logistics.enabled = enabled
 
@@ -807,6 +851,7 @@ function logistics.set_circuit(entity, enable, condition, mode)
   if mode ~= nil then
     depot.circuit_mode = stored
   end
+  watch(depot)
   show_switched(depot)
   return true
 end
@@ -2274,6 +2319,7 @@ function logistics.add_all()
         depot.circuit_condition = depot_circuit.condition(depot.circuit_condition)
       end
       depot.circuit_mode = depot_circuit.mode(depot.circuit_mode) or nil
+      watch(depot)
       if depot.fluid and REQUESTING[depot.role] then
         truck_chest(depot.entity)
       end

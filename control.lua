@@ -209,6 +209,9 @@ end)
 logistics.register()
 request_gui.register()
 -- Once a second: request depots send freighters, and road network monitors show their networks.
+-- Every tick, first: what depots whose condition reads the circuit network hold, as the wires carry
+-- it this tick (logistics.sample_circuits). The game raises on_tick before on_nth_tick.
+script.on_event(defines.events.on_tick, logistics.sample_circuits)
 script.on_nth_tick(logistics.dispatch_interval, function(event)
   logistics.on_tick(event)
   road_monitor.update()

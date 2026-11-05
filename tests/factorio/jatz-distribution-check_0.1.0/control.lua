@@ -851,6 +851,17 @@ local function setup_deliveries(surface, result)
   )
   result.circuit_mode_refused = remote.call("jatz-distribution", "set_circuit", modes.own, true, nil, "both")
   deliveries.modes = modes
+  -- Another force's provider holding 50 copper plates on the same road: left out, until its force
+  -- merges into the player's at tick 299, with no road or depot changing (Pullfrog's review of
+  -- 08bed57).
+  local other = game.forces["jatz-check-other"] or game.create_force("jatz-check-other")
+  modes.foreign = surface.create_entity({
+    name = "jatz-provider-depot",
+    position = { 53.5, 37.5 },
+    force = other,
+    raise_built = true,
+  })
+  assert(modes.foreign.insert({ name = "copper-plate", count = 50 }) == 50, "foreign: cannot stock copper")
   -- Conditions the game's own entities evaluate (x -30 to -15, y 34 to 41): for each case a red and
   -- a green constant combinator, wired to a powered lamp and to a provider depot, both given the
   -- same condition. A wildcard compared with a signal leaves that signal out, and red and green add
@@ -1314,7 +1325,10 @@ local function interfere(surface)
         label = circuit.gated.custom_status.label[1],
       },
       request_status = circuit.request.custom_status ~= nil,
+      -- The modes road's monitor, before the other force merges into the player's.
+      merged_monitor = readings_shown({ shown = deliveries.modes.monitor }).shown,
     }
+    game.merge_forces("jatz-check-other", "player")
     for _, switch in ipairs({ circuit.switch_a, circuit.switch_b }) do
       switch.get_control_behavior().get_section(1).set_slot(1, {
         value = { type = "virtual", name = switch == circuit.switch_a and "signal-A" or "signal-B", quality = "normal" },
@@ -1830,6 +1844,21 @@ local function deliveries_finished(surface, tick, result)
     monitored_2700 = holds("monitored", 2700),
     own_300 = holds("own", 300),
   }
+  -- Wood taken out of a depot reading the circuit network this tick, after the mod sampled it (its
+  -- on_tick runs first): the wire still carries its 300, so 300 is what it takes back out
+  -- (Pullfrog's review of 08bed57). 2800 elsewhere is not more than 2900, before or after.
+  local before_transfer = holds("wired", 2900)
+  modes.wired.remove_item({ name = "wood", count = 200 })
+  result.circuit_transfer = {
+    before = before_transfer,
+    after = holds("wired"),
+    wire = modes.wired
+      .get_circuit_network(defines.wire_connector_id.circuit_red)
+      .get_signal({ type = "item", name = "wood" }),
+    held = modes.wired.get_item_count("wood"),
+  }
+  -- The other force's provider, merged into the player's at tick 299, now counts.
+  result.monitor_after_merge = readings_shown({ shown = modes.monitor }).shown
   local prioritised = deliveries.prioritised
   result.priority_from_far = 20 - count(prioritised.far, "stone")
   result.priority_from_near = 20 - count(prioritised.near, "stone")

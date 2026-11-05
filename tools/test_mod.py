@@ -147,7 +147,15 @@ EXPECTED = {'free_recipes': 10, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'p
                                # the request depot, which has no condition, shows its own status.
                                'gated_status': {'red': True, 'label': 'jatz-circuit-status.entity-off'},
                                'readings': {'requests': '', 'needs': 'stone-wall=10'},
-                               'request_status': False},
+                               'request_status': False,
+                               # The modes road's monitor leaves out another force's 50 copper.
+                               'merged_monitor': 'wood=2800'},
+            # Once that force merges into the player's, the monitor counts its copper, with no road
+            # or depot changing.
+            'monitor_after_merge': 'copper-plate=50,wood=2800',
+            # 200 wood taken out of the wired depot this tick: the wire still carries its 300 (3100),
+            # and the 2800 elsewhere is not more than 2900, before or after.
+            'circuit_transfer': {'before': False, 'after': False, 'wire': 3100, 'held': 100},
             # Switched on at tick 300, the provider shows its own status again.
             'circuit_status_after': True,
             'circuit_walls': 10, 'circuit_lamps': 10, 'circuit_after': {'walls': 10, 'water': 1000, 'lamps': 0},

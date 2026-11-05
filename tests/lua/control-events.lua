@@ -1668,6 +1668,13 @@ do -- The road network monitor shows what the provider and buffer depots on its 
     "cutting the road leaves out what is beyond",
     seen["fluid:water:normal"] == nil and seen["item:iron-plate:normal"] == 10
   )
+  -- Forces change without the road changing (game.merge_forces, a script setting the force): the
+  -- other force's provider becomes the player's, and the next update counts its copper, with
+  -- nothing marking the surface changed (Pullfrog's review of 08bed57).
+  check("setup: no road change pending", next(storage.road_monitor_dirty) == nil)
+  foreign.force = "player"
+  road_monitor.update()
+  check("a depot whose force merges into the monitor's counts at once", shown()["item:copper-plate:normal"] == 7)
   -- Removed: forgotten.
   monitor.valid = false
   fire("on_object_destroyed", { type = defines.target_type.entity, useful_id = monitor.unit_number })

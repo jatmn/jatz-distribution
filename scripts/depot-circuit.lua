@@ -147,10 +147,11 @@ function depot_circuit.connected(entity)
   return #networks(entity) > 0
 end
 
--- What the entity itself sends on its `colour` wire as its contents, as signal counts by key: own()
--- while a container reads its contents or a storage tank sends them, its whole pipe segment's
--- fluid while a tank sends that, nothing when it sends none or not on that colour. Entities of
--- other kinds (a Mining Drones mining depot) aren't worked out: nothing.
+-- What the entity itself put on its `colour` wire as its contents, as signal counts by key, from
+-- `own` (see allows): own.sent() while a container reads its contents or a storage tank sends
+-- them, own.segment() (its whole pipe segment's fluid) while a tank sends that, nothing when it
+-- sends none or not on that colour. Entities of other kinds (a Mining Drones mining depot) aren't
+-- worked out: nothing.
 local function sent(entity, colour, own)
   local behavior = entity.get_control_behavior()
   if not behavior then
@@ -162,15 +163,14 @@ local function sent(entity, colour, own)
   end
   local kind = defines.control_behavior.type
   if behavior.type == kind.container then
-    return behavior.read_contents and own() or nil
+    return behavior.read_contents and own.sent() or nil
   elseif behavior.type == kind.single_fluid_box then
     local modes = defines.control_behavior.single_fluid_box.exclusive_mode
     local mode = behavior.circuit_exclusive_mode_of_operation
     if mode == modes.send_contents then
-      return own()
+      return own.sent()
     elseif mode == modes.send_segment_contents then
-      local fluid = entity.get_fluid_segment_fluid(1)
-      return fluid and { [key({ type = "fluid", name = fluid.name })] = math.floor(fluid.amount) } or nil
+      return own.segment()
     end
   end
   return nil
@@ -219,7 +219,7 @@ local function contents_reading(own)
 end
 
 -- The wires in `found`, red and green added together, each less what the depot put on it: its own
--- contents (`sent`, from own()), and what `counted(network)` says road network monitors on that
+-- contents (`sent`, from `own`), and what `counted(network)` says road network monitors on that
 -- network counted for it (a list of counts by key).
 local function external(entity, found, own, counted)
   local minus = {}
@@ -303,25 +303,32 @@ local function fulfilled(reading, condition)
 end
 
 -- Whether a depot with this setting may take part in deliveries now: always unless the condition
--- is in effect; then only while `condition` holds. `own()` gives the depot's contents, counts by
--- key; `counted(network)` what road network monitors on that network counted for it.
+-- is in effect; then only while `condition` holds. `own` gives the depot's contents as counts by
+-- key: own.held() what it holds now, for the "contents" reading; own.sent() and own.segment() what
+-- it put on its wires (its contents, its pipe segment's fluid), for "network" to take back out.
+-- Those must be what the wires carry: their signals are what every entity sent at the last circuit
+-- update, so a transfer since (earlier this tick) is not on them yet. `counted(network)` gives
+-- what road network monitors on that network counted for it.
 function depot_circuit.allows(entity, enabled, condition, mode, own, counted)
   if not enabled then
     return true
   end
   if mode == CONTENTS then
-    return fulfilled(contents_reading(own()), condition or {})
+    return fulfilled(contents_reading(own.held()), condition or {})
   end
   local found = networks(entity)
   if #found == 0 then
     return true
   end
-  local cached
-  local function own_once()
-    cached = cached or own()
-    return cached
+  local cache = {}
+  local once = {}
+  for _, name in ipairs({ "sent", "segment" }) do
+    once[name] = function()
+      cache[name] = cache[name] or own[name]()
+      return cache[name]
+    end
   end
-  return fulfilled(external(entity, found, own_once, counted), condition or {})
+  return fulfilled(external(entity, found, once, counted), condition or {})
 end
 
 return depot_circuit
