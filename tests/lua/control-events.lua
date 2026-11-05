@@ -140,6 +140,68 @@ for _, name in ipairs({
 }) do
   rawset(defines.wire_connector_id, name, "wire_connector_id." .. name)
 end
+-- defines.control_behavior's types and storage tank modes as Factorio 2.1 has them
+-- (runtime-api.json 2.1.24); others are errors.
+local function strict(what, names)
+  local list = setmetatable({}, {
+    __index = function(_, key)
+      error("FAILED: " .. what .. " has no " .. tostring(key) .. " in Factorio 2.1", 2)
+    end,
+  })
+  for _, name in ipairs(names) do
+    rawset(list, name, what .. "." .. name)
+  end
+  return list
+end
+defines.control_behavior = {
+  type = strict("defines.control_behavior.type", {
+    "accumulator",
+    "agricultural_tower",
+    "arithmetic_combinator",
+    "artillery_turret",
+    "assembling_machine",
+    "asteroid_collector",
+    "boiler",
+    "cargo_landing_pad",
+    "constant_combinator",
+    "container",
+    "decider_combinator",
+    "display_panel",
+    "furnace",
+    "generic_on_off",
+    "heat_pipe",
+    "inserter",
+    "lab",
+    "lamp",
+    "land_mine",
+    "loader",
+    "logistic_container",
+    "mining_drill",
+    "programmable_speaker",
+    "proxy_container",
+    "pump",
+    "radar",
+    "rail_chain_signal",
+    "rail_signal",
+    "reactor",
+    "roboport",
+    "rocket_silo",
+    "selector_combinator",
+    "single_fluid_box",
+    "space_platform_hub",
+    "splitter",
+    "train_stop",
+    "transport_belt",
+    "turret",
+    "wall",
+  }),
+  single_fluid_box = {
+    exclusive_mode = strict(
+      "defines.control_behavior.single_fluid_box.exclusive_mode",
+      { "none", "send_contents", "send_segment_contents" }
+    ),
+  },
+}
 local nth = {}
 -- The filters each event was registered with.
 local filters = {}
@@ -183,6 +245,7 @@ prototypes = {
   item = {
     ["jatz-quinityn-freighter"] = { stack_size = 10, fuel_value = 0 },
     wood = { stack_size = 100, fuel_value = 2000000 },
+    ["iron-plate"] = { stack_size = 100, fuel_value = 0 },
   },
   fluid = { water = { fuel_value = 0 } },
   -- As with one of the Mining Drones mods installed (tests/lua/logistics.lua checks without).
@@ -326,8 +389,11 @@ local function depot(x)
     surface = surface,
     surface_index = 1,
     force = "player",
-    -- No wires.
+    -- No wires, so no control behavior either.
     get_circuit_network = function()
+      return nil
+    end,
+    get_control_behavior = function()
       return nil
     end,
     get_inventory = function()
@@ -335,6 +401,9 @@ local function depot(x)
       local chest = {
         get_item_count = function()
           return 0
+        end,
+        get_contents = function()
+          return {}
         end,
       }
       for index = 1, 48 do
@@ -889,7 +958,7 @@ do -- The priority slider: provider depots get a panel with it and their circuit
   local children = frame.children[1].children
   check(
     "with the priority slider, then only its circuit condition",
-    row and children[1] == row and #children == 4 and children[4] == frame.children[1].condition_row
+    row and children[1] == row and #children == 5 and children[5] == frame.children[1].condition_row
   )
   local slider = row.jatz_depot_priority
   check(
@@ -1123,8 +1192,8 @@ do -- Mining Drones' mining depot: a provider depot that lays road behind it, wi
     frame
       and frame.anchor.gui == "relative_gui_type.assembling_machine_gui"
       and frame.children[1].children[1] == frame.children[1].priority_row
-      and #frame.children[1].children == 4
-      and frame.children[1].children[4] == frame.children[1].condition_row
+      and #frame.children[1].children == 5
+      and frame.children[1].children[5] == frame.children[1].condition_row
   )
   -- Turned east it is 8 by 5, centred on a tile edge across: its loading zone is the tile (395, 0).
   mine.direction, mine.position = defines.direction.east, { x = 400, y = 0.5 }
@@ -1217,6 +1286,18 @@ do -- Every delivery depot's panel ends with its enable/disable circuit conditio
   value = -9
   nth[30]()
   check("not holding, red", light.sprite == "utility/status_not_working")
+  -- What the condition reads: the circuit network by default, or the depot's own contents.
+  local modes = inner.circuit_mode_row
+  check(
+    "the circuit network is chosen to start with",
+    modes.jatz_circuit_mode_network.state and not modes.jatz_circuit_mode_contents.state
+  )
+  modes.jatz_circuit_mode_contents.state = true
+  fire("on_gui_checked_state_changed", { player_index = 14, element = modes.jatz_circuit_mode_contents })
+  check("choosing its own contents stores it", logistics.get_circuit(provider).mode == "contents")
+  check("and shows only that choice", not modes.jatz_circuit_mode_network.state)
+  -- It holds no signal-A: 0 > -7.
+  check("which the light follows, wire or not", light.sprite == "utility/status_working")
 
   local request = depot(410)
   request.name = "jatz-request-depot"
@@ -1227,7 +1308,10 @@ do -- Every delivery depot's panel ends with its enable/disable circuit conditio
 
   -- Copy and Paste settings, and blueprints, carry it.
   fire("on_entity_settings_pasted", { source = provider, destination = request })
-  check("pasting copies it", logistics.get_circuit(request).condition.constant == -7)
+  check(
+    "pasting copies it",
+    logistics.get_circuit(request).condition.constant == -7 and logistics.get_circuit(request).mode == "contents"
+  )
   local saved
   local blueprint = {
     valid = true,
@@ -1243,10 +1327,16 @@ do -- Every delivery depot's panel ends with its enable/disable circuit conditio
   }
   logistics.setup_blueprint(blueprint, { provider })
   local tag = saved[1].tags and saved[1].tags.jatz_circuit
-  check("a blueprint keeps it as a tag", tag and tag.enabled and tag.condition.first_signal.name == "signal-A")
+  check(
+    "a blueprint keeps it as a tag",
+    tag and tag.enabled and tag.condition.first_signal.name == "signal-A" and tag.mode == "contents"
+  )
   local built = depot(420)
   fire("on_robot_built_entity", { entity = built, tags = saved[1].tags })
-  check("and a depot built from it gets it", logistics.get_circuit(built).enabled)
+  check(
+    "and a depot built from it gets it",
+    logistics.get_circuit(built).enabled and logistics.get_circuit(built).mode == "contents"
+  )
   -- Ticked with no condition set yet: the tick is kept.
   local ticked = depot(440)
   fire("on_built_entity", { entity = ticked })
@@ -1351,6 +1441,9 @@ do -- The road network monitor shows what the provider and buffer depots on its 
     surface_index = 1,
     force = "player",
     operable = true,
+    get_circuit_network = function()
+      return nil
+    end,
     get_or_create_control_behavior = function()
       return behavior
     end,
@@ -1391,6 +1484,31 @@ do -- The road network monitor shows what the provider and buffer depots on its 
   road_monitor.update()
   check("a depot switched off by its condition isn't counted", shown()["item:iron-plate:normal"] == nil)
   logistics.set_circuit(p1, false, nil)
+  road_monitor.update()
+  -- P1 wired (green) to the monitor, reading the circuit network: of the 10 iron plates the monitor
+  -- shows, all are P1's own, which its condition leaves out. A tick later the wire carries them.
+  game.tick = game.tick + 1
+  local green = {
+    network_id = 7,
+    get_signal = function(id)
+      return shown()[(id.type or "item") .. ":" .. id.name .. ":" .. (id.quality or "normal")] or 0
+    end,
+  }
+  local function on_green(connector)
+    return connector == defines.wire_connector_id.circuit_green and green or nil
+  end
+  p1.get_circuit_network, monitor.get_circuit_network = on_green, on_green
+  local plate = { type = "item", name = "iron-plate" }
+  logistics.set_circuit(p1, true, { first_signal = plate, comparator = ">", constant = 5 })
+  check("setup: the condition is iron plate > 5", logistics.get_circuit(p1).condition.first_signal.name == "iron-plate")
+  check("setup: the wire carries the monitor's 10 plates", green.get_signal(plate) == 10)
+  check("a depot reading the monitor leaves out its own plates", not logistics.get_circuit(p1).fulfilled)
+  road_monitor.update()
+  game.tick = game.tick + 1
+  check("and stays off once the monitor no longer counts it", not logistics.get_circuit(p1).fulfilled)
+  logistics.set_circuit(p1, true, nil, "contents")
+  check("reading its own contents, it has its 10", logistics.get_circuit(p1).fulfilled)
+  logistics.set_circuit(p1, false, nil, "network")
   -- The road between them is mined: the liquid provider is on another network now.
   cell(502, 2).name = "grass-1"
   fire(

@@ -15,6 +15,11 @@ defines = {
   target_type = { entity = 1 },
   entity_status_diode = { green = 1, red = 2, yellow = 3 },
   wire_connector_id = { circuit_red = 1, circuit_green = 2 },
+  -- Factorio 2.1's values (probed on 2.1.24): containers 1, storage tanks 7, send_contents 1.
+  control_behavior = {
+    type = { container = 1, single_fluid_box = 7 },
+    single_fluid_box = { exclusive_mode = { none = 0, send_contents = 1, send_segment_contents = 2 } },
+  },
 }
 -- luacheck: globals settings
 -- Runtime settings, as Factorio gives them: an unknown name fails, as `settings.global[name].value`
@@ -70,6 +75,13 @@ local function inventory(contents)
   end
   function self.get_insertable_count()
     return 1000
+  end
+  function self.get_contents()
+    local list = {}
+    for name, count in pairs(self.contents) do
+      list[#list + 1] = { name = name, quality = "normal", count = count }
+    end
+    return list
   end
   return self
 end
@@ -185,6 +197,13 @@ local function entity(name, x, y, contents)
       return chest
     end,
     chest = chest,
+    -- No wires (wire() below adds them), so no control behavior either.
+    get_circuit_network = function()
+      return nil
+    end,
+    get_control_behavior = function()
+      return nil
+    end,
   }
 end
 
@@ -1984,8 +2003,10 @@ do -- Fuel turned off (0 per tile): nothing burns and nobody looks for fuel.
 end
 
 -- Circuit networks on an entity's red and green wires: `red` and `green` map signal names to
--- values (virtual signals, or items given as "item:name"); nil for no wire of that colour.
-local function wire(target, red, green)
+-- values (virtual signals, or items given as "item:name"); nil for no wire of that colour. As in
+-- the game, a wired depot has a container control behavior that sends its contents (read_contents)
+-- on both colours: put them in the values too. `sends` false unticks read_contents.
+local function wire(target, red, green, sends)
   local function network(values)
     if not values then
       return nil
@@ -2007,6 +2028,18 @@ local function wire(target, red, green)
   target.get_circuit_network = function(connector)
     return networks[connector]
   end
+  local behavior = (red or green)
+    and {
+      type = defines.control_behavior.type.container,
+      read_contents = sends ~= false,
+      output_networks = {
+        red = true,
+        green = true,
+      },
+    }
+  target.get_control_behavior = function()
+    return behavior
+  end
 end
 
 local A = { type = "virtual", name = "signal-A" }
@@ -2016,7 +2049,9 @@ do -- Conditions are compared like the game's: red and green added, signals or a
   local target = {}
   local function holds(condition, red, green)
     wire(target, red, green)
-    return circuit.allows(target, true, circuit.condition(condition))
+    return circuit.allows(target, true, circuit.condition(condition), nil, function()
+      return {}
+    end)
   end
   check(
     "red and green are added together",
@@ -2054,7 +2089,12 @@ do -- Conditions are compared like the game's: red and green added, signals or a
     circuit.condition({ first_signal = { name = "a" } }).first_signal.type == "item"
   )
   wire(target, nil, nil)
-  check("without a wire the condition has no effect", circuit.allows(target, true, circuit.condition({})))
+  check(
+    "without a wire the condition has no effect",
+    circuit.allows(target, true, circuit.condition({}), nil, function()
+      return {}
+    end)
+  )
   check("unticked, it has none either", circuit.allows({}, false, nil))
 end
 
@@ -2139,6 +2179,82 @@ do -- Without a wire a ticked condition has no effect, as in the game.
   logistics.set_circuit(request, true, { first_signal = A, comparator = ">", constant = 0 })
   logistics.on_tick()
   check("an unwired depot with a condition still searches", #requests == 1)
+end
+
+do -- Reading the circuit network, a depot leaves out the contents it sends itself.
+  local logistics = reset()
+  local request, near = setup(logistics)
+  near.chest.contents.a = 300
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 20 })
+  logistics.add(far)
+  local wood = { type = "item", name = "a" }
+  -- Wired to a depot holding 2800: the wire carries both, 3100.
+  wire(near, { ["item:a"] = 3100 })
+  logistics.set_circuit(near, true, { first_signal = wood, comparator = ">", constant = 3000 })
+  check("the circuit network is the default reading", logistics.get_circuit(near).mode == "network")
+  check("2800 elsewhere and 300 here is not more than 3000", not logistics.get_circuit(near).fulfilled)
+  logistics.on_tick()
+  check("so it isn't asked about", #requests == 1 and requests[1].goal.x == 40.5)
+  answer(logistics, 1, "route")
+  check("and the freighter goes to the other provider", trip_of(request).provider == far.unit_number)
+  logistics.set_circuit(near, true, { first_signal = wood, comparator = ">", constant = 2700 })
+  check("but it is more than 2700", logistics.get_circuit(near).fulfilled)
+  -- Everything and Anything leave it out too: only the 2800 elsewhere is compared.
+  logistics.set_circuit(near, true, {
+    first_signal = { type = "virtual", name = "signal-everything" },
+    comparator = ">",
+    constant = 2900,
+  })
+  check("everything compares what is elsewhere", not logistics.get_circuit(near).fulfilled)
+  -- Not sending its contents (read_contents unticked), there is nothing of its own on the wire.
+  wire(near, { ["item:a"] = 3100 }, nil, false)
+  logistics.set_circuit(near, true, { first_signal = wood, comparator = ">", constant = 3000 })
+  check("a depot not sending its contents reads the wire as it is", logistics.get_circuit(near).fulfilled)
+end
+
+do -- Reading its own contents, a depot needs no wire.
+  local logistics = reset()
+  local request, provider = setup(logistics)
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 20 })
+  logistics.add(far)
+  local wood = { type = "item", name = "a" }
+  check(
+    "the mode is set with the condition",
+    logistics.set_circuit(provider, true, { first_signal = wood, comparator = ">", constant = 25 }, "contents")
+  )
+  local circuit = logistics.get_circuit(provider)
+  check("and read back", circuit.mode == "contents" and not circuit.connected)
+  check("20 held is not more than 25: off, with no wire", not circuit.fulfilled)
+  logistics.on_tick()
+  check("so it isn't asked about", #requests == 1 and requests[1].goal.x == 40.5)
+  answer(logistics, 1, "route")
+  check("the freighter goes to the other provider", trip_of(request).provider == far.unit_number)
+  logistics.set_circuit(provider, true, { first_signal = wood, comparator = ">", constant = 15 })
+  check("more than 15: on", logistics.get_circuit(provider).fulfilled)
+  check("a nil mode leaves it as it is", logistics.get_circuit(provider).mode == "contents")
+  wire(provider, { ["item:a"] = 0 })
+  check("a wire changes nothing", logistics.get_circuit(provider).fulfilled)
+  check("an unknown mode is refused", not logistics.set_circuit(provider, true, nil, "both"))
+  check("leaving the mode as it was", logistics.get_circuit(provider).mode == "contents")
+  check("the circuit network can be chosen again", logistics.set_circuit(provider, true, nil, "network"))
+  check("and is stored as the default", storage.depots[provider.unit_number].circuit_mode == nil)
+end
+
+do -- A liquid depot reads its fluid in whole units, as it sends it.
+  local logistics = reset()
+  local request, provider = liquids(logistics)
+  provider.held.amount = 1000.7
+  local water = { type = "fluid", name = "water" }
+  logistics.set_circuit(provider, true, { first_signal = water, comparator = "=", constant = 1000 }, "contents")
+  check("1000.7 water reads 1000", logistics.get_circuit(provider).fulfilled and request)
+end
+
+do -- A mode from a removed version or an edited save is dropped on load.
+  local logistics = reset()
+  local request = setup(logistics)
+  storage.depots[request.unit_number].circuit_mode = "both"
+  logistics.add_all()
+  check("an unknown stored mode becomes the default", logistics.get_circuit(request).mode == "network")
 end
 
 print("all logistics checks passed")

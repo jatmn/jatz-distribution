@@ -17,9 +17,10 @@
 -- right-click has robots take the slot's freighters away (again: cancel that). Pipette (Q) over
 -- the slot picks up a freighter, or its ghost, as over any inventory slot.
 --
--- Every panel ends with the depot's circuit condition, like a logistic chest's: "Enable/disable"
--- and the condition (a signal compared with another signal or a constant), with a light saying
--- whether the depot is enabled now.
+-- Every panel ends with the depot's circuit condition, like a logistic chest's: "Enable/disable",
+-- what the condition reads (the circuit network without the depot's own contents, or its own
+-- contents) and the condition (a signal compared with another signal or a constant), with a light
+-- saying whether the depot is enabled now.
 local logistics = require("scripts.logistics")
 local depot_circuit = require("scripts.depot-circuit")
 
@@ -43,6 +44,8 @@ local CIRCUIT_FIRST = "jatz_circuit_first"
 local CIRCUIT_COMPARATOR = "jatz_circuit_comparator"
 local CIRCUIT_SECOND = "jatz_circuit_second"
 local CIRCUIT_CONSTANT = "jatz_circuit_constant"
+-- One radio button per mode: "jatz_circuit_mode_network" and "jatz_circuit_mode_contents".
+local CIRCUIT_MODE = "jatz_circuit_mode_"
 local COMPARATORS = depot_circuit.comparators
 -- The depots with a request, freighters and status: request and buffer depots, item and liquid.
 local REQUESTING = logistics.requesting
@@ -248,7 +251,7 @@ local function add_fuel(inner, entity)
 end
 
 -- The light beside "Enable/disable": green while the condition holds, red while it disables the
--- depot, grey while it has no effect (not ticked, or no wire).
+-- depot, grey while it has no effect (not ticked, or reading the circuit network with no wire).
 local function show_circuit_status(inner, entity)
   local row = inner.circuit_row
   local circuit = row and logistics.get_circuit(entity)
@@ -256,7 +259,7 @@ local function show_circuit_status(inner, entity)
     return
   end
   local state = not circuit.enabled and "off"
-    or not circuit.connected and "not-connected"
+    or not (circuit.connected or circuit.mode == depot_circuit.contents) and "not-connected"
     or circuit.fulfilled and "enabled"
     or "disabled"
   local light = row[CIRCUIT_STATUS]
@@ -285,6 +288,9 @@ local function show_condition(inner, entity)
   -- The constant counts only without a second signal, as in the game's own condition editor.
   row[CIRCUIT_CONSTANT].enabled = condition.second_signal == nil
   inner.circuit_row[CIRCUIT_ENABLED].state = circuit.enabled
+  for _, mode in ipairs(depot_circuit.modes) do
+    inner.circuit_mode_row[CIRCUIT_MODE .. mode].state = circuit.mode == mode
+  end
   show_circuit_status(inner, entity)
 end
 
@@ -301,6 +307,16 @@ local function add_circuit(inner, entity)
     tooltip = { "jatz-gui.circuit-enabled-tooltip" },
   })
   row.add({ type = "sprite", name = CIRCUIT_STATUS, style = "status_image" })
+  local modes = inner.add({ type = "flow", name = "circuit_mode_row", direction = "horizontal" })
+  for _, mode in ipairs(depot_circuit.modes) do
+    modes.add({
+      type = "radiobutton",
+      name = CIRCUIT_MODE .. mode,
+      state = mode == depot_circuit.network,
+      caption = { "jatz-gui.circuit-mode-" .. mode },
+      tooltip = { "jatz-gui.circuit-mode-" .. mode .. "-tooltip" },
+    })
+  end
   local condition = inner.add({ type = "flow", name = "condition_row", direction = "horizontal" })
   condition.style.vertical_align = "center"
   condition.add({
@@ -662,6 +678,16 @@ end
 request_gui.on_player_cursor_stack_changed = request_gui.on_player_main_inventory_changed
 
 local function on_gui_checked_state_changed(event)
+  local mode = event.element.name:match("^" .. CIRCUIT_MODE .. "(%a+)$")
+  if mode then
+    local entity = opened_depot(game.get_player(event.player_index))
+    local circuit = entity and logistics.get_circuit(entity)
+    if circuit then
+      logistics.set_circuit(entity, circuit.enabled, nil, mode)
+      show_condition(event.element.parent.parent, entity)
+    end
+    return
+  end
   if event.element.name == CIRCUIT_ENABLED then
     local entity = opened_depot(game.get_player(event.player_index))
     if entity then
@@ -720,7 +746,7 @@ local function refresh()
       elseif
         not (inner.priority_row or ROLES[entity.name] == "request")
         or (requesting and not (inner.request_row and inner.request_row[STATUS] and inner.freighter_fuel))
-        or not inner.circuit_row
+        or not inner.circuit_mode_row
       then
         -- A panel opened before an update that changed its layout: build it again.
         open(player, entity)

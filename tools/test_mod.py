@@ -127,6 +127,14 @@ EXPECTED = {'free_recipes': 10, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'p
             'circuit_before': {'walls': 0, 'lamps': 0, 'walls_status': 'no-provider', 'lamps_status': 'disabled',
                                'monitor': {'walls': 0, 'water': 1000, 'lamps': 0}},
             'circuit_walls': 10, 'circuit_lamps': 10, 'circuit_after': {'walls': 10, 'water': 1000, 'lamps': 0},
+            # Reading the circuit network, a depot leaves out its own wood: 300 here and 2800 at the
+            # depot wired to it (or counted by the monitor) is not more than 3000, but is more than
+            # 2700. Reading its own 200 wood: more than 100, not more than 300. An unknown mode is
+            # refused.
+            'circuit_modes': {'wired_wire': 3100, 'monitored_wire': 3100, 'wired': False, 'monitored': False,
+                              'own': True, 'own_mode': 'contents', 'wired_2700': True, 'monitored_2700': True,
+                              'own_300': False},
+            'circuit_mode_refused': False,
             # Blueprints keep a request depot's request (tag) and freighters (insert plan): the
             # ghost built from one asks for 7 wood and has robots bring 3 freighters. Copy and Paste
             # settings has robots bring what the destination lacks (1 -> 3). Freighters put in by

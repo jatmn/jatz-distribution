@@ -136,8 +136,10 @@ Every depot takes red and green wires. Item depots send their contents and liqui
 Provider, request and buffer depots, item and liquid, also have an **Enable/disable** circuit condition at the bottom of their panel, like a logistic chest's:
 
 - Tick **Enable/disable** and set the condition: a signal compared with another signal, or with a number. **Everything** means every signal must match, **Anything** at least one.
-- With a wire connected, the depot takes part in deliveries only while the condition holds. Switched off, a request or buffer depot sends no freighters, and no freighter is sent to fetch from a provider or buffer depot. Freighters already on their way finish their trips.
-- Without a wire, the condition does nothing.
+- Choose what the condition reads:
+  - **Circuit network**: the red and green wires, leaving out this depot's own contents. A depot sends what it holds on its wires, and a road network monitor counts it too, so without this a depot asking for *wood > 3000* would switch on with 2,800 wood elsewhere and 300 of its own. Without a wire, the condition does nothing.
+  - **This depot's contents**: only what this depot holds, each quality its own signal and fluids in whole units. No wire needed. For example, a provider with *iron plate > 200* supplies only while it holds more than 200.
+- The depot takes part in deliveries only while the condition holds. Switched off, a request or buffer depot sends no freighters, and no freighter is sent to fetch from a provider or buffer depot. Freighters already on their way finish their trips.
 - The light beside the checkbox is green while the depot is on, red while the condition switches it off, and grey while the condition has no effect.
 
 ### Road network monitor

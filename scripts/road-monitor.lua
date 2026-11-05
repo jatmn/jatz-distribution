@@ -13,6 +13,11 @@
 -- Which depots are on each monitor's network is worked out again, with the engine's own flood
 -- fill (LuaSurface.get_connected_tiles), only after road, a depot or a monitor on that surface
 -- changed. Players can't open the monitor to edit its signals.
+--
+-- A depot whose condition reads the circuit network leaves out its own contents, so each monitor
+-- remembers what it counted for each depot (`counted`, and `previous`: what its signals still show
+-- in the tick it changes them, as a combinator's output reaches the wire a tick later). Fluids are
+-- whole units per depot, so what a depot leaves out is exactly what it added.
 local loading_zone = require("scripts.loading-zone")
 local logistics = require("scripts.logistics")
 
@@ -145,18 +150,21 @@ local function connect(surface, monitors)
   end
 end
 
--- What the enabled depots among `members` hold, as constant combinator filters.
+-- What the enabled depots among `members` hold, as constant combinator filters, and what each one
+-- added (by unit_number, counts by key).
 local function contents(members)
-  local totals, order = {}, {}
-  local function add(kind, name, quality, amount)
+  local totals, order, counted = {}, {}, {}
+  local function add(unit_number, kind, name, quality, amount)
     local key = kind .. "/" .. name .. "/" .. quality
     if not totals[key] then
       totals[key] = { type = kind, name = name, quality = quality, count = 0 }
       order[#order + 1] = key
     end
     totals[key].count = totals[key].count + amount
+    counted[unit_number] = counted[unit_number] or {}
+    counted[unit_number][key] = (counted[unit_number][key] or 0) + amount
   end
-  -- In a fixed order: fluid amounts aren't whole, and their sum must come out the same everywhere.
+  -- In a fixed order, so the sums come out the same everywhere.
   local ids = {}
   for unit_number in pairs(members) do
     ids[#ids + 1] = unit_number
@@ -167,11 +175,11 @@ local function contents(members)
     if depot and depot.entity.valid and logistics.enabled(depot) then
       if depot.fluid then
         for name, amount in pairs(depot.entity.get_fluid_contents()) do
-          add("fluid", name, QUALITY, amount)
+          add(unit_number, "fluid", name, QUALITY, math.floor(amount))
         end
       else
         for _, item in ipairs(logistics.inventory(depot.entity).get_contents()) do
-          add("item", item.name, item.quality, item.count)
+          add(unit_number, "item", item.name, item.quality, item.count)
         end
       end
     end
@@ -188,8 +196,32 @@ local function contents(members)
       }
     end
   end
-  return filters
+  return filters, counted
 end
+
+-- What the monitors whose signals are on `network` (a LuaCircuitNetwork) show for depot
+-- `unit_number` now: a list of counts by key (depot_circuit.key), for its condition to leave out.
+function road_monitor.counted(unit_number, network)
+  local found = {}
+  for _, monitor in pairs(storage.road_monitors or {}) do
+    -- Changed this tick, its signals still show what it counted before (nothing, if it is new).
+    local counted = monitor.counted
+    if monitor.counted_tick == game.tick then
+      counted = monitor.previous
+    end
+    local counts = counted and counted[unit_number]
+    if counts and monitor.entity.valid then
+      for _, wire in ipairs({ defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green }) do
+        local on = monitor.entity.get_circuit_network(wire)
+        if on and on.network_id == network.network_id then
+          found[#found + 1] = counts
+        end
+      end
+    end
+  end
+  return found
+end
+logistics.monitor_counts = road_monitor.counted
 
 -- Put `filters` on the monitor's signals: its first sections, SECTION_SIZE signals each, and no
 -- others.
@@ -235,7 +267,12 @@ function road_monitor.update()
   end
   storage.road_monitor_dirty = {}
   for _, monitor in pairs(storage.road_monitors) do
-    show(monitor.entity, contents(monitor.depots))
+    local filters, counted = contents(monitor.depots)
+    if monitor.counted_tick ~= game.tick then
+      monitor.previous = monitor.counted
+    end
+    monitor.counted, monitor.counted_tick = counted, game.tick
+    show(monitor.entity, filters)
   end
 end
 

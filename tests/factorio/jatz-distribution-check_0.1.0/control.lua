@@ -766,6 +766,56 @@ local function setup_deliveries(surface, result)
   )
   result.monitor_operable = circuit.monitor.operable
   deliveries.circuit = circuit
+  -- What a condition reads (loading zones at y 39, x 50 to 62). On one road, three providers:
+  -- "wired" holding 300 wood, wired red to "remote" holding 2800; and "monitored" holding 300,
+  -- wired green to a road network monitor beside the road. Both read the circuit network for
+  -- wood > 3000, which must not hold: their own wood is on their wire (a depot sends its contents,
+  -- and the monitor counts the depots switched on), and is left out. Off the road, "own" holding
+  -- 200 wood reads its own contents, with no wire.
+  local modes = {
+    wired = depot(surface, "provider", 50.5, 37.5),
+    remote = depot(surface, "provider", 56.5, 37.5),
+    monitored = depot(surface, "provider", 62.5, 37.5),
+    own = depot(surface, "provider", 55.5, 33.5),
+  }
+  lay_road(surface, 50, 39, 62, 39)
+  for name, count in pairs({ wired = 300, remote = 2800, monitored = 300, own = 200 }) do
+    assert(modes[name].insert({ name = "wood", count = count }) == count, name .. ": cannot stock wood")
+  end
+  modes.monitor =
+    surface.create_entity({ name = MONITOR, position = { 59.5, 40.5 }, force = "player", raise_built = true })
+  local green = defines.wire_connector_id.circuit_green
+  assert(modes.wired.get_wire_connector(red, true).connect_to(modes.remote.get_wire_connector(red, true), false))
+  assert(
+    modes.monitored.get_wire_connector(green, true).connect_to(modes.monitor.get_wire_connector(green, true), false)
+  )
+  local wood = { type = "item", name = "wood" }
+  for _, name in ipairs({ "wired", "monitored" }) do
+    assert(
+      remote.call(
+        "jatz-distribution",
+        "set_circuit",
+        modes[name],
+        true,
+        { first_signal = wood, comparator = ">", constant = 3000 },
+        "network"
+      ),
+      name .. ": condition refused"
+    )
+  end
+  assert(
+    remote.call(
+      "jatz-distribution",
+      "set_circuit",
+      modes.own,
+      true,
+      { first_signal = wood, comparator = ">", constant = 100 },
+      "contents"
+    ),
+    "own: condition refused"
+  )
+  result.circuit_mode_refused = remote.call("jatz-distribution", "set_circuit", modes.own, true, nil, "both")
+  deliveries.modes = modes
   deliveries.no_trucks = depot(surface, "request", -20.5, 28.5, 0)
   assert(remote.call("jatz-distribution", "set_request", deliveries.no_trucks, "wood", 5), "wood: refused")
   -- Freighters put in a request depot's chest move into its slot.
@@ -1610,6 +1660,33 @@ local function deliveries_finished(surface, tick, result)
   result.circuit_walls = count(circuit.request, "stone-wall")
   result.circuit_lamps = count(circuit.lamps, "small-lamp")
   result.circuit_after = monitor_reading(circuit.monitor)
+  -- What each condition reads, long after the monitor first counted: the circuit network without
+  -- the depot's own wood, or its own wood.
+  local modes = deliveries.modes
+  local function holds(name, constant)
+    if constant then
+      local condition = { first_signal = { type = "item", name = "wood" }, comparator = ">", constant = constant }
+      remote.call("jatz-distribution", "set_circuit", modes[name], true, condition)
+    end
+    return remote.call("jatz-distribution", "get_circuit", modes[name]).fulfilled
+  end
+  result.circuit_modes = {
+    -- What the wires carry: 300 + 2800 on the red one; on the green one, the monitor's 2800 (the
+    -- remote provider: the other two are switched off) and the monitored depot's own 300.
+    wired_wire = modes.wired
+      .get_circuit_network(defines.wire_connector_id.circuit_red)
+      .get_signal({ type = "item", name = "wood" }),
+    monitored_wire = modes.monitored
+      .get_circuit_network(defines.wire_connector_id.circuit_green)
+      .get_signal({ type = "item", name = "wood" }),
+    wired = holds("wired"),
+    monitored = holds("monitored"),
+    own = holds("own"),
+    own_mode = remote.call("jatz-distribution", "get_circuit", modes.own).mode,
+    wired_2700 = holds("wired", 2700),
+    monitored_2700 = holds("monitored", 2700),
+    own_300 = holds("own", 300),
+  }
   local prioritised = deliveries.prioritised
   result.priority_from_far = 20 - count(prioritised.far, "stone")
   result.priority_from_near = 20 - count(prioritised.near, "stone")

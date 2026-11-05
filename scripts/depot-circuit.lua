@@ -1,8 +1,16 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- A depot's enable/disable circuit condition, as a logistic chest has one in Factorio 2.1
 -- (LuaLogisticContainerControlBehavior.circuit_condition_enabled and circuit_condition): while it
--- is set, and the depot has a red or green wire, the depot takes part in deliveries only while the
--- condition holds. Without a wire the condition has no effect, as with the game's own entities.
+-- is set, the depot takes part in deliveries only while the condition holds. It reads one of two
+-- things (its mode):
+-- - "network", the default: the red and green wires, without the depot's own contents. A depot
+--   sends its contents on its wires (a container's read_contents, a storage tank's send_contents,
+--   both on by default), and a road network monitor on its road counts it too; a logistic chest's,
+--   inserter's or assembling machine's condition would read those back, so "wood > 3000" would
+--   hold with 2800 wood at another depot and 300 here. They are taken back out (`external`).
+--   Without a wire the condition has no effect, as with the game's own entities.
+-- - "contents": what the depot itself holds, items by quality and fluids in whole units, as it
+--   would send them. No wire is needed.
 --
 -- A condition is { first_signal, comparator, second_signal, constant }, the game's CircuitCondition:
 -- the first signal compared with the second signal, or with the constant (0 if unset). No first
@@ -13,6 +21,11 @@
 local depot_circuit = {}
 
 local EVERYTHING, ANYTHING, EACH = "signal-everything", "signal-anything", "signal-each"
+-- The two modes, in the order the panel lists them; nil is stored for the default, "network".
+local NETWORK, CONTENTS = "network", "contents"
+depot_circuit.modes = { NETWORK, CONTENTS }
+depot_circuit.network, depot_circuit.contents = NETWORK, CONTENTS
+local WIRES = { red = defines.wire_connector_id.circuit_red, green = defines.wire_connector_id.circuit_green }
 -- The comparators in the order the game's condition editor lists them; "≥", "≤" and "≠" are how
 -- the game writes them back (it also accepts ">=", "<=" and "!=").
 depot_circuit.comparators = { "<", ">", "=", "≥", "≤", "≠" }
@@ -102,13 +115,28 @@ function depot_circuit.condition(condition)
   }
 end
 
--- The red and green circuit networks wired to an entity (none, one or two).
+-- A mode as stored: nil for "network", "contents" for the other; false for anything else.
+function depot_circuit.mode(mode)
+  if mode == nil or mode == NETWORK then
+    return nil
+  end
+  return mode == CONTENTS and CONTENTS or false
+end
+
+-- The key a signal is counted under: type, name and quality, as the game fills them in (an item
+-- signal read back has no type, and a signal with no quality is normal).
+local function key(signal)
+  return (signal.type or "item") .. "/" .. signal.name .. "/" .. (signal.quality or "normal")
+end
+depot_circuit.key = key
+
+-- The red and green circuit networks wired to an entity (none, one or two), with their colour.
 local function networks(entity)
   local found = {}
-  for _, wire in ipairs({ defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green }) do
-    local network = entity.get_circuit_network(wire)
+  for _, colour in ipairs({ "red", "green" }) do
+    local network = entity.get_circuit_network(WIRES[colour])
     if network then
-      found[#found + 1] = network
+      found[#found + 1] = { network = network, colour = colour }
     end
   end
   return found
@@ -119,49 +147,129 @@ function depot_circuit.connected(entity)
   return #networks(entity) > 0
 end
 
-local function value(found, signal)
-  local total = 0
-  for _, network in ipairs(found) do
-    total = total + network.get_signal(signal)
+-- What the entity itself sends on its `colour` wire as its contents, as signal counts by key: own()
+-- while a container reads its contents or a storage tank sends them, its whole pipe segment's
+-- fluid while a tank sends that, nothing when it sends none or not on that colour. Entities of
+-- other kinds (a Mining Drones mining depot) aren't worked out: nothing.
+local function sent(entity, colour, own)
+  local behavior = entity.get_control_behavior()
+  if not behavior then
+    return nil
   end
-  return total
+  local selection = behavior.output_networks
+  if selection and selection[colour] == false then
+    return nil
+  end
+  local kind = defines.control_behavior.type
+  if behavior.type == kind.container then
+    return behavior.read_contents and own() or nil
+  elseif behavior.type == kind.single_fluid_box then
+    local modes = defines.control_behavior.single_fluid_box.exclusive_mode
+    local mode = behavior.circuit_exclusive_mode_of_operation
+    if mode == modes.send_contents then
+      return own()
+    elseif mode == modes.send_segment_contents then
+      local fluid = entity.get_fluid_segment_fluid(1)
+      return fluid and { [key({ type = "fluid", name = fluid.name })] = math.floor(fluid.amount) } or nil
+    end
+  end
+  return nil
 end
 
--- Every signal on the wires, red and green added together, without the zeros.
-local function all_signals(found)
-  local totals, order = {}, {}
-  for _, network in ipairs(found) do
-    for _, signal in ipairs(network.signals or {}) do
-      local id = signal.signal
-      local key = (id.type or "item") .. "/" .. id.name .. "/" .. (id.quality or "normal")
-      if not totals[key] then
-        order[#order + 1] = key
-        totals[key] = 0
+-- A reading: the signals a condition is compared on. value(signal) gives one signal's value, and
+-- all() every signal's that isn't zero.
+
+-- The depot's own contents (`own`, counts by key).
+local function contents_reading(own)
+  return {
+    value = function(signal)
+      return own[key(signal)] or 0
+    end,
+    all = function()
+      local values = {}
+      for _, count in pairs(own) do
+        if count ~= 0 then
+          values[#values + 1] = count
+        end
       end
-      totals[key] = totals[key] + signal.count
-    end
-  end
-  local values = {}
-  for _, key in ipairs(order) do
-    if totals[key] ~= 0 then
-      values[#values + 1] = totals[key]
-    end
-  end
-  return values
+      return values
+    end,
+  }
 end
 
--- Whether a condition holds on these networks.
-local function fulfilled(found, condition)
+-- The wires in `found`, red and green added together, each less what the depot put on it: its own
+-- contents (`sent`, from own()), and what `counted(network)` says road network monitors on that
+-- network counted for it (a list of counts by key).
+local function external(entity, found, own, counted)
+  local minus = {}
+  for index, wire in ipairs(found) do
+    local list = {}
+    local mine = sent(entity, wire.colour, own)
+    if mine then
+      list[#list + 1] = mine
+    end
+    for _, counts in ipairs(counted and counted(wire.network) or {}) do
+      list[#list + 1] = counts
+    end
+    minus[index] = list
+  end
+  local function less(index, signal_key)
+    local total = 0
+    for _, counts in ipairs(minus[index]) do
+      total = total + (counts[signal_key] or 0)
+    end
+    return total
+  end
+  return {
+    value = function(signal)
+      local total = 0
+      for index, wire in ipairs(found) do
+        total = total + wire.network.get_signal(signal) - less(index, key(signal))
+      end
+      return total
+    end,
+    all = function()
+      local totals, order = {}, {}
+      local function add(signal_key, count)
+        if not totals[signal_key] then
+          order[#order + 1] = signal_key
+          totals[signal_key] = 0
+        end
+        totals[signal_key] = totals[signal_key] + count
+      end
+      for index, wire in ipairs(found) do
+        for _, signal in ipairs(wire.network.signals or {}) do
+          add(key(signal.signal), signal.count)
+        end
+        for _, counts in ipairs(minus[index]) do
+          for signal_key, count in pairs(counts) do
+            add(signal_key, -count)
+          end
+        end
+      end
+      local values = {}
+      for _, signal_key in ipairs(order) do
+        if totals[signal_key] ~= 0 then
+          values[#values + 1] = totals[signal_key]
+        end
+      end
+      return values
+    end,
+  }
+end
+
+-- Whether a condition holds on a reading.
+local function fulfilled(reading, condition)
   local first = condition.first_signal
   if not first then
     return false
   end
   local compare = COMPARE[condition.comparator] or COMPARE["<"]
-  local right = condition.second_signal and value(found, condition.second_signal) or (condition.constant or 0)
+  local right = condition.second_signal and reading.value(condition.second_signal) or (condition.constant or 0)
   local kind = special(first)
   if kind == EVERYTHING or kind == ANYTHING then
     local any = false
-    for _, left in ipairs(all_signals(found)) do
+    for _, left in ipairs(reading.all()) do
       if compare(left, right) then
         any = true
       elseif kind == EVERYTHING then
@@ -170,20 +278,29 @@ local function fulfilled(found, condition)
     end
     return kind == EVERYTHING or any
   end
-  return compare(value(found, first), right)
+  return compare(reading.value(first), right)
 end
 
--- Whether a depot with this setting may take part in deliveries now: always unless `enabled` is
--- set and the entity has a wire; then only while `condition` holds.
-function depot_circuit.allows(entity, enabled, condition)
+-- Whether a depot with this setting may take part in deliveries now: always unless the condition
+-- is in effect; then only while `condition` holds. `own()` gives the depot's contents, counts by
+-- key; `counted(network)` what road network monitors on that network counted for it.
+function depot_circuit.allows(entity, enabled, condition, mode, own, counted)
   if not enabled then
     return true
+  end
+  if mode == CONTENTS then
+    return fulfilled(contents_reading(own()), condition or {})
   end
   local found = networks(entity)
   if #found == 0 then
     return true
   end
-  return fulfilled(found, condition or {})
+  local cached
+  local function own_once()
+    cached = cached or own()
+    return cached
+  end
+  return fulfilled(external(entity, found, own_once, counted), condition or {})
 end
 
 return depot_circuit

@@ -47,9 +47,9 @@
 -- can't reach the provider on what it has, with no Fuel depot to fill up at, stays home.
 --
 -- Every delivery depot (provider, request or buffer; not the Fuel depot) can have an
--- enable/disable circuit condition, like a logistic chest's
--- (scripts/depot-circuit.lua). While it is set, the depot has a wire, and the condition doesn't
--- hold, the depot is disabled: it sends no freighters, and none are sent to fetch from it.
+-- enable/disable circuit condition, like a logistic chest's (scripts/depot-circuit.lua), on the
+-- circuit network without its own contents or on its own contents. While it is in effect and
+-- doesn't hold, the depot is disabled: it sends no freighters, and none are sent to fetch from it.
 -- Freighters already on their way finish their trips.
 local loading_zone = require("scripts.loading-zone")
 local paint = require("scripts.freighter-paint")
@@ -709,9 +709,46 @@ function logistics.get_priority(entity)
   return depot and (depot.priority or PRIORITY_DEFAULT) or nil
 end
 
+-- What a depot holds, as circuit signal counts by key (depot_circuit.key): its items by quality,
+-- or its fluids in whole units, as a container or storage tank sends them.
+local function own_signals(depot)
+  local counts = {}
+  local entity = depot.entity
+  if depot.fluid then
+    for name, amount in pairs(entity.get_fluid_contents()) do
+      local key = depot_circuit.key({ type = "fluid", name = name })
+      counts[key] = (counts[key] or 0) + math.floor(amount)
+    end
+    return counts
+  end
+  local contents = inventory(entity)
+  for _, item in ipairs(contents and contents.get_contents() or {}) do
+    local key = depot_circuit.key({ type = "item", name = item.name, quality = item.quality })
+    counts[key] = (counts[key] or 0) + item.count
+  end
+  return counts
+end
+
+-- Set by scripts/road-monitor.lua: what the road network monitors on a circuit network counted for
+-- a depot (counted(unit_number, network) gives a list of counts by key), for its condition to
+-- leave out.
+logistics.monitor_counts = nil
+
 -- Whether a depot takes part in deliveries now: its circuit condition holds, or isn't in effect.
 local function enabled(depot)
-  return depot_circuit.allows(depot.entity, depot.circuit_enabled, depot.circuit_condition)
+  local counted = logistics.monitor_counts
+  return depot_circuit.allows(
+    depot.entity,
+    depot.circuit_enabled,
+    depot.circuit_condition,
+    depot.circuit_mode,
+    function()
+      return own_signals(depot)
+    end,
+    counted and function(network)
+      return counted(depot.entity.unit_number, network)
+    end
+  )
 end
 logistics.enabled = enabled
 
@@ -723,9 +760,10 @@ local function delivery_depot(entity)
   return depot and depot.role ~= "fuel" and depot or nil
 end
 
--- A delivery depot's circuit settings: { enabled, condition, connected, fulfilled }, where
--- `enabled` says the condition is in effect (with a wire), `connected` that a red or green wire
--- reaches it, and `fulfilled` that the depot takes part in deliveries now. Nil for anything else.
+-- A delivery depot's circuit settings: { enabled, condition, mode, connected, fulfilled }, where
+-- `enabled` says the condition is ticked, `mode` what it reads ("network" or "contents"),
+-- `connected` that a red or green wire reaches the depot, and `fulfilled` that it takes part in
+-- deliveries now. Nil for anything else.
 function logistics.get_circuit(entity)
   local depot = delivery_depot(entity)
   if not depot then
@@ -734,21 +772,27 @@ function logistics.get_circuit(entity)
   return {
     enabled = depot.circuit_enabled == true,
     condition = depot_circuit.condition(depot.circuit_condition or {}),
+    mode = depot.circuit_mode or depot_circuit.network,
     connected = depot_circuit.connected(entity),
     fulfilled = enabled(depot),
   }
 end
 
--- Set whether a delivery depot's circuit condition is in effect, and (unless nil) the condition.
--- Returns false, changing nothing, for anything else or a condition that isn't a table.
-function logistics.set_circuit(entity, enable, condition)
+-- Set whether a delivery depot's circuit condition is in effect, and (unless nil) the condition
+-- and what it reads ("network" or "contents"). Returns false, changing nothing, for anything else,
+-- a condition that isn't a table or another mode.
+function logistics.set_circuit(entity, enable, condition, mode)
   local depot = delivery_depot(entity)
-  if not depot or (condition ~= nil and type(condition) ~= "table") then
+  local stored = depot_circuit.mode(mode)
+  if not depot or (condition ~= nil and type(condition) ~= "table") or stored == false then
     return false
   end
   depot.circuit_enabled = enable == true
   if condition ~= nil then
     depot.circuit_condition = depot_circuit.condition(condition)
+  end
+  if mode ~= nil then
+    depot.circuit_mode = stored
   end
   return true
 end
@@ -2095,7 +2139,12 @@ end
 local function copy_request(source, destination)
   local from = delivery_depot(source)
   if from and delivery_depot(destination) then
-    logistics.set_circuit(destination, from.circuit_enabled, from.circuit_condition or {})
+    logistics.set_circuit(
+      destination,
+      from.circuit_enabled,
+      from.circuit_condition or {},
+      from.circuit_mode or depot_circuit.network
+    )
   end
   -- Items and fluids don't mix: nothing else is copied between an item depot and a liquid depot.
   if (LIQUID[source.name] or false) ~= (LIQUID[destination.name] or false) then
@@ -2199,6 +2248,7 @@ function logistics.add_all()
         -- Signals whose mod was removed leave the condition (the game can't read them).
         depot.circuit_condition = depot_circuit.condition(depot.circuit_condition)
       end
+      depot.circuit_mode = depot_circuit.mode(depot.circuit_mode) or nil
       if depot.fluid and REQUESTING[depot.role] then
         truck_chest(depot.entity)
       end
@@ -2589,18 +2639,22 @@ local REQUEST_TAG = "jatz_request"
 local FREIGHTERS_TAG = "jatz_freighters"
 local FROM_BUFFERS_TAG = "jatz_from_buffers"
 local PRIORITY_TAG = "jatz_priority"
--- { enabled = true or nil, condition = CircuitCondition }, when either is set.
+-- { enabled = true or nil, condition = CircuitCondition, mode = "contents" or nil }, when any is set.
 local CIRCUIT_TAG = "jatz_circuit"
 logistics.request_tag = REQUEST_TAG
 
 -- A delivery depot's circuit settings as a blueprint tag, or nil if it has none.
 local function circuit_tag(depot)
   local condition = depot.circuit_condition
-  if not depot.circuit_enabled and not (condition and condition.first_signal) then
+  if not depot.circuit_enabled and not (condition and condition.first_signal) and not depot.circuit_mode then
     return nil
   end
   -- Always with a condition, so a ticked checkbox without one yet is kept too.
-  return { enabled = depot.circuit_enabled or nil, condition = depot_circuit.condition(condition or {}) }
+  return {
+    enabled = depot.circuit_enabled or nil,
+    condition = depot_circuit.condition(condition or {}),
+    mode = depot.circuit_mode,
+  }
 end
 
 function logistics.setup_blueprint(blueprint, mapping)
@@ -2716,7 +2770,12 @@ function logistics.apply_tags(entity, tags)
   end
   local circuit = tags[CIRCUIT_TAG]
   if type(circuit) == "table" and type(circuit.condition) == "table" then
-    logistics.set_circuit(entity, circuit.enabled == true, circuit.condition)
+    logistics.set_circuit(
+      entity,
+      circuit.enabled == true,
+      circuit.condition,
+      depot_circuit.mode(circuit.mode) or depot_circuit.network
+    )
   end
   local depot = request_depot(entity)
   if not depot then
@@ -3055,7 +3114,8 @@ function logistics.register()
     -- A provider or buffer depot's priority, 1 to 10.
     set_priority = logistics.set_priority,
     get_priority = logistics.get_priority,
-    -- Any delivery depot's enable/disable circuit condition (enabled, condition).
+    -- Any delivery depot's enable/disable circuit condition (enabled, condition, mode: "network",
+    -- the default, or "contents").
     set_circuit = logistics.set_circuit,
     get_circuit = logistics.get_circuit,
     -- Give a request depot new freighters, within its slot's limit (counting freighters out);
