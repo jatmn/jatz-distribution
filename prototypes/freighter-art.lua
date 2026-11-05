@@ -11,8 +11,9 @@ local art = {}
 -- The freighter's in-game size relative to the artwork's own scale.
 art.scale = constants.freighter_scale
 
-function art.animation()
-  local animation = make_animation(constants.mod_name, nil, constants.freighter_sheets)
+-- `palette` (optional): { cab, trim, cargo } colors replacing the artwork's defaults.
+function art.animation(palette)
+  local animation = make_animation(constants.mod_name, palette, constants.freighter_sheets)
   for _, layer in pairs(animation.layers) do
     layer.scale = layer.scale * art.scale
   end

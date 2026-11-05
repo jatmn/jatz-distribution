@@ -28,6 +28,7 @@ Want the details? The **[player guide](docs/guide.md)** covers the freighter slo
 - **Buffers and priority:** stage stock close to where it's needed, and rank depots from 1 to 10.
 - **Blueprint friendly:** copy, paste and blueprints keep requests, priorities and freighters, and construction robots bring the trucks.
 - **Cargo stays intact:** armor keeps its equipment, and food keeps track of its spoilage.
+- **See what's on board:** a freighter's cargo bays are light grey while empty and take the color of the item or fluid it picks up.
 - **Paint it your way:** every truck and depot has three paint layers you can recolor.
 
 ## The depots

@@ -4,15 +4,23 @@
 -- (prototypes/off-road.lua), so every path it finds stays on roads. It ignores buildings,
 -- players and other freighters, and runs without fuel for now. scripts/logistics.lua creates
 -- one per delivery and removes it when the delivery is done.
+--
+-- Its cargo paint shows what it carries (scripts/freighter-paint.lua): this is defined once per
+-- paint, light grey for the empty freighter, and logistics swaps a freighter for the one painted
+-- for its load when it loads. Every paint draws the same sprite sheets, only tinted.
 local constants = require("prototypes.constants")
 local art = require("prototypes.freighter-art")
+local paint = require("scripts.freighter-paint")
 
-local animation = art.animation()
-
-data:extend({
-  {
+-- The freighter drone `name`, its cargo painted `cargo` (nil: the artwork's own slate blue).
+local function drone(name, cargo)
+  local animation = art.animation(cargo and { cargo = cargo } or nil)
+  return {
     type = "unit",
-    name = constants.freighter_drone,
+    name = name,
+    -- Every paint is the same freighter to the player.
+    localised_name = { "entity-name." .. constants.freighter_drone },
+    localised_description = { "entity-description." .. constants.freighter_drone },
     icon = constants.freighter_icon,
     icon_size = constants.icon_size,
     hidden = true,
@@ -59,5 +67,14 @@ data:extend({
       },
       animation = animation,
     },
-  },
-})
+  }
+end
+
+local drones = {
+  drone(paint.empty, paint.empty_color),
+  drone(paint.unknown, nil),
+}
+for _, entry in ipairs(paint.palette()) do
+  drones[#drones + 1] = drone(entry.name, entry.color)
+end
+data:extend(drones)
