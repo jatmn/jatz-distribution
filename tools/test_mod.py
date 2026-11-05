@@ -40,7 +40,7 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # destination goes back to the provider; nothing is ever spilled; requests are
             # validated, cloned and cleared; road is laid on ground but not water.
             'armor_equipment': 1, 'full_status': 'full', 'full_provider_left': 50,
-            'redelivered_after_destroy': 30, 'changed_provider_left': 20, 'changed_received': 0,
+            'redelivered_after_destroy': 30, 'destroyed_restocked': 3, 'changed_provider_left': 20, 'changed_received': 0,
             'changed_status': 'no-provider', 'cut_returned': 30, 'cut_received': 0, 'cut_status': 'unreachable',
             'spilled': 0, 'bad_item_rejected': True, 'refused_request_kept': True, 'cloned_request': 'wood x5', 'request_cleared': True, 'road_on_grass': True,
             'road_on_water': False,
@@ -98,6 +98,14 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # freighter back.
             'removal_marked': 1, 'removal_cancelled': 1, 'robots_removal_marked': 2, 'slot_after_removal': 2,
             'storage_after_removal': 4,
+            # Enemies: a freighter runs over a biter on the road (impact damage) and delivers
+            # anyway, leaving the player beside it unhurt; biters destroy another freighter, whose
+            # depot asks robots for a replacement at once, is filled by its other freighters, and
+            # the robots bring the replacement (3 again). Freighters out show up in the pollution
+            # statistics.
+            'runover_received': 10, 'runover_biter': 'jatz-freighter-drone/impact', 'bystander_unhurt': True,
+            'ambush_killed_by': 'behemoth-biter/physical', 'ambush_replacement_requested': 1, 'ambush_received': 10,
+            'ambush_freighters_home': 3, 'freighters_polluted': True,
             # The request panel's status light: the game's four status indicator sprites exist.
             'status_lights': 4,
             # Blueprints keep a request depot's request (tag) and freighters (insert plan): the

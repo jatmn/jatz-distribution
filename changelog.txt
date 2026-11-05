@@ -4,11 +4,16 @@ Version: Unreleased
     - Startup settings for the tank size of liquid provider depots and of liquid buffer depots, each 25,000 by default.
     - A delivering freighter's cargo bays show its load: light grey while empty, then the color of the item or fluid it picked up (water blue, copper orange, sulfur yellow...) on the way back. Cargo with no clear color keeps the usual slate blue.
     - In alt mode, loaded freighters show the icon of the item or fluid they carry. Empty freighters show none.
+    - Freighters run over enemy units on the road, as trains do, dealing impact damage. They never harm players or other freighters, and never stop or turn aside for enemies.
+    - Freighters out on deliveries make a little pollution, as Transport Drones' drones do.
+    - A request depot whose freighter is destroyed asks construction robots for a replacement. You can also put one in by hand.
   Changes:
     - Delivering freighters drive at about 4 tiles a second instead of 12, the default speed of Transport Drones' drones.
     - Freighters stop for 1 second at a depot's loading zone to load and to unload, instead of loading and unloading the moment they arrive.
     - Only belts, pipes and train tracks can be built on road. Depots and other buildings can't, though a depot's loading zone can be on road.
     - Request and liquid request depots with "Request from buffer depots" unticked now fall back to buffer depots for what no provider can supply, instead of ignoring them. Ticked, buffer depots still come first.
+  Bugfixes:
+    - A freighter killed by enemies is now lost, with its cargo. Before, it could go back into its depot's freighter slot as if its route had failed.
   Compatibility:
     - Marked Transport Drones and its Factorio 2.1 forks (Transport Drones (Continuous), Transport Drones (Continued, 2.1, Unofficial) and Transport Drones By Yunli) as incompatible.
 ---------------------------------------------------------------------------------------------------

@@ -114,7 +114,9 @@ Liquid depots work the same way for fluids.
 ## Good to know
 
 - Freighters need no fuel yet.
-- A freighter destroyed on the road is lost.
+- Enemies can attack and destroy freighters. Freighters never fight back or turn aside: they drive on until they arrive or are destroyed. A freighter that drives through an enemy unit runs it over, as a train does, but it never harms players or other freighters.
+- A freighter destroyed on the road is lost, with its cargo. Its request depot then asks construction robots for a replacement freighter. You can also put one in by hand.
+- Freighters out on deliveries make a little pollution.
 - Cargo keeps its data on the way: armor keeps its equipment, food how far it has spoiled.
 - In alt mode, a loaded freighter shows the icon of the item or fluid it carries, as machines show their recipe. Empty freighters show nothing.
 - Requests are for normal-quality items.

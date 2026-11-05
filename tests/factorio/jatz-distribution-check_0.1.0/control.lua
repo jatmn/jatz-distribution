@@ -503,6 +503,19 @@ local function setup_deliveries(surface, result)
   deliveries.shortest = shortest
   -- The request depot is removed while its freighter heads out: the freighter leaves, nothing moves.
   deliveries.orphaned = pair(50, 20, 12, "wooden-chest", 10, 10)
+  -- Enemies on the road. A medium biter, held still and ignoring everything, stands on the road
+  -- between a provider and a request depot, beside a player: the freighter runs the biter over
+  -- and drives on, and the player is unhurt.
+  deliveries.runover = pair(-9, 64, 20, "iron-ore", 10, 10)
+  local biter = surface.create_entity({ name = "medium-biter", position = { 1.5, 66.5 }, force = "enemy" })
+  biter.commandable.set_command({ type = defines.command.stop, distraction = defines.distraction.none })
+  deliveries.runover.biter_id = biter.unit_number
+  deliveries.runover.bystander =
+    surface.create_entity({ name = "character", position = { 5.5, 66.5 }, force = "player" })
+  -- On a second road, behemoth biters are set on a freighter as it drives out: they destroy it,
+  -- with any cargo it has loaded, and its depot asks robots for a replacement, which the
+  -- roboport's robots bring. Its other freighters fill the request from the provider's other 10.
+  deliveries.ambush = pair(-9, 54, 20, "copper-ore", 20, 10)
   -- Buffer depots, on one road (loading zones at y -25): a provider (100 copper cable), a request
   -- depot 10 tiles away set to request from buffer depots, a buffer depot right beside it asking
   -- for 15, and a buffer depot 20 tiles away holding 30 with no request of its own. The request
@@ -616,8 +629,9 @@ local function setup_deliveries(surface, result)
   surface.create_entity({ name = "electric-energy-interface", position = { 26, 30 }, force = "player" })
   surface.create_entity({ name = "medium-electric-pole", position = { 23.5, 30.5 }, force = "player" })
   deliveries.store = surface.create_entity({ name = "storage-chest", position = { 20.5, 26.5 }, force = "player" })
-  -- 5 for the request depot below, 2 for the liquid one.
-  deliveries.store.insert({ name = FREIGHTER, count = 7 })
+  -- 5 for the request depot below, 2 for the liquid one, and 2 to replace the freighters
+  -- destroyed on the road (deliveries.destroyed and deliveries.ambush, both within reach).
+  deliveries.store.insert({ name = FREIGHTER, count = 9 })
   local remote_depot = depot(surface, "request", 30.5, 28.5, 1)
   deliveries.remote = remote_depot
   result.requested = remote.call("jatz-distribution", "request_freighters", remote_depot, 4)
@@ -1012,6 +1026,32 @@ local function interfere(surface)
       destroyed.done = true
     end
   end
+  local ambush = deliveries.ambush
+  if not ambush.drone then
+    -- Its freighter, a few tiles out on the road (loading zones at y 56.5, request at x 11.5).
+    local drone = surface.find_entities_filtered({ name = DRONES, area = { { -10, 55 }, { 8, 58 } } })[1]
+    if drone then
+      ambush.drone, ambush.drone_id = drone, drone.unit_number
+      ambush.biters = {}
+      for _, offset in ipairs({ { 0, -2 }, { 0, 2 }, { -2, -2 } }) do
+        local behemoth = surface.create_entity({
+          name = "behemoth-biter",
+          position = { drone.position.x + offset[1], drone.position.y + offset[2] },
+          force = "enemy",
+        })
+        behemoth.commandable.set_command({ type = defines.command.attack, target = drone })
+        ambush.biters[#ambush.biters + 1] = behemoth
+      end
+    end
+  elseif not ambush.killed and not ambush.drone.valid then
+    ambush.killed = game.tick
+    ambush.requested = remote.call("jatz-distribution", "requested_freighters", ambush.request)
+    for _, behemoth in ipairs(ambush.biters) do
+      if behemoth.valid then
+        behemoth.destroy()
+      end
+    end
+  end
   local changed = deliveries.changed
   if not changed.done and status(changed.request) == "delivering" then
     assert(remote.call("jatz-distribution", "set_request", changed.request, "electronic-circuit", 5), "change refused")
@@ -1095,6 +1135,11 @@ local function deliveries_finished(surface, tick, result)
     and count(deliveries.shortest.request, "coal") == 10
     and count(storage.depot_roads.request, "small-electric-pole") == 5
     and count(deliveries.multi.request, "iron-stick") == 60
+    and count(deliveries.runover.request, "iron-ore") == 10
+    and deliveries.ambush.killed
+    and count(deliveries.ambush.request, "copper-ore") == 10
+    and remote.call("jatz-distribution", "freighter_counts", destroyed.request) == 3
+    and remote.call("jatz-distribution", "freighter_counts", deliveries.ambush.request) == 3
     and count(deliveries.buffering.request, "copper-cable") == 20
     and count(deliveries.buffering.filling, "copper-cable") == 15
     and count(deliveries.prioritised.request, "stone") == 10
@@ -1110,7 +1155,7 @@ local function deliveries_finished(surface, tick, result)
     if tick >= DELIVERY_DEADLINE then
       error(
         string.format(
-          "deliveries did not finish in time: iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), pipes after mending %d (%s), bricks rerouted %d, buffered request %d (%s), buffer filled %d (%s), prioritised %d (%s), water %d (%s), steam %d (%s), oil fallback %d (%s), liquid robots %d, %d freighter(s) out",
+          "deliveries did not finish in time: iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), pipes after mending %d (%s), bricks rerouted %d, buffered request %d (%s), buffer filled %d (%s), prioritised %d (%s), water %d (%s), steam %d (%s), oil fallback %d (%s), liquid robots %d, run over %d (%s), ambushed %d (%s, killed %s), %d freighter(s) out",
           count(deliveries.connected),
           tostring(status(deliveries.connected)),
           count(armor.request, armor.item),
@@ -1136,6 +1181,11 @@ local function deliveries_finished(surface, tick, result)
           deliveries.fallback.request.get_fluid_count("crude-oil"),
           tostring(status(deliveries.fallback.request)),
           remote.call("jatz-distribution", "freighter_counts", deliveries.liquid_remote),
+          count(deliveries.runover.request, "iron-ore"),
+          tostring(status(deliveries.runover.request)),
+          count(deliveries.ambush.request, "copper-ore"),
+          tostring(status(deliveries.ambush.request)),
+          tostring(deliveries.ambush.killed),
           #surface.find_entities_filtered({ name = DRONES })
         )
       )
@@ -1200,6 +1250,22 @@ local function deliveries_finished(surface, tick, result)
   result.full_status = status(full.request)
   result.full_provider_left = count(full.provider, full.item)
   result.redelivered_after_destroy = count(destroyed.request, destroyed.item)
+  -- Robots replaced the destroyed freighter: its depot has its 3 again.
+  result.destroyed_restocked = remote.call("jatz-distribution", "freighter_counts", destroyed.request)
+  -- Enemies: the biter on the road was run over by the freighter (impact damage), which delivered
+  -- anyway; the player beside it was unhurt. Biters destroyed the ambushed freighter; its depot
+  -- asked for a replacement at once, its other freighters filled the request, and robots brought
+  -- the replacement.
+  local runover, ambush, killed = deliveries.runover, deliveries.ambush, storage.killed or {}
+  result.runover_received = count(runover.request, runover.item)
+  result.runover_biter = killed[runover.biter_id] or "alive"
+  result.bystander_unhurt = runover.bystander.health == runover.bystander.max_health
+  result.ambush_killed_by = killed[ambush.drone_id] or "unknown"
+  result.ambush_replacement_requested = ambush.requested
+  result.ambush_received = count(ambush.request, ambush.item)
+  result.ambush_freighters_home = remote.call("jatz-distribution", "freighter_counts", ambush.request)
+  -- Freighters out pollute a little, credited to them in the pollution statistics.
+  result.freighters_polluted = game.get_pollution_statistics(surface).get_input_count(DRONE) > 0
   result.changed_provider_left = count(changed.provider, changed.item)
   result.changed_received = count(changed.request, changed.item)
   result.changed_status = status(changed.request)
@@ -1361,6 +1427,16 @@ script.on_init(function()
   storage.freighter = freighter
   storage.start = { x = freighter.position.x, y = freighter.position.y }
   storage.result = result
+end)
+
+-- What killed the entities the enemy checks watch, as "killer/damage type", by unit_number.
+script.on_event(defines.events.on_entity_died, function(event)
+  storage.killed = storage.killed or {}
+  storage.killed[event.entity.unit_number] = string.format(
+    "%s/%s",
+    event.cause and event.cause.name or "none",
+    event.damage_type and event.damage_type.name or "none"
+  )
 end)
 
 script.on_event(defines.events.on_tick, function(event)

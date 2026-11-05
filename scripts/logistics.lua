@@ -21,7 +21,13 @@
 -- spoilage, health) arrives intact. If the way back is lost, the freighter returns its cargo to
 -- the provider; only when that fails too is the cargo left on the ground, marked for
 -- deconstruction. A freighter destroyed on the way is lost with its cargo, like any destroyed
--- vehicle; otherwise every freighter goes back into its depot's slot when its trip ends.
+-- vehicle, and its depot asks construction robots for a replacement (a player can put one in by
+-- hand instead); otherwise every freighter goes back into its depot's slot when its trip ends.
+--
+-- Enemies can attack freighters, which never fight back or turn aside: they drive on until they
+-- arrive or are destroyed. A moving freighter runs over the enemy units it drives through, as a
+-- train does, but never harms players or other freighters, and collides with none of them. Every
+-- freighter out pollutes a little, as Transport Drones' drones do.
 --
 -- Depots are registered when built or cloned (control.lua), found again on load, and forgotten
 -- when destroyed. A request depot mined by a player or robot hands over all its freighters, in the
@@ -110,6 +116,18 @@ local LOADING_TICKS = 60
 local SEARCH_TIMEOUT = 10 * 60
 -- Requests are for normal-quality items.
 local QUALITY = "normal"
+-- Pollution each freighter out makes a second: Transport Drones' default for its drones.
+local POLLUTION_PER_SECOND = 0.005
+-- How often moving freighters look for enemy units they are driving through, and the impact
+-- damage each one hit takes, at most once a second from the same freighter. Freighters never
+-- attack; this is them running enemies over, as trains do. 200 kills small and medium biters
+-- outright and hurts bigger ones.
+local IMPACT_INTERVAL = 10
+local IMPACT_DAMAGE = 200
+local IMPACT_COOLDOWN = 60
+-- What a freighter runs over: enemy units only, never players (characters), buildings or other
+-- freighters.
+local IMPACT_TYPES = { "unit", "spider-unit", "segmented-unit" }
 
 -- Status of a request depot, shown in its window: a key in the [jatz-request-status] locale section.
 logistics.status = {
@@ -804,6 +822,10 @@ function logistics.on_tick()
   -- nothing is, and drives on from where it stands. Painting changes trip ids, so after the loop.
   local repaint_pending = {}
   for id, trip in pairs(storage.trips) do
+    -- Every freighter out pollutes a little, standing or driving.
+    if trip.drone.valid then
+      trip.drone.surface.pollute(trip.drone.position, POLLUTION_PER_SECOND * DISPATCH_INTERVAL / 60, DRONE)
+    end
     if trip.searching and game.tick - trip.searching >= SEARCH_TIMEOUT then
       reroute(id, trip)
     elseif
@@ -986,6 +1008,19 @@ function end_trip(id, trip, lost)
   end
 end
 
+-- A freighter destroyed on the way (by enemies, say): it is lost, with its cargo. Its depot is
+-- now one short of the freighters it had (or was being topped up to), so it asks robots for a
+-- replacement; one put in by hand counts too.
+local function lose(id, trip)
+  local home = storage.depots[trip.request]
+  local entity = home and home.entity.valid and home.entity
+  local had = entity and math.max(logistics.freighter_total(entity), home.freighter_target or 0)
+  end_trip(id, trip, true)
+  if entity then
+    logistics.match_freighters(entity, had)
+  end
+end
+
 local function depot_entity(unit_number)
   local depot = storage.depots[unit_number]
   return depot and depot.entity.valid and depot.entity or nil
@@ -1075,8 +1110,12 @@ function logistics.on_ai_command_completed(event)
     return
   end
   upgrade(trip)
+  -- A freighter killed on the way (by enemies, say) fails its command as it dies, at 0 health: it
+  -- is lost, with its cargo, once it is gone (on_object_destroyed), not back from a failed route.
   if not trip.drone.valid then
-    return end_trip(id, trip)
+    return lose(id, trip)
+  elseif trip.drone.health <= 0 then
+    return
   end
   local depot = storage.depots[trip.request]
   if event.result ~= defines.behavior_result.success then
@@ -1399,8 +1438,69 @@ function logistics.on_object_destroyed(event)
     storage.depots[id] = nil
     depot_removed(id)
   elseif storage.trips[id] then
-    -- A freighter destroyed on the way (by enemies, say): it is lost, with its cargo.
-    end_trip(id, upgrade(storage.trips[id]), true)
+    lose(id, upgrade(storage.trips[id]))
+  end
+end
+
+-- Moving freighters run over the enemy units they drive through, as trains do: each takes
+-- IMPACT_DAMAGE as impact damage, at most once a second from the same freighter. The search
+-- covers the ground the freighter crossed since the last look, so a fast one misses nothing in
+-- between. A standing freighter (loading, or waiting for a route) hits nothing, players and other
+-- freighters are never hit, and nothing makes the freighter stop or turn: it drives on.
+function logistics.on_impact_tick()
+  local enemies = {}
+  local reach = prototypes.entity[DRONE].collision_box.right_bottom.x
+  for _, trip in pairs(storage.trips) do
+    local drone = trip.drone
+    if drone.valid then
+      local here, last = drone.position, trip.last_position
+      local moved = last and (here.x ~= last.x or here.y ~= last.y)
+      local area = moved
+        and {
+          { math.min(here.x, last.x) - reach, math.min(here.y, last.y) - reach },
+          { math.max(here.x, last.x) + reach, math.max(here.y, last.y) + reach },
+        }
+      trip.last_position = here
+      local force = drone.force
+      if not enemies[force.name] then
+        local list = {}
+        for _, other in pairs(game.forces) do
+          if force.is_enemy(other) then
+            list[#list + 1] = other
+          end
+        end
+        enemies[force.name] = list
+      end
+      -- Enemies hit in the last second, by unit_number, aren't hit again yet.
+      local hits = trip.hits
+      if hits then
+        for unit_number, tick in pairs(hits) do
+          if game.tick - tick >= IMPACT_COOLDOWN then
+            hits[unit_number] = nil
+          end
+        end
+      end
+      if area and #enemies[force.name] > 0 then
+        for _, enemy in
+          pairs(drone.surface.find_entities_filtered({
+            area = area,
+            type = IMPACT_TYPES,
+            force = enemies[force.name],
+          }))
+        do
+          local key = enemy.unit_number
+          -- Damage can set off other mods' handlers: check the freighter is still there too.
+          if drone.valid and enemy.valid and not paint.is_drone(enemy.name) and not (key and hits and hits[key]) then
+            if key then
+              hits = hits or {}
+              hits[key] = game.tick
+            end
+            enemy.damage(IMPACT_DAMAGE, force, "impact", drone, drone)
+          end
+        end
+      end
+      trip.hits = hits and next(hits) and hits or nil
+    end
   end
 end
 
@@ -2205,6 +2305,7 @@ end
 
 function logistics.register()
   script.on_nth_tick(DISPATCH_INTERVAL, logistics.on_tick)
+  script.on_nth_tick(IMPACT_INTERVAL, logistics.on_impact_tick)
   script.on_event(defines.events.on_ai_command_completed, logistics.on_ai_command_completed)
   script.on_event(defines.events.on_script_path_request_finished, logistics.on_script_path_request_finished)
   remote.add_interface("jatz-distribution", {

@@ -212,10 +212,15 @@ local function reset()
     surface.spilled[#surface.spilled + 1] = { name = parameters.stack.name, count = parameters.stack.count }
     return {}
   end
+  surface.polluted = 0
+  function surface.pollute(_, amount)
+    surface.polluted = surface.polluted + amount
+  end
   surface.created = {}
   function surface.create_entity(parameters)
     local drone = entity(parameters.name, parameters.position.x, parameters.position.y)
     drone.target = parameters.target
+    drone.parameters = parameters
     surface.created[#surface.created + 1] = drone
     drone.commands = {}
     drone.commandable = {
@@ -224,6 +229,7 @@ local function reset()
       end,
     }
     drone.force = parameters.force or "player"
+    drone.health = 500
     function drone.destroy()
       drone.valid = false
     end
@@ -559,9 +565,16 @@ do -- No freighters: nothing is sent, and the panel says why.
   check("and says so", logistics.get_status(request) == "no-trucks")
 end
 
-do -- A freighter goes back into the slot after its trip; one destroyed on the way is lost.
+do -- A freighter goes back into the slot after its trip; one destroyed on the way is lost, and
+  -- its depot asks robots for a replacement.
   local logistics = reset()
   local request = supplied(logistics, 2)
+  -- A chest with stacks, for the replacement's request to go into.
+  local chest = script_inventory(4)
+  chest.get_insertable_count = request.chest.get_insertable_count
+  request.get_inventory = function()
+    return chest
+  end
   logistics.on_tick()
   answer(logistics, 1, "route")
   local trip = trips_from(request)[1]
@@ -572,9 +585,38 @@ do -- A freighter goes back into the slot after its trip; one destroyed on the w
   logistics.on_tick()
   answer(logistics, #requests, "route")
   trip = trips_from(request)[1]
+  check("no pollution while no freighter is out at a check", surface.polluted == 0)
+  game.tick = 120
+  logistics.on_tick()
+  check("a freighter out pollutes a little", surface.polluted == 0.005)
   logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = trip.drone.unit_number })
   local in_slot, out = logistics.freighter_counts(request)
   check("a freighter destroyed on the way is lost", in_slot == 1 and out == 0)
+  local proxy = surface.created[#surface.created]
+  check(
+    "and its depot asks robots for one freighter to replace it",
+    proxy.name == "item-request-proxy"
+      and proxy.parameters.target == request
+      and proxy.parameters.modules[1].items.in_inventory[1].count == 1
+      and storage.depots[request.unit_number].freighter_target == 2
+  )
+end
+
+do -- A freighter killed by enemies fails its command as it dies, at 0 health, before it is gone:
+  -- it is lost, not taken back into the slot, and its provider isn't put on cooldown.
+  local logistics = reset()
+  local request = supplied(logistics, 2)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  trip.drone.health = 0
+  logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = defines.behavior_result.fail })
+  check("a dying freighter's failed command doesn't end its trip", logistics.freighter_counts(request) == 1)
+  check("nor puts its provider on cooldown", next(storage.depots[request.unit_number].cooldowns) == nil)
+  trip.drone.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = trip.drone.unit_number })
+  local in_slot, out = logistics.freighter_counts(request)
+  check("once gone, it is lost", in_slot == 1 and out == 0)
 end
 
 do -- The slot holds 100 freighters, counting freighters out.
