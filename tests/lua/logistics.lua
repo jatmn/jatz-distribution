@@ -1071,10 +1071,6 @@ do -- The cargo paint: grey out, the load's color from the provider home, the sa
   local empty = trip.drone
   check("a freighter sets off in the empty paint", empty.name == "jatz-freighter-drone")
   empty.orientation, empty.health = 0.25, 321
-  empty.stickers = {
-    { valid = true, name = "acid-sticker", force = "enemy", time_to_live = 240 },
-    { valid = false, name = "gone-sticker", force = "enemy", time_to_live = 10 },
-  }
   arrive(logistics, trip)
   local painted = trip.drone
   check(
@@ -1096,16 +1092,6 @@ do -- The cargo paint: grey out, the load's color from the provider home, the sa
       and trip_of(request) == trip
       and not storage.depots[request.unit_number].trips[empty.unit_number]
   )
-  local stuck = {}
-  for _, created in ipairs(surface.created) do
-    if created.target == painted then
-      stuck[#stuck + 1] = created
-    end
-  end
-  check(
-    "with what was stuck to it, and the time it had left",
-    #stuck == 1 and stuck[1].name == "acid-sticker" and stuck[1].force == "enemy" and stuck[1].time_to_live == 240
-  )
   local drive = painted.commands[#painted.commands]
   check("and drives home", drive and drive.type == defines.command.go_to_location and drive.destination.x == 0.5)
   logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = empty.unit_number })
@@ -1114,6 +1100,62 @@ do -- The cargo paint: grey out, the load's color from the provider home, the sa
   arrive(logistics, trip)
   check("it unloads and parks as usual", home.get_item_count("a") == 10 and logistics.freighter_counts(request) == 5)
   check("leaving no freighter behind", not painted.valid and next(storage.trips) == nil)
+end
+
+do -- Something stuck to it (fire, acid) stays stuck: it keeps its paint until that wears off.
+  local logistics = reset()
+  local request, provider = setup(logistics)
+  stocked(provider, "a", 20)
+  local home = stocked(request)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  local drone = trip.drone
+  local fire = { valid = true, name = "fire-sticker" }
+  drone.stickers = { fire }
+  arrive(logistics, trip)
+  local drive = drone.commands[#drone.commands]
+  check("a freighter with a sticker loads", trip.cargo.get_item_count("a") == 10)
+  check(
+    "but is not swapped for a painted one",
+    trip.drone == drone and drone.valid and drone.name == "jatz-freighter-drone"
+  )
+  check("and drives home", drive.type == defines.command.go_to_location and drive.destination.x == 0.5)
+  game.tick = 60
+  logistics.on_tick()
+  check("still not while the sticker lasts", trip.drone == drone and drone.valid and drone.stickers[1] == fire)
+  drone.stickers = {}
+  game.tick = 120
+  logistics.on_tick()
+  local painted = trip.drone
+  check("once it wears off, the next check paints it", painted ~= drone and painted.name == "jatz-freighter-drone-500")
+  check("in place of the old one", not drone.valid and storage.trips[painted.unit_number] == trip)
+  drive = painted.commands[#painted.commands]
+  check("which drives on home", drive and drive.type == defines.command.go_to_location and drive.destination.x == 0.5)
+  game.tick = 180
+  logistics.on_tick()
+  check("and is left alone after", trip.drone == painted and #painted.commands == 1)
+  arrive(logistics, trip)
+  check("it unloads and parks", home.get_item_count("a") == 10 and next(storage.trips) == nil)
+end
+
+do -- A freighter standing to load or unload is never painted from on_tick.
+  local logistics = reset()
+  local request, provider = setup(logistics)
+  stocked(provider, "a", 20)
+  stocked(request)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  local drone = trip.drone
+  drone.stickers = { { valid = true, name = "fire-sticker" } }
+  arrive(logistics, trip)
+  drone.stickers = nil
+  logistics.on_ai_command_completed({ unit_number = drone.unit_number, result = defines.behavior_result.success })
+  check("setup: it stands at home to unload", trip.loading and trip.drone == drone)
+  game.tick = 60
+  logistics.on_tick()
+  check("on_tick leaves it standing", trip.drone == drone and drone.valid and trip.loading)
 end
 
 do -- Nothing to load keeps the empty paint; an item with no color of its own gets the artwork's.

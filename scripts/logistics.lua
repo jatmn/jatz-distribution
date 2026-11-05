@@ -131,8 +131,8 @@ logistics.status = {
 -- back to the provider after the way to the request depot was lost.
 local TO_PROVIDER, TO_REQUEST, RETURNING = "to-provider", "to-request", "returning"
 
--- Defined further down; dispatch and the search need them first.
-local end_trip, load, freighter_requests, load_fluid, unload_fluid
+-- Defined further down; dispatch, the search and on_tick need them first.
+local end_trip, load, freighter_requests, load_fluid, unload_fluid, target
 
 local function init_storage()
   storage.depots = storage.depots or {}
@@ -290,37 +290,34 @@ local function cargo_empty(trip)
   return not (trip.cargo and trip.cargo.valid) or trip.cargo.is_empty()
 end
 
+-- The paint for what a trip's freighter carries.
+local function paint_of(trip)
+  return cargo_empty(trip) and DRONE or paint.drone_for_cargo(trip.fluid ~= nil, trip.item)
+end
+
 -- Put trip `id`'s freighter in the paint for what it carries: the same freighter, where it stands,
--- facing the same way, as damaged and with the same stickers, as the drone prototype in that
--- paint, and the trip moves to the new unit_number. Only between commands: the new unit has none.
+-- facing the same way and as damaged, as the drone prototype in that paint, and the trip moves to
+-- the new unit_number. Only between commands: the new unit has none. Returns whether its paint is
+-- right now.
+-- Not while anything is stuck to it (fire, acid, slowdown): stickers are entities of their own,
+-- stuck to this unit for good, and one made anew on another unit would restart its damage cycle,
+-- adding or skipping a hit. A paint is only a look, so the freighter keeps its old one until they
+-- wear off, and logistics.on_tick paints it then (`repaint_pending`).
 local function repaint(id, trip)
   local old = trip.drone
-  local name = cargo_empty(trip) and DRONE or paint.drone_for_cargo(trip.fluid ~= nil, trip.item)
+  local name = paint_of(trip)
   if not old.valid or old.name == name then
-    return
+    return true
+  end
+  if next(old.stickers or {}) then
+    return false
   end
   local drone = old.surface.create_entity({ name = name, position = old.position, force = old.force })
   if not drone then
-    return
+    return false
   end
   drone.orientation = old.orientation
   drone.health = old.health
-  -- A paint is only a look: whatever is stuck to the freighter (fire, acid, slowdown) stays on it,
-  -- with the time it has left. Stickers are entities of their own, stuck to the old unit, and would
-  -- go with it.
-  for _, sticker in pairs(old.stickers or {}) do
-    if sticker.valid then
-      local kept = drone.surface.create_entity({
-        name = sticker.name,
-        position = drone.position,
-        target = drone,
-        force = sticker.force,
-      })
-      if kept then
-        kept.time_to_live = sticker.time_to_live
-      end
-    end
-  end
   local new = drone.unit_number
   storage.trips[id], storage.trips[new] = nil, trip
   local depot = storage.depots[trip.request]
@@ -332,6 +329,7 @@ local function repaint(id, trip)
   trip.drone = drone
   -- Its on_object_destroyed finds no trip under the old number, so nothing else happens.
   old.destroy()
+  return true
 end
 
 -- What a trip will bring: what it promised to load while on its way out, its cargo on the way back.
@@ -781,9 +779,26 @@ end
 
 function logistics.on_tick()
   -- A freighter whose reroute search never answered (or met a busy pathfinder) searches again.
+  -- One driving in the wrong paint (something was stuck to it when it loaded) is painted once
+  -- nothing is, and drives on from where it stands. Painting changes trip ids, so after the loop.
+  local repaint_pending = {}
   for id, trip in pairs(storage.trips) do
     if trip.searching and game.tick - trip.searching >= SEARCH_TIMEOUT then
       reroute(id, trip)
+    elseif
+      trip.drone.valid
+      and trip.destination
+      and not trip.searching
+      and not trip.loading
+      and trip.drone.name ~= paint_of(trip)
+    then
+      repaint_pending[#repaint_pending + 1] = id
+    end
+  end
+  for _, id in ipairs(repaint_pending) do
+    local trip = storage.trips[id]
+    if trip and trip.drone.valid and repaint(id, trip) then
+      drive(trip, target(trip))
     end
   end
   for id, depot in pairs(storage.depots) do
@@ -809,14 +824,14 @@ function load(from, to, item, limit, leave, any_quality)
     if stack.valid_for_read and stack.name == item and (any_quality or stack.quality.name == QUALITY) then
       local kept = leave and leave[index] or 0
       for slot = 1, #to do
-        local target = to[slot]
+        local into = to[slot]
         local movable = (stack.valid_for_read and stack.count or 0) - kept
         if moved >= limit or movable <= 0 then
           break
         end
-        if not target.valid_for_read or target.name == item then
+        if not into.valid_for_read or into.name == item then
           local before = stack.count
-          target.transfer_stack(stack, math.min(movable, limit - moved))
+          into.transfer_stack(stack, math.min(movable, limit - moved))
           moved = moved + before - (stack.valid_for_read and stack.count or 0)
         end
       end
@@ -1062,7 +1077,7 @@ function logistics.on_ai_command_completed(event)
 end
 
 -- Where a trip is heading: the provider's loading zone, or the request depot's with cargo.
-local function target(trip)
+function target(trip)
   local depot = depot_entity(trip.state == TO_REQUEST and trip.request or trip.provider)
   return depot and (loading_tile(depot)) or trip.destination
 end

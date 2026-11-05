@@ -59,9 +59,10 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # takes its own color.
             'paint_out': 'jatz-freighter-drone', 'paint_home': 'jatz-freighter-drone-233', 'paint_swapped': True,
             'paint_iron_plate': True, 'paint_water': True,
-            # A sticker (like acid splash) on the freighter when it loads stays on the painted one,
-            # with the time it had left, and keeps hurting it.
-            'sticker_kept': True, 'sticker_still_hurts': True,
+            # A freighter with a sticker (like fire) stuck to it loads without being swapped, so the
+            # sticker and its damage go on untouched, and is painted on the way home once the
+            # sticker wears off; its 10 iron plates arrive.
+            'sticker_kept': True, 'sticker_then_painted': True, 'sticky_received': 10,
             # Depots lay road under their loading zone, connecting road a tile away, and take it
             # away when removed, putting back what it covered; road that was already there, or
             # laid over theirs, stays; a shared tile keeps road until the last depot goes; nothing

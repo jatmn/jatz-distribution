@@ -23,8 +23,9 @@ for r = 0, 5 do
 end
 -- Iron plates take iron ore's map color, water its own (prototypes/freighter-colors.lua).
 local IRON_PAINT, WATER_PAINT = DRONE .. "-233", DRONE .. "-023"
--- Stuck to the connected pair's freighter as it reaches the provider, for this long (data.lua).
-local STICKER, STICKER_TICKS = "jatz-check-sticker", 300
+-- Stuck to the sticky pair's freighter as it reaches the provider, for this long (data.lua): it
+-- wears off a little after loading, on the way home.
+local STICKER, STICKER_TICKS = "jatz-check-sticker", 90
 -- Deliveries have this long to finish; tools/test_mod.py runs a little longer.
 local DELIVERY_DEADLINE = 1700
 -- A failed route must have been tried and reported before the report is written.
@@ -416,6 +417,10 @@ local function setup_deliveries(surface, result)
   -- The request changes to another item while the freighter is on its way out: it must not load
   -- the old item.
   deliveries.changed = pair(40, 2, 12, "plastic-bar", 20, 10)
+  -- Something stuck to the freighter when it loads (interfere sticks a sticker to it): it keeps
+  -- its paint, and the sticker, until the sticker wears off. A long road, so that is on the way.
+  deliveries.sticky = pair(-10, 2, 24, "iron-plate", 10, 10)
+  deliveries.sticky.road = { { -10, 3 }, { 14, 6 } }
   -- The road is cut behind a loaded freighter: it brings the cargo back to the provider, at once.
   deliveries.cut = pair(20, 20, 24, "iron-gear-wheel", 30, 20)
   -- A road with a gap: the first trip fails; mending the road sends a freighter at once, without
@@ -851,9 +856,6 @@ local function interfere(surface)
     if stops.drone then
       stops.at_provider = game.tick
       stops.empty_paint = stops.drone.name
-      local sticker = surface.create_entity({ name = STICKER, position = stops.drone.position, target = stops.drone })
-      assert(sticker and sticker.sticked_to == stops.drone, "the test sticker did not stick")
-      sticker.time_to_live = STICKER_TICKS
     end
   end
   if stops.at_provider and not stops.loaded and count(deliveries.provider) < 50 then
@@ -868,17 +870,34 @@ local function interfere(surface)
     )
     stops.drone = painted
     stops.home_paint = painted.name
-    -- What was stuck to it is still stuck, with only the time since gone, and still hurts.
-    for _, sticker in pairs(painted.stickers or {}) do
-      if sticker.name == STICKER then
-        stops.sticker_left = sticker.time_to_live
-      end
-    end
-    stops.sticker_due = STICKER_TICKS - (game.tick - stops.at_provider)
-    stops.health_at_swap = painted.health
   end
-  if stops.loaded and game.tick == stops.loaded + 10 and stops.drone and stops.drone.valid then
-    stops.health_after = stops.drone.health
+  -- A freighter with something stuck to it (here a sticker like fire) loads without being swapped,
+  -- so the sticker and its damage go on exactly as they would, and takes its cargo's paint on the
+  -- way home once the sticker has worn off.
+  local sticky = deliveries.sticky
+  if not sticky.drone then
+    sticky.drone = standing_at(sticky.provider.position.x, sticky.provider.position.y + 2)
+    if sticky.drone then
+      sticky.sticker =
+        surface.create_entity({ name = STICKER, position = sticky.drone.position, target = sticky.drone })
+      assert(sticky.sticker and sticky.sticker.sticked_to == sticky.drone, "the test sticker did not stick")
+      sticky.sticker.time_to_live = STICKER_TICKS
+    end
+  end
+  if sticky.drone and not sticky.loaded and count(sticky.provider, sticky.item) < 10 then
+    sticky.loaded = game.tick
+    sticky.kept = sticky.drone.valid
+      and sticky.drone.name == DRONE
+      and sticky.sticker.valid
+      and sticky.sticker.sticked_to == sticky.drone
+  end
+  if sticky.loaded and not sticky.painted then
+    for _, drone in pairs(surface.find_entities_filtered({ name = IRON_PAINT, area = sticky.road })) do
+      sticky.painted = game.tick
+      -- Painted where the old one was, after the sticker wore off, still on its way home.
+      sticky.painted_after_sticker = not sticky.sticker.valid and not sticky.drone.valid
+      sticky.painted_on_road = drone.position.x < sticky.request.position.x - 1
+    end
   end
   if stops.at_provider and not stops.loaded then
     stops.standing = stops.drone.position
@@ -988,6 +1007,7 @@ local function deliveries_finished(surface, tick, result)
   local armor, full, destroyed, changed, cut =
     deliveries.armor, deliveries.full, deliveries.destroyed, deliveries.changed, deliveries.cut
   local done = count(deliveries.connected) >= 30
+    and count(deliveries.sticky.request, "iron-plate") == 10
     and count(armor.request, armor.item) == 1
     and (not deliveries.food or count(deliveries.food.request, "yumako") == 20)
     and destroyed.done
@@ -1071,8 +1091,10 @@ local function deliveries_finished(surface, tick, result)
   result.paint_out = stops.empty_paint
   result.paint_home = stops.home_paint
   result.paint_swapped = stops.swapped
-  result.sticker_kept = stops.sticker_left ~= nil and math.abs(stops.sticker_left - stops.sticker_due) <= 2
-  result.sticker_still_hurts = stops.health_after ~= nil and stops.health_after < stops.health_at_swap
+  local sticky = deliveries.sticky
+  result.sticker_kept = sticky.kept == true
+  result.sticker_then_painted = sticky.painted_after_sticker == true and sticky.painted_on_road == true
+  result.sticky_received = count(sticky.request, sticky.item)
   local paints = prototypes.mod_data["jatz-freighter-colors"].data
   result.paint_iron_plate = paints.items["iron-plate"] == IRON_PAINT
   result.paint_water = paints.fluids.water == WATER_PAINT
