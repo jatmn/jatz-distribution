@@ -161,8 +161,11 @@ local function open(player, entity)
     caption = { "jatz-gui." .. (LIQUID[entity.name] and "liquid-" or "") .. ROLES[entity.name] .. "-title" },
     direction = "vertical",
     anchor = {
-      -- Factorio 2.1 dropped storage_tank_gui: storage tanks open the pipe window.
-      gui = LIQUID[entity.name] and defines.relative_gui_type.pipe_gui or defines.relative_gui_type.container_gui,
+      -- Factorio 2.1 dropped storage_tank_gui: storage tanks open the pipe window. A mining
+      -- depot (Mining Drones) is an assembling machine.
+      gui = LIQUID[entity.name] and defines.relative_gui_type.pipe_gui
+        or entity.type == "assembling-machine" and defines.relative_gui_type.assembling_machine_gui
+        or defines.relative_gui_type.container_gui,
       position = defines.relative_gui_position.right,
       names = PANELLED_NAMES,
     },

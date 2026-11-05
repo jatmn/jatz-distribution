@@ -106,6 +106,13 @@ Liquid depots work the same way for fluids.
 - A liquid depot whose tank holds a different fluid waits until it is emptied.
 - Items and fluids never mix: item depots only deal with item depots, liquid depots with liquid depots.
 
+## Mining Drones
+
+With [Mining Drones](https://mods.factorio.com/mod/Mining_Drones), [Mining Drones 2 Remastered](https://mods.factorio.com/mod/Mining_Drones_Remastered) or [Mining Drones Mod](https://mods.factorio.com/mod/Mining_Drones_Mod) installed, every mining depot is also an item provider depot for whatever its drones mine.
+
+- Freighters load at the tile just behind the depot, on the side away from its mining area. The depot lays road there, like our depots do, so connect your road to it.
+- Mining depots have the same priority slider as provider depots, in a panel beside their window.
+
 ## Copy, paste and blueprints
 
 - Copy and Paste settings, copy and paste, and blueprints carry a request depot's request and its number of freighters. The new depot asks for the freighters (as a ghost request), and construction robots, or you by hand, bring them. This works for liquid depots too.

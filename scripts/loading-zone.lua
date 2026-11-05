@@ -15,6 +15,17 @@ for _, role in ipairs(ROLES) do
   loading_zone.depots["jatz-" .. role .. "-depot"] = true
 end
 
+-- Mining Drones' mining depot (Mining_Drones, Mining_Drones_Remastered and Mining_Drones_Mod all
+-- name it this): a 5 by 8 assembling machine whose drones mine the area in front of it. Its
+-- loading zone is the tile just past its back end, opposite the mining area, where Transport
+-- Drones puts its road node too. Only when one of those mods is installed: event filters and
+-- entity searches refuse names that don't exist.
+loading_zone.mining_depot = "mining-depot"
+local MINING_SHIFT = { north = { 0, 4.5 }, east = { -4.5, 0 }, south = { 0, -4.5 }, west = { 4.5, 0 } }
+if prototypes.entity[loading_zone.mining_depot] then
+  loading_zone.depots[loading_zone.mining_depot] = true
+end
+
 local DIRECTION_NAMES = {
   [defines.direction.north] = "north",
   [defines.direction.east] = "east",
@@ -37,7 +48,8 @@ end
 
 -- The centre of a depot's loading zone tile.
 function loading_zone.tile_centre(entity)
-  local shift = orientation.loading_zone_shift[DIRECTION_NAMES[entity.direction]]
+  local shifts = entity.name == loading_zone.mining_depot and MINING_SHIFT or orientation.loading_zone_shift
+  local shift = shifts[DIRECTION_NAMES[entity.direction]]
   return entity.position.x + shift[1], entity.position.y + shift[2]
 end
 

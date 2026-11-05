@@ -39,6 +39,8 @@ The request panel needs a player, so check it in the graphical client. Open a re
 
 The headless server can't show sprites. So `tools/test_mod_setup.py` checks the depots' default orientation and loading zones with Lua 5.2: south by default, turning with the depot, and never on a pipe tile. In the graphical client, check that each depot's loading zone marking lies on the right side and stays there as you rotate the depot.
 
+With `--mod path/to/Mining_Drones_2.1.1.zip` (or Mining Drones 2 Remastered's or Mining Drones Mod's zip, downloaded from the mod portal), that mod loads too, and a request depot must also fetch 30 of the 40 iron ore in a mining depot's output, from the road the mining depot lays behind it. The option can be repeated for other mods, which then only have to load.
+
 It runs with the base game only and, if your Factorio includes Space Age and the mods it needs, again with Space Age. The free headless server is enough. To look around yourself, open the newest save under `.local/mod-check/` in the full game with that run's `config.ini` and `mods` folder (see the depot instructions below).
 
 ## Freighter

@@ -10,6 +10,7 @@ Version: Unreleased
     - Only belts, pipes and train tracks can be built on road. Depots and other buildings can't, though a depot's loading zone can be on road.
     - Request and liquid request depots with "Request from buffer depots" unticked now fall back to buffer depots for what no provider can supply, instead of ignoring them. Ticked, buffer depots still come first.
   Compatibility:
+    - With Mining Drones, Mining Drones 2 Remastered or Mining Drones Mod installed, mining depots are item provider depots of what their drones mine: freighters fetch it from the tile behind the depot, opposite its mining area, where the depot lays road like any other depot. They have a priority like provider depots.
     - Marked Transport Drones and its Factorio 2.1 forks (Transport Drones (Continuous), Transport Drones (Continued, 2.1, Unofficial) and Transport Drones By Yunli) as incompatible.
 ---------------------------------------------------------------------------------------------------
 Version: 0.1.0
