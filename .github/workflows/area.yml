@@ -137,12 +137,6 @@ jobs:
       - name: Test the mod check's setup and the mod's English names
         if: inputs.area == 'mod'
         run: python3 tools/test_mod_setup.py
-      # The base revision's Lua comes from the partial clone on demand (the repository is public).
-      - name: Compare the deliveries' script cost with the base (engine-free)
-        if: inputs.area == 'mod' && github.event_name == 'pull_request'
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-        run: python3 tools/emulate_ups.py --base "$BASE" --summary "$GITHUB_STEP_SUMMARY"
 
       # The art check needs this area's models and images, so fetch only those.
       - name: Check out this area's art

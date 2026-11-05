@@ -202,7 +202,7 @@ class RoutingTests(unittest.TestCase):
               'scripts/dispatch.lua', 'locale/en/jatz.cfg'], {'mod'}),
             (['tools/package_mod.py', 'tools/test_mod.py', 'tools/test_mod_setup.py',
               'tests/factorio/jatz-distribution-check_0.1.0/control.lua'], {'mod'}),
-            # The UPS benchmark, its map and the engine-free emulator the mod job runs.
+            # The UPS benchmark, its map and the engine-free emulator the UPS benchmark check runs.
             (['tools/benchmark_ups.py', 'tools/emulate_ups.py', 'tests/factorio/ups-benchmark_0.1.0/layout.lua',
               'tests/lua/ups-emulator.lua'], {'mod'}),
             (['.github/workflows/pullfrog.yml', 'tools/pullfrog_command.py',
