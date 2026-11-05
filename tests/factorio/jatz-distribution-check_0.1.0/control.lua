@@ -318,6 +318,10 @@ local function check_road_placement(surface, result)
     result.on_road[name] = can_place(name, { 66.5, 66.5 })
   end
   result.on_road["straight-rail"] = can_place("straight-rail", { 67, 67 })
+  -- The road network monitor is a building like any other: beside road, never on it (freighters
+  -- would drive through it).
+  result.on_road[MONITOR] = can_place(MONITOR, { 66.5, 66.5 })
+  result.monitor_beside_road = can_place(MONITOR, { 66.5, 67.5 })
   -- Road can't be laid under them either, a gate included while it stands open (an open gate
   -- uses its opened collision mask): an open gate, a closed one and a pole on grass, where
   -- `lay_road_under` tries road once the first is open.
@@ -773,6 +777,27 @@ local function setup_deliveries(surface, result)
     assert(remote.call("jatz-distribution", "set_monitor_reading", monitor, reading), reading .. ": refused")
     circuit.readings[reading] = monitor
   end
+  -- Copy and Paste settings from a constant combinator switched off, whose section is multiplied by
+  -- 3 and belongs to a named group another combinator shares (signal-A = 123), onto a monitor on
+  -- the same road: the monitor must show its own reading, and the group must stay as it is.
+  circuit.pasted =
+    surface.create_entity({ name = MONITOR, position = { 17.5, 40.5 }, force = "player", raise_built = true })
+  circuit.grouped = {}
+  for index, x in ipairs({ 17.5, 19.5 }) do
+    local grouped = surface.create_entity({ name = "constant-combinator", position = { x, 43.5 }, force = "player" })
+    local behavior = grouped.get_or_create_control_behavior()
+    local section = behavior.get_section(1) or behavior.add_section()
+    section.group = "jatz-check shared"
+    if index == 1 then
+      section.filters = {
+        { value = { type = "virtual", name = "signal-A", quality = "normal", comparator = "=" }, min = 123 },
+      }
+      section.multiplier = 3
+      behavior.enabled = false
+    end
+    circuit.grouped[index] = grouped
+  end
+  circuit.pasted.copy_settings(circuit.grouped[1])
   result.monitor_readings_refused = remote.call("jatz-distribution", "set_monitor_reading", circuit.monitor, "all")
   result.monitor_reading_default = remote.call("jatz-distribution", "get_monitor_reading", circuit.monitor)
   deliveries.circuit = circuit
@@ -826,6 +851,65 @@ local function setup_deliveries(surface, result)
   )
   result.circuit_mode_refused = remote.call("jatz-distribution", "set_circuit", modes.own, true, nil, "both")
   deliveries.modes = modes
+  -- Conditions the game's own entities evaluate (x -30 to -15, y 34 to 41): for each case a red and
+  -- a green constant combinator, wired to a powered lamp and to a provider depot, both given the
+  -- same condition. A wildcard compared with a signal leaves that signal out, and red and green add
+  -- up as signed 32-bit values (Pullfrog's review of bef0020).
+  local virtual = function(name)
+    return { type = "virtual", name = name }
+  end
+  local MAX = 2147483647
+  local cases = {
+    anything_ge_b = { green = { ["signal-B"] = 1 }, first = "signal-anything", comparator = "≥", second = "signal-B" },
+    everything_gt_b = {
+      green = { ["signal-B"] = 1 },
+      first = "signal-everything",
+      comparator = ">",
+      second = "signal-B",
+    },
+    overflow = { red = { ["signal-A"] = MAX }, green = { ["signal-A"] = 1 }, first = "signal-A", comparator = ">" },
+    wildcard_wrap = {
+      red = { ["signal-A"] = MAX },
+      green = { ["signal-A"] = MAX },
+      first = "signal-anything",
+      comparator = "<",
+    },
+  }
+  surface.create_entity({ name = "substation", position = { -24, 32 }, force = "player" })
+  surface.create_entity({ name = "electric-energy-interface", position = { -27, 31 }, force = "player" })
+  deliveries.parity = {}
+  local x = -30
+  for _, name in ipairs({ "anything_ge_b", "everything_gt_b", "overflow", "wildcard_wrap" }) do
+    local case = cases[name]
+    local lamp = surface.create_entity({ name = "small-lamp", position = { x + 0.5, 36.5 }, force = "player" })
+    local target = depot(surface, "provider", x + 1.5, 39.5)
+    for offset, colour in ipairs({ "red", "green" }) do
+      local wire = defines.wire_connector_id["circuit_" .. colour]
+      local source =
+        surface.create_entity({ name = "constant-combinator", position = { x + offset - 0.5, 34.5 }, force = "player" })
+      local filters = {}
+      for signal_name, count in pairs(case[colour] or {}) do
+        filters[#filters + 1] =
+          { value = { type = "virtual", name = signal_name, quality = "normal", comparator = "=" }, min = count }
+      end
+      local behavior = source.get_or_create_control_behavior();
+      (behavior.get_section(1) or behavior.add_section()).filters = filters
+      assert(source.get_wire_connector(wire, true).connect_to(lamp.get_wire_connector(wire, true), false))
+      assert(lamp.get_wire_connector(wire, true).connect_to(target.get_wire_connector(wire, true), false))
+    end
+    local condition = {
+      first_signal = virtual(case.first),
+      comparator = case.comparator,
+      second_signal = case.second and virtual(case.second) or nil,
+      constant = 0,
+    }
+    local behavior = lamp.get_or_create_control_behavior()
+    behavior.circuit_enable_disable = true
+    behavior.circuit_condition = condition
+    assert(remote.call("jatz-distribution", "set_circuit", target, true, condition, "network"), name)
+    deliveries.parity[name] = { lamp = lamp, depot = target }
+    x = x + 4
+  end
   deliveries.no_trucks = depot(surface, "request", -20.5, 28.5, 0)
   assert(remote.call("jatz-distribution", "set_request", deliveries.no_trucks, "wood", 5), "wood: refused")
   -- Freighters put in a request depot's chest move into its slot.
@@ -1699,6 +1783,26 @@ local function deliveries_finished(surface, tick, result)
   result.circuit_after = monitor_reading(circuit.monitor)
   result.circuit_status_after = circuit.gated.custom_status == nil
   result.circuit_readings_after = readings_shown(circuit.readings)
+  -- The pasted monitor took its output back; the shared group kept its signal.
+  local pasted = circuit.pasted.get_control_behavior()
+  local first = pasted.get_section(1)
+  result.monitor_pasted = {
+    shows = readings_shown({ pasted = circuit.pasted }).pasted,
+    own = pasted.enabled
+      and pasted.sections_count == 1
+      and first.group == ""
+      and first.active
+      and first.multiplier == 1,
+    group = readings_shown({ source = circuit.grouped[1], other = circuit.grouped[2] }),
+  }
+  -- Each depot condition against a lamp's, the game's own, on the same wires.
+  result.condition_parity = {}
+  for name, case in pairs(deliveries.parity) do
+    result.condition_parity[name] = {
+      native = not case.lamp.get_control_behavior().disabled,
+      depot = remote.call("jatz-distribution", "get_circuit", case.depot).fulfilled,
+    }
+  end
   -- What each condition reads, long after the monitor first counted: the circuit network without
   -- the depot's own wood, or its own wood.
   local modes = deliveries.modes

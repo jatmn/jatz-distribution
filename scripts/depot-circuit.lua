@@ -176,23 +176,44 @@ local function sent(entity, colour, own)
   return nil
 end
 
--- A reading: the signals a condition is compared on. value(signal) gives one signal's value, and
--- all() every signal's that isn't zero.
+-- A reading: the signals a condition is compared on, as the game's own conditions see them.
+-- value(signal) gives one signal's value, and all() every signal that isn't zero, as
+-- { key = depot_circuit.key, value = value }, so a wildcard can leave out its right-hand signal.
+-- Values are signed 32-bit, as on the wires: red and green (and what is taken out of them) add up
+-- with the game's wrap-around (`wrap`), before zeros are dropped and before anything is compared.
+
+-- A sum as a signed 32-bit signal value: wrapped around, as the game adds signals.
+local function wrap(value)
+  value = value % 4294967296
+  return value >= 2147483648 and value - 4294967296 or value
+end
+depot_circuit.wrap = wrap
+
+-- The non-zero signals of `totals` (values by key) in `order`, wrapped.
+local function nonzero(totals, order)
+  local signals = {}
+  for _, signal_key in ipairs(order) do
+    local value = wrap(totals[signal_key])
+    if value ~= 0 then
+      signals[#signals + 1] = { key = signal_key, value = value }
+    end
+  end
+  return signals
+end
 
 -- The depot's own contents (`own`, counts by key).
 local function contents_reading(own)
   return {
     value = function(signal)
-      return own[key(signal)] or 0
+      return wrap(own[key(signal)] or 0)
     end,
     all = function()
-      local values = {}
-      for _, count in pairs(own) do
-        if count ~= 0 then
-          values[#values + 1] = count
-        end
+      local order = {}
+      for signal_key in pairs(own) do
+        order[#order + 1] = signal_key
       end
-      return values
+      table.sort(order)
+      return nonzero(own, order)
     end,
   }
 end
@@ -226,7 +247,7 @@ local function external(entity, found, own, counted)
       for index, wire in ipairs(found) do
         total = total + wire.network.get_signal(signal) - less(index, key(signal))
       end
-      return total
+      return wrap(total)
     end,
     all = function()
       local totals, order = {}, {}
@@ -247,13 +268,7 @@ local function external(entity, found, own, counted)
           end
         end
       end
-      local values = {}
-      for _, signal_key in ipairs(order) do
-        if totals[signal_key] ~= 0 then
-          values[#values + 1] = totals[signal_key]
-        end
-      end
-      return values
+      return nonzero(totals, order)
     end,
   }
 end
@@ -265,15 +280,21 @@ local function fulfilled(reading, condition)
     return false
   end
   local compare = COMPARE[condition.comparator] or COMPARE["<"]
-  local right = condition.second_signal and reading.value(condition.second_signal) or (condition.constant or 0)
+  local second = condition.second_signal
+  local right = second and reading.value(second) or (condition.constant or 0)
   local kind = special(first)
   if kind == EVERYTHING or kind == ANYTHING then
+    -- As in the game, a wildcard compared with a signal leaves that signal out of its inputs: with
+    -- only B on the wires, "Anything >= B" doesn't hold and "Everything > B" does.
+    local excluded = second and key(second)
     local any = false
-    for _, left in ipairs(reading.all()) do
-      if compare(left, right) then
-        any = true
-      elseif kind == EVERYTHING then
-        return false
+    for _, signal in ipairs(reading.all()) do
+      if signal.key ~= excluded then
+        if compare(signal.value, right) then
+          any = true
+        elseif kind == EVERYTHING then
+          return false
+        end
       end
     end
     return kind == EVERYTHING or any

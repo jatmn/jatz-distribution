@@ -144,7 +144,7 @@ Provider, request and buffer depots, item and liquid, also have an **Enable/disa
 
 ### Road network monitor
 
-To switch depots on what the road network holds or needs, build a **road network monitor** on a road tile or right beside one, and wire it to the depots. Once a second it sends one reading of the depots on that road network, like a roboport reading its logistic network. Open it to choose the reading:
+To switch depots on what the road network holds or needs, build a **road network monitor** right beside a road, as you would a depot's loading zone, and wire it to the depots. Like every building, it can't stand on the road itself. Once a second it sends one reading of the depots on that road network, like a roboport reading its logistic network. Open it to choose the reading:
 
 - **What provider and buffer depots hold** (the default): what freighters can fetch.
 - **What provider depots hold**: buffer depots left out.
@@ -153,7 +153,7 @@ To switch depots on what the road network holds or needs, build a **road network
 
 More about it:
 
-- Its road network is all the road joined, side by side, to the tile it stands on or to one of the four beside it. A depot is on it when its loading zone is.
+- Its road network is all the road joined, side by side, to one of the four tiles beside it. A depot is on it when its loading zone is.
 - Item depots count their items (each quality as its own signal) and liquid depots their fluids.
 - Freighters on the road, and depots switched off by their circuit condition, aren't counted.
 - Its signals can't be edited: opening it shows only the choice of reading. Copy and Paste settings, blueprints and copies keep the reading.

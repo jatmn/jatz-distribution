@@ -2075,6 +2075,48 @@ do -- Conditions are compared like the game's: red and green added, signals or a
   check("everything needs every signal to match", not holds(everything, { ["signal-A"] = 1, ["signal-B"] = -1 }))
   check("anything needs one", holds(anything, { ["signal-A"] = -1, ["signal-B"] = 1 }))
   check("and fails with none", not holds(anything, {}))
+  -- A wildcard compared with a signal leaves that signal out, as the game does (Pullfrog's review
+  -- of bef0020, checked against a native chest): with only B = 1, nothing else is compared.
+  local B = { type = "virtual", name = "signal-B" }
+  local function against_b(wildcard, comparator)
+    return { first_signal = { type = "virtual", name = wildcard }, comparator = comparator, second_signal = B }
+  end
+  check(
+    "anything >= B with only B: no input, doesn't hold",
+    not holds(against_b("signal-anything", "≥"), { ["signal-B"] = 1 })
+  )
+  check("everything > B with only B: no input, holds", holds(against_b("signal-everything", ">"), { ["signal-B"] = 1 }))
+  check(
+    "the other signals are still compared with B",
+    holds(against_b("signal-anything", "≥"), { ["signal-A"] = 2, ["signal-B"] = 1 })
+      and not holds(against_b("signal-everything", ">"), { ["signal-A"] = 1, ["signal-B"] = 1 })
+  )
+  -- Red and green add up as signed 32-bit values, wrapping around as the game's do.
+  local max, min = 2147483647, -2147483648
+  check(
+    "2147483647 + 1 wraps to -2147483648",
+    not holds({ first_signal = A, comparator = ">", constant = 0 }, { ["signal-A"] = max }, { ["signal-A"] = 1 })
+  )
+  check(
+    "-2147483648 - 1 wraps to 2147483647",
+    holds({ first_signal = A, comparator = "=", constant = max }, { ["signal-A"] = min }, { ["signal-A"] = -1 })
+  )
+  check(
+    "so do wildcards' inputs",
+    holds(
+      { first_signal = { type = "virtual", name = "signal-anything" }, comparator = "=", constant = -2 },
+      { ["signal-A"] = max },
+      { ["signal-A"] = max }
+    )
+  )
+  check(
+    "and a sum that wraps to 0 is no input",
+    not holds(
+      { first_signal = { type = "virtual", name = "signal-anything" }, comparator = "<", constant = 1 },
+      { ["signal-A"] = min },
+      { ["signal-A"] = min }
+    )
+  )
   check(
     "each can't be used",
     circuit.condition({ first_signal = { type = "virtual", name = "signal-each" } }).first_signal == nil

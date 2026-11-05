@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
--- The road network monitor: a constant combinator, built on or beside road, that puts on its red
+-- The road network monitor: a constant combinator, built beside road, that puts on its red
 -- and green wires what the provider and buffer depots on that road network hold, like a roboport
 -- reading its logistic network's contents. scripts/road-monitor.lua sets its signals once a
 -- second; players can't edit them.

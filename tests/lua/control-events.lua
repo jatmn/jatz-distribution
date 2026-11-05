@@ -1577,6 +1577,46 @@ do -- The road network monitor shows what the provider and buffer depots on its 
   -- Back to providers and buffers, without the buffer, for the rest.
   check("setup", road_monitor.set_reading(monitor, "supply"))
   removed(buffer)
+  -- Copy and Paste settings from a constant combinator brings its state with it (probed on 2.1.24):
+  -- its switch off, and a section switched off, multiplied by 3, and in a named group, whose filters
+  -- every member shares. The monitor must take its output back without writing that group
+  -- (Pullfrog's review of 5f5c385).
+  road_monitor.update()
+  local group = { { value = { type = "virtual", name = "signal-A", quality = "normal", comparator = "=" }, min = 123 } }
+  local state = { group = "shared", active = false, multiplier = 3, own = {} }
+  sections[1] = setmetatable({ is_manual = true }, {
+    __index = function(_, key)
+      if key == "filters" then
+        return state.group ~= "" and group or state.own
+      end
+      return state[key]
+    end,
+    __newindex = function(_, key, value)
+      if key == "filters" and state.group ~= "" then
+        group = value
+      elseif key == "filters" then
+        state.own = value
+      else
+        state[key] = value
+      end
+    end,
+  })
+  behavior.enabled = false
+  fire("on_entity_settings_pasted", {
+    source = { valid = true, name = "constant-combinator", unit_number = 99999 },
+    destination = monitor,
+  })
+  check(
+    "pasting a combinator's settings leaves its shared group alone",
+    #group == 1 and group[1].value.name == "signal-A" and group[1].min == 123
+  )
+  check("the monitor shows its own reading again at once", shown()["item:iron-plate:normal"] == 10)
+  check(
+    "in a section of its own, active, multiplied by 1, and switched on",
+    state.group == "" and state.active and state.multiplier == 1 and behavior.enabled
+  )
+  road_monitor.update()
+  check("nor does its next update write the group", #group == 1 and group[1].value.name == "signal-A")
   -- P1 switched off by its circuit condition: left out.
   p1.get_circuit_network = function(connector)
     return connector == defines.wire_connector_id.circuit_green

@@ -53,7 +53,8 @@ EXPECTED = {'free_recipes': 10, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'p
             # nor their ghosts, though their loading zone can be road.
             'depot_on_road': False, 'depot_ghost_on_road': False, 'depot_zone_on_road': True,
             'on_road': {'small-electric-pole': False, 'inserter': False, 'wooden-chest': False,
-                        'transport-belt': True, 'pipe': True, 'straight-rail': True, 'jatz-quinityn-freighter': True},
+                        'transport-belt': True, 'pipe': True, 'straight-rail': True, 'jatz-quinityn-freighter': True,
+                        'jatz-road-monitor': False},
             # Nor can road be laid under any of them, a gate included while it stands open.
             'road_under': {'open_gate': 'grass-1', 'closed_gate': 'grass-1', 'pole': 'grass-1',
                            'gate_still_open': True, 'gate_closed': True},
@@ -130,6 +131,16 @@ EXPECTED = {'free_recipes': 10, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'p
             # needs none. An unknown reading is refused; the default is providers and buffers.
             'monitor_readings_refused': False, 'monitor_reading_default': 'supply',
             'circuit_readings_after': {'requests': 'stone-wall=10', 'needs': ''},
+            # A combinator's settings pasted onto a monitor: the monitor shows its own reading, in its
+            # own switched-on, unmultiplied section, and the shared group keeps signal-A = 123.
+            'monitor_pasted': {'shows': 'stone-wall=10,water=1000', 'own': True,
+                               'group': {'source': 'signal-A=123', 'other': 'signal-A=123'}},
+            # Each depot condition agrees with the game's own (a lamp's) on the same wires.
+            'condition_parity': {'anything_ge_b': {'native': False, 'depot': False},
+                                 'everything_gt_b': {'native': True, 'depot': True},
+                                 'overflow': {'native': False, 'depot': False},
+                                 'wildcard_wrap': {'native': True, 'depot': True}},
+            'monitor_beside_road': True,
             'circuit_before': {'walls': 0, 'lamps': 0, 'walls_status': 'no-provider', 'lamps_status': 'disabled',
                                'monitor': {'walls': 0, 'water': 1000, 'lamps': 0},
                                # The switched-off provider's hover panel says so with a red light;

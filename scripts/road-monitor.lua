@@ -1,11 +1,11 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
--- The road network monitor (prototypes/road-monitor.lua): a constant combinator built on or beside
--- road. Once a second it puts on its wires one reading of the depots on its road network, like a
--- roboport reading its logistic network, item depots' items (each quality its own signal) and
--- liquid depots' fluids. Wire a depot's circuit condition to it to switch the depot on or off by
--- what the road network has. The reading (`READINGS`, chosen in its panel,
--- scripts/road-monitor-gui.lua; the owner's request, November 5, 2026, so a condition reads one
--- thing at a time):
+-- The road network monitor (prototypes/road-monitor.lua): a constant combinator built beside road
+-- (like every building, it can't stand on road: prototypes/off-road.lua). Once a second it puts on
+-- its wires one reading of the depots on its road network, like a roboport reading its logistic
+-- network, item depots' items (each quality its own signal) and liquid depots' fluids. Wire a
+-- depot's circuit condition to it to switch the depot on or off by what the road network has.
+-- The reading (`READINGS`, chosen in its panel, scripts/road-monitor-gui.lua; the owner's request,
+-- November 5, 2026, so a condition reads one thing at a time):
 -- - "supply", the default: what provider and buffer depots hold, what freighters can fetch;
 -- - "providers": what provider depots hold;
 -- - "requests": what request depots hold;
@@ -14,9 +14,10 @@
 -- Request depots are the item and liquid request depots, never buffer depots.
 --
 -- Its road network is the road (road and depot road, the tiles freighters drive on) joined, side
--- by side, to the tile it stands on or to one of the four beside it; a depot is on it when its
--- loading zone tile is. Depots disabled by their circuit condition are left out of every reading,
--- since no freighter comes to or goes from them; freighters out on trips aren't counted.
+-- by side, to one of the four tiles beside it (or the one under it, should a script have put it on
+-- road); a depot is on it when its loading zone tile is. Depots disabled by their circuit
+-- condition are left out of every reading, since no freighter comes to or goes from them;
+-- freighters out on trips aren't counted.
 --
 -- Which depots are on each monitor's network is worked out again, with the engine's own flood
 -- fill (LuaSurface.get_connected_tiles), only after road, a depot or a monitor on that surface
@@ -287,10 +288,19 @@ logistics.monitor_counts = road_monitor.counted
 
 -- Put `filters` on the monitor's signals: its first sections, SECTION_SIZE signals each, and no
 -- others.
+-- The monitor owns its whole output, not just the filters: Copy and Paste settings from a constant
+-- combinator, or a blueprint, brings that combinator's state with it (probed on 2.1.24): its on/off
+-- switch, and sections with a multiplier, switched off, or in a named logistic group, whose
+-- filters every member of the group shares (writing them would change other players' combinators).
+-- So it is switched on, and each section leaves any group (first: from then on its filters are its
+-- own), is active and multiplies by 1, before its filters are written.
 local function show(entity, filters)
   local behavior = entity.get_or_create_control_behavior()
   if not behavior then
     return
+  end
+  if not behavior.enabled then
+    behavior.enabled = true
   end
   local needed = math.ceil(#filters / SECTION_SIZE)
   for index = behavior.sections_count, math.max(needed, 1) + 1, -1 do
@@ -303,9 +313,29 @@ local function show(entity, filters)
       part[#part + 1] = filters[slot]
     end
     if section and section.is_manual then
+      if section.group ~= "" then
+        section.group = ""
+      end
+      if not section.active then
+        section.active = true
+      end
+      if section.multiplier ~= 1 then
+        section.multiplier = 1
+      end
       section.filters = part
     end
   end
+end
+
+-- Show a monitor's reading now, remembering what it counted for each depot (and, the first time
+-- this tick, what its signals still show: what it counted before).
+local function refresh(monitor)
+  local filters, counted = contents(monitor.depots, monitor.reading)
+  if monitor.counted_tick ~= game.tick then
+    monitor.previous = monitor.counted
+  end
+  monitor.counted, monitor.counted_tick = counted, game.tick
+  show(monitor.entity, filters)
 end
 
 -- Once a second: networks worked out again where something changed, then every monitor's signals.
@@ -329,12 +359,7 @@ function road_monitor.update()
   end
   storage.road_monitor_dirty = {}
   for _, monitor in pairs(storage.road_monitors) do
-    local filters, counted = contents(monitor.depots, monitor.reading)
-    if monitor.counted_tick ~= game.tick then
-      monitor.previous = monitor.counted
-    end
-    monitor.counted, monitor.counted_tick = counted, game.tick
-    show(monitor.entity, filters)
+    refresh(monitor)
   end
 end
 
@@ -349,12 +374,21 @@ function road_monitor.add_all()
   end
 end
 
--- Copy and Paste settings from one monitor to another copies its reading.
+-- Copy and Paste settings onto a monitor: from another monitor it takes that one's reading. The
+-- game has also copied the source's combinator state (from any constant combinator: its switch,
+-- and sections that may belong to a shared group), so the monitor shows its own reading again at
+-- once (`show` takes the output back), rather than putting the pasted signals on its wires until
+-- the next update.
 function road_monitor.on_settings_pasted(event)
+  local monitor = monitor_of(event.destination)
+  if not monitor then
+    return
+  end
   local reading = road_monitor.get_reading(event.source)
-  if reading and monitor_of(event.destination) then
+  if reading then
     road_monitor.set_reading(event.destination, reading)
   end
+  refresh(monitor)
 end
 
 -- Blueprints keep a monitor's reading as a tag when it isn't the default (logistics.setup_blueprint
