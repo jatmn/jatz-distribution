@@ -133,57 +133,73 @@ end
 -- The Fuel depot is a container; its port is on the hidden tank under it, which holds its liquid fuel.
 local FUEL_TANK = "jatz-fuel-depot-tank"
 
--- Every recipe is locked until the freight system is researched, which unlocks them all.
+-- Every recipe is locked until researched: the freight system unlocks its recipes, and the liquid
+-- ones stay locked until liquid freight is researched after it.
 local function check_research(result)
   local force = game.forces.player
-  local system = prototypes.technology[research.system]
-  result.research_prerequisites = {}
-  for name in pairs(system.prerequisites) do
-    result.research_prerequisites[#result.research_prerequisites + 1] = name
-  end
-  result.localised_names[research.system] = { technology = locale_key(system.localised_name) }
-  result.locked_recipes, result.unlocked_recipes = 0, 0
-  local unlocks = {}
-  for _, effect in ipairs(system.effects) do
-    if effect.type == "unlock-recipe" then
-      unlocks[#unlocks + 1] = effect.recipe
-      if not force.recipes[effect.recipe].enabled then
-        result.locked_recipes = result.locked_recipes + 1
+  result.research_unlocks = {}
+  for _, name in ipairs({ research.system, research.liquid }) do
+    local technology = prototypes.technology[name]
+    local unlocks = { prerequisites = {}, recipes = {}, locked = 0, unlocked = 0 }
+    for prerequisite in pairs(technology.prerequisites) do
+      unlocks.prerequisites[#unlocks.prerequisites + 1] = prerequisite
+    end
+    table.sort(unlocks.prerequisites)
+    for _, effect in ipairs(technology.effects) do
+      if effect.type == "unlock-recipe" then
+        unlocks.recipes[#unlocks.recipes + 1] = effect.recipe
+        if not force.recipes[effect.recipe].enabled then
+          unlocks.locked = unlocks.locked + 1
+        end
       end
     end
-  end
-  force.technologies[research.system].researched = true
-  for _, recipe in ipairs(unlocks) do
-    if force.recipes[recipe].enabled then
-      result.unlocked_recipes = result.unlocked_recipes + 1
+    force.technologies[name].researched = true
+    for _, recipe in ipairs(unlocks.recipes) do
+      if force.recipes[recipe].enabled then
+        unlocks.unlocked = unlocks.unlocked + 1
+      end
     end
+    result.research_unlocks[name] = unlocks
+    result.localised_names[name] = { technology = locale_key(technology.localised_name) }
   end
-  -- Speed: four levels, then an infinite one; capacity: five levels. Each after the one before.
+  -- Speed: four levels, then an infinite one; item and fluid capacity: five levels each. Each after
+  -- the one before; fluid capacity after liquid freight.
   local speed_top = prototypes.technology[research.speed .. "-" .. (research.speed_levels + 1)]
   result.speed_infinite = speed_top.max_level == 4294967295 and speed_top.research_unit_count_formula ~= nil
   result.research_levels = {}
-  for name, levels in pairs({ [research.speed] = research.speed_levels + 1, [research.capacity] = 5 }) do
-    for level = 1, levels do
+  for name, upgrade in pairs({
+    [research.speed] = { levels = research.speed_levels + 1, first = research.system },
+    [research.item_capacity] = { levels = research.capacity_levels, first = research.system },
+    [research.fluid_capacity] = { levels = research.capacity_levels, first = research.liquid },
+  }) do
+    for level = 1, upgrade.levels do
       local technology = prototypes.technology[name .. "-" .. level]
-      local before = level > 1 and name .. "-" .. (level - 1) or research.system
+      local before = level > 1 and name .. "-" .. (level - 1) or upgrade.first
       assert(technology and technology.prerequisites[before], name .. "-" .. level .. ": must follow " .. before)
       result.localised_names[technology.name] = { technology = locale_key(technology.localised_name) }
     end
-    result.research_levels[name] = levels
+    result.research_levels[name] = upgrade.levels
   end
   -- The levels a force has, from the game's own technologies: four speed levels and the infinite
   -- one written to level 7 (5 and 6 done) are six; a new force has none.
   local researched = game.create_force("jatz-researched")
-  researched.technologies[research.system].researched = true
+  local technologies = researched.technologies
+  technologies[research.system].researched = true
+  technologies[research.liquid].researched = true
   for level = 1, research.speed_levels do
-    researched.technologies[research.speed .. "-" .. level].researched = true
+    technologies[research.speed .. "-" .. level].researched = true
   end
-  researched.technologies[speed_top.name].level = 7
-  researched.technologies[research.capacity .. "-1"].researched = true
-  researched.technologies[research.capacity .. "-2"].researched = true
+  technologies[speed_top.name].level = 7
+  for level = 1, 2 do
+    technologies[research.item_capacity .. "-" .. level].researched = true
+  end
+  for level = 1, 3 do
+    technologies[research.fluid_capacity .. "-" .. level].researched = true
+  end
   result.researched_levels = {
     speed = research.levels(researched, research.speed),
-    capacity = research.levels(researched, research.capacity),
+    item_capacity = research.levels(researched, research.item_capacity),
+    fluid_capacity = research.levels(researched, research.fluid_capacity),
     fresh = research.levels(game.create_force("jatz-unresearched"), research.speed),
   }
 end
@@ -563,7 +579,7 @@ local function setup_deliveries(surface, result)
     return { provider = from, request = to, item = item }
   end
 
-  -- A force with six speed levels and two capacity levels (check_research): its one freighter
+  -- A force with six speed levels and two item capacity levels (check_research): its one freighter
   -- leaves at 2.2 times the speed and carries 12 stacks of iron plates (1200), not 10. Speed
   -- research undone while it is out (watch_researched) slows it down on the road.
   deliveries.researched = {

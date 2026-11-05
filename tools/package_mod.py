@@ -33,7 +33,8 @@ def mod_files(root=REPO):
     files += sorted((root / 'scripts').glob('*.lua'))
     files += sorted((root / 'locale').rglob('*.cfg'))
     freighter = root / 'assets/quinityn-freighter'
-    files += [freighter / 'factorio/freighter-animation.lua', freighter / 'icons/quinityn-freighter.png']
+    files += [freighter / 'factorio/freighter-animation.lua', freighter / 'icons/quinityn-freighter.png',
+              freighter / 'technology/quinityn-freighter.png']
     files += [freighter / f'sheets/freighter-{layer}.png' for layer in LAYERS]
     depots = root / 'assets/depots'
     files += sorted((depots / 'factorio').glob('*.lua'))
@@ -44,6 +45,7 @@ def mod_files(root=REPO):
     # The road network monitor draws its default-colour preview and shadow (prototypes/road-monitor.lua).
     files += [depots / f'road-monitor/1/sheets/{layer}.png' for layer in ('preview', 'shadow')]
     files += [depots / 'icons/road-monitor.png']
+    files += [depots / 'technology/liquid-provider-depot.png']
     files += [depots / f'connectors/sheets/{layer}.png' for layer in ('base', 'shadow')]
     files += [depots / 'loading-zone/loading-zone.png']
     # The road art is Yuoki's (CC BY-NC-SA 4.0), so its licence ships beside it.

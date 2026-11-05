@@ -2350,11 +2350,11 @@ end
 -- Research (prototypes/technologies.lua, scripts/research.lua), as Factorio 2.1 has it: each
 -- upgrade level is its own technology, whose `level` is its number; the infinite speed level's
 -- `level` is the next one to research. `done` gives how many levels of each are researched.
-local SPEED, CAPACITY = "jatz-freighter-speed", "jatz-freighter-capacity"
+local SPEED, ITEMS, FLUIDS = "jatz-freighter-speed", "jatz-freighter-item-capacity", "jatz-freighter-fluid-capacity"
 local function researching(done)
   local force = { name = "player", index = 1, technologies = {} }
   prototypes.technology = {}
-  for name, levels in pairs({ [SPEED] = 5, [CAPACITY] = 5 }) do
+  for name, levels in pairs({ [SPEED] = 5, [ITEMS] = 5, [FLUIDS] = 5 }) do
     for level = 1, levels do
       local key = name .. "-" .. level
       prototypes.technology[key] = {}
@@ -2384,7 +2384,7 @@ do -- Research: bigger loads and faster freighters, on the road too.
   check("at the freighter's own speed", near(trip.drone.speed, 0.2))
 
   logistics = reset()
-  local force = researching({ [SPEED] = 2, [CAPACITY] = 3 })
+  local force = researching({ [SPEED] = 2, [ITEMS] = 3, [FLUIDS] = 5 })
   request, near_provider = supplied(logistics, 5)
   request.force, near_provider.force = force, force
   near_provider.chest.contents.a = 1000
@@ -2392,12 +2392,12 @@ do -- Research: bigger loads and faster freighters, on the road too.
   logistics.on_tick()
   answer(logistics, 1, "route")
   trip = trips_from(request)[1]
-  check("each capacity level adds a stack", trip.planned == 650 and #trip.cargo == 13)
+  check("each item capacity level adds a stack, fluid capacity none", trip.planned == 650 and #trip.cargo == 13)
   check("each speed level adds 20%", near(trip.drone.speed, 0.2 * 1.4))
   arrive(logistics, trip)
   check("a freighter repainted for its load keeps its speed", near(trip.drone.speed, 0.2 * 1.4))
-  force.technologies[CAPACITY .. "-4"].researched = true
-  logistics.on_research_changed({ research = force.technologies[CAPACITY .. "-4"] })
+  force.technologies[ITEMS .. "-4"].researched = true
+  logistics.on_research_changed({ research = force.technologies[ITEMS .. "-4"] })
   check("capacity research leaves freighters on the road alone", near(trip.drone.speed, 0.2 * 1.4))
   force.technologies[SPEED .. "-3"].researched = true
   logistics.on_research_changed({ research = force.technologies[SPEED .. "-3"] })
@@ -2407,16 +2407,17 @@ do -- Research: bigger loads and faster freighters, on the road too.
   check("and so does undoing it", near(trip.drone.speed, 0.2 * 1.4))
 end
 
-do -- The infinite speed level counts every level researched; fluid capacity grows by 50 a level.
+do -- The infinite speed level counts every level researched; fluid capacity grows by 50 a level,
+  -- and item capacity doesn't change it.
   local logistics = reset()
-  local force = researching({ [SPEED] = 7, [CAPACITY] = 2 })
+  local force = researching({ [SPEED] = 7, [ITEMS] = 4, [FLUIDS] = 2 })
   local request, provider = liquids(logistics, 900)
   request.force, provider.force = force, force
   logistics.on_tick()
   answer(logistics, 1, "route")
   local trip = trips_from(request)[1]
   check("seven speed levels, four finite and three infinite", near(trip.drone.speed, 0.2 * 2.4))
-  check("two capacity levels: 600 fluid a freighter", trip.planned == 600)
+  check("two fluid capacity levels: 600 fluid a freighter", trip.planned == 600)
   arrive(logistics, trip)
   check("all of it pumped out", trip.fluid.amount == 600)
   prototypes.technology = {}

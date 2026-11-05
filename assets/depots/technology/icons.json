@@ -1,0 +1,15 @@
+{
+  "liquid-provider-depot.png": {
+    "source": "assets/depots/liquid-provider/3/sheets/preview.png",
+    "source_frame": [
+      1024,
+      0,
+      1536,
+      512
+    ],
+    "source_sha256": "1d7988ff48fc5cda25c66633516693b302fcb3a6a3a81b86b54276e5f8d72b9c",
+    "sha256": "49b5554588c3467861c193f6f93ae7ed1ceac44fecac22e3f95dcc1c16893b3b",
+    "icon_size": 256,
+    "mipmaps": 1
+  }
+}

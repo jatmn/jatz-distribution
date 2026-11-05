@@ -3,16 +3,20 @@
 -- names and numbers): how many levels of each upgrade a force has, and what they give.
 local research = {}
 
--- Unlocks every recipe.
+-- Unlocks the item depots, the fuel depot, the freighter and road.
 research.system = "jatz-freight-system"
+-- Expands it with the liquid depots.
+research.liquid = "jatz-liquid-freight"
 -- Upgrades are named <name>-<level>.
 research.speed = "jatz-freighter-speed"
-research.capacity = "jatz-freighter-capacity"
+research.item_capacity = "jatz-freighter-item-capacity"
+research.fluid_capacity = "jatz-freighter-fluid-capacity"
 -- Transport Drones' speed research: +20% a level, four levels, then an infinite one.
 research.speed_levels = 4
 research.speed_bonus = 0.2
--- Five capacity levels (Transport Drones has five too), each one more stack of items, or a tenth
--- of the base 500 of fluid (the owner's choice, November 5, 2026).
+-- Five levels each of item capacity, one more stack a level, and fluid capacity, a tenth of the
+-- base 500 a level (Transport Drones has five capacity levels; the owner's choice, November 5,
+-- 2026, as two separate upgrades).
 research.capacity_levels = 5
 research.stacks_per_level = 1
 research.fluid_per_level = 50
@@ -40,11 +44,11 @@ function research.speed_multiplier(force)
 end
 
 function research.extra_stacks(force)
-  return research.stacks_per_level * research.levels(force, research.capacity)
+  return research.stacks_per_level * research.levels(force, research.item_capacity)
 end
 
 function research.extra_fluid(force)
-  return research.fluid_per_level * research.levels(force, research.capacity)
+  return research.fluid_per_level * research.levels(force, research.fluid_capacity)
 end
 
 -- Whether a finished or reversed research changes freighter speed.

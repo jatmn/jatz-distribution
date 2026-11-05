@@ -11,7 +11,7 @@ Build depots where goods are made and where they're needed, connect them with ro
 
 ## How it works
 
-1. **Research Freight system**, after Engine, to unlock the depots, freighters and road.
+1. **Research Freight system**, after Engine, to unlock the item depots, freighters and road (and **Liquid freight** later for the liquid depots).
 2. **Lay road.** Freighters drive only on road, which you'll find in the mod's row of the crafting menu. Each depot lays a road tile under its loading zone (except on space platforms), so just run your road up to it.
 3. **Place a provider depot** and fill it with goods.
 4. **Place a request depot**, open it, and choose an item and how many to keep in stock.
@@ -32,7 +32,7 @@ Want the details? The **[player guide](docs/guide.md)** covers the freighter slo
 - **Circuit network:** switch depots on and off with a circuit condition, and read what a whole road network holds with the road network monitor.
 - **Blueprint friendly:** copy, paste and blueprints keep requests, priorities and freighters, and construction robots bring the trucks.
 - **Cargo stays intact:** armor keeps its equipment, and food keeps track of its spoilage.
-- **Research:** unlock the system, then make freighters faster (with infinite research) and carry more.
+- **Research:** unlock the system, expand it to fluids, then make freighters faster (with infinite research) and carry more items and fluid.
 - **See what's on board:** a freighter's cargo bays are light grey while empty and take the color of the item or fluid it picks up.
 - **Paint it your way:** every truck and depot has three paint layers you can recolor.
 
@@ -78,7 +78,7 @@ Copy `dist/jatz-distribution_0.1.0.zip` into your [Factorio mods folder](https:/
 - [x] Liquid deliveries
 - [x] Fuel for freighters, and refueling at the Fuel depot
 - [ ] Freighter wheel animation and final stats
-- [x] Research: unlocking, freighter speed (infinite) and capacity
+- [x] Research: unlocking, liquid freight, freighter speed (infinite), item and fluid capacity
 - [ ] Recipes and balance
 - [ ] Release on the Factorio Mod Portal
 

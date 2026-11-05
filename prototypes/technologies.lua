@@ -1,7 +1,9 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
--- Research, laid out as Transport Drones does (its data/technologies/, values only): one
--- technology unlocks every recipe, then freighter speed (four levels and an infinite one) and
--- freighter capacity (five levels). scripts/research.lua applies the levels at runtime.
+-- Research, laid out after Transport Drones' tech tree (its data/technologies/, values only): the
+-- freight system unlocks the item depots, the fuel depot, the freighter and road; liquid freight
+-- expands it with the liquid depots. Upgrades: freighter speed (four levels and an infinite one),
+-- item capacity (five levels) and, after liquid freight, fluid capacity (five levels).
+-- scripts/research.lua applies the levels at runtime.
 local constants = require("prototypes.constants")
 local research = require("scripts.research")
 
@@ -20,21 +22,26 @@ local LADDER = {
   { RED, GREEN, BLUE, PURPLE, YELLOW },
 }
 
--- Item order in our crafting row (prototypes/placement.lua): the depots, the freighter, road.
-local RECIPES = {
+-- In our crafting row's order (prototypes/placement.lua).
+local SYSTEM_RECIPES = {
   "jatz-provider-depot",
   "jatz-request-depot",
   "jatz-buffer-depot",
-  "jatz-liquid-provider-depot",
-  "jatz-liquid-request-depot",
-  "jatz-liquid-buffer-depot",
   "jatz-fuel-depot",
   "jatz-quinityn-freighter",
   constants.road,
 }
+local LIQUID_RECIPES = {
+  "jatz-liquid-provider-depot",
+  "jatz-liquid-request-depot",
+  "jatz-liquid-buffer-depot",
+}
 
-local function icons(overlay)
-  local layers = { { icon = constants.freighter_icon, icon_size = constants.icon_size, scale = 2 } }
+-- A 256 px technology icon (tools/make_icons.py), with the game's "constant" badge for upgrades.
+local FREIGHTER = constants.freighter_technology_icon
+local LIQUID = constants.liquid_technology_icon
+local function icons(icon, overlay)
+  local layers = { { icon = icon, icon_size = constants.technology_icon_size } }
   if overlay then
     layers[2] = {
       icon = "__core__/graphics/icons/technology/constants/" .. overlay .. ".png",
@@ -47,72 +54,88 @@ local function icons(overlay)
   return layers
 end
 
--- A scripted effect: the technology GUI shows its description under the freighter's icon.
-local function nothing(description)
-  return {
-    type = "nothing",
-    effect_description = description,
-    icon = constants.freighter_icon,
-    icon_size = constants.icon_size,
-  }
+-- A scripted effect: the technology GUI shows its description beside the item icon.
+local function nothing(icon, description)
+  return { type = "nothing", effect_description = description, icon = icon, icon_size = constants.icon_size }
 end
 
-local unlocks = {}
-for _, recipe in ipairs(RECIPES) do
-  unlocks[#unlocks + 1] = { type = "unlock-recipe", recipe = recipe }
+local function unlocks(recipes)
+  local effects = {}
+  for _, recipe in ipairs(recipes) do
+    effects[#effects + 1] = { type = "unlock-recipe", recipe = recipe }
+  end
+  return effects
 end
 
 local technologies = {
   {
     type = "technology",
     name = research.system,
-    icons = icons(nil),
-    effects = unlocks,
+    icons = icons(FREIGHTER),
+    effects = unlocks(SYSTEM_RECIPES),
     prerequisites = { "engine" },
     unit = { count = 200, ingredients = LADDER[1], time = 30 },
     order = "j[jatz]-a",
   },
+  {
+    -- Expands the freight system to fluids. Fluid handling unlocks storage tanks, which liquid
+    -- depots are.
+    type = "technology",
+    name = research.liquid,
+    icons = icons(LIQUID),
+    effects = unlocks(LIQUID_RECIPES),
+    prerequisites = { research.system, "fluid-handling" },
+    unit = { count = 200, ingredients = LADDER[1], time = 30 },
+    order = "j[jatz]-b",
+  },
 }
 
-local function upgrade(name, level, effect, overlay)
-  return {
-    type = "technology",
-    name = name .. "-" .. level,
-    icons = icons(overlay),
-    upgrade = true,
-    effects = { effect },
-    prerequisites = { level > 1 and name .. "-" .. (level - 1) or research.system },
-    order = "j[jatz]-" .. name,
-  }
+-- `levels` finite levels of an upgrade, each after the one before, the first after `first`.
+local function upgrades(name, levels, first, icon, overlay, effect)
+  for level = 1, levels do
+    technologies[#technologies + 1] = {
+      type = "technology",
+      name = name .. "-" .. level,
+      icons = icons(icon, overlay),
+      upgrade = true,
+      effects = { effect },
+      prerequisites = { level > 1 and name .. "-" .. (level - 1) or first },
+      unit = { count = level * 200, ingredients = LADDER[level], time = 30 },
+      order = "j[jatz]-" .. name,
+    }
+  end
 end
 
-local speed_effect =
-  nothing({ "modifier-description.jatz-freighter-speed", tostring(math.floor(research.speed_bonus * 100 + 0.5)) })
-for level = 1, research.speed_levels do
-  local technology = upgrade(research.speed, level, speed_effect, "constant-movement-speed")
-  technology.unit = { count = level * 200, ingredients = LADDER[level], time = 30 }
-  technologies[#technologies + 1] = technology
-end
+local percent = tostring(math.floor(research.speed_bonus * 100 + 0.5))
+local speed_effect = nothing(constants.freighter_icon, { "modifier-description.jatz-freighter-speed", percent })
+upgrades(research.speed, research.speed_levels, research.system, FREIGHTER, "constant-movement-speed", speed_effect)
 -- Then one level after another for ever, each costing twice the last.
 local infinite_level = research.speed_levels + 1
-local infinite = upgrade(research.speed, infinite_level, speed_effect, "constant-movement-speed")
-infinite.max_level = "infinite"
-infinite.unit = {
-  count_formula = string.format("2^(L-%d)*500", infinite_level),
-  ingredients = { RED, GREEN, BLUE, PURPLE, YELLOW, WHITE },
-  time = 60,
+technologies[#technologies + 1] = {
+  type = "technology",
+  name = research.speed .. "-" .. infinite_level,
+  icons = icons(FREIGHTER, "constant-movement-speed"),
+  upgrade = true,
+  effects = { speed_effect },
+  prerequisites = { research.speed .. "-" .. research.speed_levels },
+  max_level = "infinite",
+  unit = {
+    count_formula = string.format("2^(L-%d)*500", infinite_level),
+    ingredients = { RED, GREEN, BLUE, PURPLE, YELLOW, WHITE },
+    time = 60,
+  },
+  order = "j[jatz]-" .. research.speed,
 }
-technologies[#technologies + 1] = infinite
 
-local capacity_effect = nothing({
-  "modifier-description.jatz-freighter-capacity",
-  tostring(research.stacks_per_level),
-  tostring(research.fluid_per_level),
-})
-for level = 1, research.capacity_levels do
-  local technology = upgrade(research.capacity, level, capacity_effect, "constant-capacity")
-  technology.unit = { count = level * 200, ingredients = LADDER[level], time = 30 }
-  technologies[#technologies + 1] = technology
-end
+local item_effect = nothing(
+  constants.freighter_icon,
+  { "modifier-description.jatz-freighter-item-capacity", tostring(research.stacks_per_level) }
+)
+upgrades(research.item_capacity, research.capacity_levels, research.system, FREIGHTER, "constant-capacity", item_effect)
+local fluid_effect = nothing(
+  string.format(constants.depot_icon, "liquid-provider"),
+  { "modifier-description.jatz-freighter-fluid-capacity", tostring(research.fluid_per_level) }
+)
+upgrades(research.fluid_capacity, research.capacity_levels, research.liquid, LIQUID, "constant-capacity", fluid_effect)
 
 data:extend(technologies)
