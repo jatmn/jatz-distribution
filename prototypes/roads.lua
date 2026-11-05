@@ -6,8 +6,8 @@
 -- Every other tile gets the "jatz_off_road" collision layer (prototypes/off-road.lua, run in
 -- data-final-fixes so tiles from every mod are included), and the freighter drone collides
 -- with that layer only. The engine's own pathfinder then keeps freighters on roads.
--- Both road tiles carry the "jatz_road" layer, which depots collide with (prototypes/depots.lua):
--- a depot can't be built on road, only its loading zone can sit on it.
+-- Both road tiles carry the "jatz_road" layer, which every building except belts, pipes and train
+-- tracks collides with (prototypes/off-road.lua), so nothing else can be built on road.
 local constants = require("prototypes.constants")
 local tile_collision_masks = require("__base__/prototypes/tile/tile-collision-masks")
 

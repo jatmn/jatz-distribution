@@ -252,19 +252,25 @@ local function check_road_placement(surface, result)
     end
     result[case[2]] = surface.get_tile(case[1], 66).name == ROAD
   end
-  -- Depots can't be built, nor their ghosts placed, on road; only their loading zone can be road
-  -- (here the road just laid at 66, 66, south of an unrotated depot at 66.5, 64.5).
-  local function can_place(y, check)
+  -- Nothing but belts, pipes, train tracks and vehicles can be built on road, and depots and their
+  -- ghosts can't either; a depot's loading zone can be road (here the road just laid at 66, 66,
+  -- south of an unrotated depot at 66.5, 64.5).
+  local function can_place(name, position, check)
     return surface.can_place_entity({
-      name = "jatz-request-depot",
-      position = { 66.5, y },
+      name = name,
+      position = position,
       force = "player",
-      build_check_type = defines.build_check_type[check],
+      build_check_type = defines.build_check_type[check or "manual"],
     })
   end
-  result.depot_on_road = can_place(66.5, "manual")
-  result.depot_ghost_on_road = can_place(66.5, "manual_ghost")
-  result.depot_zone_on_road = can_place(64.5, "manual")
+  result.depot_on_road = can_place("jatz-request-depot", { 66.5, 66.5 })
+  result.depot_ghost_on_road = can_place("jatz-request-depot", { 66.5, 66.5 }, "manual_ghost")
+  result.depot_zone_on_road = can_place("jatz-request-depot", { 66.5, 64.5 })
+  result.on_road = {}
+  for _, name in ipairs({ "small-electric-pole", "inserter", "wooden-chest", "transport-belt", "pipe", FREIGHTER }) do
+    result.on_road[name] = can_place(name, { 66.5, 66.5 })
+  end
+  result.on_road["straight-rail"] = can_place("straight-rail", { 67, 67 })
 end
 
 -- Lay road over every tile from one corner to the other (inclusive).
