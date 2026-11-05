@@ -883,6 +883,12 @@ local function need(depot, except)
   return wanted, math.max(0, math.min(wanted, chest.get_insertable_count(id) - coming))
 end
 
+-- What a request or buffer depot still needs of what it requests: its request, less what it holds
+-- and what freighters are bringing (0 with nothing requested). The road network monitor reads it.
+function logistics.missing(depot)
+  return (need(depot))
+end
+
 -- Every depot that could serve a requesting depot: provider depots, and for a request depot,
 -- buffer depots too (a buffer depot itself fetches only from providers). A request depot set to
 -- request from buffer depots ranks buffers first, however near a provider is; one not set to ranks
@@ -2686,6 +2692,19 @@ function logistics.setup_blueprint(blueprint, mapping)
     local entity = mapping[planned.entity_number]
     local depot = entity and entity.valid and request_depot(entity)
     local supplying = entity and entity.valid and supplying_depot(entity)
+    -- A road network monitor (scripts/road-monitor.lua): its reading.
+    local tag, value
+    if entity and entity.valid and not (depot or supplying) and logistics.monitor_tag then
+      tag, value = logistics.monitor_tag(entity)
+    end
+    if tag then
+      planned.tags = planned.tags or {}
+      planned.tags[tag] = value
+      if next(planned.tags) == nil then
+        planned.tags = nil
+      end
+      changed = changed + 1
+    end
     if supplying and not depot then
       -- A provider depot: its priority, unless it's the one every new depot has.
       planned.tags = planned.tags or {}
@@ -3119,11 +3138,17 @@ function logistics.init()
   logistics.add_all()
 end
 
+-- Set by other scripts (scripts/road-monitor.lua) before register(): more functions for the remote
+-- interface.
+logistics.remote_extra = {}
+-- Set by scripts/road-monitor.lua: the blueprint tag (name and value) of a road network monitor.
+logistics.monitor_tag = nil
+
 function logistics.register()
   script.on_nth_tick(IMPACT_INTERVAL, logistics.on_impact_tick)
   script.on_event(defines.events.on_ai_command_completed, logistics.on_ai_command_completed)
   script.on_event(defines.events.on_script_path_request_finished, logistics.on_script_path_request_finished)
-  remote.add_interface("jatz-distribution", {
+  local interface = {
     -- For other mods and the tests: read and write a request depot's request and status.
     set_request = logistics.set_request,
     get_request = logistics.get_request,
@@ -3167,7 +3192,11 @@ function logistics.register()
     freighter_fuel = logistics.freighter_fuel,
     set_freighter_fuel = logistics.set_freighter_fuel,
     fuel_contents = logistics.fuel_contents,
-  })
+  }
+  for name, call in pairs(logistics.remote_extra) do
+    interface[name] = call
+  end
+  remote.add_interface("jatz-distribution", interface)
 end
 
 return logistics

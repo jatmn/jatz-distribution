@@ -1,18 +1,27 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- The road network monitor (prototypes/road-monitor.lua): a constant combinator built on or beside
--- road. Once a second it puts on its wires what the provider and buffer depots on its road network
--- hold, item depots their items (each quality its own signal) and liquid depots their fluids,
--- like a roboport reading its logistic network's contents. Wire a depot's circuit condition to it
--- to switch the depot on or off by what the road network has.
+-- road. Once a second it puts on its wires one reading of the depots on its road network, like a
+-- roboport reading its logistic network, item depots' items (each quality its own signal) and
+-- liquid depots' fluids. Wire a depot's circuit condition to it to switch the depot on or off by
+-- what the road network has. The reading (`READINGS`, chosen in its panel,
+-- scripts/road-monitor-gui.lua; the owner's request, November 5, 2026, so a condition reads one
+-- thing at a time):
+-- - "supply", the default: what provider and buffer depots hold, what freighters can fetch;
+-- - "providers": what provider depots hold;
+-- - "requests": what request depots hold;
+-- - "needs": what request depots still need, their request less what they hold and what
+--   freighters are bringing (logistics.missing).
+-- Request depots are the item and liquid request depots, never buffer depots.
 --
 -- Its road network is the road (road and depot road, the tiles freighters drive on) joined, side
 -- by side, to the tile it stands on or to one of the four beside it; a depot is on it when its
--- loading zone tile is. Depots disabled by their circuit condition are left out, since no
--- freighter fetches from them; requests and freighters out on trips aren't counted.
+-- loading zone tile is. Depots disabled by their circuit condition are left out of every reading,
+-- since no freighter comes to or goes from them; freighters out on trips aren't counted.
 --
 -- Which depots are on each monitor's network is worked out again, with the engine's own flood
 -- fill (LuaSurface.get_connected_tiles), only after road, a depot or a monitor on that surface
--- changed. Players can't open the monitor to edit its signals.
+-- changed. Opening the monitor shows its panel instead of the combinator's own window, so players
+-- choose its reading but can't edit its signals.
 --
 -- A depot whose condition reads the circuit network leaves out its own contents, so each monitor
 -- remembers what it counted for each depot (`counted`, and `previous`: what its signals still show
@@ -33,6 +42,18 @@ local NEIGHBOURS = { { 0, 0 }, { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } }
 local SECTION_SIZE = 1000
 local INT_MAX = 2147483647
 local QUALITY = "normal"
+-- The readings in the order the panel lists them; nil is stored for the default, "supply". Which
+-- depot roles (logistics.depots) each reads, and whether it reads what they still need.
+local READINGS = { "supply", "providers", "requests", "needs" }
+road_monitor.readings = READINGS
+local ROLES = {
+  supply = { provider = true, buffer = true },
+  providers = { provider = true },
+  requests = { request = true },
+  needs = { request = true },
+}
+-- The blueprint tag that keeps a monitor's reading (when it isn't the default).
+local TAG = "jatz_monitor_reading"
 
 local function init_storage()
   storage.road_monitors = storage.road_monitors or {}
@@ -48,16 +69,48 @@ function road_monitor.changed(surface_index)
   end
 end
 
--- Remember a monitor (built, cloned or found on load); players can't edit its signals.
-function road_monitor.add(entity)
+local function monitor_of(entity)
+  return entity
+    and entity.valid
+    and entity.name == NAME
+    and entity.unit_number
+    and storage.road_monitors
+    and storage.road_monitors[entity.unit_number]
+end
+
+-- A monitor's reading ("supply", "providers", "requests" or "needs"), or nil for anything else.
+function road_monitor.get_reading(entity)
+  local monitor = monitor_of(entity)
+  return monitor and (monitor.reading or READINGS[1]) or nil
+end
+
+-- Set a monitor's reading; its signals follow at the next update. Returns false, changing
+-- nothing, for anything else or another reading.
+function road_monitor.set_reading(entity, reading)
+  local monitor = monitor_of(entity)
+  if not (monitor and ROLES[reading]) then
+    return false
+  end
+  monitor.reading = reading ~= READINGS[1] and reading or nil
+  return true
+end
+
+-- Remember a monitor (built, cloned or found on load), with the reading from its blueprint tags
+-- or the monitor it was cloned from. It opens to its panel (operable; monitors from before the
+-- panel weren't).
+function road_monitor.add(entity, tags, source)
   if not (entity and entity.valid and entity.name == NAME and entity.unit_number) then
     return
   end
   init_storage()
-  entity.operable = false
+  entity.operable = true
   if not storage.road_monitors[entity.unit_number] then
     storage.road_monitors[entity.unit_number] = { entity = entity, depots = {} }
     script.register_on_object_destroyed(entity)
+  end
+  local reading = (tags and tags[TAG]) or road_monitor.get_reading(source)
+  if type(reading) == "string" then
+    road_monitor.set_reading(entity, reading)
   end
   road_monitor.changed(entity.surface_index)
 end
@@ -84,15 +137,15 @@ local function tile_key(x, y)
   return x .. "," .. y
 end
 
--- Work out which provider and buffer depots are on each monitor's road network on a surface: those
--- of the monitor's own force, as deliveries only use those.
+-- Work out which delivery depots are on each monitor's road network on a surface: those of the
+-- monitor's own force, as deliveries only use those. Its reading picks among them.
 local function connect(surface, monitors)
-  -- Supplying depots by the tile they load from.
+  -- Depots by the tile they load from.
   local depots = {}
   for unit_number, depot in pairs(storage.depots or {}) do
     local entity = depot.entity
     if
-      (depot.role == "provider" or depot.role == "buffer")
+      (depot.role == "provider" or depot.role == "buffer" or depot.role == "request")
       and entity.valid
       and entity.surface_index == surface.index
     then
@@ -150,9 +203,10 @@ local function connect(surface, monitors)
   end
 end
 
--- What the enabled depots among `members` hold, as constant combinator filters, and what each one
--- added (by unit_number, counts by key).
-local function contents(members)
+-- A reading of the enabled depots among `members`, as constant combinator filters, and what each
+-- one added (by unit_number, counts by key).
+local function contents(members, reading)
+  local roles = ROLES[reading or READINGS[1]]
   local totals, order, counted = {}, {}, {}
   local function add(unit_number, kind, name, quality, amount)
     local key = kind .. "/" .. name .. "/" .. quality
@@ -172,7 +226,15 @@ local function contents(members)
   table.sort(ids)
   for _, unit_number in ipairs(ids) do
     local depot = storage.depots and storage.depots[unit_number]
-    if depot and depot.entity.valid and logistics.enabled(depot) then
+    if not (depot and depot.entity.valid and roles[depot.role] and logistics.enabled(depot)) then
+      depot = nil
+    end
+    if depot and reading == "needs" then
+      local wanted = depot.request and logistics.missing(depot) or 0
+      if wanted >= 1 then
+        add(unit_number, depot.fluid and "fluid" or "item", depot.request.item, QUALITY, math.floor(wanted))
+      end
+    elseif depot then
       if depot.fluid then
         for name, amount in pairs(depot.entity.get_fluid_contents()) do
           add(unit_number, "fluid", name, QUALITY, math.floor(amount))
@@ -267,7 +329,7 @@ function road_monitor.update()
   end
   storage.road_monitor_dirty = {}
   for _, monitor in pairs(storage.road_monitors) do
-    local filters, counted = contents(monitor.depots)
+    local filters, counted = contents(monitor.depots, monitor.reading)
     if monitor.counted_tick ~= game.tick then
       monitor.previous = monitor.counted
     end
@@ -286,5 +348,26 @@ function road_monitor.add_all()
     road_monitor.changed(surface.index)
   end
 end
+
+-- Copy and Paste settings from one monitor to another copies its reading.
+function road_monitor.on_settings_pasted(event)
+  local reading = road_monitor.get_reading(event.source)
+  if reading and monitor_of(event.destination) then
+    road_monitor.set_reading(event.destination, reading)
+  end
+end
+
+-- Blueprints keep a monitor's reading as a tag when it isn't the default (logistics.setup_blueprint
+-- asks through this hook); road_monitor.add applies it to the monitor built from the ghost.
+logistics.monitor_tag = function(entity)
+  local reading = road_monitor.get_reading(entity)
+  if reading then
+    return TAG, reading ~= READINGS[1] and reading or nil
+  end
+end
+
+-- For other mods and the tests: read and set a monitor's reading.
+logistics.remote_extra.get_monitor_reading = road_monitor.get_reading
+logistics.remote_extra.set_monitor_reading = road_monitor.set_reading
 
 return road_monitor

@@ -639,7 +639,7 @@ end
 
 -- A minimal GUI: elements with children by name, add and destroy.
 local function element(spec, parent)
-  local self = { children = {}, style = {}, parent = parent }
+  local self = { children = {}, style = {}, parent = parent, valid = true }
   for key, value in pairs(spec or {}) do
     self[key] = value
   end
@@ -652,6 +652,7 @@ local function element(spec, parent)
     return child
   end
   function self.destroy()
+    self.valid = false
     for index, child in ipairs(parent.children) do
       if child == self then
         table.remove(parent.children, index)
@@ -1450,7 +1451,7 @@ do -- The road network monitor shows what the provider and buffer depots on its 
     end,
   }
   fire("on_built_entity", { entity = monitor })
-  check("players can't open a monitor to edit it", monitor.operable == false)
+  check("a monitor can be opened, to its panel", monitor.operable == true)
   road_monitor.update()
   local function shown()
     local seen = {}
@@ -1471,6 +1472,111 @@ do -- The road network monitor shows what the provider and buffer depots on its 
   check("nor another force's", seen["item:copper-plate:normal"] == nil)
   check("and a mining depot's output", seen["item:iron-ore:normal"] == 4)
   check("nor a provider on another road", #sections == 1 and #sections[1].filters == 4)
+  -- What it reads is chosen in its panel, which opening it shows instead of the combinator's own
+  -- window. A buffer depot holding 3 stone joins the road, and the request depot asks for 12 wood
+  -- (it holds 5).
+  local buffer = depot(502)
+  buffer.name = "jatz-buffer-depot"
+  holding(buffer, { { name = "stone", quality = "normal", count = 3 } })
+  request.get_inventory = function()
+    return {
+      get_item_count = function(id)
+        return (type(id) == "table" and id.name or id) == "wood" and 5 or 0
+      end,
+      get_insertable_count = function()
+        return 100
+      end,
+      get_contents = function()
+        return { { name = "wood", quality = "normal", count = 5 } }
+      end,
+    }
+  end
+  check("setup: the request depot asks for 12 wood", logistics.set_request(request, "wood", 12))
+  local screen = element()
+  local viewer = { index = 15, valid = true, gui = { relative = element(), screen = screen } }
+  game.get_player = function()
+    return viewer
+  end
+  monitor.localised_name = { "entity-name.jatz-road-monitor" }
+  fire("on_gui_opened", { player_index = 15, entity = monitor })
+  local panel = screen.jatz_monitor_frame
+  check("opening a monitor shows its panel in place of the combinator's window", panel and viewer.opened == panel)
+  check(
+    "reading what provider and buffer depots hold to start with",
+    panel.inner.jatz_monitor_reading_supply.state and not panel.inner.jatz_monitor_reading_providers.state
+  )
+  local function choose(reading)
+    local button = panel.inner["jatz_monitor_reading_" .. reading]
+    button.state = true
+    fire("on_gui_checked_state_changed", { player_index = 15, element = button })
+    road_monitor.update()
+    return shown()
+  end
+  seen = choose("supply")
+  check(
+    "provider and buffer depots: the buffer's stone too",
+    seen["item:stone:normal"] == 3 and seen["item:iron-plate:normal"] == 10 and seen["item:wood:normal"] == nil
+  )
+  seen = choose("providers")
+  check(
+    "provider depots only: no stone",
+    seen["item:stone:normal"] == nil and seen["item:iron-plate:normal"] == 10 and seen["fluid:water:normal"] == 1500
+  )
+  check("and only that choice ticked", not panel.inner.jatz_monitor_reading_supply.state)
+  seen = choose("requests")
+  check(
+    "request depots only: the 5 wood it holds, nothing else",
+    seen["item:wood:normal"] == 5 and seen["item:iron-plate:normal"] == nil and seen["item:stone:normal"] == nil
+  )
+  seen = choose("needs")
+  check(
+    "what request depots still need: 12 less the 5 held",
+    seen["item:wood:normal"] == 7 and #sections[1].filters == 1
+  )
+  check("kept on the monitor", road_monitor.get_reading(monitor) == "needs")
+  -- Blueprints, Copy and Paste settings and clones carry it.
+  local saved
+  local blueprint = {
+    valid = true,
+    object_name = "LuaItemStack",
+    valid_for_read = true,
+    is_blueprint = true,
+    get_blueprint_entities = function()
+      return { { entity_number = 1, name = "jatz-road-monitor", position = { x = 0, y = 0 } } }
+    end,
+    set_blueprint_entities = function(entities)
+      saved = entities
+    end,
+  }
+  logistics.setup_blueprint(blueprint, { monitor })
+  check("a blueprint keeps it as a tag", saved and saved[1].tags and saved[1].tags.jatz_monitor_reading == "needs")
+  local function another()
+    next_unit = next_unit + 1
+    local copy = {}
+    for key, value in pairs(monitor) do
+      copy[key] = value
+    end
+    copy.unit_number, copy.position = next_unit, { x = 900.5, y = 3.5 }
+    copy.get_or_create_control_behavior = function() end
+    return copy
+  end
+  local built = another()
+  fire("on_robot_built_entity", { entity = built, tags = saved[1].tags })
+  check("a monitor built from it reads the same", road_monitor.get_reading(built) == "needs")
+  local pasted = another()
+  fire("on_built_entity", { entity = pasted })
+  check("a new monitor reads providers and buffers", road_monitor.get_reading(pasted) == "supply")
+  fire("on_entity_settings_pasted", { source = monitor, destination = pasted })
+  check("pasting settings copies it", road_monitor.get_reading(pasted) == "needs")
+  local cloned = another()
+  fire("on_entity_cloned", { source = monitor, destination = cloned })
+  check("so does cloning", road_monitor.get_reading(cloned) == "needs")
+  check("the remote interface refuses another reading", not road_monitor.set_reading(monitor, "everything"))
+  fire("on_gui_closed", { player_index = 15, element = panel })
+  check("E or Esc closes the panel", screen.jatz_monitor_frame == nil)
+  -- Back to providers and buffers, without the buffer, for the rest.
+  check("setup", road_monitor.set_reading(monitor, "supply"))
+  removed(buffer)
   -- P1 switched off by its circuit condition: left out.
   p1.get_circuit_network = function(connector)
     return connector == defines.wire_connector_id.circuit_green

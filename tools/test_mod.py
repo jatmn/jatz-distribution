@@ -123,12 +123,19 @@ EXPECTED = {'free_recipes': 10, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'p
             # until then. The road network monitor, beside one road, shows what its provider and
             # liquid provider hold, leaving out a switched-off provider, request depots and the
             # other road. Only delivery depots take a condition; players can't open the monitor.
-            'wired_depots': 28, 'circuit_refused_elsewhere': False, 'monitor_operable': False,
+            # The monitor opens, to its own panel (its reading); its signals stay its own.
+            'wired_depots': 28, 'circuit_refused_elsewhere': False, 'monitor_operable': True,
+            # Monitors reading request depots: before tick 300 the wall request depot holds none
+            # and still needs all 10 (its provider is switched off); afterwards it holds 10 and
+            # needs none. An unknown reading is refused; the default is providers and buffers.
+            'monitor_readings_refused': False, 'monitor_reading_default': 'supply',
+            'circuit_readings_after': {'requests': 'stone-wall=10', 'needs': ''},
             'circuit_before': {'walls': 0, 'lamps': 0, 'walls_status': 'no-provider', 'lamps_status': 'disabled',
                                'monitor': {'walls': 0, 'water': 1000, 'lamps': 0},
                                # The switched-off provider's hover panel says so with a red light;
                                # the request depot, which has no condition, shows its own status.
                                'gated_status': {'red': True, 'label': 'jatz-circuit-status.entity-off'},
+                               'readings': {'requests': '', 'needs': 'stone-wall=10'},
                                'request_status': False},
             # Switched on at tick 300, the provider shows its own status again.
             'circuit_status_after': True,

@@ -765,6 +765,16 @@ local function setup_deliveries(surface, result)
     "monitor: no wire"
   )
   result.monitor_operable = circuit.monitor.operable
+  -- Two more monitors on the same road, reading what request depots hold and what they still need.
+  circuit.readings = {}
+  for reading, x in pairs({ requests = 9.5, needs = 11.5 }) do
+    local monitor =
+      surface.create_entity({ name = MONITOR, position = { x, 40.5 }, force = "player", raise_built = true })
+    assert(remote.call("jatz-distribution", "set_monitor_reading", monitor, reading), reading .. ": refused")
+    circuit.readings[reading] = monitor
+  end
+  result.monitor_readings_refused = remote.call("jatz-distribution", "set_monitor_reading", circuit.monitor, "all")
+  result.monitor_reading_default = remote.call("jatz-distribution", "get_monitor_reading", circuit.monitor)
   deliveries.circuit = circuit
   -- What a condition reads (loading zones at y 39, x 50 to 62). On one road, three providers:
   -- "wired" holding 300 wood, wired red to "remote" holding 2800; and "monitored" holding 300,
@@ -1156,6 +1166,26 @@ local function status(entity)
 end
 
 -- What a road network monitor puts on its red wire: stone walls, water and small lamps.
+-- What each of the reading monitors shows, by reading: "name=count" for each of its signals (from
+-- its sections), sorted and comma-separated ("" for none).
+local function readings_shown(monitors)
+  local shown = {}
+  for reading, monitor in pairs(monitors) do
+    local signals = {}
+    local behavior = monitor.get_control_behavior()
+    for index = 1, behavior and behavior.sections_count or 0 do
+      for _, filter in pairs(behavior.get_section(index).filters) do
+        if filter.value then
+          signals[#signals + 1] = filter.value.name .. "=" .. filter.min
+        end
+      end
+    end
+    table.sort(signals)
+    shown[reading] = table.concat(signals, ",")
+  end
+  return shown
+end
+
 local function monitor_reading(monitor)
   local network = monitor.get_circuit_network(defines.wire_connector_id.circuit_red)
   return {
@@ -1193,6 +1223,7 @@ local function interfere(surface)
       walls_status = status(circuit.request),
       lamps_status = status(circuit.lamps),
       monitor = monitor_reading(circuit.monitor),
+      readings = readings_shown(circuit.readings),
       -- The hover panel of the provider switched off, and of the request depot on its road.
       gated_status = circuit.gated.custom_status and {
         red = circuit.gated.custom_status.diode == defines.entity_status_diode.red,
@@ -1667,6 +1698,7 @@ local function deliveries_finished(surface, tick, result)
   result.circuit_lamps = count(circuit.lamps, "small-lamp")
   result.circuit_after = monitor_reading(circuit.monitor)
   result.circuit_status_after = circuit.gated.custom_status == nil
+  result.circuit_readings_after = readings_shown(circuit.readings)
   -- What each condition reads, long after the monitor first counted: the circuit network without
   -- the depot's own wood, or its own wood.
   local modes = deliveries.modes

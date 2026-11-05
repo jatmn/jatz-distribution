@@ -47,7 +47,8 @@ local function on_built(event)
     -- Built from a blueprint ghost: the request it was blueprinted with.
     logistics.apply_tags(entity, event.tags)
     if entity.name == road_monitor.name then
-      road_monitor.add(entity)
+      -- With the reading it was blueprinted with.
+      road_monitor.add(entity, event.tags)
     else
       depot_changed(entity)
     end
@@ -101,7 +102,7 @@ script.on_event(defines.events.on_entity_cloned, function(event)
     end
     logistics.on_cloned(event.source, entity)
     if entity.valid and entity.name == road_monitor.name then
-      road_monitor.add(entity)
+      road_monitor.add(entity, nil, event.source)
     elseif entity.valid then
       depot_changed(entity)
     end
@@ -128,7 +129,10 @@ for _, event in ipairs({ defines.events.on_entity_died, defines.events.script_ra
 end
 script.on_event(defines.events.on_player_rotated_entity, on_turned)
 script.on_event(defines.events.on_player_flipped_entity, on_turned)
-script.on_event(defines.events.on_entity_settings_pasted, logistics.on_entity_settings_pasted)
+script.on_event(defines.events.on_entity_settings_pasted, function(event)
+  logistics.on_entity_settings_pasted(event)
+  road_monitor.on_settings_pasted(event)
+end)
 -- Blueprints and copy and paste of request depots keep their request and freighters.
 script.on_event(defines.events.on_player_setup_blueprint, logistics.on_player_setup_blueprint)
 

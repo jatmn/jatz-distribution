@@ -144,12 +144,20 @@ Provider, request and buffer depots, item and liquid, also have an **Enable/disa
 
 ### Road network monitor
 
-To switch depots on what the road network holds, build a **road network monitor** on a road tile or right beside one, and wire it to the depots. Once a second it sends what the provider and buffer depots on that road network hold, like a roboport reading its logistic network:
+To switch depots on what the road network holds or needs, build a **road network monitor** on a road tile or right beside one, and wire it to the depots. Once a second it sends one reading of the depots on that road network, like a roboport reading its logistic network. Open it to choose the reading:
+
+- **What provider and buffer depots hold** (the default): what freighters can fetch.
+- **What provider depots hold**: buffer depots left out.
+- **What request depots hold**: item and liquid request depots, not buffer depots.
+- **What request depots still need**: each request depot's request, less what it holds and what freighters are already bringing it.
+
+More about it:
 
 - Its road network is all the road joined, side by side, to the tile it stands on or to one of the four beside it. A depot is on it when its loading zone is.
 - Item depots count their items (each quality as its own signal) and liquid depots their fluids.
-- Request depots, freighters on the road, and depots switched off by their circuit condition aren't counted.
-- Its signals can't be edited.
+- Freighters on the road, and depots switched off by their circuit condition, aren't counted.
+- Its signals can't be edited: opening it shows only the choice of reading. Copy and Paste settings, blueprints and copies keep the reading.
+- Use one monitor per reading, each on its own wire, so a condition reads one thing at a time.
 
 For example, wire a backup provider to a monitor and give it the condition *iron plate < 100*: it supplies only while the other providers on the road run low.
 

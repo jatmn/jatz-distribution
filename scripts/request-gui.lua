@@ -23,6 +23,8 @@
 -- saying whether the depot is enabled now.
 local logistics = require("scripts.logistics")
 local depot_circuit = require("scripts.depot-circuit")
+-- The road network monitor's panel gets the GUI events first (scripts/road-monitor-gui.lua).
+local monitor_gui = require("scripts.road-monitor-gui")
 
 local request_gui = {}
 
@@ -481,6 +483,9 @@ local function count_pockets(player)
 end
 
 local function on_gui_opened(event)
+  if monitor_gui.on_gui_opened(event) then
+    return
+  end
   local entity = event.entity
   if entity and entity.valid and (ROLES[entity.name] == "provider" or ROLES[entity.name] == "fuel") then
     open(game.get_player(event.player_index), entity)
@@ -495,6 +500,9 @@ local function on_gui_opened(event)
 end
 
 local function on_gui_closed(event)
+  if monitor_gui.on_gui_closed(event) then
+    return
+  end
   if event.entity and storage.request_gui then
     storage.request_gui[event.player_index] = nil
   end
@@ -678,6 +686,9 @@ end
 request_gui.on_player_cursor_stack_changed = request_gui.on_player_main_inventory_changed
 
 local function on_gui_checked_state_changed(event)
+  if monitor_gui.on_gui_checked_state_changed(event) then
+    return
+  end
   local mode = event.element.name:match("^" .. CIRCUIT_MODE .. "(%a+)$")
   if mode then
     local entity = opened_depot(game.get_player(event.player_index))
