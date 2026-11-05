@@ -68,7 +68,8 @@ end
 -- * yellow: the item is there, but something is in the way (no road route right now, no
 --   freighters, loading zone not on road, the depot full or its tank holding another fluid, a
 --   freighter couldn't be sent);
--- * red: no depot it fetches from has the item (no provider, nor any buffer for a request depot);
+-- * red: no depot it fetches from has the item (no provider, nor any buffer for a request depot),
+--   or its freighters need fuel and no Fuel depot is connected by road;
 -- * grey: nothing requested.
 local LIGHTS = {
   satisfied = "utility/status_working",
@@ -82,6 +83,7 @@ local LIGHTS = {
   ["other-fluid"] = "utility/status_yellow",
   ["no-fuel"] = "utility/status_yellow",
   ["no-provider"] = "utility/status_not_working",
+  ["no-fuel-depot"] = "utility/status_not_working",
   none = "utility/status_inactive",
 }
 request_gui.lights = LIGHTS

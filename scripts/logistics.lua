@@ -169,9 +169,12 @@ logistics.status = {
   delivering = "delivering",
   -- A liquid depot's tank holds another fluid than the one requested.
   other_fluid = "other-fluid",
-  -- Its freighters can't reach the provider on the fuel they have, and no Fuel depot with fuel can
-  -- be reached by road to fill up at.
+  -- Its freighters can't reach the provider on the fuel they have, and the Fuel depots their road
+  -- reaches have no fuel: they go once one has some.
   no_fuel = "no-fuel",
+  -- Its freighters can't reach the provider on the fuel they have, and their road reaches no Fuel
+  -- depot at all: red.
+  no_fuel_depot = "no-fuel-depot",
 }
 
 -- Trip states: driving out to the provider, bringing cargo to the request depot, or taking cargo
@@ -924,8 +927,10 @@ end
 
 -- Fuel depots a freighter of `depot` could fill up at: same surface and force, road at the loading
 -- zone, holding fuel, not on cooldown for this depot (no road route lately), nearest first in a
--- straight line from `from`.
-local function fuel_candidates(depot, from)
+-- straight line from `from`. With `empty`, Fuel depots without fuel come too, ranked after all
+-- those with fuel (rank 1): a search reaches one only when none with fuel has a road, and tells a
+-- freighter at home that its road has Fuel depots, empty ones, from none at all.
+local function fuel_candidates(depot, from, empty)
   local entity = depot.entity
   local found = {}
   for unit_number, fuel in pairs(storage.depots) do
@@ -936,16 +941,24 @@ local function fuel_candidates(depot, from)
       and candidate.surface == entity.surface
       and candidate.force == entity.force
       and (depot.cooldowns[unit_number] or 0) <= game.tick
-      and has_fuel(fuel)
     then
+      local stocked = has_fuel(fuel)
       local position, on_road = loading_tile(candidate)
-      if on_road then
+      if on_road and (stocked or empty) then
         local dx, dy = position.x - from.x, position.y - from.y
-        found[#found + 1] = { id = unit_number, position = position, distance = math.sqrt(dx * dx + dy * dy), rank = 0 }
+        found[#found + 1] = {
+          id = unit_number,
+          position = position,
+          distance = math.sqrt(dx * dx + dy * dy),
+          rank = stocked and 0 or 1,
+        }
       end
     end
   end
   table.sort(found, function(a, b)
+    if a.rank ~= b.rank then
+      return a.rank < b.rank
+    end
     return a.distance < b.distance or (a.distance == b.distance and a.id < b.id)
   end)
   return found
@@ -960,7 +973,8 @@ local function seek_fuel(id, trip)
     return false
   end
   local from = trip.drone.position
-  local found = fuel_candidates(depot, from)
+  -- One still at home also looks for empty ones, so its depot can say which it is waiting for.
+  local found = fuel_candidates(depot, from, trip.departing)
   if #found == 0 then
     return false
   end
@@ -981,8 +995,11 @@ local function seek_fuel(id, trip)
 end
 
 -- Nowhere to fill up for this leg: go on where it was going on what it has. One that hasn't left
--- home yet and can't reach the provider on that stays home, and its depot waits a while.
-local function go_without_fuel(id, trip)
+-- home yet and can't reach the provider on that stays home, never sent to wait at an empty Fuel
+-- depot. Its depot waits for fuel in one if a road reaches an empty one (`empty_reachable`;
+-- dispatch looks every second), and otherwise shows red, no Fuel depot connected by road, until
+-- one is built or connected (or RETRY_TICKS pass).
+local function go_without_fuel(id, trip, empty_reachable)
   trip.fuel_search, trip.refueled = nil, true
   if not trip.drone.valid then
     return end_trip(id, trip)
@@ -990,9 +1007,10 @@ local function go_without_fuel(id, trip)
   if trip.departing and trip.energy < (trip.leg or 0) * fuel_per_tile() then
     local depot = storage.depots[trip.request]
     if depot then
+      local status = empty_reachable and logistics.status.no_fuel or logistics.status.no_fuel_depot
       depot.retry_at = game.tick + RETRY_TICKS
-      depot.retry_status = logistics.status.no_fuel
-      depot.status = logistics.status.no_fuel
+      depot.retry_status = status
+      depot.status = status
     end
     return end_trip(id, trip)
   end
@@ -1097,6 +1115,14 @@ local function dispatch(depot)
   if not on_road then
     depot.status = logistics.status.no_road
     return
+  end
+  if
+    (depot.retry_at or 0) > game.tick
+    and (depot.retry_status == logistics.status.no_fuel or depot.retry_status == logistics.status.no_fuel_depot)
+    and #fuel_candidates(depot, from) > 0
+  then
+    -- Its freighters were waiting for fuel, and a Fuel depot has some now: they go at once.
+    depot.retry_at = 0
   end
   if (depot.retry_at or 0) > game.tick then
     depot.status = depot.retry_status or logistics.status.no_freighter
@@ -1676,11 +1702,12 @@ local function finish_search(depot, search, owner)
     if fuel and fuel.entity.valid and has_fuel(fuel) then
       owner.refuel = search.best
       drive(owner, (loading_tile(fuel.entity)))
-    elseif search.best then
+    elseif search.best and search.best_rank == 0 then
       -- The one found was emptied or removed meanwhile: look again among the rest.
       look_for_fuel(search.trip, owner)
     else
-      go_without_fuel(search.trip, owner)
+      -- None with fuel has a road; one without fuel may (rank 1).
+      go_without_fuel(search.trip, owner, search.best ~= nil)
     end
     return
   end

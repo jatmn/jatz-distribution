@@ -1667,16 +1667,71 @@ do -- Nothing to fill up with: a fluid that doesn't burn, a chest of things that
   local logistics = reset()
   local fuel = fuel_depot(logistics, -10.5, 0.5, { { "a", 20 } }, "water", 500)
   local request = fuelled(logistics, 0)
-  check("a Fuel depot without fuel is no candidate", #requests == 1)
-  check("a freighter that can't make it there stays home", not has_trip(request))
-  check("its depot says it has no fuel", logistics.get_status(request) == "no-fuel")
+  check("a freighter at home asks for a road to the empty Fuel depot too", requests[2].goal.x == -10.5)
+  answer(logistics, 2, "route")
+  check("but is never sent to wait there: it stays home", not has_trip(request))
+  check("its depot says the Fuel depots have no fuel", logistics.get_status(request) == "no-fuel")
   check("the freighter is back in the slot", logistics.freighter_counts(request) == 5)
   game.tick = 60
   logistics.on_tick()
-  check("and the depot waits before trying again", #requests == 1 and logistics.get_status(request) == "no-fuel")
+  check("and the depot waits for fuel", #requests == 2 and logistics.get_status(request) == "no-fuel")
   check("a flushed tank is empty", logistics.flush_fuel(fuel) and logistics.fuel_contents(fuel).amount == 0)
   local contents = logistics.fuel_contents(fuel)
   check("the panel reads the tank", contents.capacity == 25000 and contents.burnable == false)
+  fuel.chest.insert({ name = "coal", count = 5 })
+  game.tick = 120
+  logistics.on_tick()
+  check("once the Fuel depot has fuel, it looks again at once, not after the wait", #requests == 3)
+  answer(logistics, 3, "route")
+  local trip = trips_from(request)[1]
+  check("and the freighter sets off to fill up there", trip and trip.fuel_search and requests[4].goal.x == -10.5)
+end
+
+do -- A Fuel depot with fuel on another road counts for nothing: an empty one on this road is yellow.
+  local logistics = reset()
+  local far
+  local request = fuelled(logistics, 0, function()
+    far = fuel_depot(logistics, -40.5, 0.5, { { "coal", 20 } })
+    fuel_depot(logistics, -10.5, 0.5)
+    return far
+  end)
+  check("those with fuel are asked first, however far", requests[2].goal.x == far.position.x)
+  answer(logistics, 2, "none")
+  check("then, none with fuel having a road, the empty one", requests[3].goal.x == -10.5)
+  answer(logistics, 3, "route")
+  check("the freighter stays home", not has_trip(request))
+  check("waiting for fuel, not red", logistics.get_status(request) == "no-fuel")
+end
+
+do -- No Fuel depot at all: red, until one is built; then a freighter sets off to fill up there.
+  local logistics = reset()
+  local request = fuelled(logistics, 0)
+  check("a freighter that can't make it stays home", not has_trip(request) and logistics.freighter_counts(request) == 5)
+  check("and its depot says no Fuel depot is connected by road", logistics.get_status(request) == "no-fuel-depot")
+  game.tick = 60
+  logistics.on_tick()
+  check("it waits", #requests == 1 and logistics.get_status(request) == "no-fuel-depot")
+  local fuel = fuel_depot(logistics, -10.5, 0.5, { { "coal", 20 } })
+  logistics.on_depot_changed(fuel)
+  game.tick = 120
+  logistics.on_tick()
+  check("a Fuel depot built: it looks again at once", #requests == 2)
+  answer(logistics, 2, "route")
+  local trip = trips_from(request)[1]
+  check("and sets off to fill up there", trip and trip.fuel_search and requests[3].goal.x == fuel.position.x)
+end
+
+do -- A Fuel depot with fuel but no road route to it: red too, and no new search while it cools down.
+  local logistics = reset()
+  local request = fuelled(logistics, 0, function()
+    return fuel_depot(logistics, -10.5, 0.5, { { "coal", 20 } })
+  end)
+  answer(logistics, 2, "none")
+  check("no route: the freighter stays home", not has_trip(request) and logistics.freighter_counts(request) == 5)
+  check("and its depot says no Fuel depot is connected by road", logistics.get_status(request) == "no-fuel-depot")
+  game.tick = 60
+  logistics.on_tick()
+  check("nothing is asked again meanwhile", #requests == 2 and logistics.get_status(request) == "no-fuel-depot")
 end
 
 do -- Short, but enough to reach the provider, and nowhere to fill up: it goes anyway.
@@ -1733,8 +1788,10 @@ do -- A Fuel depot of fuel cells with no room left for used ones gives nothing: 
     fuel.chest.room = 0
     return fuel
   end)
-  check("a Fuel depot with no room for burnt results isn't asked", #requests == 1)
+  check("a Fuel depot with no room for burnt results is asked only as an empty one", #requests == 2)
+  answer(logistics, 2, "route")
   check("so a freighter that can't make it stays home", not has_trip(request))
+  check("waiting for fuel", logistics.get_status(request) == "no-fuel")
 end
 
 do -- Freighters taken out take their fuel with them; new ones put in come with a full tank.

@@ -637,7 +637,8 @@ local function setup_deliveries(surface, result)
   --   makes burnable at 1 MJ (data.lua): it takes 20, and fetches 10 copper ore.
   -- * dry: an empty tank, and the only Fuel depot on its road holds stone. The freighter can't
   --   reach the provider and stays home (status no-fuel), until coal is put in that Fuel depot
-  --   (tick 300): then it crawls there, fills up, and fetches 10 sulfur.
+  --   (tick 300): then it sets off at once (delivering by tick 420), crawls there, fills up, and
+  --   fetches 10 sulfur.
   local fuelled = {
     fuel = depot(surface, "fuel", -70.5, 64.5),
     request = depot(surface, "request", -66.5, 64.5, 1),
@@ -1108,6 +1109,9 @@ local function interfere(surface)
     dry.waiting_status = status(dry.request)
     dry.waiting_received = count(dry.request, "sulfur")
     assert(dry.fuel.insert({ name = "coal", count = 5 }) == 5, "dry: cannot add coal")
+  elseif game.tick == 420 then
+    -- Its depot looks every second for fuel to get, not after its 10-second wait.
+    dry.after_coal_status = status(dry.request)
   end
   -- Once robots have brought the 3 requested freighters, have them take 2 away again.
   if not deliveries.removal_started then
@@ -1504,6 +1508,7 @@ local function deliveries_finished(surface, tick, result)
   result.liquid_fuel_taken = math.floor(100 - liquid_fuelled.tank.get_fluid_count("petroleum-gas") + 0.5)
   result.no_fuel_status = dry.waiting_status
   result.no_fuel_received_before = dry.waiting_received
+  result.no_fuel_status_after_coal = dry.after_coal_status
   result.no_fuel_received_after = count(dry.request, "sulfur")
   result.no_fuel_coal_left = count(dry.fuel, "coal")
   local turned = storage.turned_fuel

@@ -69,7 +69,8 @@ Freighters burn fuel as they drive, and fill up at **fuel depots** by themselves
 - Load a fuel depot with **any fuel item** (coal, solid fuel, rocket fuel, a mod's fuel, anything that burns), by hand, inserter or robot, or **pipe in any fluid that burns**. Freighters take the fluid first, then items, a whole item at a time. Fuel that burns into something (a fuel cell, say) leaves that in the depot.
 - Before every leg of a trip (leaving home, leaving the provider) a freighter checks whether its tank will last to where it's going, with some to spare. If not, it first drives to the **fuel depot nearest by road**, stops about a second to fill up, then carries on where it was going, cargo and all.
 - If its tank runs dry anyway, it crawls on at a tenth of its speed to a fuel depot, or to where it was going if it can't reach one.
-- A freighter that can't even reach the provider on what it has, with no fuel depot it can reach that has fuel, stays home, and the request depot's light turns yellow. It tries again every 10 seconds, and at once when you lay road or build a depot.
+- Freighters only fill up at fuel depots, and are only sent when there is fuel to get. Fuel in provider, request or buffer depots is ordinary cargo: freighters deliver it like anything else and never burn it.
+- A freighter that can't even reach the provider on what it has stays home rather than being sent to wait at an empty fuel depot. If there are fuel depots but none has fuel, the request depot's light turns yellow, and the freighter sets off as soon as one does. If no fuel depot is connected by road, the light turns red, and the freighter sets off as soon as you build one or connect it by road (and it has fuel).
 - The fuel depot's window shows the fluid in it. If a fluid that doesn't burn got in, the **flush** button beside it empties it (and the pipes joined to it).
 - How big the tank is and how much a tile of driving burns are **Settings → Mod settings → Map** options. Setting the use to 0 turns fuel off.
 
@@ -80,8 +81,8 @@ A light beside the request shows at a glance whether it can be filled. Hover it 
 | Light | Meaning |
 | --- | --- |
 | 🟢 Green | Stocked, a freighter is on its way, or it's finding a provider (or, for a request depot, a buffer depot) by road |
-| 🟡 Yellow | Waiting on something in the way: no room in the depot, its loading zone isn't on road, no road route to a provider (or, for a request depot, a buffer depot) that has it, no freighters (or none could be sent), freighters too low on fuel with no fuel depot to fill up at, or a liquid depot's tank holds another fluid |
-| 🔴 Red | No provider depot with road at its loading zone has it (nor, for a request depot, any buffer depot) |
+| 🟡 Yellow | Waiting on something in the way: no room in the depot, its loading zone isn't on road, no road route to a provider (or, for a request depot, a buffer depot) that has it, no freighters (or none could be sent), freighters too low on fuel while the fuel depots are empty, or a liquid depot's tank holds another fluid |
+| 🔴 Red | No provider depot with road at its loading zone has it (nor, for a request depot, any buffer depot), or its freighters need fuel and no fuel depot is connected by road |
 | ⚪ Grey | Nothing requested |
 
 ## When roads or depots change
