@@ -380,6 +380,8 @@ local function setup_deliveries(surface, result)
     unpaved = unpaved,
     road_samples = 0,
     deepest = 0,
+    -- Every cargo icon seen on a freighter.
+    cargo_icons = {},
     -- Ticks the connected pair's freighter reached the provider's loading zone, loaded, got home
     -- and unloaded.
     stops = {},
@@ -791,10 +793,26 @@ local function setup_deliveries(surface, result)
     and remote.call("jatz-distribution", "get_request", clone) == nil
 end
 
+-- The sprites the mod draws on a freighter (its alt-mode cargo icon), in drawing order.
+local function cargo_icons(drone)
+  local sprites = {}
+  for _, object in pairs(rendering.get_all_objects("jatz-distribution")) do
+    if object.type == "sprite" and object.target.entity == drone then
+      assert(object.only_in_alt_mode, "a freighter's cargo icon shows outside alt mode")
+      sprites[#sprites + 1] = object.sprite
+    end
+  end
+  return table.concat(sprites, " ")
+end
+
 -- Every freighter on the way must stand wholly on road.
 local function check_freighters_on_road(surface)
   local deliveries = storage.deliveries
   for _, drone in pairs(surface.find_entities_filtered({ name = DRONES })) do
+    local icons = cargo_icons(drone)
+    if icons ~= "" then
+      deliveries.cargo_icons[icons] = true
+    end
     local box = drone.bounding_box
     for _, corner in ipairs({
       { box.left_top.x, box.left_top.y },
@@ -856,6 +874,7 @@ local function interfere(surface)
     if stops.drone then
       stops.at_provider = game.tick
       stops.empty_paint = stops.drone.name
+      stops.empty_icons = cargo_icons(stops.drone)
     end
   end
   if stops.at_provider and not stops.loaded and count(deliveries.provider) < 50 then
@@ -890,6 +909,7 @@ local function interfere(surface)
       and sticky.drone.name == DRONE
       and sticky.sticker.valid
       and sticky.sticker.sticked_to == sticky.drone
+    sticky.loaded_icons = cargo_icons(sticky.drone)
   end
   if sticky.loaded and not sticky.painted then
     for _, drone in pairs(surface.find_entities_filtered({ name = IRON_PAINT, area = sticky.road })) do
@@ -897,6 +917,7 @@ local function interfere(surface)
       -- Painted where the old one was, after the sticker wore off, still on its way home.
       sticky.painted_after_sticker = not sticky.sticker.valid and not sticky.drone.valid
       sticky.painted_on_road = drone.position.x < sticky.request.position.x - 1
+      sticky.painted_icons = cargo_icons(drone)
     end
   end
   if stops.at_provider and not stops.loaded then
@@ -904,6 +925,7 @@ local function interfere(surface)
   end
   if stops.loaded and not stops.at_home and standing_at(-40.5, 47.5) then
     stops.at_home = game.tick
+    stops.loaded_icons = cargo_icons(stops.drone)
   end
   if stops.at_home and not stops.unloaded and count(deliveries.connected) > 0 then
     stops.unloaded = game.tick
@@ -1084,6 +1106,22 @@ local function deliveries_finished(surface, tick, result)
   for _, stop in ipairs({ result.loading_stop, result.unloading_stop }) do
     assert(stop >= 50 and stop <= 70, "a freighter stood " .. stop .. " ticks to load or unload, not 60")
   end
+  -- In alt mode a loaded freighter shows its cargo's icon, an empty one nothing.
+  result.empty_icons = stops.empty_icons
+  result.loaded_icons = stops.loaded_icons
+  assert(stops.empty_icons == "", "an empty freighter shows a cargo icon: " .. stops.empty_icons)
+  assert(
+    stops.loaded_icons == "utility/entity_info_dark_background item/iron-plate",
+    "a freighter loaded with iron plates shows: " .. stops.loaded_icons
+  )
+  -- Kept unswapped while the sticker lasts, it shows the icon; painted after, the new one does.
+  for _, icons in ipairs({ deliveries.sticky.loaded_icons or "", deliveries.sticky.painted_icons or "" }) do
+    assert(icons == "utility/entity_info_dark_background item/iron-plate", "the sticky freighter shows: " .. icons)
+  end
+  assert(
+    deliveries.cargo_icons["utility/entity_info_dark_background fluid/water"],
+    "no freighter carrying water showed its icon"
+  )
   local home, out = remote.call("jatz-distribution", "freighter_counts", deliveries.connected)
   assert(home == 3 and out == 0, "the delivered freighter was not returned to its slot")
   assert(not stops.drone.valid, "the unloaded freighter did not park")

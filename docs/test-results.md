@@ -70,6 +70,8 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | Road laid from a ghost on grass; refused on water | Passed |
 | A save made by the PR's first version, with a freighter on its way, loads and finishes the delivery | Passed (one-off check) |
 | Road tile art, transitions and the item icon in the graphical client | Untested |
+| Alt-mode cargo icons (November 4, 2026; Factorio 2.1.24 headless, Linux, base and Space Age): the tracked freighter has no icon on reaching the provider empty and `utility/entity_info_dark_background` + `item/iron-plate` (alt mode only) on getting home loaded; a freighter carrying water showed `fluid/water`. Both checks fail with the icon call removed | Passed headless |
+| Alt-mode cargo icon size and placement on the freighter in the graphical client (0.6 scale, centred on the truck) | Untested |
 | Request panel beside the request depot's window (item, amount, status), and Copy and Paste settings between request depots | **Passed:** the owner reported the first version working in game on November 3, 2026; the panel is unchanged since |
 
 ## Depots: passed
