@@ -27,7 +27,7 @@ This builds the installable zip with `tools/package_mod.py` and loads it, with t
 - every depot can be placed, as a ghost and for real, in all four directions, and rotated through a full turn;
 - each depot's pipe ports match the designed layout (written out in the check mod, independently of the generated data) and all 20 connect;
 - containers hold items and tanks hold fluid;
-- a character can enter a fuelled freighter and drive it;
+- the freighter item doesn't place the car (the `jatz-freighter-drivable` startup setting is off by default), whose entity stays defined but hidden, and a character can enter a fuelled freighter made by script and drive it;
 - every item, recipe and entity name the game shows has an English translation;
 - our row sits directly above the car and tank row in the same tab, with the items in their intended order;
 - building a depot clears decoratives from its loading zone tile and keeps those beyond it, for all 7 depots in all 4 directions;

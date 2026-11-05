@@ -121,6 +121,7 @@ With [Mining Drones](https://mods.factorio.com/mod/Mining_Drones), [Mining Drone
 ## Good to know
 
 - Freighters need no fuel yet.
+- Freighters are for depots to send out: you can't place one and drive it yourself. To allow that, turn on **Place freighters as cars** under **Settings → Mod settings → Startup**. Freighters already placed stay drivable either way, and you can pick them up.
 - Enemies can attack and destroy freighters. Freighters never fight back or turn aside: they drive on until they arrive or are destroyed. A freighter that drives through an enemy unit runs it over, as a train does, but it never harms players or other freighters.
 - A freighter destroyed on the road explodes and leaves a wreck, which disappears after 15 minutes. It is lost, with its cargo. Its request depot then asks construction robots for a replacement freighter. You can also put one in by hand.
 - Freighters out on deliveries make a little pollution.

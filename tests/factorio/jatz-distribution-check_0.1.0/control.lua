@@ -96,12 +96,19 @@ local function locale_key(localised)
   return type(localised) == "table" and localised[1] or localised
 end
 
-local function check_recipe(name, result)
+-- unplaceable: the item must not place its entity, which stays defined but hidden (the freighter
+-- without the jatz-freighter-drivable setting).
+local function check_recipe(name, result, unplaceable)
   local item = prototypes.item[name]
-  assert(item and item.place_result and item.place_result.name == name, name .. ": item must place the entity")
+  if unplaceable then
+    assert(item and not item.place_result, name .. ": item must not place the entity")
+    assert(prototypes.entity[name].hidden, name .. ": an entity no item places must be hidden")
+  else
+    assert(item and item.place_result and item.place_result.name == name, name .. ": item must place the entity")
+  end
   -- tools/test_mod.py checks that each of these keys has an English translation.
   result.localised_names[name] = {
-    entity = locale_key(item.place_result.localised_name),
+    entity = locale_key(prototypes.entity[name].localised_name),
     item = locale_key(item.localised_name),
     recipe = locale_key(prototypes.recipe[name].localised_name),
   }
@@ -1430,7 +1437,10 @@ script.on_init(function()
   end
   check_loading_zone_clearing(surface, result)
 
-  check_recipe(FREIGHTER, result)
+  -- Players place the freighter as a car only with the jatz-freighter-drivable startup setting,
+  -- off by default (as here); the car stays defined, so a script-made one still drives below.
+  result.freighter_placeable = settings.startup["jatz-freighter-drivable"].value
+  check_recipe(FREIGHTER, result, not result.freighter_placeable)
   -- Drawn at 60% of the artwork's scale, with the boxes scaled to match.
   local box = prototypes.entity[FREIGHTER].collision_box
   result.freighter_box = { box.right_bottom.x - box.left_top.x, box.right_bottom.y - box.left_top.y }
