@@ -24,11 +24,11 @@ NO_COMMIT = '0' * 40
 EVERYTHING = {'.github/workflows/ci.yml', '.github/workflows/area.yml', 'tools/ci_changes.py'}
 # Shared lint configuration: every area's code is checked again, in full.
 SHARED_LINT = {'.luacheckrc', '.stylua.toml', '.ruff.toml', '.gitattributes'}
-DOCUMENTATION = {'README.md', 'AGENTS.md', 'NOTICE', 'COPYING', 'COPYING.LESSER',
-                 '.gitignore', 'requirements.txt'}
+DOCUMENTATION = {'README.md', 'AGENTS.md', 'CONTRIBUTING.md', 'SECURITY.md', 'NOTICE', 'COPYING',
+                 'COPYING.LESSER', '.gitignore'}
 ART_SUFFIXES = {'.blend', '.png', '.webp', '.json'}
-# The art check and the icon generator cover both art areas.
-ART_TOOLS = {'tools/check_blender_sources.py', 'tools/make_icons.py'}
+# The art check, icon generator and their Python dependencies cover both art areas.
+ART_TOOLS = {'tools/check_blender_sources.py', 'tools/make_icons.py', 'tools/test_art_dependencies.py', 'requirements.txt'}
 
 
 def area_of(path):
@@ -55,7 +55,9 @@ def touches_art(path):
     suffix = PurePosixPath(path).suffix
     return (path.startswith('assets/') and suffix in ART_SUFFIXES
             or path.startswith('assets/depots/archive/')
-            or path in {'assets/depots/tools/render_connector.py', 'assets/depots/tools/make_loading_zone.py'})
+            or path in {'assets/depots/tools/render_connector.py', 'assets/depots/tools/make_loading_zone.py',
+                        # The art jobs run the sprite extractor (tools/test_art_dependencies.py).
+                        'assets/quinityn-freighter/tools/package_sprites.py'})
 
 
 def classify(paths):

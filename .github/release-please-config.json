@@ -1,0 +1,73 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "158198d9dfb36922e9feb72211ac4e385fb726ab",
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "versioning": "always-bump-patch",
+      "version-file": ".github/version.txt",
+      "changelog-path": "docs/CHANGELOG.md",
+      "include-component-in-tag": false,
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "info.json",
+          "jsonpath": "$.version"
+        }
+      ],
+      "changelog-sections": [
+        {
+          "type": "feat",
+          "section": "Features",
+          "hidden": false
+        },
+        {
+          "type": "fix",
+          "section": "Bug Fixes",
+          "hidden": false
+        },
+        {
+          "type": "perf",
+          "section": "Performance",
+          "hidden": false
+        },
+        {
+          "type": "refactor",
+          "section": "Refactoring",
+          "hidden": false
+        },
+        {
+          "type": "docs",
+          "section": "Documentation",
+          "hidden": false
+        },
+        {
+          "type": "test",
+          "section": "Tests",
+          "hidden": false
+        },
+        {
+          "type": "build",
+          "section": "Build",
+          "hidden": false
+        },
+        {
+          "type": "ci",
+          "section": "CI",
+          "hidden": false
+        },
+        {
+          "type": "chore",
+          "section": "Maintenance",
+          "hidden": false
+        },
+        {
+          "type": "revert",
+          "section": "Reverts",
+          "hidden": false
+        }
+      ],
+      "pull-request-footer": "Review the finalized player changelog and successful CI before merging. Merging this PR authorizes a stable GitHub release and optional Mod Portal upload. See docs/releases.md."
+    }
+  }
+}

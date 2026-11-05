@@ -179,8 +179,10 @@ class RoutingTests(unittest.TestCase):
     def test_area_selection(self):
         cases = [
             (['assets/quinityn-freighter/factorio/freighter-animation.lua'], {'freighter', 'mod'}),
-            (['assets/quinityn-freighter/tools/package_sprites.py', 'tools/test_factorio.py',
-              'tools/prepare_test_mod.py', 'tests/factorio/freighter-art-check_0.1.0/control.lua'], {'freighter'}),
+            (['tools/test_factorio.py', 'tools/prepare_test_mod.py',
+              'tests/factorio/freighter-art-check_0.1.0/control.lua'], {'freighter'}),
+            # The art jobs exercise the sprite extractor, so changing it runs the freighter art checks.
+            (['assets/quinityn-freighter/tools/package_sprites.py'], {'freighter', 'freighter_art'}),
             (['assets/quinityn-freighter/source/quinityn-freighter.blend'], {'freighter', 'freighter_art'}),
             (['assets/quinityn-freighter/sheets/freighter-base.png',
               'assets/quinityn-freighter/checksums.json'], {'freighter', 'freighter_art'}),
@@ -208,10 +210,12 @@ class RoutingTests(unittest.TestCase):
             (['assets/depots/icons/fuel-depot.png', 'assets/depots/icons/icons.json'], {'depots', 'depots_art'}),
             (['assets/quinityn-freighter/icons/quinityn-freighter.png'], {'freighter', 'freighter_art'}),
             (['tools/test_check_blender_sources.py', 'tools/test_ci_changes.py'], {'repository'}),
-            (['README.md', 'AGENTS.md', 'NOTICE', 'COPYING', 'COPYING.LESSER', 'requirements.txt',
+            (['README.md', 'AGENTS.md', 'CONTRIBUTING.md', 'SECURITY.md', 'NOTICE', 'COPYING', 'COPYING.LESSER',
               '.gitignore', 'docs/testing.md', 'docs/images/x.jpg', 'concepts/depots/images/fuel.png'], set()),
             (['.luacheckrc'], {'freighter', 'depots', 'mod', 'repository'}),
             (['.stylua.toml', '.ruff.toml', '.gitattributes'], {'freighter', 'depots', 'mod', 'repository'}),
+            (['requirements.txt'], {'freighter', 'freighter_art', 'depots', 'depots_art', 'repository'}),
+            (['tools/test_art_dependencies.py'], {'freighter', 'freighter_art', 'depots', 'depots_art', 'repository'}),
             (['.github/workflows/ci.yml'], set(KEYS)),
             (['.github/workflows/area.yml'], set(KEYS)),
             (['tools/ci_changes.py'], set(KEYS)),

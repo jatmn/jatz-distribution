@@ -22,3 +22,8 @@ assets/depots/connectors/layers/
 
 # CI file lists written by .github/workflows/lua.yml
 .cache/
+
+# Local credentials and environment overrides.
+.env
+.env.*
+!.env.example

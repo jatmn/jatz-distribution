@@ -1,0 +1,61 @@
+name: Publish stable mod
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+    secrets:
+      FACTORIO_API_KEY:
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve an existing stable release from main history
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          gh release view "$TAG" --json isDraft,isPrerelease --jq 'if (.isDraft or .isPrerelease) then error("Stable published release required") else . end'
+          git merge-base --is-ancestor "refs/tags/$TAG" origin/main
+          git checkout --detach "refs/tags/$TAG"
+      - name: Build and verify the exact tagged package
+        run: |
+          python3 tools/package_mod.py
+          python3 tools/validate_package.py --tag "$TAG"
+      - name: Upload missing assets and verify existing bytes on retries
+        run: |
+          mkdir -p "$RUNNER_TEMP/published"
+          gh release view "$TAG" --json assets --jq '.assets[].name' > "$RUNNER_TEMP/release-assets"
+          for file in dist/*.zip dist/SHA256SUMS; do
+            name="${file##*/}"
+            if grep -Fxq "$name" "$RUNNER_TEMP/release-assets"; then
+              gh release download "$TAG" --pattern "$name" --dir "$RUNNER_TEMP/published"
+              cmp "$file" "$RUNNER_TEMP/published/$name"
+            else
+              gh release upload "$TAG" "$file"
+            fi
+          done
+      - name: Publish the same package to Factorio when connected
+        env:
+          FACTORIO_API_KEY: ${{ secrets.FACTORIO_API_KEY }}
+          FACTORIO_LICENSE_ID: ${{ vars.FACTORIO_LICENSE_ID }}
+        run: |
+          if [ -z "$FACTORIO_API_KEY" ]; then
+            echo 'GitHub release complete; optional Mod Portal publishing is not connected.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          python3 tools/publish_mod.py --tag "$TAG"

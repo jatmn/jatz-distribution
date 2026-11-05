@@ -26,6 +26,10 @@ args = parser.parse_args(sys.argv[sys.argv.index("--")+1:] if "--" in sys.argv e
 if args.asset_root:
     ROOT = args.asset_root.resolve()
 scene = bpy.data.scenes["Scene"]
+# Published previews must not expose the local model path or workstation name.
+scene.render.use_stamp_filename = False
+scene.render.use_stamp_hostname = False
+scene.render.use_stamp_date = False
 root = bpy.data.objects[args.root_object]
 shadow_scene = bpy.data.scenes["Ground shadow"]
 scene.cycles.samples = args.samples

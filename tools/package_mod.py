@@ -9,10 +9,13 @@ license files. Blender sources, tools, tests, docs and previews stay out
 """
 import argparse
 import json
+import hashlib
 import os
 from pathlib import Path
 import tempfile
 import zipfile
+
+from release_metadata import package_metadata
 
 REPO = Path(__file__).resolve().parents[1]
 # Every sprite layer the helpers draw; the preview atlases are for people, not the game.
@@ -24,7 +27,7 @@ ROAD_ART = tuple(f'{name}.png' for name in ('slag1', 'slag2', 'slag4', 'concrete
 
 def mod_files(root=REPO):
     files = [root / name for name in ('info.json', 'data.lua', 'data-final-fixes.lua', 'control.lua', 'COPYING',
-                                      'COPYING.LESSER', 'NOTICE')]
+                                      'COPYING.LESSER', 'NOTICE', 'changelog.txt')]
     files += sorted((root / 'prototypes').glob('*.lua'))
     files += sorted((root / 'scripts').glob('*.lua'))
     files += sorted((root / 'locale').rglob('*.cfg'))
@@ -49,7 +52,10 @@ def mod_files(root=REPO):
 
 
 def build(output, root=REPO):
-    info = json.loads((root / 'info.json').read_text(encoding='utf-8'))
+    info, notes = package_metadata(root)
+    overrides = {'changelog.txt': notes.encode()}
+    if info['version'] != json.loads((root / 'info.json').read_text())['version']:
+        overrides['info.json'] = (json.dumps(info, indent=2) + '\n').encode()
     folder = f'{info["name"]}_{info["version"]}'
     output.mkdir(parents=True, exist_ok=True)
     target = output / f'{folder}.zip'
@@ -62,7 +68,11 @@ def build(output, root=REPO):
         # Factorio expects one top-level folder inside the zip.
         with zipfile.ZipFile(temporary, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
             for path in files:
-                archive.write(path, f'{folder}/{path.relative_to(root).as_posix()}')
+                relative = path.relative_to(root).as_posix()
+                entry = zipfile.ZipInfo(f'{folder}/{relative}', date_time=(1980, 1, 1, 0, 0, 0))
+                entry.compress_type = zipfile.ZIP_DEFLATED
+                entry.external_attr = 0o644 << 16
+                archive.writestr(entry, overrides.get(relative, path.read_bytes()))
         with zipfile.ZipFile(temporary) as archive:
             if archive.testzip() is not None or len(archive.namelist()) != len(files):
                 raise SystemExit(f'Archive verification failed: {target}')
@@ -74,6 +84,7 @@ def build(output, root=REPO):
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+    (output / 'SHA256SUMS').write_text(f'{hashlib.sha256(target.read_bytes()).hexdigest()}  {target.name}\n')
     return target, len(files)
 
 
