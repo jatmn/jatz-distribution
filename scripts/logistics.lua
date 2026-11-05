@@ -93,6 +93,8 @@ logistics.fluid_capacity = FLUID_CAPACITY
 local RETRY_TICKS = 10 * 60
 -- How close a freighter must get to a loading zone's centre to load or unload there.
 local ARRIVAL_RADIUS = 0.5
+-- How long a freighter stands at a loading zone to load or unload before it moves on.
+local LOADING_TICKS = 2 * 60
 -- A search for the nearest provider by road that hasn't answered in this long (a save loaded
 -- mid-search, say) is started again.
 local SEARCH_TIMEOUT = 10 * 60
@@ -500,6 +502,7 @@ end
 
 local function drive(trip, destination)
   trip.destination = destination
+  trip.loading = nil
   trip.drone.commandable.set_command({
     type = defines.command.go_to_location,
     destination = destination,
@@ -979,6 +982,15 @@ function logistics.on_ai_command_completed(event)
   local depot = storage.depots[trip.request]
   if event.result ~= defines.behavior_result.success then
     route_failed(id, trip, depot)
+  elseif not trip.loading and not (trip.state == TO_REQUEST and cargo_empty(trip)) then
+    -- Arrived to load or unload: stand there LOADING_TICKS first. The stop command's completion
+    -- comes back here, and the freighter loads or unloads then. One coming home empty just parks.
+    trip.loading = true
+    trip.drone.commandable.set_command({
+      type = defines.command.stop,
+      distraction = defines.distraction.none,
+      ticks_to_wait = LOADING_TICKS,
+    })
   elseif trip.state == TO_PROVIDER then
     arrived_at_provider(id, trip, depot)
   elseif trip.state == TO_REQUEST then
@@ -997,8 +1009,9 @@ end
 -- Plan a freighter's route again from where it stands. A route that no longer exists fails at
 -- once (on_ai_command_completed), instead of after the freighter stands stuck for seconds.
 local function replan(trip)
-  -- A freighter waiting for a reroute search stays put; the search decides where it goes.
-  if trip.drone.valid and trip.destination and not trip.searching then
+  -- A freighter waiting for a reroute search stays put; the search decides where it goes. One
+  -- loading or unloading finishes first, then plans its next route afresh.
+  if trip.drone.valid and trip.destination and not trip.searching and not trip.loading then
     drive(trip, target(trip))
   end
 end
@@ -1086,7 +1099,8 @@ local function depot_removed(id)
     elseif trip.request == id then
       -- Nobody to deliver to: cargo goes back to the provider, an empty freighter just leaves.
       if trip.state == TO_REQUEST and depot_entity(trip.provider) then
-        trip.state = RETURNING
+        -- One standing there to unload leaves at once too.
+        trip.state, trip.loading = RETURNING, nil
         replan(trip)
       elseif trip.state == TO_PROVIDER or cargo_empty(trip) then
         end_trip(trip_id, trip)
@@ -1094,7 +1108,7 @@ local function depot_removed(id)
     elseif trip.provider == id and trip.state == RETURNING then
       -- Bringing cargo back to a provider that is gone: try the request depot again.
       if depot_entity(trip.request) then
-        trip.state = TO_REQUEST
+        trip.state, trip.loading = TO_REQUEST, nil
         replan(trip)
       else
         spill(trip)

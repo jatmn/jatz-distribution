@@ -1,4 +1,8 @@
 ---------------------------------------------------------------------------------------------------
+Version: Unreleased
+  Changes:
+    - Freighters stop for 2 seconds at a depot's loading zone to load and to unload, instead of loading and unloading the moment they arrive.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.0
   Features:
     - Road-bound freighters deliver items and fluids between provider, buffer and request depots.

@@ -27,8 +27,9 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | A request depot with no room fetches nothing (provider keeps all 50 copper, status "full") | Passed |
 | A freighter destroyed on its way is replaced, and the request is filled (30 steel) | Passed |
 | A request changed from plastic to circuits mid-trip loads no plastic | Passed |
-| Road cut behind a loaded freighter: all 30 gears go back to the provider, none to the request, provider cooled down; the cut is noticed in 2 ticks (it used to take about 6 s of standing stuck) | Passed |
-| Mending a gap in a road: delivery done 195 ticks (about 3 s, round trip included) after the repair, instead of waiting out the retry cooldown | Passed |
+| Freighters stop to load and unload: on November 4, 2026, the freighter stood 123 ticks (about 2 s) at the provider's loading zone before loading and 123 ticks at the request depot's before unloading; before this it loaded and unloaded the tick it arrived (measured 2 ticks) | Passed headless; untested in the graphical client |
+| Road cut behind a loaded freighter: all 30 gears go back to the provider, none to the request, provider cooled down; the gears are back in the provider 123 ticks after the cut, the freighter's 2 s stop to unload included (2 ticks before freighters stopped; it used to take about 6 s of standing stuck) | Passed |
+| Mending a gap in a road: delivery done 438 ticks (about 7 s, round trip and its two 2 s stops included; 195 ticks before the stops) after the repair, instead of waiting out the retry cooldown | Passed |
 | Nearer of two providers removed mid-trip: the same freighter goes on to the other one and delivers | Passed |
 | Request depot removed mid-trip: its freighter leaves at once and the provider keeps its stock | Passed |
 | Provider nearest by road chosen: 8 tiles away in a straight line but 34 by road loses to 16 tiles on a straight road (all 10 coal from the farther one) | Passed |
