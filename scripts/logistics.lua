@@ -27,7 +27,13 @@
 -- when destroyed. A request depot mined by a player or robot hands over all its freighters, in the
 -- slot and out on trips; one destroyed leaves them on the ground where it stood. Fuel is not used
 -- yet.
+--
+-- A freighter's cargo paint shows its load: light grey while empty, then the color of the item or
+-- fluid it loaded (scripts/freighter-paint.lua) until its trip ends. Units have no runtime color,
+-- so loading swaps the freighter for the drone prototype in that paint (`repaint`), and its trip
+-- moves to the new unit_number.
 local loading_zone = require("scripts.loading-zone")
+local paint = require("scripts.freighter-paint")
 
 local logistics = {}
 
@@ -46,7 +52,8 @@ logistics.priority = { min = PRIORITY_MIN, max = PRIORITY_MAX, default = PRIORIT
 local ROAD = "jatz-road"
 -- The road a depot lays under its own loading zone (scripts/depot-road.lua).
 local DEPOT_ROAD = "jatz-depot-road"
-local DRONE = "jatz-freighter-drone"
+-- The empty freighter; painted ones are paint.names() (scripts/freighter-paint.lua).
+local DRONE = paint.empty
 -- The freighter item: what a request depot's freighter slot holds.
 local FREIGHTER = "jatz-quinityn-freighter"
 -- A request depot holds up to this many freighters (in its slot and out on trips together). The
@@ -74,6 +81,7 @@ logistics.liquid = LIQUID
 local REQUESTING = { request = true, buffer = true }
 logistics.requesting = { [REQUEST] = true, [BUFFER] = true, [LIQUID_REQUEST] = true, [LIQUID_BUFFER] = true }
 logistics.drone = DRONE
+logistics.drones = paint.names()
 logistics.freighter = FREIGHTER
 -- Liquid depots are storage tanks, with no item inventory: robots bring their freighters into
 -- this invisible chest under them instead (prototypes/truck-chest.lua).
@@ -280,6 +288,34 @@ local function cargo_empty(trip)
     return trip.fluid.amount <= 0
   end
   return not (trip.cargo and trip.cargo.valid) or trip.cargo.is_empty()
+end
+
+-- Put trip `id`'s freighter in the paint for what it carries: the same freighter, where it stands
+-- and facing the same way, as the drone prototype in that paint, and the trip moves to the new
+-- unit_number. Only between commands: the new unit has none.
+local function repaint(id, trip)
+  local old = trip.drone
+  local name = cargo_empty(trip) and DRONE or paint.drone_for_cargo(trip.fluid ~= nil, trip.item)
+  if not old.valid or old.name == name then
+    return
+  end
+  local drone = old.surface.create_entity({ name = name, position = old.position, force = old.force })
+  if not drone then
+    return
+  end
+  drone.orientation = old.orientation
+  drone.health = old.health
+  local new = drone.unit_number
+  storage.trips[id], storage.trips[new] = nil, trip
+  local depot = storage.depots[trip.request]
+  if depot then
+    local trips = trips_of(depot)
+    trips[id], trips[new] = nil, true
+  end
+  script.register_on_object_destroyed(drone)
+  trip.drone = drone
+  -- Its on_object_destroyed finds no trip under the old number, so nothing else happens.
+  old.destroy()
 end
 
 -- What a trip will bring: what it promised to load while on its way out, its cargo on the way back.
@@ -921,8 +957,9 @@ local function arrived_at_provider(id, trip, depot)
   if not (depot and depot.entity.valid) then
     return end_trip(id, trip)
   end
-  -- Home, loaded or (if there was nothing to load) empty, to unload and park.
+  -- Home, loaded or (if there was nothing to load) empty, to unload and park, painted for its load.
   trip.state = TO_REQUEST
+  repaint(id, trip)
   drive(trip, (loading_tile(depot.entity)))
 end
 
@@ -1348,7 +1385,7 @@ end
 -- A cloned depot is a new depot with the original's request; a cloned freighter has no trip.
 function logistics.on_cloned(source, destination)
   -- A cloned truck chest: the cloned depot makes its own (logistics.add).
-  if destination.name == DRONE or destination.name == TRUCK_CHEST then
+  if paint.is_drone(destination.name) or destination.name == TRUCK_CHEST then
     destination.destroy()
     return
   end
@@ -1405,7 +1442,7 @@ function logistics.add_all()
     end
   end
   for _, surface in pairs(game.surfaces) do
-    for _, drone in pairs(surface.find_entities_filtered({ name = DRONE })) do
+    for _, drone in pairs(surface.find_entities_filtered({ name = logistics.drones })) do
       if not storage.trips[drone.unit_number] then
         drone.destroy()
       end

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-only
 """Unit tests without Factorio: test_mod.py's expansion resolution and locale parsing, the English
-names, the icon size the prototypes declare, the depots' orientation and loading zones, and the
-dispatcher's provider searches and the depots' own road (tests/lua/)."""
+names, the icon size the prototypes declare, the depots' orientation and loading zones, the
+dispatcher's provider searches, the depots' own road and the freighters' cargo paint (tests/lua/)."""
 from pathlib import Path
 import re
 import shutil
@@ -149,6 +149,16 @@ class LogisticsSearchTests(unittest.TestCase):
         result = subprocess.run(['lua5.2', 'tests/lua/control-events.lua'], cwd=ROOT, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('all control event checks passed', result.stdout)
+
+
+class FreighterColorTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('lua5.2'), 'the Mod CI job installs Lua 5.2')
+    def test_items_and_fluids_get_the_paint_of_their_color(self):
+        # tests/lua/freighter-colors.lua: the palette, and each rule of prototypes/freighter-colors.lua
+        # against a fake data.raw.
+        result = subprocess.run(['lua5.2', 'tests/lua/freighter-colors.lua'], cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('all freighter color checks passed', result.stdout)
 
 
 class LocaleTests(unittest.TestCase):
