@@ -13,3 +13,7 @@ data:extend({
     damage_per_tick = { amount = 0.1, type = "acid" },
   },
 })
+
+-- Freighters fill up with any fluid that burns, from game data. The base game has none, so the
+-- check makes petroleum gas burn, as an overhaul mod might, for its liquid fuel delivery.
+data.raw.fluid["petroleum-gas"].fuel_value = "1MJ"

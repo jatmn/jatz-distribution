@@ -2,11 +2,11 @@
 -- The freighter as it drives itself between depots: a unit, so the engine's pathfinder steers
 -- it. Its only collision layer is "jatz_off_road", which every tile but the road has
 -- (prototypes/off-road.lua), so every path it finds stays on roads. It collides with no
--- buildings, players or other freighters, and runs without fuel for now. Enemies can attack and
--- destroy it; it never fights back. Destroyed, it explodes and leaves a wreck, as the drivable
--- freighter does. scripts/logistics.lua creates one per delivery and removes it
--- when the delivery is done, and makes it run over enemy units it drives through and pollute a
--- little while out.
+-- buildings, players or other freighters. It has no burner: scripts/logistics.lua keeps its fuel,
+-- burns it by the tile and refuels it at Fuel depots. Enemies can attack and destroy it; it never
+-- fights back. Destroyed, it explodes and leaves a wreck, as the drivable freighter does.
+-- scripts/logistics.lua creates one per delivery and removes it when the delivery is done, and
+-- makes it run over enemy units it drives through and pollute a little while out.
 --
 -- Its cargo paint shows what it carries (scripts/freighter-paint.lua): this is defined once per
 -- paint, light grey for the empty freighter, and logistics swaps a freighter for the one painted

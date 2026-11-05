@@ -6,6 +6,7 @@ Everything you need to know to run Jat'z Distribution in your factory. New to th
 - [Setting up a delivery](#setting-up-a-delivery)
 - [The freighter slot](#the-freighter-slot)
 - [How freighters choose where to go](#how-freighters-choose-where-to-go)
+- [Fuel](#fuel)
 - [The status light](#the-status-light)
 - [When roads or depots change](#when-roads-or-depots-change)
 - [Buffer depots](#buffer-depots)
@@ -60,6 +61,18 @@ Of the depots that have the item and can be reached by road, freighters go to th
 
 If there's no road route to a depot, no freighter is sent there. The depot that asked shows why and tries the next one in this order, so a request depot with **Request from buffer depots** unticked moves on to buffer depots when no provider can be reached.
 
+## Fuel
+
+Freighters burn fuel as they drive, and fill up at **fuel depots** by themselves.
+
+- A new freighter comes with a full tank (20 MJ, about 2,000 tiles of driving). A freighter keeps what is left in its tank when it parks, and sets off on the next trip with it: the depot sends the one with the most fuel.
+- Load a fuel depot with **any fuel item** (coal, solid fuel, rocket fuel, a mod's fuel, anything that burns), by hand, inserter or robot, or **pipe in any fluid that burns**. Freighters take the fluid first, then items, a whole item at a time. Fuel that burns into something (a fuel cell, say) leaves that in the depot.
+- Before every leg of a trip (leaving home, leaving the provider) a freighter checks whether its tank will last to where it's going, with some to spare. If not, it first drives to the **fuel depot nearest by road**, stops about a second to fill up, then carries on where it was going, cargo and all.
+- If its tank runs dry anyway, it crawls on at a tenth of its speed to a fuel depot, or to where it was going if it can't reach one.
+- A freighter that can't even reach the provider on what it has, with no fuel depot it can reach that has fuel, stays home, and the request depot's light turns yellow. It tries again every 10 seconds, and at once when you lay road or build a depot.
+- The fuel depot's window shows the fluid in it. If a fluid that doesn't burn got in, the **flush** button beside it empties it (and the pipes joined to it).
+- How big the tank is and how much a tile of driving burns are **Settings → Mod settings → Map** options. Setting the use to 0 turns fuel off.
+
 ## The status light
 
 A light beside the request shows at a glance whether it can be filled. Hover it for the details.
@@ -67,7 +80,7 @@ A light beside the request shows at a glance whether it can be filled. Hover it 
 | Light | Meaning |
 | --- | --- |
 | 🟢 Green | Stocked, a freighter is on its way, or it's finding a provider (or, for a request depot, a buffer depot) by road |
-| 🟡 Yellow | Waiting on something in the way: no room in the depot, its loading zone isn't on road, no road route to a provider (or, for a request depot, a buffer depot) that has it, no freighters (or none could be sent), or a liquid depot's tank holds another fluid |
+| 🟡 Yellow | Waiting on something in the way: no room in the depot, its loading zone isn't on road, no road route to a provider (or, for a request depot, a buffer depot) that has it, no freighters (or none could be sent), freighters too low on fuel with no fuel depot to fill up at, or a liquid depot's tank holds another fluid |
 | 🔴 Red | No provider depot with road at its loading zone has it (nor, for a request depot, any buffer depot) |
 | ⚪ Grey | Nothing requested |
 
@@ -120,10 +133,10 @@ With [Mining Drones](https://mods.factorio.com/mod/Mining_Drones), [Mining Drone
 
 ## Good to know
 
-- Freighters need no fuel yet.
 - Freighters are for depots to send out: you can't place one and drive it yourself. To allow that, turn on **Place freighters as cars** under **Settings → Mod settings → Startup**. Freighters already placed stay drivable either way, and you can pick them up.
 - Enemies can attack and destroy freighters. Freighters never fight back or turn aside: they drive on until they arrive or are destroyed. A freighter that drives through an enemy unit runs it over, as a train does, but it never harms players or other freighters.
 - A freighter destroyed on the road explodes and leaves a wreck, which disappears after 15 minutes. It is lost, with its cargo. Its request depot then asks construction robots for a replacement freighter. You can also put one in by hand.
+- Freighters taken out of a depot (by hand, robots or mining it) and put back come with a full tank again.
 - Freighters out on deliveries make a little pollution.
 - Cargo keeps its data on the way: armor keeps its equipment, food how far it has spoiled.
 - In alt mode, a loaded freighter shows the icon of the item or fluid it carries, as machines show their recipe. Empty freighters show nothing.

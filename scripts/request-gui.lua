@@ -4,8 +4,9 @@
 -- doing as a status light (hover it for the status in words). Buffer depots have the same panel,
 -- with a priority slider at the top; provider depots have a panel with only that slider. Liquid
 -- depots have the same panels, for a fluid, beside their storage tank window (a pipe window in
--- Factorio 2.1). Changes apply as
--- they are made. Factorio shows the panel only with these depots' windows.
+-- Factorio 2.1). The Fuel depot's panel shows the liquid fuel in its hidden tank, which has no
+-- window of its own, with a button to flush it. Changes apply as they are made. Factorio shows the
+-- panel only with these depots' windows.
 --
 -- The freighter slot works like an inventory slot: click with freighters in hand to put them in
 -- (right-click: one), click with an empty hand to take them all (right-click: half), and
@@ -28,12 +29,15 @@ local SLOT_LABEL = "jatz_request_freighters_label"
 local FROM_BUFFERS = "jatz_request_from_buffers"
 local PRIORITY = "jatz_depot_priority"
 local PRIORITY_VALUE = "jatz_depot_priority_value"
+local FUEL_FLUID = "jatz_fuel_fluid"
+local FUEL_AMOUNT = "jatz_fuel_amount"
+local FLUSH = "jatz_fuel_flush"
 -- The depots with a request, freighters and status: request and buffer depots, item and liquid.
 local REQUESTING = logistics.requesting
 -- Liquid depots: storage tanks, whose window is a storage tank window, requesting fluids.
 local LIQUID = logistics.liquid
--- Every depot's role (provider, request or buffer): all have this panel, provider depots with only
--- the priority slider. The fuel depot isn't in deliveries and has none.
+-- Every depot's role (provider, request, buffer or fuel): all have this panel, provider depots
+-- with only the priority slider, the Fuel depot with its liquid fuel.
 local ROLES = logistics.depots
 local PANELLED_NAMES = {}
 for name in pairs(ROLES) do
@@ -76,6 +80,7 @@ local LIGHTS = {
   full = "utility/status_yellow",
   ["no-freighter"] = "utility/status_yellow",
   ["other-fluid"] = "utility/status_yellow",
+  ["no-fuel"] = "utility/status_yellow",
   ["no-provider"] = "utility/status_not_working",
   none = "utility/status_inactive",
 }
@@ -150,6 +155,37 @@ local function add_priority(inner, entity)
   show_priority(inner, entity)
 end
 
+-- The Fuel depot's liquid fuel: the fluid in its tank and how much, a warning if it doesn't burn.
+local function show_fuel(inner, entity)
+  local row = inner.fuel_row
+  local contents = row and logistics.fuel_contents(entity)
+  if not contents then
+    return
+  end
+  row[FUEL_FLUID].sprite = contents.fluid and ("fluid/" .. contents.fluid) or ""
+  local amount = { "jatz-gui.fuel-amount", math.floor(contents.amount + 0.5), contents.capacity }
+  if contents.fluid and not contents.burnable then
+    amount = { "", amount, " [color=yellow]", { "jatz-gui.fuel-not-burnable" }, "[/color]" }
+  end
+  row[FUEL_AMOUNT].caption = amount
+end
+
+local function add_fuel(inner, entity)
+  local row = inner.add({ type = "flow", name = "fuel_row", direction = "horizontal" })
+  row.style.vertical_align = "center"
+  row.add({ type = "label", caption = { "jatz-gui.fuel-liquid" }, tooltip = { "jatz-gui.fuel-tooltip" } })
+  row.add({ type = "sprite", name = FUEL_FLUID, tooltip = { "jatz-gui.fuel-tooltip" } })
+  row.add({ type = "label", name = FUEL_AMOUNT, tooltip = { "jatz-gui.fuel-tooltip" } })
+  row.add({
+    type = "sprite-button",
+    name = FLUSH,
+    style = "tool_button_red",
+    sprite = "utility/trash",
+    tooltip = { "jatz-gui.fuel-flush" },
+  })
+  show_fuel(inner, entity)
+end
+
 local function open(player, entity)
   local old = frame_of(player)
   if old then
@@ -173,6 +209,9 @@ local function open(player, entity)
   local inner = frame.add({ type = "frame", style = "inside_shallow_frame_with_padding", direction = "vertical" })
   storage.request_gui = storage.request_gui or {}
   storage.request_gui[player.index] = entity
+  if ROLES[entity.name] == "fuel" then
+    return add_fuel(inner, entity)
+  end
   -- Provider and buffer depots: the priority slider first, above the request.
   if ROLES[entity.name] ~= "request" then
     add_priority(inner, entity)
@@ -256,7 +295,7 @@ end
 
 local function on_gui_opened(event)
   local entity = event.entity
-  if entity and entity.valid and ROLES[entity.name] == "provider" then
+  if entity and entity.valid and (ROLES[entity.name] == "provider" or ROLES[entity.name] == "fuel") then
     open(game.get_player(event.player_index), entity)
   elseif entity and entity.valid and REQUESTING[entity.name] then
     local player = game.get_player(event.player_index)
@@ -312,6 +351,13 @@ end
 
 -- The freighter slot clicked: put freighters in from the cursor, or take them out.
 local function on_gui_click(event)
+  if event.element.name == FLUSH then
+    local entity = opened_depot(game.get_player(event.player_index))
+    if entity and logistics.flush_fuel(entity) then
+      show_fuel(event.element.parent.parent, entity)
+    end
+    return
+  end
   if event.element.name ~= SLOT then
     return
   end
@@ -452,7 +498,13 @@ local function refresh()
     if frame and entity.valid then
       local inner = frame.children[1]
       local requesting = REQUESTING[entity.name]
-      if
+      if ROLES[entity.name] == "fuel" then
+        if not inner.fuel_row then
+          open(player, entity)
+          inner = frame_of(player).children[1]
+        end
+        show_fuel(inner, entity)
+      elseif
         not (inner.priority_row or ROLES[entity.name] == "request")
         or (requesting and not (inner.request_row and inner.request_row[STATUS]))
       then

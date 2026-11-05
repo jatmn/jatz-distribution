@@ -175,7 +175,16 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # Tank sizes: the check mod sets the liquid provider and liquid buffer settings to
             # 40,000 and 15,000 (settings-updates.lua); the other tanks keep 25,000.
             'tank_sizes': {'fuel': 25000, 'liquid-provider': 40000, 'liquid-request': 25000,
-                           'liquid-buffer': 15000}}
+                           'liquid-buffer': 15000},
+            # Fuel: a freighter short of fuel for the leg fills up at a Fuel depot first (5 of 10
+            # coal, 20 MJ) and still delivers, parking with 19 MJ left; with liquid fuel it takes
+            # 20 of 100 petroleum gas (made burnable by the check mod); with no fuel to be had it
+            # stays home saying so, and goes once coal is put in the Fuel depot. A Fuel depot
+            # turned by script turns its hidden tank too.
+            'fuel_stop_first': True, 'fuel_delivered': 10, 'fuel_coal_left': 5, 'fuel_left_mj': 19,
+            'liquid_fuel_delivered': 10, 'liquid_fuel_taken': 20, 'no_fuel_status': 'no-fuel',
+            'no_fuel_received_before': 0, 'no_fuel_received_after': 10, 'no_fuel_coal_left': 0,
+            'fuel_tank_turned': True}
 # With a Mining Drones mod: the mining depot's road, and 30 of its 40 iron ore delivered.
 MINING_DRONES = {'Mining_Drones', 'Mining_Drones_Remastered', 'Mining_Drones_Mod'}
 EXPECTED_MINING = {'zone': 'jatz-depot-road', 'delivered': 30, 'left': 10}

@@ -7,7 +7,7 @@
 Build depots where goods are made and where they're needed, connect them with road, and heavy freighters do the hauling. The gameplay is inspired by Klonan's [Transport Drones](https://mods.factorio.com/mod/Transport_Drones), with trucks in place of drones and a rugged industrial look inspired by the Yuoki mods.
 
 > [!NOTE]
-> **In development.** Item and fluid deliveries already work. Fuel, real recipes and balance are still to come, and everything is free to craft for now. The mod isn't on the Mod Portal yet: see [Try it](#try-it).
+> **In development.** Item and fluid deliveries, and fuel, already work. Real recipes and balance are still to come, and everything is free to craft for now. The mod isn't on the Mod Portal yet: see [Try it](#try-it).
 
 ## How it works
 
@@ -15,15 +15,17 @@ Build depots where goods are made and where they're needed, connect them with ro
 2. **Place a provider depot** and fill it with goods.
 3. **Place a request depot**, open it, and choose an item and how many to keep in stock.
 4. **Give it freighters.** Put freighters in the request depot's freighter slot.
+5. **Fuel them.** Freighters come with a full tank and burn fuel as they drive. Place a fuel depot on the road, with any fuel item in it or any burnable fluid piped in, and they fill up there by themselves.
 
 That's it. Freighters set off for the provider that's nearest **by road**, load up and bring the goods home. A status light on the request depot tells you at a glance if anything is wrong.
 
-Want the details? The **[player guide](docs/guide.md)** covers the freighter slot and its shortcuts, buffer depots, priority, liquid depots, blueprints, and what happens when a road is cut.
+Want the details? The **[player guide](docs/guide.md)** covers the freighter slot and its shortcuts, fuel, buffer depots, priority, liquid depots, blueprints, and what happens when a road is cut.
 
 ## Features
 
 - **Trucks, not drones:** the Quinityn sealed freighter is an armored eight-wheeler that follows your roads.
 - **Smart routing:** freighters pick the nearest provider by road, not in a straight line, and re-route the moment a road is cut.
+- **They need fuel, like real trucks:** a freighter low on fuel for where it's going stops at the nearest fuel depot first, fills up, then carries on. Any fuel works, item or fluid, from any mod.
 - **Items and fluids:** separate depots for dry cargo and for fluids, and fluids keep their temperature.
 - **Buffers and priority:** stage stock close to where it's needed, and rank depots from 1 to 10.
 - **Blueprint friendly:** copy, paste and blueprints keep requests, priorities and freighters, and construction robots bring the trucks.
@@ -38,7 +40,7 @@ Want the details? The **[player guide](docs/guide.md)** covers the freighter slo
 | **Provider** | Offers its items to freighters | ![Provider depot in four rotations](assets/depots/provider/3/previews/four-directions.png) |
 | **Request** | Keeps an item in stock, fetched by its own freighters | ![Request depot in four rotations](assets/depots/request/3/previews/four-directions.png) |
 | **Buffer** | Stocks an item from providers, close to where it's needed | ![Buffer depot in four rotations](assets/depots/buffer/3/previews/four-directions.png) |
-| **Fuel** | Will refuel freighters with solid or liquid fuel (not active yet) | ![Fuel depot in four rotations](assets/depots/fuel/3/previews/four-directions.png) |
+| **Fuel** | Freighters fill up here with any fuel item, or any burnable fluid piped in | ![Fuel depot in four rotations](assets/depots/fuel/3/previews/four-directions.png) |
 | **Liquid Provider** | Offers fluids to freighters | ![Liquid Provider depot in four rotations](assets/depots/liquid-provider/3/previews/four-directions.png) |
 | **Liquid Request** | Keeps a fluid in stock, fetched by its own freighters | ![Liquid Request depot in four rotations](assets/depots/liquid-request/3/previews/four-directions.png) |
 | **Liquid Buffer** | Stocks a fluid from liquid providers. Two pipe connections | ![Liquid Buffer depot in four rotations](assets/depots/liquid-buffer/3/previews/four-directions.png) |
@@ -71,7 +73,7 @@ Copy `dist/jatz-distribution_0.1.0.zip` into your [Factorio mods folder](https:/
 - [x] Roads, and freighter deliveries between provider and request depots
 - [x] Buffer depots and priority
 - [x] Liquid deliveries
-- [ ] Fuel for freighters, and refueling at the Fuel depot
+- [x] Fuel for freighters, and refueling at the Fuel depot
 - [ ] Freighter wheel animation and final stats
 - [ ] Recipes, technology and balance
 - [ ] Release on the Factorio Mod Portal

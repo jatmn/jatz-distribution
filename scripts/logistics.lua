@@ -31,13 +31,20 @@
 --
 -- Depots are registered when built or cloned (control.lua), found again on load, and forgotten
 -- when destroyed. A request depot mined by a player or robot hands over all its freighters, in the
--- slot and out on trips; one destroyed leaves them on the ground where it stood. Fuel is not used
--- yet.
+-- slot and out on trips; one destroyed leaves them on the ground where it stood.
 --
 -- A freighter's cargo paint shows its load: light grey while empty, then the color of the item or
 -- fluid it loaded (scripts/freighter-paint.lua) until its trip ends. Units have no runtime color,
 -- so loading swaps the freighter for the drone prototype in that paint (`repaint`), and its trip
 -- moves to the new unit_number.
+--
+-- Freighters need fuel. Each carries its own (as energy), starts with a full tank, burns it by the
+-- tile as it drives, and fills up at Fuel depots by itself: from any burnable item in the depot,
+-- or any burnable fluid piped into it. Before each leg (setting off from home, leaving a provider,
+-- heading for a new provider) a freighter checks its tank against the leg's road length; short,
+-- it first drives to the Fuel depot nearest by road, fills up, then goes on where it was going. One
+-- whose tank runs dry crawls on to a Fuel depot, or to where it was going if there is none. One that
+-- can't reach the provider on what it has, with no Fuel depot to fill up at, stays home.
 local loading_zone = require("scripts.loading-zone")
 local paint = require("scripts.freighter-paint")
 
@@ -87,6 +94,13 @@ local MINING_DEPOT = loading_zone.mining_depot
 if loading_zone.depots[MINING_DEPOT] then
   logistics.depots[MINING_DEPOT] = "provider"
 end
+-- The Fuel depot: a container for fuel items with a hidden storage tank under it for liquid fuel
+-- (prototypes/depots.lua). Freighters fill up there; it takes no part in deliveries.
+local FUEL = "jatz-fuel-depot"
+local FUEL_TANK = "jatz-fuel-depot-tank"
+logistics.depots[FUEL] = "fuel"
+logistics.fuel_depot = FUEL
+logistics.fuel_tank = FUEL_TANK
 local LIQUID = { [LIQUID_PROVIDER] = true, [LIQUID_REQUEST] = true, [LIQUID_BUFFER] = true }
 logistics.liquid = LIQUID
 -- Depots that request (send freighters out for an item or fluid): request and buffer depots.
@@ -134,6 +148,12 @@ local IMPACT_COOLDOWN = 60
 -- What a freighter runs over: enemy units only, never players (characters), buildings or other
 -- freighters.
 local IMPACT_TYPES = { "unit", "spider-unit", "segmented-unit" }
+-- A freighter fills up before a leg unless its tank holds what the leg's road length takes, times
+-- this (its path may differ from the road measured), plus this share of a full tank in reserve.
+local FUEL_MARGIN = 1.25
+local FUEL_RESERVE = 0.1
+-- A freighter whose tank is dry crawls at this share of its speed.
+local DRY_SPEED = 0.1
 
 -- Status of a request depot, shown in its window: a key in the [jatz-request-status] locale section.
 logistics.status = {
@@ -149,6 +169,9 @@ logistics.status = {
   delivering = "delivering",
   -- A liquid depot's tank holds another fluid than the one requested.
   other_fluid = "other-fluid",
+  -- Its freighters can't reach the provider on the fuel they have, and no Fuel depot with fuel can
+  -- be reached by road to fill up at.
+  no_fuel = "no-fuel",
 }
 
 -- Trip states: driving out to the provider, bringing cargo to the request depot, or taking cargo
@@ -156,7 +179,7 @@ logistics.status = {
 local TO_PROVIDER, TO_REQUEST, RETURNING = "to-provider", "to-request", "returning"
 
 -- Defined further down; dispatch, the search and on_tick need them first.
-local end_trip, load, freighter_requests, load_fluid, unload_fluid, target
+local end_trip, load, freighter_requests, load_fluid, unload_fluid, set_off, target, upgrade
 
 local function init_storage()
   storage.depots = storage.depots or {}
@@ -209,6 +232,122 @@ local function freighter_chest(entity)
   return inventory(truck_chest(entity))
 end
 
+-- The hidden tank holding a Fuel depot's liquid fuel, facing and flipped as the depot is (made if
+-- missing: a depot built before fuel, or the tank removed by another mod). Nil for anything else.
+local function fuel_tank(entity)
+  local depot = entity.name == FUEL and storage.depots and storage.depots[entity.unit_number]
+  if not depot then
+    return nil
+  end
+  local tank = depot.tank
+  if not (tank and tank.valid) then
+    tank = entity.surface.create_entity({
+      name = FUEL_TANK,
+      position = entity.position,
+      direction = entity.direction,
+      force = entity.force,
+      create_build_effect_smoke = false,
+    })
+    if tank then
+      tank.destructible = false
+    end
+    depot.tank = tank
+  end
+  if tank then
+    -- Scripts can turn a depot without any event: keep the port where the depot's is.
+    if tank.direction ~= entity.direction then
+      tank.direction = entity.direction
+    end
+    if tank.mirroring ~= entity.mirroring then
+      tank.mirroring = entity.mirroring
+    end
+  end
+  return tank
+end
+logistics.fuel_tank_of = fuel_tank
+
+-- Fuel: a full tank and what a tile of driving burns, in joules (runtime settings, settings.lua).
+local function fuel_capacity()
+  return settings.global["jatz-freighter-fuel-capacity"].value * 1000000
+end
+
+local function fuel_per_tile()
+  return settings.global["jatz-freighter-fuel-per-tile"].value * 1000
+end
+
+-- The prototype of an item or fluid that burns, from game data (any mod's), or nil.
+local function burnable_item(name)
+  local item = prototypes.item[name]
+  return item and item.fuel_value > 0 and item or nil
+end
+
+local function burnable_fluid(name)
+  local fluid = prototypes.fluid[name]
+  return fluid and fluid.fuel_value > 0 and fluid or nil
+end
+
+-- Whether a Fuel depot holds anything a freighter can fill up with: a burnable fluid in its tank,
+-- or a burnable item in its chest.
+local function has_fuel(depot)
+  local tank = fuel_tank(depot.entity)
+  local held = tank and tank.get_fluid(1)
+  if held and held.amount > 0 and burnable_fluid(held.name) then
+    return true
+  end
+  local chest = inventory(depot.entity)
+  for _, item in pairs(chest.get_contents()) do
+    local fuel = burnable_item(item.name)
+    -- One that burns into another counts only while the depot has room for what it leaves.
+    local burnt = fuel and fuel.burnt_result
+    if fuel and (not burnt or chest.get_insertable_count({ name = burnt.name, quality = item.quality }) > 0) then
+      return true
+    end
+  end
+  return false
+end
+
+-- Fill a freighter's tank at a Fuel depot: burnable fluid first, then burnable items, a whole item
+-- at a time (the last may fill it past full, as a burner holds the item it is burning). An item
+-- that burns into another (a fuel cell into a used one) leaves that in the depot, so only as many
+-- are taken as the depot has room for what they leave.
+local function refuel(trip, depot)
+  local capacity = fuel_capacity()
+  local tank = fuel_tank(depot.entity)
+  local held = tank and tank.get_fluid(1)
+  local fluid = held and burnable_fluid(held.name)
+  if fluid and trip.energy < capacity then
+    local removed = tank.remove_fluid(1, math.min(held.amount, (capacity - trip.energy) / fluid.fuel_value))
+    trip.energy = trip.energy + (removed and removed.amount or 0) * fluid.fuel_value
+  end
+  local chest = inventory(depot.entity)
+  for index = 1, #chest do
+    if trip.energy >= capacity then
+      break
+    end
+    local stack = chest[index]
+    local item = stack.valid_for_read and burnable_item(stack.name)
+    if item then
+      local quality = stack.quality.name
+      local count = math.min(stack.count, math.ceil((capacity - trip.energy) / item.fuel_value))
+      local burnt = item.burnt_result
+      if burnt then
+        count = math.min(count, chest.get_insertable_count({ name = burnt.name, quality = quality }))
+      end
+      if count > 0 then
+        if count >= stack.count then
+          stack.clear()
+        else
+          stack.count = stack.count - count
+        end
+        if burnt then
+          chest.insert({ name = burnt.name, count = count, quality = quality })
+        end
+        trip.energy = trip.energy + count * item.fuel_value
+      end
+    end
+  end
+end
+
 local function item_id(item)
   return { name = item, quality = QUALITY }
 end
@@ -232,7 +371,7 @@ local function loading_tile(entity)
   return { x = x, y = y }, tile.valid and (tile.name == ROAD or tile.name == DEPOT_ROAD)
 end
 
--- Remember a provider or request depot. Safe to call again for one already known.
+-- Remember a depot (provider, request, buffer or fuel). Safe to call again for one already known.
 function logistics.add(entity)
   local role = logistics.depots[entity.name]
   if not role or not entity.unit_number then
@@ -242,6 +381,7 @@ function logistics.add(entity)
   local depot = storage.depots[entity.unit_number]
   if depot then
     depot.entity = entity
+    fuel_tank(entity)
     return
   end
   storage.depots[entity.unit_number] = {
@@ -266,6 +406,7 @@ function logistics.add(entity)
   if LIQUID[entity.name] and REQUESTING[role] then
     truck_chest(entity)
   end
+  fuel_tank(entity)
 end
 
 -- A request depot's freighter slot: room for FREIGHTER_CAPACITY freighters, as real items, in as
@@ -288,6 +429,20 @@ local function a_freighter(depot)
       return slot[index]
     end
   end
+end
+
+-- The fuel of the freighters parked in a requesting depot's slot whose tank isn't full, in joules,
+-- lowest first; the others have a full tank (new freighters come with one). Freighters taken out
+-- of the slot (by hand, by robots, or with the depot) take the fullest entries with them.
+local function parked_fuel(depot)
+  local parked = depot.fuel or {}
+  depot.fuel = parked
+  table.sort(parked)
+  local count = trucks_of(depot).get_item_count()
+  while #parked > count do
+    table.remove(parked)
+  end
+  return parked
 end
 
 -- The ids of a request depot's trips. Saves from before depots sent several freighters kept one.
@@ -346,6 +501,8 @@ local function repaint(id, trip)
   end
   drone.orientation = old.orientation
   drone.health = old.health
+  -- A dry freighter crawls (DRY_SPEED): the new one must too.
+  drone.speed = old.speed
   local new = drone.unit_number
   storage.trips[id], storage.trips[new] = nil, trip
   local depot = storage.depots[trip.request]
@@ -610,6 +767,8 @@ end
 local function drive(trip, destination)
   trip.destination = destination
   trip.loading = nil
+  -- On the road now: no longer standing at home deciding whether it can go.
+  trip.departing = nil
   trip.drone.commandable.set_command({
     type = defines.command.go_to_location,
     destination = destination,
@@ -619,8 +778,10 @@ local function drive(trip, destination)
   })
 end
 
--- Send one of a request depot's freighters to `provider`, to load `planned` of the item.
-local function start_trip(depot, provider, from, planned)
+-- Send one of a request depot's freighters, the one with the most fuel, to `provider` (`length`
+-- tiles away by road), to load `planned` of the item. Returns whether it set off: one that can't
+-- reach the provider on its fuel, with no Fuel depot to fill up at, goes back into the slot.
+local function start_trip(depot, provider, from, planned, length)
   local slot = a_freighter(depot)
   if not slot then
     return false
@@ -633,6 +794,14 @@ local function start_trip(depot, provider, from, planned)
   if not drone then
     return false
   end
+  local parked = parked_fuel(depot)
+  local energy
+  if trucks_of(depot).get_item_count() > #parked then
+    -- One with a full tank.
+    energy = fuel_capacity()
+  else
+    energy = table.remove(parked)
+  end
   local trip = {
     drone = drone,
     request = depot.entity.unit_number,
@@ -644,6 +813,13 @@ local function start_trip(depot, provider, from, planned)
     truck = game.create_inventory(1),
     planned = planned,
     state = TO_PROVIDER,
+    -- Fuel in joules; where it stood when last burned; the road length to its provider.
+    energy = energy,
+    at = from,
+    leg = length,
+    departing = true,
+    -- Where it is going, should the provider go before it sets off (see target).
+    destination = (loading_tile(provider.entity)),
   }
   trip.truck[1].transfer_stack(slot, 1)
   -- on_object_destroyed reports an entity's unit_number as its useful_id, the key used here.
@@ -651,8 +827,12 @@ local function start_trip(depot, provider, from, planned)
   script.register_on_object_destroyed(drone)
   trips_of(depot)[drone.unit_number] = true
   depot.next_send = game.tick + SEND_SPACING
-  drive(trip, (loading_tile(provider.entity)))
-  return true
+  if energy <= 0 and fuel_per_tile() > 0 then
+    trip.dry = true
+    drone.speed = prototypes.entity[DRONE].speed * DRY_SPEED
+  end
+  set_off(drone.unit_number, trip, length)
+  return storage.trips[drone.unit_number] ~= nil
 end
 
 -- Searches belong to a request depot (finding a provider to send a freighter to) or to a trip (a
@@ -723,7 +903,8 @@ end
 local function reroute(id, trip)
   local depot = storage.depots[trip.request]
   local request = depot and depot.entity.valid and depot.request
-  trip.search_token, trip.searching = nil, nil
+  -- A Fuel depot it was heading for, or looking for, waits: set_off decides again for the new leg.
+  trip.search_token, trip.searching, trip.fuel_search, trip.refuel = nil, nil, nil, nil
   if
     trip.drone.valid
     and request
@@ -738,6 +919,122 @@ local function reroute(id, trip)
     drive(trip, (loading_tile(depot.entity)))
   else
     end_trip(id, trip)
+  end
+end
+
+-- Fuel depots a freighter of `depot` could fill up at: same surface and force, road at the loading
+-- zone, holding fuel, not on cooldown for this depot (no road route lately), nearest first in a
+-- straight line from `from`.
+local function fuel_candidates(depot, from)
+  local entity = depot.entity
+  local found = {}
+  for unit_number, fuel in pairs(storage.depots) do
+    local candidate = fuel.entity
+    if
+      fuel.role == "fuel"
+      and candidate.valid
+      and candidate.surface == entity.surface
+      and candidate.force == entity.force
+      and (depot.cooldowns[unit_number] or 0) <= game.tick
+      and has_fuel(fuel)
+    then
+      local position, on_road = loading_tile(candidate)
+      if on_road then
+        local dx, dy = position.x - from.x, position.y - from.y
+        found[#found + 1] = { id = unit_number, position = position, distance = math.sqrt(dx * dx + dy * dy), rank = 0 }
+      end
+    end
+  end
+  table.sort(found, function(a, b)
+    return a.distance < b.distance or (a.distance == b.distance and a.id < b.id)
+  end)
+  return found
+end
+
+-- Start looking for the Fuel depot nearest by road from where a freighter stands; it waits while
+-- the search runs. Returns false if there is none to look for.
+local function seek_fuel(id, trip)
+  trip.search_token, trip.searching, trip.fuel_search, trip.refuel = nil, nil, nil, nil
+  local depot = storage.depots[trip.request]
+  if not (trip.drone.valid and depot and depot.entity.valid) then
+    return false
+  end
+  local from = trip.drone.position
+  local found = fuel_candidates(depot, from)
+  if #found == 0 then
+    return false
+  end
+  local search = {
+    token = new_token(),
+    request = trip.request,
+    item = trip.item,
+    from = from,
+    candidates = found,
+    index = 1,
+    trip = id,
+    fuel = true,
+  }
+  trip.search_token, trip.searching, trip.fuel_search = search.token, game.tick, true
+  trip.drone.commandable.set_command({ type = defines.command.stop, distraction = defines.distraction.none })
+  ask_route(search, depot.entity.surface, depot.entity.force)
+  return true
+end
+
+-- Nowhere to fill up for this leg: go on where it was going on what it has. One that hasn't left
+-- home yet and can't reach the provider on that stays home, and its depot waits a while.
+local function go_without_fuel(id, trip)
+  trip.fuel_search, trip.refueled = nil, true
+  if not trip.drone.valid then
+    return end_trip(id, trip)
+  end
+  if trip.departing and trip.energy < (trip.leg or 0) * fuel_per_tile() then
+    local depot = storage.depots[trip.request]
+    if depot then
+      depot.retry_at = game.tick + RETRY_TICKS
+      depot.retry_status = logistics.status.no_fuel
+      depot.status = logistics.status.no_fuel
+    end
+    return end_trip(id, trip)
+  end
+  drive(trip, target(trip))
+end
+
+-- Find a Fuel depot to fill up at, or go on without.
+local function look_for_fuel(id, trip)
+  if not seek_fuel(id, trip) then
+    go_without_fuel(id, trip)
+  end
+end
+
+-- Whether a freighter should fill up before a leg `length` tiles long by road: its tank holds
+-- less than the leg takes (with FUEL_MARGIN) plus FUEL_RESERVE, or than a full tank if that is
+-- less. Once a leg: after filling up, or finding nowhere to, it goes.
+local function short_of_fuel(trip, length)
+  local per_tile = fuel_per_tile()
+  if trip.refueled or not length or per_tile <= 0 then
+    return false
+  end
+  local capacity = fuel_capacity()
+  return trip.energy < math.min(length * per_tile * FUEL_MARGIN + capacity * FUEL_RESERVE, capacity)
+end
+
+-- Set off on a leg of `length` tiles by road towards the trip's target, by way of a Fuel depot if
+-- the tank is short for it.
+function set_off(id, trip, length)
+  upgrade(trip)
+  trip.refueled = nil
+  if short_of_fuel(trip, length) then
+    return look_for_fuel(id, trip)
+  end
+  drive(trip, target(trip))
+end
+
+-- Drop a trip's search and start again: for fuel, or for a new provider.
+local function search_again(id, trip)
+  if trip.fuel_search then
+    look_for_fuel(id, trip)
+  else
+    reroute(id, trip)
   end
 end
 
@@ -802,7 +1099,7 @@ local function dispatch(depot)
     return
   end
   if (depot.retry_at or 0) > game.tick then
-    depot.status = logistics.status.no_freighter
+    depot.status = depot.retry_status or logistics.status.no_freighter
     return
   end
   if trucks_of(depot).is_empty() then
@@ -826,18 +1123,46 @@ local function dispatch(depot)
   end
 end
 
+-- Burn the fuel a freighter used driving since last time: what the tiles it covered take.
+local function burn(trip)
+  local drone = trip.drone
+  if not drone.valid then
+    return
+  end
+  local position = drone.position
+  local last = trip.at or position
+  trip.at = { x = position.x, y = position.y }
+  upgrade(trip)
+  local per_tile = fuel_per_tile()
+  local dx, dy = position.x - last.x, position.y - last.y
+  trip.energy = math.max(0, trip.energy - math.sqrt(dx * dx + dy * dy) * per_tile)
+  if trip.dry and per_tile <= 0 then
+    -- Fuel was turned off: nothing to crawl for.
+    trip.dry = nil
+    drone.speed = prototypes.entity[DRONE].speed
+  end
+end
+
 function logistics.on_tick()
-  -- A freighter whose reroute search never answered (or met a busy pathfinder) searches again.
+  -- A freighter whose search never answered (or met a busy pathfinder) searches again.
   -- One driving in the wrong paint (something was stuck to it when it loaded) is painted once
   -- nothing is, and drives on from where it stands. Painting changes trip ids, so after the loop.
   local repaint_pending = {}
   for id, trip in pairs(storage.trips) do
+    burn(trip)
     -- Every freighter out pollutes a little, standing or driving.
     if trip.drone.valid then
       trip.drone.surface.pollute(trip.drone.position, POLLUTION_PER_SECOND * DISPATCH_INTERVAL / 60, DRONE)
     end
     if trip.searching and game.tick - trip.searching >= SEARCH_TIMEOUT then
-      reroute(id, trip)
+      search_again(id, trip)
+    elseif trip.drone.valid and trip.energy <= 0 and not trip.dry and fuel_per_tile() > 0 then
+      -- Its tank just ran dry: it crawls, to a Fuel depot if it can find one.
+      trip.dry = true
+      trip.drone.speed = prototypes.entity[DRONE].speed * DRY_SPEED
+      if not (trip.refuel or trip.searching or trip.loading) then
+        look_for_fuel(id, trip)
+      end
     elseif
       trip.drone.valid
       and trip.destination
@@ -857,9 +1182,15 @@ function logistics.on_tick()
   end
   for id, depot in pairs(storage.depots) do
     if not depot.entity.valid then
+      -- Gone before on_object_destroyed reached it: a Fuel depot's tank goes too.
+      if depot.tank and depot.tank.valid then
+        depot.tank.destroy()
+      end
       storage.depots[id] = nil
     elseif REQUESTING[depot.role] then
       dispatch(depot)
+    elseif depot.role == "fuel" then
+      fuel_tank(depot.entity)
     end
   end
 end
@@ -967,7 +1298,9 @@ end
 
 -- Saves from this PR's first version carried cargo as a plain count, and the mod version didn't
 -- change, so no configuration change converts them: carry such cargo as stacks from here on.
-local function upgrade(trip)
+function upgrade(trip)
+  -- Trips from before fuel set off with a full tank.
+  trip.energy = trip.energy or fuel_capacity()
   if type(trip.cargo) == "number" then
     local count = trip.cargo
     trip.cargo = game.create_inventory(CAPACITY_STACKS)
@@ -995,6 +1328,13 @@ function end_trip(id, trip, lost)
         truck.clear()
       else
         truck.count = truck.count - inserted
+      end
+      -- It parks with what is left in its tank.
+      if inserted > 0 and trip.energy and trip.energy < fuel_capacity() then
+        local parked = depot.fuel or {}
+        parked[#parked + 1] = trip.energy
+        depot.fuel = parked
+        parked_fuel(depot)
       end
     end
     if truck.valid_for_read and trip.drone.valid then
@@ -1055,11 +1395,31 @@ local function arrived_at_provider(id, trip, depot)
   if not (depot and depot.entity.valid) then
     return end_trip(id, trip)
   end
-  -- Home, loaded or (if there was nothing to load) empty, to unload and park, painted for its load.
+  -- Home, loaded or (if there was nothing to load) empty, to unload and park, painted for its load:
+  -- as far by road as it came (when it came from home), and never less than the straight line.
   trip.state = TO_REQUEST
   repaint(id, trip)
   show_cargo(trip)
-  drive(trip, (loading_tile(depot.entity)))
+  -- Painting moves the trip to its new freighter's unit_number.
+  id = trip.drone.unit_number
+  local home, here = loading_tile(depot.entity), trip.drone.position
+  set_off(id, trip, math.max(trip.leg or 0, math.sqrt((home.x - here.x) ^ 2 + (home.y - here.y) ^ 2)))
+end
+
+-- Filled up at a Fuel depot (as far as it had fuel): on to where it was going.
+local function arrived_at_fuel(id, trip)
+  local fuel = storage.depots[trip.refuel]
+  trip.refuel, trip.refueled = nil, true
+  if fuel and fuel.entity.valid then
+    refuel(trip, fuel)
+  end
+  if trip.dry and trip.energy > 0 then
+    trip.dry = nil
+    trip.drone.speed = prototypes.entity[DRONE].speed
+  end
+  if storage.trips[id] then
+    drive(trip, target(trip))
+  end
 end
 
 local function arrived_at_request(id, trip, depot)
@@ -1111,6 +1471,15 @@ local function route_failed(id, trip, depot)
   end_trip(id, trip)
 end
 
+-- No road route to the Fuel depot it was heading for: don't try that one again for a while, and
+-- look for another, or go on without.
+local function fuel_route_failed(id, trip, depot)
+  if depot then
+    depot.cooldowns[trip.refuel] = game.tick + RETRY_TICKS
+  end
+  look_for_fuel(id, trip)
+end
+
 function logistics.on_ai_command_completed(event)
   local id = event.unit_number
   local trip = storage.trips and storage.trips[id]
@@ -1129,7 +1498,21 @@ function logistics.on_ai_command_completed(event)
   end
   local depot = storage.depots[trip.request]
   if event.result ~= defines.behavior_result.success then
-    route_failed(id, trip, depot)
+    if trip.refuel then
+      fuel_route_failed(id, trip, depot)
+    else
+      route_failed(id, trip, depot)
+    end
+  elseif trip.refuel and not trip.loading then
+    -- At the Fuel depot: it stands there LOADING_TICKS to fill up too.
+    trip.loading = true
+    trip.drone.commandable.set_command({
+      type = defines.command.stop,
+      distraction = defines.distraction.none,
+      ticks_to_wait = LOADING_TICKS,
+    })
+  elseif trip.refuel then
+    arrived_at_fuel(id, trip)
   elseif not trip.loading and not (trip.state == TO_REQUEST and cargo_empty(trip)) then
     -- Arrived to load or unload: stand there LOADING_TICKS first. The stop command's completion
     -- comes back here, and the freighter loads or unloads then. One coming home empty just parks.
@@ -1148,8 +1531,13 @@ function logistics.on_ai_command_completed(event)
   end
 end
 
--- Where a trip is heading: the provider's loading zone, or the request depot's with cargo.
+-- Where a trip is heading: a Fuel depot's loading zone while it goes to fill up, otherwise the
+-- provider's, or the request depot's with cargo.
 function target(trip)
+  local fuel = trip.refuel and depot_entity(trip.refuel)
+  if fuel then
+    return (loading_tile(fuel))
+  end
   local depot = depot_entity(trip.state == TO_REQUEST and trip.request or trip.provider)
   return depot and (loading_tile(depot)) or trip.destination
 end
@@ -1183,7 +1571,7 @@ local function restart_searches(surface_index)
   end
   for id, trip in pairs(storage.trips) do
     if trip.search_token and trip.drone.valid and trip.drone.surface_index == surface_index then
-      reroute(id, trip)
+      search_again(id, trip)
     end
   end
 end
@@ -1229,10 +1617,16 @@ function logistics.on_depot_changed(entity)
   if not storage.depots or not logistics.depots[entity.name] then
     return
   end
+  -- A Fuel depot's port turns with it.
+  fuel_tank(entity)
   retry_now(entity.surface_index)
   restart_searches(entity.surface_index)
   for _, trip in pairs(storage.trips) do
-    if trip.provider == entity.unit_number or trip.request == entity.unit_number then
+    if
+      trip.provider == entity.unit_number
+      or trip.request == entity.unit_number
+      or trip.refuel == entity.unit_number
+    then
       replan(upgrade(trip))
     end
   end
@@ -1264,6 +1658,10 @@ local function depot_removed(id)
       end
     elseif trip.provider == id and trip.state == TO_PROVIDER then
       reroute(trip_id, trip)
+    elseif trip.refuel == id then
+      -- The Fuel depot it was heading for is gone (one standing there leaves at once): another.
+      trip.refuel, trip.loading = nil, nil
+      look_for_fuel(trip_id, trip)
     end
   end
 end
@@ -1271,6 +1669,21 @@ end
 -- The search is over: send a freighter to the provider nearest by road (or redirect the freighter
 -- the search was for), if the request still wants the item.
 local function finish_search(depot, search, owner)
+  if search.fuel then
+    -- A freighter's search for a Fuel depot: fill up at the nearest by road, if it still has fuel.
+    owner.search_token, owner.searching, owner.fuel_search = nil, nil, nil
+    local fuel = search.best and storage.depots[search.best]
+    if fuel and fuel.entity.valid and has_fuel(fuel) then
+      owner.refuel = search.best
+      drive(owner, (loading_tile(fuel.entity)))
+    elseif search.best then
+      -- The one found was emptied or removed meanwhile: look again among the rest.
+      look_for_fuel(search.trip, owner)
+    else
+      go_without_fuel(search.trip, owner)
+    end
+    return
+  end
   local provider = search.best and storage.depots[search.best]
   local still = depot.request
     and depot.request.item == search.item
@@ -1284,7 +1697,8 @@ local function finish_search(depot, search, owner)
       -- removed provider, so `available` doesn't count it).
       owner.planned = math.min(owner.planned or 0, available(provider, search.item))
       owner.provider = search.best
-      drive(owner, (loading_tile(provider.entity)))
+      owner.leg = search.best_length
+      set_off(search.trip, owner, search.best_length)
     else
       -- The provider found was emptied or removed meanwhile: look again among the rest.
       reroute(search.trip, owner)
@@ -1307,9 +1721,11 @@ local function finish_search(depot, search, owner)
   -- unpromised and it can carry; the next freighter covers the rest, from here or elsewhere.
   local capacity = depot.fluid and FLUID_CAPACITY or CAPACITY_STACKS * prototypes.item[search.item].stack_size
   local planned = math.min(room, available(provider, search.item), capacity)
-  if start_trip(depot, provider, from, planned) then
+  depot.retry_status = nil
+  if start_trip(depot, provider, from, planned, search.best_length) then
     depot.status = logistics.status.delivering
-  else
+  elseif (depot.retry_at or 0) <= game.tick then
+    -- (A freighter that stayed home for want of fuel has set the wait and status already.)
     depot.retry_at = game.tick + RETRY_TICKS
     depot.status = logistics.status.no_freighter
   end
@@ -1445,6 +1861,9 @@ function logistics.on_object_destroyed(event)
     if depot.chest and depot.chest.valid then
       depot.chest.destroy()
     end
+    if depot.tank and depot.tank.valid then
+      depot.tank.destroy()
+    end
     storage.depots[id] = nil
     depot_removed(id)
   elseif storage.trips[id] then
@@ -1551,8 +1970,8 @@ end
 
 -- A cloned depot is a new depot with the original's request; a cloned freighter has no trip.
 function logistics.on_cloned(source, destination)
-  -- A cloned truck chest: the cloned depot makes its own (logistics.add).
-  if paint.is_drone(destination.name) or destination.name == TRUCK_CHEST then
+  -- A cloned truck chest or fuel tank: the cloned depot makes its own (logistics.add).
+  if paint.is_drone(destination.name) or destination.name == TRUCK_CHEST or destination.name == FUEL_TANK then
     destination.destroy()
     return
   end
@@ -1617,7 +2036,7 @@ function logistics.add_all()
   end
   for id, trip in pairs(storage.trips) do
     if trip.searching then
-      reroute(id, trip)
+      search_again(id, trip)
     end
   end
   for _, depot in pairs(storage.depots) do
@@ -1851,6 +2270,8 @@ function logistics.remove_freighters(entity, count)
       true
     )
   end
+  -- The freighters leaving take their fuel entries, as in take_freighters.
+  parked_fuel(depot)
   return moved
 end
 
@@ -2287,6 +2708,8 @@ function logistics.take_freighters(entity, stack, count, into)
       end
     end
   end
+  -- The freighters taken take their fuel entries, so freighters put in later come full.
+  parked_fuel(depot)
   return before - slot.get_item_count()
 end
 
@@ -2326,6 +2749,76 @@ function logistics.describe_freighters(entity)
     #proxies,
     #plans > 0 and table.concat(plans, "; ") or "none"
   )
+end
+
+-- A requesting depot's freighters' fuel, in joules: those in its slot, fullest first, and those
+-- out on trips; and what a full tank holds. Nil for anything else.
+function logistics.freighter_fuel(entity)
+  local depot = request_depot(entity)
+  if not depot then
+    return nil
+  end
+  local capacity = fuel_capacity()
+  local parked = parked_fuel(depot)
+  local home, out = {}, {}
+  for _ = 1, trucks_of(depot).get_item_count() - #parked do
+    home[#home + 1] = capacity
+  end
+  for index = #parked, 1, -1 do
+    home[#home + 1] = parked[index]
+  end
+  for id in pairs(trips_of(depot)) do
+    local trip = storage.trips[id]
+    if trip then
+      out[#out + 1] = trip.energy or capacity
+    end
+  end
+  return { home = home, out = out, capacity = capacity }
+end
+
+-- Give every freighter in a requesting depot's slot `energy` joules of fuel (other mods, tests).
+-- Returns how many freighters that was.
+function logistics.set_freighter_fuel(entity, energy)
+  local depot = request_depot(entity)
+  if not depot or type(energy) ~= "number" or energy ~= energy then
+    return 0
+  end
+  local count = trucks_of(depot).get_item_count()
+  local parked = {}
+  if energy < fuel_capacity() then
+    for index = 1, count do
+      parked[index] = math.max(0, energy)
+    end
+  end
+  depot.fuel = parked
+  return count
+end
+
+-- What a Fuel depot's tank holds, for its panel: { fluid = name or nil, amount, capacity,
+-- burnable }. Nil for anything else.
+function logistics.fuel_contents(entity)
+  local tank = entity and entity.valid and fuel_tank(entity)
+  if not tank then
+    return nil
+  end
+  local held = tank.get_fluid(1)
+  return {
+    fluid = held and held.name,
+    amount = held and held.amount or 0,
+    capacity = tank.get_fluid_capacity(1),
+    burnable = held and burnable_fluid(held.name) ~= nil or false,
+  }
+end
+
+-- Empty a Fuel depot's tank (a fluid piped in that doesn't burn blocks it). Returns false for
+-- anything else.
+function logistics.flush_fuel(entity)
+  local tank = entity and entity.valid and fuel_tank(entity)
+  if not tank then
+    return false
+  end
+  tank.clear_fluid_inside()
+  return true
 end
 
 function logistics.init()
@@ -2374,6 +2867,10 @@ function logistics.register()
     describe_freighters = logistics.describe_freighters,
     setup_blueprint = logistics.setup_blueprint,
     cancel_freighter_removal = logistics.cancel_freighter_removal,
+    -- Freighter fuel, in joules: read a requesting depot's, and set its parked freighters'.
+    freighter_fuel = logistics.freighter_fuel,
+    set_freighter_fuel = logistics.set_freighter_fuel,
+    fuel_contents = logistics.fuel_contents,
   })
 end
 

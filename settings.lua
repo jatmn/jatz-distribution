@@ -2,6 +2,7 @@
 -- Jat'z Distribution settings stage. The tank sizes are startup settings because they are
 -- prototype values (prototypes/depots.lua reads them); the liquid request depot keeps 25,000.
 -- Whether players can place the freighter as a car is one too (prototypes/freighter.lua).
+-- Freighter fuel is runtime: scripts/logistics.lua reads it as freighters drive and refuel.
 data:extend({
   {
     type = "int-setting",
@@ -27,5 +28,26 @@ data:extend({
     setting_type = "startup",
     default_value = false,
     order = "b[freighter]",
+  },
+  {
+    -- In MJ. With the default use, a full tank lasts 2,000 tiles: what Transport Drones' default
+    -- fuel per drone lasts (50 fuel at 0.025 a tile).
+    type = "double-setting",
+    name = "jatz-freighter-fuel-capacity",
+    setting_type = "runtime-global",
+    default_value = 20,
+    minimum_value = 0.1,
+    maximum_value = 100000,
+    order = "b[fuel]-a[capacity]",
+  },
+  {
+    -- In kJ per tile driven; 0 turns fuel off.
+    type = "double-setting",
+    name = "jatz-freighter-fuel-per-tile",
+    setting_type = "runtime-global",
+    default_value = 10,
+    minimum_value = 0,
+    maximum_value = 100000,
+    order = "b[fuel]-b[use]",
   },
 })
