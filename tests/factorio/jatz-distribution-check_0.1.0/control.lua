@@ -1,10 +1,13 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
--- Checks that every Jat'z Distribution item is free to craft and can be placed, that every
+-- Checks that every Jat'z Distribution item is free to craft once researched and can be placed,
+-- that research unlocks the recipes and makes freighters faster and bigger, that every
 -- depot works in all four directions with its pipe ports, that the freighter can be driven, and
 -- that freighters deliver from provider to request depots driving only on road.
 -- Writes script-output/jatz-distribution-check.json; tools/test_mod.py runs it headless.
 
 local FREIGHTER = "jatz-quinityn-freighter"
+-- The mod's own research levels (scripts/research.lua), checked against the game's technologies.
+local research = require("__jatz-distribution__/scripts/research")
 local ROLES = { "provider", "request", "buffer", "fuel", "liquid-provider", "liquid-request", "liquid-buffer" }
 local HEADINGS = { defines.direction.north, defines.direction.east, defines.direction.south, defines.direction.west }
 local VECTORS = { [0] = { 0, -1 }, [4] = { 1, 0 }, [8] = { 0, 1 }, [12] = { -1, 0 } }
@@ -97,6 +100,10 @@ local function check_menu_placement(result)
 end
 
 local function locale_key(localised)
+  -- An upgrade level's name joins its technology's name and its number: { "", name, ... }.
+  if type(localised) == "table" and localised[1] == "" then
+    return locale_key(localised[2])
+  end
   return type(localised) == "table" and localised[1] or localised
 end
 
@@ -117,7 +124,7 @@ local function check_recipe(name, result, unplaceable)
     recipe = locale_key(prototypes.recipe[name].localised_name),
   }
   local recipe = game.forces.player.recipes[name]
-  assert(recipe and recipe.enabled, name .. ": recipe must be available from the start")
+  assert(recipe and recipe.enabled, name .. ": recipe must be available once researched")
   assert(#recipe.ingredients == 0, name .. ": recipe must be free")
   assert(#recipe.products == 1 and recipe.products[1].name == name, name .. ": recipe must make the item")
   result.free_recipes = result.free_recipes + 1
@@ -125,6 +132,61 @@ end
 
 -- The Fuel depot is a container; its port is on the hidden tank under it, which holds its liquid fuel.
 local FUEL_TANK = "jatz-fuel-depot-tank"
+
+-- Every recipe is locked until the freight system is researched, which unlocks them all.
+local function check_research(result)
+  local force = game.forces.player
+  local system = prototypes.technology[research.system]
+  result.research_prerequisites = {}
+  for name in pairs(system.prerequisites) do
+    result.research_prerequisites[#result.research_prerequisites + 1] = name
+  end
+  result.localised_names[research.system] = { technology = locale_key(system.localised_name) }
+  result.locked_recipes, result.unlocked_recipes = 0, 0
+  local unlocks = {}
+  for _, effect in ipairs(system.effects) do
+    if effect.type == "unlock-recipe" then
+      unlocks[#unlocks + 1] = effect.recipe
+      if not force.recipes[effect.recipe].enabled then
+        result.locked_recipes = result.locked_recipes + 1
+      end
+    end
+  end
+  force.technologies[research.system].researched = true
+  for _, recipe in ipairs(unlocks) do
+    if force.recipes[recipe].enabled then
+      result.unlocked_recipes = result.unlocked_recipes + 1
+    end
+  end
+  -- Speed: four levels, then an infinite one; capacity: five levels. Each after the one before.
+  local speed_top = prototypes.technology[research.speed .. "-" .. (research.speed_levels + 1)]
+  result.speed_infinite = speed_top.max_level == 4294967295 and speed_top.research_unit_count_formula ~= nil
+  result.research_levels = {}
+  for name, levels in pairs({ [research.speed] = research.speed_levels + 1, [research.capacity] = 5 }) do
+    for level = 1, levels do
+      local technology = prototypes.technology[name .. "-" .. level]
+      local before = level > 1 and name .. "-" .. (level - 1) or research.system
+      assert(technology and technology.prerequisites[before], name .. "-" .. level .. ": must follow " .. before)
+      result.localised_names[technology.name] = { technology = locale_key(technology.localised_name) }
+    end
+    result.research_levels[name] = levels
+  end
+  -- The levels a force has, from the game's own technologies: four speed levels and the infinite
+  -- one written to level 7 (5 and 6 done) are six; a new force has none.
+  local researched = game.create_force("jatz-researched")
+  researched.technologies[research.system].researched = true
+  for level = 1, research.speed_levels do
+    researched.technologies[research.speed .. "-" .. level].researched = true
+  end
+  researched.technologies[speed_top.name].level = 7
+  researched.technologies[research.capacity .. "-1"].researched = true
+  researched.technologies[research.capacity .. "-2"].researched = true
+  result.researched_levels = {
+    speed = research.levels(researched, research.speed),
+    capacity = research.levels(researched, research.capacity),
+    fresh = research.levels(game.create_force("jatz-unresearched"), research.speed),
+  }
+end
 
 local function check_port_layout(name, role)
   local expected = EXPECTED_PORTS[role]
@@ -277,7 +339,7 @@ local function check_road(result)
     recipe = locale_key(prototypes.recipe[ROAD].localised_name),
   }
   local recipe = game.forces.player.recipes[ROAD]
-  assert(recipe and recipe.enabled and #recipe.ingredients == 0, "road: recipe must be free from the start")
+  assert(recipe and recipe.enabled and #recipe.ingredients == 0, "road: recipe must be free once researched")
   assert(recipe.products[1].name == ROAD, "road: recipe must make road")
   assert(not prototypes.tile[ROAD].collision_mask.layers.jatz_off_road, "road: must not be off-road")
   assert(prototypes.tile.concrete.collision_mask.layers.jatz_off_road, "concrete: must be off-road")
@@ -368,11 +430,11 @@ local function lay_road(surface, x1, y1, x2, y2)
 end
 
 -- Request and buffer depots get `trucks` freighters in their slot (3 unless given).
-local function depot(surface, role, x, y, trucks)
+local function depot(surface, role, x, y, trucks, force)
   local entity = surface.create_entity({
     name = "jatz-" .. role .. "-depot",
     position = { x, y },
-    force = "player",
+    force = force or "player",
     raise_built = true,
   })
   if (role == "request" or role == "buffer") and (trucks or 3) > 0 then
@@ -500,6 +562,20 @@ local function setup_deliveries(surface, result)
     assert(remote.call("jatz-distribution", "set_request", to, item, count), item .. ": request refused")
     return { provider = from, request = to, item = item }
   end
+
+  -- A force with six speed levels and two capacity levels (check_research): its one freighter
+  -- leaves at 2.2 times the speed and carries 12 stacks of iron plates (1200), not 10. Speed
+  -- research undone while it is out (watch_researched) slows it down on the road.
+  deliveries.researched = {
+    provider = depot(surface, "provider", -65.5, -7.5, nil, "jatz-researched"),
+    request = depot(surface, "request", -53.5, -7.5, 1, "jatz-researched"),
+  }
+  lay_road(surface, -66, -6, -54, -6)
+  assert(deliveries.researched.provider.insert({ name = "iron-plate", count = 2000 }) == 2000, "researched: stock")
+  assert(
+    remote.call("jatz-distribution", "set_request", deliveries.researched.request, "iron-plate", 2000),
+    "researched: request refused"
+  )
 
   -- Item data survives the trip: armor keeps the equipment in its grid.
   deliveries.armor = pair(-66, 2, 12, "modular-armor", 1, 1)
@@ -1254,6 +1330,25 @@ local function count(entity, item)
   return entity.get_inventory(defines.inventory.chest).get_item_count(item or "iron-plate")
 end
 
+-- The researched force's freighter: its speed as it sets off, then undo a speed level (the
+-- fourth, so the infinite levels after it no longer count either: 1.6 times) and read it again on
+-- the road; and the first load it brings.
+local function watch_researched(surface)
+  local researched = storage.deliveries.researched
+  local base = prototypes.entity[DRONE].speed
+  if not researched.reversed_speed then
+    local drone = surface.find_entities_filtered({ name = DRONES, force = "jatz-researched" })[1]
+    if drone then
+      researched.first_speed = drone.speed / base
+      game.forces["jatz-researched"].technologies[research.speed .. "-" .. research.speed_levels].researched = false
+      researched.reversed_speed = drone.speed / base
+    end
+  end
+  if not researched.first_load and count(researched.request) > 0 then
+    researched.first_load = count(researched.request)
+  end
+end
+
 -- With one of the Mining Drones mods (tools/test_mod.py --mod): a mining depot is a provider of
 -- what its drones mine, which collects in its output inventory. Facing north it mines to the north
 -- and loads from the tile behind its southern end; a request depot for 30 of its 40 iron ore stands
@@ -1649,6 +1744,7 @@ local function deliveries_finished(surface, tick, result)
     and count(deliveries.shortest.request, "coal") == 10
     and count(storage.depot_roads.request, "small-electric-pole") == 5
     and count(deliveries.multi.request, "iron-stick") == 60
+    and count(deliveries.researched.request) == 2000
     and count(deliveries.runover.request, "iron-ore") == 10
     and deliveries.ambush.killed
     and count(deliveries.ambush.request, "copper-ore") == 10
@@ -1719,6 +1815,11 @@ local function deliveries_finished(surface, tick, result)
     return false
   end
   result.delivered = count(deliveries.connected)
+  local researched = deliveries.researched
+  result.researched_speed = math.floor(researched.first_speed * 100 + 0.5) / 100
+  result.researched_speed_reversed = math.floor(researched.reversed_speed * 100 + 0.5) / 100
+  result.researched_first_load = researched.first_load
+  result.researched_received = count(researched.request)
   if deliveries.mining then
     result.mining = {
       zone = deliveries.mining.zone,
@@ -2016,6 +2117,7 @@ script.on_init(function()
     tank_sizes = {},
     wired_depots = 0,
   }
+  check_research(result)
   for row, role in ipairs(ROLES) do
     check_depot(surface, role, row - 1, result)
   end
@@ -2082,6 +2184,7 @@ script.on_event(defines.events.on_tick, function(event)
   if event.tick % 10 == 0 then
     check_freighters_on_road(surface)
   end
+  watch_researched(surface)
   interfere(surface)
   lay_road_under(surface, result)
   if not result.driven_tiles and event.tick >= DRIVE_TICKS then

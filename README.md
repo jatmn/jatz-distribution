@@ -7,15 +7,16 @@
 Build depots where goods are made and where they're needed, connect them with road, and heavy freighters do the hauling. The gameplay is inspired by Klonan's [Transport Drones](https://mods.factorio.com/mod/Transport_Drones), with trucks in place of drones and a rugged industrial look inspired by the Yuoki mods.
 
 > [!NOTE]
-> **In development.** Item and fluid deliveries, and fuel, already work. Real recipes and balance are still to come, and everything is free to craft for now. The mod isn't on the Mod Portal yet: see [Try it](#try-it).
+> **In development.** Item and fluid deliveries, and fuel, already work. Real recipes and balance are still to come, and everything is free to craft for now, once you research **Freight system**. The mod isn't on the Mod Portal yet: see [Try it](#try-it).
 
 ## How it works
 
-1. **Lay road.** Freighters drive only on road, which you'll find in the mod's row of the crafting menu. Each depot lays a road tile under its loading zone (except on space platforms), so just run your road up to it.
-2. **Place a provider depot** and fill it with goods.
-3. **Place a request depot**, open it, and choose an item and how many to keep in stock.
-4. **Give it freighters.** Put freighters in the request depot's freighter slot.
-5. **Fuel them.** Freighters come with a full tank and burn fuel as they drive. Place a fuel depot on the road, with any fuel item in it or any burnable fluid piped in (petroleum gas burns for them), and they fill up there by themselves. Hover a freighter to see its fuel.
+1. **Research Freight system**, after Engine, to unlock the depots, freighters and road.
+2. **Lay road.** Freighters drive only on road, which you'll find in the mod's row of the crafting menu. Each depot lays a road tile under its loading zone (except on space platforms), so just run your road up to it.
+3. **Place a provider depot** and fill it with goods.
+4. **Place a request depot**, open it, and choose an item and how many to keep in stock.
+5. **Give it freighters.** Put freighters in the request depot's freighter slot.
+6. **Fuel them.** Freighters come with a full tank and burn fuel as they drive. Place a fuel depot on the road, with any fuel item in it or any burnable fluid piped in (petroleum gas burns for them), and they fill up there by themselves. Hover a freighter to see its fuel.
 
 That's it. Freighters set off for the provider that's nearest **by road**, load up and bring the goods home. A status light on the request depot tells you at a glance if anything is wrong.
 
@@ -31,6 +32,7 @@ Want the details? The **[player guide](docs/guide.md)** covers the freighter slo
 - **Circuit network:** switch depots on and off with a circuit condition, and read what a whole road network holds with the road network monitor.
 - **Blueprint friendly:** copy, paste and blueprints keep requests, priorities and freighters, and construction robots bring the trucks.
 - **Cargo stays intact:** armor keeps its equipment, and food keeps track of its spoilage.
+- **Research:** unlock the system, then make freighters faster (with infinite research) and carry more.
 - **See what's on board:** a freighter's cargo bays are light grey while empty and take the color of the item or fluid it picks up.
 - **Paint it your way:** every truck and depot has three paint layers you can recolor.
 
@@ -76,7 +78,8 @@ Copy `dist/jatz-distribution_0.1.0.zip` into your [Factorio mods folder](https:/
 - [x] Liquid deliveries
 - [x] Fuel for freighters, and refueling at the Fuel depot
 - [ ] Freighter wheel animation and final stats
-- [ ] Recipes, technology and balance
+- [x] Research: unlocking, freighter speed (infinite) and capacity
+- [ ] Recipes and balance
 - [ ] Release on the Factorio Mod Portal
 
 ## Credits

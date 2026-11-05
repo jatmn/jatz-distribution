@@ -130,10 +130,10 @@ for index, role in ipairs(ORDER) do
       stack_size = 10,
     },
     {
-      -- Free while the mod is in development.
+      -- Free while the mod is in development; unlocked by research (prototypes/technologies.lua).
       type = "recipe",
       name = name,
-      enabled = true,
+      enabled = false,
       energy_required = 0.5,
       ingredients = {},
       results = { { type = "item", name = name, amount = 1 } },

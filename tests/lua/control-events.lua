@@ -1713,4 +1713,12 @@ do -- The road network monitor shows what the provider and buffer depots on its 
   check("a removed monitor is forgotten", storage.road_monitors[monitor.unit_number] == nil)
 end
 
+do -- Research finished or undone reaches the freighters (tests/lua/logistics.lua checks what it does).
+  local logistics = require("scripts.logistics")
+  check("finished research is handled", handlers.on_research_finished == logistics.on_research_changed)
+  check("so is research undone", handlers.on_research_reversed == logistics.on_research_changed)
+  fire("on_research_finished", { research = { name = "automation", force = { index = 1 } } })
+  check("other research changes nothing", true)
+end
+
 print("all control event checks passed")

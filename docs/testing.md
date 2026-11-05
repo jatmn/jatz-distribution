@@ -23,7 +23,8 @@ python3 tools/test_mod.py --factorio /path/to/factorio/bin/x64/factorio
 ```
 
 This builds the installable zip with `tools/package_mod.py` and loads it, with the check mod `tests/factorio/jatz-distribution-check_0.1.0`, in a fresh workspace under `.local/mod-check/`. It checks that:
-- all ten recipes are available from the start and free, and the road item lays the road tile;
+- all ten recipes are free; the nine depot, freighter and road recipes are locked at the start and unlocked by the Freight system technology (after Engine), and the road item lays the road tile;
+- freighter speed has four levels then an infinite one and capacity five, each after the last; the mod's research levels read the game's own technologies (an infinite level written to 7 counts 6); and a pair on a force with six speed and two capacity levels must send its freighter at 2.2 times the speed, slow it to 1.6 times on the road when speed level 4 is undone, and bring 1200 iron plates (12 stacks) in its first load, 2000 in all;
 - every depot can be placed, as a ghost and for real, in all four directions, and rotated through a full turn;
 - each depot's pipe ports match the designed layout (written out in the check mod, independently of the generated data) and all 20 connect;
 - containers hold items and tanks hold fluid (the Fuel depot both: its port and fluid are on the hidden tank under it);

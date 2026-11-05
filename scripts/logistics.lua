@@ -7,15 +7,16 @@
 -- freighter, so freighters leave one after another rather than all at once. Each goes from the
 -- depot's loading zone to the provider depot with the highest priority (1 to 10), nearest by road
 -- among equals, that has some of the item not already promised to another freighter, and promises
--- itself what it will load there (up to ten stacks); once one provider's stock is all promised,
--- the next freighter goes to the next provider, so a large request is gathered from several. Road distance comes from the engine's pathfinder (surface.request_path, with the
+-- itself what it will load there (up to ten stacks, more with capacity research); once one
+-- provider's stock is all promised, the next freighter goes to the next provider, so a large
+-- request is gathered from several. Road distance comes from the engine's pathfinder (surface.request_path, with the
 -- freighter's own size and collision mask), asked one provider at a time in order of straight-line
 -- distance until no remaining provider could be nearer by road than the best found; a provider
 -- with no road route at all is skipped for a while, and no freighter is sent towards it. The freighter
--- loads what is needed (no more than fits at the request depot, and at most ten stacks), drives
--- back, unloads and leaves the map. Freighters are units whose only collision layer is on every
--- tile except roads (prototypes/off-road.lua), so the engine's pathfinder keeps them on roads;
--- both loading zones must be road for a trip to start.
+-- loads what is needed (no more than fits at the request depot, and at most ten stacks before
+-- capacity research), drives back, unloads and leaves the map. Freighters are units whose only
+-- collision layer is on every tile except roads (prototypes/off-road.lua), so the engine's
+-- pathfinder keeps them on roads; both loading zones must be road for a trip to start.
 --
 -- Cargo travels as real item stacks in a script inventory, so item data (equipment in armor,
 -- spoilage, health) arrives intact. If the way back is lost, the freighter returns its cargo to
@@ -54,6 +55,7 @@
 local loading_zone = require("scripts.loading-zone")
 local paint = require("scripts.freighter-paint")
 local depot_circuit = require("scripts.depot-circuit")
+local research = require("scripts.research")
 
 local logistics = {}
 
@@ -127,10 +129,26 @@ logistics.dispatch_interval = DISPATCH_INTERVAL
 -- A request depot sends at most one freighter this often, so they leave one after another.
 local SEND_SPACING = 60
 -- A freighter carries at most this many stacks, or this much fluid (Transport Drones' default
--- drone fluid capacity).
+-- drone fluid capacity), before capacity research (scripts/research.lua).
 local CAPACITY_STACKS = 10
 local FLUID_CAPACITY = 500
 logistics.fluid_capacity = FLUID_CAPACITY
+
+-- What a force's freighters carry and how fast they drive, with its research. A trip keeps the
+-- cargo size it set off with; speed research also reaches freighters already on the road
+-- (logistics.on_research_changed).
+local function cargo_stacks(force)
+  return CAPACITY_STACKS + research.extra_stacks(force)
+end
+
+local function fluid_capacity(force)
+  return FLUID_CAPACITY + research.extra_fluid(force)
+end
+
+local function freighter_speed(force)
+  return prototypes.entity[DRONE].speed * research.speed_multiplier(force)
+end
+
 -- After a provider can't be reached, a request depot ignores it for this long; after a freighter
 -- can't be created, the depot waits this long before trying again. Laying road, or building or
 -- turning a depot, ends every wait on that surface at once (logistics.on_roads_changed and
@@ -1028,12 +1046,13 @@ local function start_trip(depot, provider, from, planned, length)
     -- One with a full tank.
     energy = fuel_capacity()
   end
+  drone.speed = freighter_speed(drone.force)
   local trip = {
     drone = drone,
     request = depot.entity.unit_number,
     provider = provider.entity.unit_number,
     item = depot.request.item,
-    cargo = not depot.fluid and game.create_inventory(CAPACITY_STACKS) or nil,
+    cargo = not depot.fluid and game.create_inventory(cargo_stacks(drone.force)) or nil,
     fluid = depot.fluid and { amount = 0 } or nil,
     -- The freighter item it was, taken from the depot's slot; it goes back there afterwards.
     truck = game.create_inventory(1),
@@ -1055,7 +1074,7 @@ local function start_trip(depot, provider, from, planned, length)
   depot.next_send = game.tick + SEND_SPACING
   if energy <= 0 and fuel_per_tile() > 0 then
     trip.dry = true
-    drone.speed = prototypes.entity[DRONE].speed * DRY_SPEED
+    drone.speed = freighter_speed(drone.force) * DRY_SPEED
   end
   show_fuel(trip)
   set_off(drone.unit_number, trip, length)
@@ -1395,7 +1414,7 @@ local function burn(trip)
   if trip.dry and per_tile <= 0 then
     -- Fuel was turned off: nothing to crawl for.
     trip.dry = nil
-    drone.speed = prototypes.entity[DRONE].speed
+    drone.speed = freighter_speed(drone.force)
   end
 end
 
@@ -1416,7 +1435,7 @@ function logistics.on_tick()
     elseif trip.drone.valid and trip.energy <= 0 and not trip.dry and fuel_per_tile() > 0 then
       -- Its tank just ran dry: it crawls, to a Fuel depot if it can find one.
       trip.dry = true
-      trip.drone.speed = prototypes.entity[DRONE].speed * DRY_SPEED
+      trip.drone.speed = freighter_speed(trip.drone.force) * DRY_SPEED
       if not (trip.refuel or trip.searching or trip.loading) then
         look_for_fuel(id, trip)
       end
@@ -1648,7 +1667,7 @@ local function arrived_at_provider(id, trip, depot)
     local _, room = need(depot, id)
     local limit = math.min(trip.planned or room, room)
     if trip.fluid then
-      load_fluid(provider, trip, math.min(limit, FLUID_CAPACITY))
+      load_fluid(provider, trip, math.min(limit, fluid_capacity(depot.entity.force)))
     else
       load(inventory(provider), trip.cargo, trip.item, limit)
     end
@@ -1677,7 +1696,7 @@ local function arrived_at_fuel(id, trip)
   end
   if trip.dry and trip.energy > 0 then
     trip.dry = nil
-    trip.drone.speed = prototypes.entity[DRONE].speed
+    trip.drone.speed = freighter_speed(trip.drone.force)
   end
   show_fuel(trip)
   if storage.trips[id] then
@@ -1987,7 +2006,9 @@ local function finish_search(depot, search, owner)
   end
   -- This freighter promises to load what the depot still needs, as far as the provider has it
   -- unpromised and it can carry; the next freighter covers the rest, from here or elsewhere.
-  local capacity = depot.fluid and FLUID_CAPACITY or CAPACITY_STACKS * prototypes.item[search.item].stack_size
+  local force = depot.entity.force
+  local capacity = depot.fluid and fluid_capacity(force)
+    or cargo_stacks(force) * prototypes.item[search.item].stack_size
   local planned = math.min(room, available(provider, search.item), capacity)
   depot.retry_status = nil
   if start_trip(depot, provider, from, planned, search.best_length) then
@@ -3190,7 +3211,26 @@ logistics.remote_extra = {}
 -- Set by scripts/road-monitor.lua: the blueprint tag (name and value) of a road network monitor.
 logistics.monitor_tag = nil
 
+-- Speed research finished (or undone): the force's freighters on the road drive at the new speed.
+function logistics.on_research_changed(event)
+  local technology = event.research
+  if not research.is_speed(technology) then
+    return
+  end
+  local force = technology.force
+  local speed = freighter_speed(force)
+  for _, trip in pairs(storage.trips or {}) do
+    local drone = trip.drone
+    if drone.valid and drone.force.index == force.index then
+      -- A dry one still crawls (DRY_SPEED), at its share of the new speed.
+      drone.speed = trip.dry and speed * DRY_SPEED or speed
+    end
+  end
+end
+
 function logistics.register()
+  script.on_event(defines.events.on_research_finished, logistics.on_research_changed)
+  script.on_event(defines.events.on_research_reversed, logistics.on_research_changed)
   script.on_nth_tick(IMPACT_INTERVAL, logistics.on_impact_tick)
   script.on_event(defines.events.on_ai_command_completed, logistics.on_ai_command_completed)
   script.on_event(defines.events.on_script_path_request_finished, logistics.on_script_path_request_finished)

@@ -34,7 +34,18 @@ CHECK = ROOT / 'tests/factorio/jatz-distribution-check_0.1.0'
 OURS = ('jatz-distribution', 'jatz-distribution-check')
 # Dependency prefixes Factorio loads with the mod: required ('' and '~') and recommended ('+').
 LOADED_WITH = re.compile(r'^\s*(?:~|\+)?\s*([A-Za-z0-9_-]+)')
-EXPECTED = {'free_recipes': 10, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pipe_connections': 20,
+EXPECTED = {'free_recipes': 10,
+            # Research: the freight system (after engine) unlocks the 9 depot, freighter and road
+            # recipes, locked until then;
+            # freighter speed has 4 levels then an infinite one, capacity 5. A force with speed 1-4
+            # and the infinite level written to 7, and capacity 1-2, has 6 and 2 levels; a new force
+            # none. Its freighter leaves at 2.2 times the speed, slows to 1.6 times on the road
+            # when speed level 4 is undone, and brings 12 stacks (1200 iron plates) a trip, 2000 in all.
+            'research_prerequisites': ['engine'], 'locked_recipes': 9, 'unlocked_recipes': 9,
+            'speed_infinite': True, 'research_levels': {'jatz-freighter-speed': 5, 'jatz-freighter-capacity': 5},
+            'researched_levels': {'speed': 6, 'capacity': 2, 'fresh': 0}, 'researched_speed': 2.2,
+            'researched_speed_reversed': 1.6, 'researched_first_load': 1200, 'researched_received': 2000,
+            'ghosts': 28, 'placed': 28, 'rotations': 112, 'pipe_connections': 20,
             'cleared_zones': 28,
             # Deliveries (tests/factorio/jatz-distribution-check_0.1.0/control.lua): 30 of the
             # provider's 50 iron plates reach the request over the road; the request on an
