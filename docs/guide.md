@@ -50,7 +50,11 @@ Other items ctrl+clicked in go into the depot's inventory as usual.
 
 ## How freighters choose where to go
 
-Freighters pick the provider that is nearest **by road**, not in a straight line. A provider just across a wall of concrete loses to one farther away with a shorter road.
+Of the depots that have the item and can be reached by road, freighters go to the one that comes first in this order:
+
+1. **Buffer depots before providers**, but only for a request depot with **Request from buffer depots** ticked. See [Buffer depots](#buffer-depots).
+2. **Higher priority before lower**, even when the lower one is nearer. See [Priority](#priority).
+3. **Nearest by road among equals**, not in a straight line. A provider just across a wall of concrete loses to one farther away with a shorter road.
 
 If there's no road route to a provider, no freighter is sent there. The request depot shows why and tries another provider.
 

@@ -40,7 +40,7 @@ Want the details? The **[player guide](docs/guide.md)** covers the freighter slo
 | **Fuel** | Will refuel freighters with solid or liquid fuel (not active yet) | ![Fuel depot in four rotations](assets/depots/fuel/3/previews/four-directions.png) |
 | **Liquid Provider** | Offers fluids to freighters | ![Liquid Provider depot in four rotations](assets/depots/liquid-provider/3/previews/four-directions.png) |
 | **Liquid Request** | Keeps a fluid in stock, fetched by its own freighters | ![Liquid Request depot in four rotations](assets/depots/liquid-request/3/previews/four-directions.png) |
-| **Liquid Buffer** | Stocks a fluid from liquid providers | ![Liquid Buffer depot in four rotations](assets/depots/liquid-buffer/3/previews/four-directions.png) |
+| **Liquid Buffer** | Stocks a fluid from liquid providers. Two pipe connections | ![Liquid Buffer depot in four rotations](assets/depots/liquid-buffer/3/previews/four-directions.png) |
 
 Every depot is 3×3 and can face any direction. A worn "no parking: loading zone" marking shows where freighters load, and fluid ports connect to ordinary pipes.
 
