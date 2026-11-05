@@ -188,8 +188,8 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
 # With a Mining Drones mod: the mining depot's road, and 30 of its 40 iron ore delivered.
 MINING_DRONES = {'Mining_Drones', 'Mining_Drones_Remastered', 'Mining_Drones_Mod'}
 EXPECTED_MINING = {'zone': 'jatz-depot-road', 'delivered': 30, 'left': 10}
-# Long enough for the check mod's deliveries (it fails itself at tick 1700).
-TICKS = 1800
+# Long enough for the check mod's deliveries (it fails itself at tick 2500).
+TICKS = 2600
 
 
 def run(command, log, timeout=300):

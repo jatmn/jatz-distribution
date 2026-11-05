@@ -26,8 +26,10 @@ local IRON_PAINT, WATER_PAINT = DRONE .. "-233", DRONE .. "-023"
 -- Stuck to the sticky pair's freighter as it reaches the provider, for this long (data.lua): it
 -- wears off a little after loading, on the way home.
 local STICKER, STICKER_TICKS = "jatz-check-sticker", 90
--- Deliveries have this long to finish; tools/test_mod.py runs a little longer.
-local DELIVERY_DEADLINE = 1700
+-- Deliveries have this long to finish; tools/test_mod.py runs a little longer. The dry freighter
+-- sets the pace: it waits out the 10-second retry after coal arrives at tick 300, then crawls to
+-- the Fuel depot at a tenth of the drone's 0.066 tiles a tick before its round trip.
+local DELIVERY_DEADLINE = 2500
 -- A failed route must have been tried and reported before the report is written.
 local DELIVERY_SETTLE = 600
 -- The designed pipe ports (assets/depots/README.md, "Using it in Factorio"), written out here
