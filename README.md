@@ -11,7 +11,7 @@ Build depots where goods are made and where they're needed, connect them with ro
 
 ## How it works
 
-1. **Lay road.** Freighters drive only on road, which you'll find in the mod's row of the crafting menu. Each depot lays a road tile under its loading zone, so just run your road up to it.
+1. **Lay road.** Freighters drive only on road, which you'll find in the mod's row of the crafting menu. Each depot lays a road tile under its loading zone (except on space platforms), so just run your road up to it.
 2. **Place a provider depot** and fill it with goods.
 3. **Place a request depot**, open it, and choose an item and how many to keep in stock.
 4. **Give it freighters.** Put freighters in the request depot's freighter slot.

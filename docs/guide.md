@@ -18,7 +18,7 @@ Everything you need to know to run Jat'z Distribution in your factory. New to th
 
 Freighters drive **only on road**. Road is a floor tile you craft and place like stone path; it's in our row of the crafting menu.
 
-- Every depot lays a road tile under its loading zone sign (the marked tile) when you build it. You only need to bring road up to it: road that ends one tile away connects.
+- Every depot lays a road tile under its loading zone sign (the marked tile) when you build it, except on space platforms. You only need to bring road up to it: road that ends one tile away connects.
 - Removing the depot takes that tile away again and puts back the ground that was there, unless you laid your own road or tile over it.
 - Buildings can still be placed on road. Freighters drive through them.
 
@@ -44,7 +44,7 @@ A request depot holds up to **100 freighters** in its freighter slot.
 | Grab a freighter | Pipette (Q) over the slot picks up a freighter, or its ghost. |
 | Get them all back | Mine the depot. You get all its freighters, including those out on deliveries. |
 
-The line beside the slot shows how many freighters are out on the road, and a green **+N** while N more are on their way to the depot. Hover it for the full breakdown.
+The line beside the slot shows how many freighters are out on the road, and a green **+N** while N more have been requested for the depot. Hover it for the full breakdown.
 
 Other items ctrl+clicked in go into the depot's inventory as usual.
 
@@ -64,9 +64,9 @@ A light beside the request shows at a glance whether it can be filled. Hover it 
 
 | Light | Meaning |
 | --- | --- |
-| 🟢 Green | Stocked, or on its way |
-| 🟡 Yellow | The item is out there, but something is in the way: no road route, no freighters, or no room |
-| 🔴 Red | No provider has it |
+| 🟢 Green | Stocked, a freighter is on its way, or it's finding a provider by road |
+| 🟡 Yellow | Waiting on something in the way: no room in the depot, its loading zone isn't on road, no road route to a provider that has it, no freighters (or none could be sent), or a liquid depot's tank holds another fluid |
+| 🔴 Red | No provider depot with road at its loading zone has it |
 | ⚪ Grey | Nothing requested |
 
 ## When roads or depots change
