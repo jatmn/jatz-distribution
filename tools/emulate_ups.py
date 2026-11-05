@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-only
-"""Compare the deliveries' script cost with a base revision, without Factorio.
+"""UPS benchmark for CI: compare the mod's script cost with a base revision, without Factorio.
 
 Runs tests/lua/ups-emulator.lua (Lua 5.2) on the benchmark map, once with the mod's
 control.lua, scripts/ and prototypes/ at --base and once with the working tree, and
@@ -11,13 +11,15 @@ pathfinding and movement, which only tools/benchmark_ups.py measures in the game
 
 python3 tools/emulate_ups.py --base origin/main [--preset standard] [--summary FILE]
 
-CI runs this for pull requests that change the mod and adds the table to the job
-summary. A rise of more than --warn percent in the mean or worst tick is flagged as a
+CI's "UPS benchmark" check runs this for pull requests that change the mod, adds the
+table to its summary and posts it as a pull request comment (--comment writes the
+comment's text; the workflow posts it, editing its earlier comment on later pushes). A rise of more than --warn percent in the mean or worst tick is flagged as a
 warning; the job fails only if the emulator itself fails on the working tree.
 """
 import argparse
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import tarfile
@@ -27,6 +29,8 @@ ROOT = Path(__file__).resolve().parents[1]
 EMULATOR = ROOT / 'tests/lua/ups-emulator.lua'
 # What the mod's runtime is made of: the emulator loads these from each tree.
 RUNTIME = ('control.lua', 'scripts', 'prototypes')
+# Marks the workflow's comment so later pushes edit it instead of adding another.
+COMMENT_MARKER = '<!-- ups-benchmark -->'
 METRICS = (('instructions_per_tick', 'Mean per tick'), ('instructions_p99', 'p99 tick'),
            ('instructions_max', 'Worst tick'), ('path_requests', 'Path requests'),
            ('commands', 'Unit commands'), ('vehicles_out', 'Freighters out'), ('delivered', 'Items delivered'))
@@ -70,6 +74,7 @@ def main():
     parser.add_argument('--base', help='Git revision to compare with')
     parser.add_argument('--preset', default='standard', choices=('quick', 'standard', 'stress'))
     parser.add_argument('--summary', type=Path, help='append the Markdown table to this file')
+    parser.add_argument('--comment', type=Path, help='write the pull request comment (Markdown) here')
     parser.add_argument('--warn', type=float, default=5.0, help='flag rises above this many percent')
     parser.add_argument('--lua', default='lua5.2')
     args = parser.parse_args()
@@ -87,9 +92,23 @@ def main():
     print(markdown)
     if args.summary:
         with args.summary.open('a') as handle:
-            handle.write('## Deliveries\' script cost\n\n' + markdown + '\n')
+            handle.write('## UPS benchmark\n\n' + markdown + '\n')
+    if args.comment:
+        if before is None:
+            verdict = 'Could not compare with the base: only this pull request\'s numbers are shown.'
+        elif flagged:
+            verdict = ('**Script cost rose:** ' + ', '.join(flagged) + '. Check it in the game with '
+                       '`tools/benchmark_ups.py --compare`.')
+        else:
+            verdict = f'No rise above {args.warn:g}% in the mean or worst tick.'
+        repository = os.environ.get('GITHUB_REPOSITORY', 'jatmn/jatz-distribution')
+        server = os.environ.get('GITHUB_SERVER_URL', 'https://github.com')
+        args.comment.write_text(f'{COMMENT_MARKER}\n## UPS benchmark\n\n{verdict}\n\n{markdown}\n\n'
+                                'This is CI\'s engine-free estimate. The in-game before and after table from '
+                                '`tools/benchmark_ups.py --compare origin/main` (pull request template) is still '
+                                f'required; see [docs/benchmark.md]({server}/{repository}/blob/main/docs/benchmark.md).\n')
     for item in flagged:
-        print(f'::warning title=Script cost rose::{item} against {args.base} in the engine-free emulation; '
+        print(f'::warning title=UPS benchmark::{item} against {args.base} in the engine-free emulation; '
               'run tools/benchmark_ups.py --compare in the game to confirm.')
 
 

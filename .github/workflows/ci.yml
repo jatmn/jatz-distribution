@@ -119,6 +119,68 @@ jobs:
     with:
       area: repository
 
+  # The mod's script cost per tick against the pull request's base, without Factorio
+  # (tools/emulate_ups.py; docs/benchmark.md). Reports in the job summary and only warns on a rise.
+  ups:
+    name: UPS benchmark
+    needs: changes
+    if: needs.changes.outputs.mod == 'true' && github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Comments the results on the pull request. Pull requests from forks get a read-only token
+    # whatever this says, so for them the results stay in the job summary only.
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # Full history but only the Lua and tools it runs; the base revision's files come from the
+      # partial clone on demand (the repository is public).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          filter: blob:none
+          sparse-checkout: |
+            scripts
+            prototypes
+            tests/lua
+            tests/factorio/ups-benchmark_0.1.0
+            tools
+      - name: Install Lua 5.2
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends -y lua5.2
+      - name: Compare the mod's cost per tick with the base
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: >-
+          python3 tools/emulate_ups.py --base "$BASE" --summary "$GITHUB_STEP_SUMMARY"
+          --comment "$RUNNER_TEMP/ups-benchmark.md"
+      # One comment per pull request, found by its marker and edited on later pushes.
+      - name: Post the results on the pull request
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          BODY_PATH: ${{ runner.temp }}/ups-benchmark.md
+        with:
+          script: |
+            const body = require('fs').readFileSync(process.env.BODY_PATH, 'utf8');
+            const marker = '<!-- ups-benchmark -->';
+            const { owner, repo } = context.repo;
+            try {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: context.issue.number, per_page: 100,
+              });
+              const existing = comments.find(
+                (comment) => comment.user?.type === 'Bot' && comment.body?.startsWith(marker));
+              if (existing) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              } else {
+                await github.rest.issues.createComment({ owner, repo, issue_number: context.issue.number, body });
+              }
+            } catch (error) {
+              core.warning(`Could not comment the UPS benchmark (a fork's pull request?): ${error.message}`);
+            }
+
   package:
     name: Installable package
     needs: changes
@@ -141,7 +203,7 @@ jobs:
   # depending on the diff, so require this job instead of the individual checks.
   result:
     name: CI result
-    needs: [changes, freighter, depots, mod, repository, package]
+    needs: [changes, freighter, depots, mod, repository, ups, package]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 1
