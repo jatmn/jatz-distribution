@@ -212,6 +212,11 @@ local function tank(name, x, y, fluid, amount, temperature)
     held.amount = held.amount - taken
     return { name = held.name, amount = taken, temperature = held.temperature }
   end
+  function self.set_fluid(index, set)
+    assert(index == 1, "a storage tank has one fluid storage")
+    held.name, held.amount, held.temperature = set.name, math.min(set.amount, 25000), set.temperature or 15
+    return held.amount
+  end
   function self.insert_fluid(spec)
     if contents() and contents() ~= spec.name then
       return 0
@@ -1795,6 +1800,72 @@ do -- A Fuel depot of fuel cells with no room left for used ones gives nothing: 
   answer(logistics, 2, "route")
   check("so a freighter that can't make it stays home", not has_trip(request))
   check("waiting for fuel", logistics.get_status(request) == "no-fuel")
+end
+
+do -- Cloning a Fuel depot keeps its liquid fuel: the tank cloned with it, or the original's fluid.
+  local logistics = reset()
+  local original, source = fuel_depot(logistics, -10.5, 0.5, { { "coal", 10 } }, "water", 1234)
+  source.held.temperature = 60
+  local function destroyable(thing)
+    function thing.destroy()
+      thing.valid = false
+    end
+    return thing
+  end
+  -- What stands where: the cloned entities, as LuaSurface::find_entities_filtered finds them.
+  local placed = {}
+  function surface.find_entities_filtered(filter)
+    local found = {}
+    for _, thing in ipairs(placed) do
+      local dx, dy = thing.position.x - filter.position.x, thing.position.y - filter.position.y
+      if thing.valid and thing.name == filter.name and dx * dx + dy * dy <= filter.radius ^ 2 then
+        found[#found + 1] = thing
+      end
+    end
+    return found
+  end
+
+  local alone = entity("jatz-fuel-depot", 40.5, 0.5)
+  logistics.on_cloned(original, alone)
+  local made = storage.depots[alone.unit_number].tank
+  check(
+    "a Fuel depot cloned alone gets a tank with the original's liquid fuel",
+    made and made.held.name == "water" and made.held.amount == 1234 and made.held.temperature == 60
+  )
+  check(
+    "the original keeps its own",
+    source.held.amount == 1234 and storage.depots[original.unit_number].tank == source
+  )
+
+  -- Cloned with its tank, the depot's event first: it adopts that tank, fluid and all.
+  local copy = destroyable(entity("jatz-fuel-depot", 80.5, 0.5))
+  local copy_tank = destroyable(tank("jatz-fuel-depot-tank", 80.5, 0.5, "water", 1234, 60))
+  placed = { copy, copy_tank }
+  local created = #surface.created
+  logistics.on_cloned(original, copy)
+  check("cloned with its tank, the depot adopts it", storage.depots[copy.unit_number].tank == copy_tank)
+  check("making none of its own", #surface.created == created and copy_tank.held.amount == 1234)
+  logistics.on_cloned(source, copy_tank)
+  check("and the tank's own clone event leaves it", copy_tank.valid)
+
+  -- The tank's event first: it stays for the depot cloned on it, which then adopts it.
+  local later = destroyable(entity("jatz-fuel-depot", 120.5, 0.5))
+  local later_tank = destroyable(tank("jatz-fuel-depot-tank", 120.5, 0.5, "water", 1234, 60))
+  placed = { later, later_tank }
+  logistics.on_cloned(source, later_tank)
+  check("a tank cloned before its depot's event stays", later_tank.valid)
+  logistics.on_cloned(original, later)
+  check("and the depot adopts it", storage.depots[later.unit_number].tank == later_tank and #surface.created == created)
+
+  -- One tank only: a second cloned onto a depot that has one goes, as does one cloned alone.
+  local extra = destroyable(tank("jatz-fuel-depot-tank", 120.5, 0.5, "water", 5))
+  placed = { later, later_tank, extra }
+  logistics.on_cloned(source, extra)
+  check("a second tank cloned onto a Fuel depot with one goes", not extra.valid and later_tank.valid)
+  local lone = destroyable(tank("jatz-fuel-depot-tank", 160.5, 0.5, "water", 5))
+  placed = { lone }
+  logistics.on_cloned(source, lone)
+  check("a tank cloned without its depot goes", not lone.valid)
 end
 
 do -- A freighter shows its fuel on hover: green, yellow when low, red when dry; nothing if off.

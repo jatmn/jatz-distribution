@@ -188,7 +188,12 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             'liquid_fuel_delivered': 10, 'liquid_fuel_taken': 50, 'no_fuel_status': 'no-fuel',
             'no_fuel_received_before': 0, 'no_fuel_status_after_coal': 'delivering',
             'no_fuel_received_after': 10, 'no_fuel_coal_left': 0,
-            'fuel_tank_turned': True}
+            'fuel_tank_turned': True,
+            # A Fuel depot cloned alone, or with its hidden tank, keeps its coal and its liquid,
+            # with one tank; the original keeps its own.
+            'fuel_clone_alone': 'water 1234, 10 coal, 1 tank(s)',
+            'fuel_clone_with_tank': 'water 1234, 10 coal, 1 tank(s)',
+            'fuel_clone_source': 'water 1234, 10 coal, 1 tank(s)'}
 # With a Mining Drones mod: the mining depot's road, and 30 of its 40 iron ore delivered.
 MINING_DRONES = {'Mining_Drones', 'Mining_Drones_Remastered', 'Mining_Drones_Mod'}
 EXPECTED_MINING = {'zone': 'jatz-depot-road', 'delivered': 30, 'left': 10}

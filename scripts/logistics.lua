@@ -237,12 +237,34 @@ end
 
 -- The hidden tank holding a Fuel depot's liquid fuel, facing and flipped as the depot is (made if
 -- missing: a depot built before fuel, or the tank removed by another mod). Nil for anything else.
+local function tank_owner(tank)
+  for _, depot in pairs(storage.depots or {}) do
+    if depot.tank == tank then
+      return depot
+    end
+  end
+end
+
+-- A Fuel depot's hidden tank lying where `entity` stands that no depot owns: one cloned along with
+-- the depot (it keeps its fluid, as a cloned storage tank does), or nil.
+local function stray_tank(entity)
+  local here = entity.position
+  for _, tank in pairs(entity.surface.find_entities_filtered({ name = FUEL_TANK, position = here, radius = 0.1 })) do
+    if tank.position.x == here.x and tank.position.y == here.y and not tank_owner(tank) then
+      return tank
+    end
+  end
+end
+
 local function fuel_tank(entity)
   local depot = entity.name == FUEL and storage.depots and storage.depots[entity.unit_number]
   if not depot then
     return nil
   end
   local tank = depot.tank
+  if not (tank and tank.valid) then
+    tank = stray_tank(entity)
+  end
   if not (tank and tank.valid) then
     tank = entity.surface.create_entity({
       name = FUEL_TANK,
@@ -251,9 +273,9 @@ local function fuel_tank(entity)
       force = entity.force,
       create_build_effect_smoke = false,
     })
-    if tank then
-      tank.destructible = false
-    end
+  end
+  if tank and depot.tank ~= tank then
+    tank.destructible = false
     depot.tank = tank
   end
   if tank then
@@ -2034,13 +2056,45 @@ function logistics.on_entity_settings_pasted(event)
 end
 
 -- A cloned depot is a new depot with the original's request; a cloned freighter has no trip.
+-- Whether a cloned Fuel depot tank belongs to a Fuel depot cloned with it: one that owns it
+-- already, or one standing on it whose own clone event hasn't come yet (fuel_tank adopts it then).
+local function cloned_tank_kept(tank)
+  if tank_owner(tank) then
+    return true
+  end
+  local here = tank.position
+  for _, entity in pairs(tank.surface.find_entities_filtered({ name = FUEL, position = here, radius = 0.1 })) do
+    local depot = storage.depots[entity.unit_number]
+    if entity.position.x == here.x and entity.position.y == here.y then
+      return not depot or fuel_tank(entity) == tank
+    end
+  end
+  return false
+end
+
 function logistics.on_cloned(source, destination)
-  -- A cloned truck chest or fuel tank: the cloned depot makes its own (logistics.add).
-  if paint.is_drone(destination.name) or destination.name == TRUCK_CHEST or destination.name == FUEL_TANK then
+  -- A Fuel depot's tank cloned with its depot stays, with its fluid (the depot adopts it); one cloned
+  -- without its depot goes, as do cloned freighters and truck chests: the cloned depot makes its own.
+  if destination.name == FUEL_TANK then
+    if not cloned_tank_kept(destination) then
+      destination.destroy()
+    end
+    return
+  end
+  if paint.is_drone(destination.name) or destination.name == TRUCK_CHEST then
     destination.destroy()
     return
   end
   logistics.add(destination)
+  if destination.name == FUEL then
+    -- Cloned without its tank, it has a new, empty one: it takes the original tank's fluid.
+    local tank = fuel_tank(destination)
+    local from = storage.depots[source.unit_number]
+    local held = from and from.tank and from.tank.valid and from.tank.get_fluid(1)
+    if tank and held and not tank.get_fluid(1) then
+      tank.set_fluid(1, held)
+    end
+  end
   copy_request(source, destination)
 end
 

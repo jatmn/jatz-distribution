@@ -931,6 +931,32 @@ local function setup_deliveries(surface, result)
   result.cloned_request = cloned and (cloned.item .. " x" .. cloned.count) or "none"
   result.request_cleared = remote.call("jatz-distribution", "set_request", clone, nil) == true
     and remote.call("jatz-distribution", "get_request", clone) == nil
+
+  -- A cloned Fuel depot keeps its fuel, items and liquid: cloned alone (LuaEntity::clone) it gets the
+  -- original's fluid in a tank of its own; cloned with its hidden tank (LuaSurface::clone_entities)
+  -- it keeps that tank. The original keeps its own. Water, which needs no fuel value to be held.
+  local fuel_source = depot(surface, "fuel", 64.5, -6.5)
+  local source_tank = surface.find_entity(FUEL_TANK, fuel_source.position)
+  assert(fuel_source.insert({ name = "coal", count = 10 }) == 10, "clone: cannot stock coal")
+  assert(source_tank.insert_fluid({ name = "water", amount = 1234 }) == 1234, "clone: cannot fill the tank")
+  local function fuel_held(entity)
+    if not (entity and entity.valid) then
+      return "missing"
+    end
+    local contents = remote.call("jatz-distribution", "fuel_contents", entity)
+    local tanks = surface.find_entities_filtered({ name = FUEL_TANK, position = entity.position, radius = 0.5 })
+    return string.format(
+      "%s %d, %d coal, %d tank(s)",
+      contents.fluid or "none",
+      math.floor(contents.amount + 0.5),
+      entity.get_item_count("coal"),
+      #tanks
+    )
+  end
+  result.fuel_clone_alone = fuel_held(fuel_source.clone({ position = { 64.5, 2.5 } }))
+  surface.clone_entities({ entities = { fuel_source, source_tank }, destination_offset = { -10, 0 } })
+  result.fuel_clone_with_tank = fuel_held(surface.find_entity("jatz-fuel-depot", { 54.5, -6.5 }))
+  result.fuel_clone_source = fuel_held(fuel_source)
 end
 
 -- The sprites the mod draws on a freighter (its alt-mode cargo icon), in drawing order.
