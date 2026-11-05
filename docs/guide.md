@@ -116,5 +116,6 @@ Liquid depots work the same way for fluids.
 - Freighters need no fuel yet.
 - A freighter destroyed on the road is lost.
 - Cargo keeps its data on the way: armor keeps its equipment, food how far it has spoiled.
+- In alt mode, a loaded freighter shows the icon of the item or fluid it carries, as machines show their recipe. Empty freighters show nothing.
 - Requests are for normal-quality items.
 - By default, provider depots are red, request depots blue, buffer depots green and the fuel depot amber. Every color can be changed.

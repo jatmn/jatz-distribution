@@ -332,6 +332,26 @@ local function repaint(id, trip)
   return true
 end
 
+-- In alt mode a loaded freighter shows what it carries, as machines show their recipe: the item's
+-- or fluid's icon over the dark entity info background. Both are drawn on the freighter, so they
+-- move with it and go when it leaves the map. An empty freighter shows nothing.
+local function show_cargo(trip)
+  if cargo_empty(trip) or not trip.drone.valid then
+    return
+  end
+  for _, sprite in ipairs({ "utility/entity_info_dark_background", (trip.fluid and "fluid/" or "item/") .. trip.item }) do
+    rendering.draw_sprite({
+      sprite = sprite,
+      target = trip.drone,
+      surface = trip.drone.surface,
+      only_in_alt_mode = true,
+      render_layer = "entity-info-icon",
+      x_scale = 0.6,
+      y_scale = 0.6,
+    })
+  end
+end
+
 -- What a trip will bring: what it promised to load while on its way out, its cargo on the way back.
 local function bringing(trip)
   if trip.state == TO_PROVIDER then
@@ -983,6 +1003,7 @@ local function arrived_at_provider(id, trip, depot)
     else
       load(inventory(provider), trip.cargo, trip.item, limit)
     end
+    show_cargo(trip)
   end
   trip.planned = nil
   if not (depot and depot.entity.valid) then

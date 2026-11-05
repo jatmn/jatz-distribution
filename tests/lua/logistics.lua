@@ -40,6 +40,47 @@ end
 
 local surface, requests, next_unit
 
+-- Factorio 2.1's LuaRendering.draw_sprite parameters, and its entity info icon render layers.
+local DRAW_SPRITE = {}
+for _, key in ipairs({
+  "blink_interval",
+  "forces",
+  "light_mode",
+  "only_in_alt_mode",
+  "orientation",
+  "orientation_target",
+  "oriented_offset",
+  "players",
+  "render_layer",
+  "render_mode",
+  "sprite",
+  "surface",
+  "tall",
+  "target",
+  "time_to_live",
+  "tint",
+  "use_target_orientation",
+  "visible",
+  "x_scale",
+  "y_scale",
+}) do
+  DRAW_SPRITE[key] = true
+end
+local ENTITY_INFO_LAYERS =
+  { ["entity-info-icon"] = true, ["entity-info-icon-above"] = true, ["air-entity-info-icon"] = true }
+
+-- The alt-mode sprites drawn on a freighter, in drawing order.
+local function sprites_on(drone)
+  local sprites = {}
+  for _, drawn in ipairs(surface.sprites) do
+    if drawn.target == drone then
+      assert(drawn.only_in_alt_mode, "a freighter's cargo icon shows outside alt mode")
+      sprites[#sprites + 1] = drawn.sprite
+    end
+  end
+  return table.concat(sprites, " ")
+end
+
 -- An item stack and a script inventory, as far as the dispatcher uses them.
 local function stack(name, count)
   local self = { name = name, count = count or 0, valid_for_read = (count or 0) > 0 }
@@ -188,6 +229,25 @@ local function reset()
     end
     return drone
   end
+  -- Sprites drawn on entities (alt-mode cargo icons), strict to Factorio 2.1's draw_sprite: only
+  -- its parameters, its entity info render layers, and sprites that exist.
+  surface.sprites = {}
+  rendering = {
+    draw_sprite = function(parameters)
+      for key in pairs(parameters) do
+        assert(DRAW_SPRITE[key], "rendering.draw_sprite has no parameter " .. key)
+      end
+      local kind, name = parameters.sprite:match("^(%a+)/(.+)$")
+      assert(
+        parameters.sprite == "utility/entity_info_dark_background"
+          or (kind == "item" or kind == "fluid") and prototypes[kind][name],
+        "no sprite " .. parameters.sprite
+      )
+      assert(ENTITY_INFO_LAYERS[parameters.render_layer], "not an entity info layer: " .. parameters.render_layer)
+      assert(parameters.target.valid and parameters.surface == parameters.target.surface, "drawn off its target")
+      surface.sprites[#surface.sprites + 1] = parameters
+    end,
+  }
   storage = {}
   function surface.find_entities_filtered()
     return {}
@@ -476,6 +536,7 @@ do -- "On its way" means a freighter is bringing the item: not one driving home 
   local trip = trips_from(request)[1]
   local fail = defines.behavior_result.fail
   arrive(logistics, trip) -- nothing to load
+  check("an empty freighter shows no cargo icon", sprites_on(trip.drone) == "")
   game.tick = 60
   logistics.on_tick()
   check("a freighter driving home empty isn't 'on its way'", logistics.get_status(request) ~= "delivering")
@@ -829,6 +890,10 @@ do -- A fluid delivery: 500 per freighter, at the provider's temperature.
   arrive(logistics, trip)
   check("it pumps 500 out of the provider", provider.held.amount == 500 and trip.fluid.amount == 500)
   check("at the provider's temperature", trip.fluid.temperature == 60)
+  check(
+    "showing the fluid's icon in alt mode",
+    sprites_on(trip.drone) == "utility/entity_info_dark_background fluid/water"
+  )
   arrive(logistics, trip)
   check("and into the request depot's tank", request.held.name == "water" and request.held.amount == 500)
   check("hot", request.held.temperature == 60)
