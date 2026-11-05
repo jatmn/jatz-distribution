@@ -56,6 +56,9 @@ local ROLES = {
 -- The blueprint tag that keeps a monitor's reading (when it isn't the default).
 local TAG = "jatz_monitor_reading"
 
+-- Defined further down; add needs it first.
+local refresh
+
 local function init_storage()
   storage.road_monitors = storage.road_monitors or {}
   -- Surfaces whose monitors must work out their networks again.
@@ -99,19 +102,33 @@ end
 -- Remember a monitor (built, cloned or found on load), with the reading from its blueprint tags
 -- or the monitor it was cloned from. It opens to its panel (operable; monitors from before the
 -- panel weren't).
+-- A new one shows its own reading at once (`refresh`): nothing yet, as its road is worked out at
+-- the next update. A depot reading the wire takes out exactly what a monitor counted for it, so a
+-- monitor's signals must always be what it counted; but one can arrive with signals already set,
+-- which it never counted: a clone keeps the original's, and a blueprint keeps a combinator's. Left
+-- until its first update, a clone of a monitor counting a provider's 100 iron put them on the wire
+-- again as if from elsewhere (Pullfrog's review of 99acef3). Cleared in the tick it is built or
+-- cloned, before the circuit update, they never reach the wire. Monitors already known keep what
+-- they counted.
 function road_monitor.add(entity, tags, source)
   if not (entity and entity.valid and entity.name == NAME and entity.unit_number) then
     return
   end
   init_storage()
   entity.operable = true
-  if not storage.road_monitors[entity.unit_number] then
-    storage.road_monitors[entity.unit_number] = { entity = entity, depots = {} }
+  local monitor = storage.road_monitors[entity.unit_number]
+  local new = not monitor
+  if new then
+    monitor = { entity = entity, depots = {} }
+    storage.road_monitors[entity.unit_number] = monitor
     script.register_on_object_destroyed(entity)
   end
   local reading = (tags and tags[TAG]) or road_monitor.get_reading(source)
   if type(reading) == "string" then
     road_monitor.set_reading(entity, reading)
+  end
+  if new then
+    refresh(monitor)
   end
   road_monitor.changed(entity.surface_index)
 end
@@ -339,7 +356,7 @@ end
 
 -- Show a monitor's reading now, remembering what it counted for each depot (and, the first time
 -- this tick, what its signals still show: what it counted before).
-local function refresh(monitor)
+function refresh(monitor)
   local filters, counted = contents(monitor.depots, monitor.reading, monitor.entity.force)
   if monitor.counted_tick ~= game.tick then
     monitor.previous = monitor.counted

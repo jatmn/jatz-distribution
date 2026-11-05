@@ -156,6 +156,11 @@ EXPECTED = {'free_recipes': 10, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'p
             # 200 wood taken out of the wired depot this tick: the wire still carries its 300 (3100),
             # and the 2800 elsewhere is not more than 2900, before or after.
             'circuit_transfer': {'before': False, 'after': False, 'wire': 3100, 'held': 100},
+            # A monitor counting a provider's 100 iron, cloned at tick 301 and wired to it: the clone
+            # puts nothing on the wire before its first update (200: the provider's own 100 and the
+            # monitor's count), so the provider's iron plate > 0 doesn't hold.
+            'monitor_clone': {'before': {'wire': 200, 'fulfilled': False, 'monitor': 'iron-plate=100'},
+                              'after': {'wire': 200, 'fulfilled': False, 'clone_shows': ''}},
             # Switched on at tick 300, the provider shows its own status again.
             'circuit_status_after': True,
             'circuit_walls': 10, 'circuit_lamps': 10, 'circuit_after': {'walls': 10, 'water': 1000, 'lamps': 0},

@@ -854,6 +854,22 @@ local function setup_deliveries(surface, result)
   -- Another force's provider holding 50 copper plates on the same road: left out, until its force
   -- merges into the player's at tick 299, with no road or depot changing (Pullfrog's review of
   -- 08bed57).
+  -- A provider holding 100 iron plates and a monitor beside its road, wired red (x -62 to -54, y
+  -- 34 to 39). At tick 301, after the monitor counted it at 300, the provider reads the network
+  -- for iron plate > 0, and the monitor is cloned, the clone wired to it too. Before any update,
+  -- the clone must put nothing on the wire: the provider's own 100 and the monitor's count of it
+  -- are all there is (Pullfrog's review of 99acef3).
+  deliveries.cloning = { provider = depot(surface, "provider", -60.5, 35.5) }
+  lay_road(surface, -61, 37, -55, 37)
+  assert(deliveries.cloning.provider.insert({ name = "iron-plate", count = 100 }) == 100, "cloning: cannot stock")
+  deliveries.cloning.monitor =
+    surface.create_entity({ name = MONITOR, position = { -57.5, 38.5 }, force = "player", raise_built = true })
+  assert(
+    deliveries.cloning.provider
+      .get_wire_connector(defines.wire_connector_id.circuit_red, true)
+      .connect_to(deliveries.cloning.monitor.get_wire_connector(defines.wire_connector_id.circuit_red, true), false),
+    "cloning: no wire"
+  )
   local other = game.forces["jatz-check-other"] or game.create_force("jatz-check-other")
   modes.foreign = surface.create_entity({
     name = "jatz-provider-depot",
@@ -1309,6 +1325,41 @@ local function interfere(surface)
   end
   local deliveries = storage.deliveries
   local circuit = deliveries.circuit
+  local cloning = deliveries.cloning
+  if game.tick == 301 then
+    local red = defines.wire_connector_id.circuit_red
+    local iron = { type = "item", name = "iron-plate" }
+    assert(
+      remote.call(
+        "jatz-distribution",
+        "set_circuit",
+        cloning.provider,
+        true,
+        { first_signal = iron, comparator = ">", constant = 0 },
+        "network"
+      ),
+      "cloning: condition refused"
+    )
+    cloning.before = {
+      wire = cloning.provider.get_circuit_network(red).get_signal(iron),
+      fulfilled = remote.call("jatz-distribution", "get_circuit", cloning.provider).fulfilled,
+      monitor = readings_shown({ shown = cloning.monitor }).shown,
+    }
+    cloning.clone = cloning.monitor.clone({ position = { -55.5, 38.5 } })
+    assert(
+      cloning.clone.get_wire_connector(red, true).connect_to(cloning.provider.get_wire_connector(red, true), false),
+      "cloning: no wire to the clone"
+    )
+    cloning.clone_shows = readings_shown({ shown = cloning.clone }).shown
+  elseif game.tick == 302 then
+    local red = defines.wire_connector_id.circuit_red
+    local iron = { type = "item", name = "iron-plate" }
+    cloning.after = {
+      wire = cloning.provider.get_circuit_network(red).get_signal(iron),
+      fulfilled = remote.call("jatz-distribution", "get_circuit", cloning.provider).fulfilled,
+      clone_shows = cloning.clone_shows,
+    }
+  end
   if game.tick == 299 then
     -- Before the combinators switch them on: nothing moved, and the monitor left out the
     -- switched-off provider and the other road.
@@ -1857,6 +1908,8 @@ local function deliveries_finished(surface, tick, result)
       .get_signal({ type = "item", name = "wood" }),
     held = modes.wired.get_item_count("wood"),
   }
+  -- A cloned monitor put none of the original's count on the wire before its first update.
+  result.monitor_clone = { before = deliveries.cloning.before, after = deliveries.cloning.after }
   -- The other force's provider, merged into the player's at tick 299, now counts.
   result.monitor_after_merge = readings_shown({ shown = modes.monitor }).shown
   local prioritised = deliveries.prioritised

@@ -1571,6 +1571,38 @@ do -- The road network monitor shows what the provider and buffer depots on its 
   local cloned = another()
   fire("on_entity_cloned", { source = monitor, destination = cloned })
   check("so does cloning", road_monitor.get_reading(cloned) == "needs")
+  -- A clone keeps the original's signals, which it never counted: a depot reading the wire would
+  -- take them for stock elsewhere. Cleared as the clone is registered, in the tick it is made,
+  -- they never reach the wire (Pullfrog's review of 99acef3).
+  local inherited = {
+    {
+      is_manual = true,
+      filters = {
+        { value = { type = "item", name = "iron-plate", quality = "normal", comparator = "=" }, min = 10 },
+      },
+    },
+  }
+  local copied = another()
+  local copied_behavior = {
+    enabled = true,
+    sections_count = 1,
+    get_section = function(index)
+      return inherited[index]
+    end,
+    add_section = function() end,
+    remove_section = function() end,
+  }
+  copied.get_or_create_control_behavior = function()
+    return copied_behavior
+  end
+  fire("on_entity_cloned", { source = monitor, destination = copied })
+  local record = storage.road_monitors[copied.unit_number]
+  check("a clone's inherited signals are cleared as it is registered", #inherited[1].filters == 0)
+  check(
+    "and what it counted starts empty, this tick",
+    record and record.counted and next(record.counted) == nil and record.counted_tick == game.tick
+  )
+  check("keeping the original's reading", road_monitor.get_reading(copied) == "needs")
   check("the remote interface refuses another reading", not road_monitor.set_reading(monitor, "everything"))
   fire("on_gui_closed", { player_index = 15, element = panel })
   check("E or Esc closes the panel", screen.jatz_monitor_frame == nil)
