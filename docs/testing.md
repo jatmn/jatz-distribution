@@ -119,6 +119,10 @@ Screenshots are written to `<config folder>/write/script-output/jatz-distributio
 
 The first `/c` command in a save may need to be entered twice to enable console commands.
 
+## Performance (UPS)
+
+`tools/benchmark_ups.py` measures the game update time Jat'z Distribution's deliveries cost on a large generated road map, and `tools/emulate_ups.py` compares the mod's script cost with another revision without the game. Pull requests that change the mod must include the benchmark's before and after table. See [benchmark.md](benchmark.md).
+
 ## Recording results
 
 Add a short entry to [test-results.md](test-results.md) for each test run. Include the commit tested, Factorio version, OS and graphics backend, then a passed, failed or untested result for each check. Attach screenshots to the pull request instead of committing them. Only images used by the README belong in `docs/images/`.
