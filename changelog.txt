@@ -6,7 +6,7 @@ Version: Unreleased
     - In alt mode, loaded freighters show the icon of the item or fluid they carry. Empty freighters show none.
     - Freighters run over enemy units on the road, as trains do, dealing impact damage. They never harm players or other freighters, and never stop or turn aside for enemies.
     - Freighters out on deliveries make a little pollution, as Transport Drones' drones do.
-    - A request depot whose freighter is destroyed asks construction robots for a replacement. You can also put one in by hand.
+    - A request depot whose freighter is destroyed asks construction robots for a replacement, as soon as its chest has a free stack for it. You can also put one in by hand.
     - A delivering freighter that is destroyed explodes and leaves a wreck, which disappears after 15 minutes, as the drivable freighter does.
   Changes:
     - Delivering freighters drive at about 4 tiles a second instead of 12, the default speed of Transport Drones' drones.
@@ -15,6 +15,7 @@ Version: Unreleased
     - Request and liquid request depots with "Request from buffer depots" unticked now fall back to buffer depots for what no provider can supply, instead of ignoring them. Ticked, buffer depots still come first.
   Bugfixes:
     - A freighter killed by enemies is now lost, with its cargo. Before, it could go back into its depot's freighter slot as if its route had failed.
+    - Freighters requested for a request depot whose chest has no free stack (it is full of cargo, say) are now brought once a stack frees up. Before, the request was dropped.
   Compatibility:
     - Marked Transport Drones and its Factorio 2.1 forks (Transport Drones (Continuous), Transport Drones (Continued, 2.1, Unofficial) and Transport Drones By Yunli) as incompatible.
 ---------------------------------------------------------------------------------------------------

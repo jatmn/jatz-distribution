@@ -1488,14 +1488,17 @@ function logistics.on_impact_tick()
             force = enemies[force.name],
           }))
         do
-          local key = enemy.unit_number
-          -- Damage can set off other mods' handlers: check the freighter is still there too.
-          if drone.valid and enemy.valid and not paint.is_drone(enemy.name) and not (key and hits and hits[key]) then
-            if key then
-              hits = hits or {}
-              hits[key] = game.tick
+          -- Damage sets off other mods' handlers there and then, and they can remove the freighter
+          -- or an enemy further down this list: check both are still there before reading either.
+          if drone.valid and enemy.valid and not paint.is_drone(enemy.name) then
+            local key = enemy.unit_number
+            if not (key and hits and hits[key]) then
+              if key then
+                hits = hits or {}
+                hits[key] = game.tick
+              end
+              enemy.damage(IMPACT_DAMAGE, force, "impact", drone, drone)
             end
-            enemy.damage(IMPACT_DAMAGE, force, "impact", drone, drone)
           end
         end
       end
@@ -1766,6 +1769,11 @@ function logistics.request_freighters(entity, count)
   if amount <= 0 then
     return 0
   end
+  -- What these requests are for: the depot ending up with this many. Freighters arriving some
+  -- other way (put in by hand) count towards it, and requests beyond it are cancelled. It is all
+  -- that was asked for, even if the chest has no free stacks for some or all of it yet (it also
+  -- holds the depot's cargo): trim_freighter_requests asks for the rest as stacks free up.
+  request_depot(entity).freighter_target = in_slot + out + in_chest + requested + amount
   -- A stack at a time, into chest stacks that are empty and in no other plan.
   local positions
   amount, positions = spread(amount, free_chest_stacks(chest, proxies))
@@ -1776,9 +1784,6 @@ function logistics.request_freighters(entity, count)
     id = { name = FREIGHTER, quality = QUALITY },
     items = { in_inventory = positions },
   })
-  -- What these requests are for: the depot ending up with this many. Freighters arriving some
-  -- other way (put in by hand) count towards it, and requests beyond it are cancelled.
-  request_depot(entity).freighter_target = in_slot + out + in_chest + requested + amount
   return amount
 end
 
