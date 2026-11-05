@@ -634,6 +634,39 @@ do -- A freighter lost while every stack of its depot's chest is taken: robots c
   )
 end
 
+do -- Freighters asked for while the chest has no free stack wait for one; asking for more adds
+  -- to them, and once a stack is free they are all requested, once.
+  local logistics = reset()
+  local request = supplied(logistics, 0)
+  local chest = script_inventory(2)
+  chest.get_insertable_count = request.chest.get_insertable_count
+  request.get_inventory = function()
+    return chest
+  end
+  for index = 1, 2 do
+    chest[index].name, chest[index].count, chest[index].valid_for_read = "b", 50, true
+  end
+  local depot = storage.depots[request.unit_number]
+  local created = #surface.created
+  check("with a full chest, nothing is requested yet", logistics.request_freighters(request, 5) == 0)
+  check("but the 5 are remembered", depot.freighter_target == 5 and #surface.created == created)
+  logistics.request_freighters(request, 1)
+  check("one more adds to them", depot.freighter_target == 6)
+  check("a match to what it is already waiting for adds nothing", logistics.match_freighters(request, 6) == 0)
+  check("and keeps them", depot.freighter_target == 6)
+  chest[2].name, chest[2].count, chest[2].valid_for_read = nil, 0, false
+  game.tick = 60
+  logistics.on_tick()
+  local proxy = surface.created[#surface.created]
+  check(
+    "once a stack is free, all 6 are requested",
+    #surface.created == created + 1
+      and proxy.name == "item-request-proxy"
+      and proxy.parameters.modules[1].items.in_inventory[1].count == 6
+  )
+  check("and the target isn't counted twice", depot.freighter_target == 6)
+end
+
 do -- Running enemies over: damage can set off other mods' handlers, which may remove an enemy
   -- further down the same search, or the freighter itself. Neither is read once gone.
   local logistics = reset()

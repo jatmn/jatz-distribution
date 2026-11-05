@@ -15,7 +15,7 @@ Version: Unreleased
     - Request and liquid request depots with "Request from buffer depots" unticked now fall back to buffer depots for what no provider can supply, instead of ignoring them. Ticked, buffer depots still come first.
   Bugfixes:
     - A freighter killed by enemies is now lost, with its cargo. Before, it could go back into its depot's freighter slot as if its route had failed.
-    - Freighters requested for a request depot whose chest has no free stack (it is full of cargo, say) are now brought once a stack frees up. Before, the request was dropped.
+    - Freighters requested for a request depot whose chest has no free stack (it is full of cargo, say) are now brought once a stack frees up, together with any more asked for meanwhile. Before, the request was dropped.
   Compatibility:
     - Marked Transport Drones and its Factorio 2.1 forks (Transport Drones (Continuous), Transport Drones (Continued, 2.1, Unofficial) and Transport Drones By Yunli) as incompatible.
 ---------------------------------------------------------------------------------------------------

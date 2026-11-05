@@ -1752,31 +1752,28 @@ local function add_plan(entity, proxies, plan, removal)
   end
 end
 
--- Ask construction robots to bring `count` freighters (or as many as the slot has room for,
--- counting freighters out, in the chest and already requested) into a request depot's chest.
--- Returns how many were requested.
-function logistics.request_freighters(entity, count)
+-- Ask construction robots to bring freighters into a request depot's chest until it has `goal`
+-- (within its slot's limit), counting freighters in its slot, out, in its chest (except those
+-- waiting to be taken away) and already requested. `goal` becomes the depot's target, what the
+-- requests are for: freighters arriving some other way (put in by hand) count towards it, and
+-- requests beyond it are cancelled. It is kept even when the chest has no free stacks for some or
+-- all of them yet (it also holds the depot's cargo): trim_freighter_requests asks for the rest as
+-- stacks free up. Returns how many were requested now.
+local function request_up_to(entity, goal)
   local in_slot, out, capacity = logistics.freighter_counts(entity)
   if not in_slot then
     return 0
   end
   local chest = freighter_chest(entity)
   local proxies, requested, removing = freighter_requests(entity)
-  -- Freighters in the chest count, except those waiting to be taken away.
-  local in_chest = count_freighters(chest) - removing
-  local room = capacity - in_slot - out - requested - in_chest
-  local amount = math.min(math.floor(tonumber(count) or room), room)
-  if amount <= 0 then
+  local have = in_slot + out + count_freighters(chest) - removing + requested
+  goal = math.min(goal, capacity)
+  if goal <= have then
     return 0
   end
-  -- What these requests are for: the depot ending up with this many. Freighters arriving some
-  -- other way (put in by hand) count towards it, and requests beyond it are cancelled. It is all
-  -- that was asked for, even if the chest has no free stacks for some or all of it yet (it also
-  -- holds the depot's cargo): trim_freighter_requests asks for the rest as stacks free up.
-  request_depot(entity).freighter_target = in_slot + out + in_chest + requested + amount
+  request_depot(entity).freighter_target = goal
   -- A stack at a time, into chest stacks that are empty and in no other plan.
-  local positions
-  amount, positions = spread(amount, free_chest_stacks(chest, proxies))
+  local amount, positions = spread(goal - have, free_chest_stacks(chest, proxies))
   if amount <= 0 then
     return 0
   end
@@ -1785,6 +1782,24 @@ function logistics.request_freighters(entity, count)
     items = { in_inventory = positions },
   })
   return amount
+end
+
+-- Ask construction robots to bring `count` more freighters (or as many as the slot has room for)
+-- into a request depot's chest: more than it has and has already asked for, including freighters
+-- still waiting for a free chest stack (its target). Returns how many were requested now.
+function logistics.request_freighters(entity, count)
+  local depot = request_depot(entity)
+  if not depot then
+    return 0
+  end
+  local have, capacity = logistics.freighter_total(entity)
+  local asked = math.max(have, depot.freighter_target or 0)
+  local room = capacity - asked
+  local amount = math.min(math.floor(tonumber(count) or room), room)
+  if amount <= 0 then
+    return 0
+  end
+  return request_up_to(entity, asked + amount)
 end
 
 -- Have construction robots take `count` freighters (or all) out of a request depot's slot, as
@@ -1851,7 +1866,7 @@ function logistics.match_freighters(entity, total)
   total = math.max(0, math.floor(tonumber(total) or 0))
   local have = freighter_total(entity)
   if total > have then
-    return logistics.request_freighters(entity, total - have)
+    return request_up_to(entity, total)
   end
   -- Already as many or more: freighter requests beyond `total` are cancelled. Freighters already
   -- in the depot stay; they are the player's, and taking them away is the player's call.
@@ -1938,7 +1953,7 @@ function logistics.trim_freighter_requests(entity)
     reduce_freighter_requests(entity, total - wanted)
   elseif total < wanted then
     -- Short, with nothing requested to cover it: ask again for the rest.
-    logistics.request_freighters(entity, wanted - total)
+    request_up_to(entity, wanted)
   end
 end
 
