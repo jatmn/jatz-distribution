@@ -21,7 +21,13 @@
 -- spoilage, health) arrives intact. If the way back is lost, the freighter returns its cargo to
 -- the provider; only when that fails too is the cargo left on the ground, marked for
 -- deconstruction. A freighter destroyed on the way is lost with its cargo, like any destroyed
--- vehicle; otherwise every freighter goes back into its depot's slot when its trip ends.
+-- vehicle, and its depot asks construction robots for a replacement (a player can put one in by
+-- hand instead); otherwise every freighter goes back into its depot's slot when its trip ends.
+--
+-- Enemies can attack freighters, which never fight back or turn aside: they drive on until they
+-- arrive or are destroyed. A moving freighter runs over the enemy units it drives through, as a
+-- train does, but never harms players or other freighters, and collides with none of them. Every
+-- freighter out pollutes a little, as Transport Drones' drones do.
 --
 -- Depots are registered when built or cloned (control.lua), found again on load, and forgotten
 -- when destroyed. A request depot mined by a player or robot hands over all its freighters, in the
@@ -116,6 +122,18 @@ local LOADING_TICKS = 60
 local SEARCH_TIMEOUT = 10 * 60
 -- Requests are for normal-quality items.
 local QUALITY = "normal"
+-- Pollution each freighter out makes a second: Transport Drones' default for its drones.
+local POLLUTION_PER_SECOND = 0.005
+-- How often moving freighters look for enemy units they are driving through, and the impact
+-- damage each one hit takes, at most once a second from the same freighter. Freighters never
+-- attack; this is them running enemies over, as trains do. 200 kills small and medium biters
+-- outright and hurts bigger ones.
+local IMPACT_INTERVAL = 10
+local IMPACT_DAMAGE = 200
+local IMPACT_COOLDOWN = 60
+-- What a freighter runs over: enemy units only, never players (characters), buildings or other
+-- freighters.
+local IMPACT_TYPES = { "unit", "spider-unit", "segmented-unit" }
 
 -- Status of a request depot, shown in its window: a key in the [jatz-request-status] locale section.
 logistics.status = {
@@ -814,6 +832,10 @@ function logistics.on_tick()
   -- nothing is, and drives on from where it stands. Painting changes trip ids, so after the loop.
   local repaint_pending = {}
   for id, trip in pairs(storage.trips) do
+    -- Every freighter out pollutes a little, standing or driving.
+    if trip.drone.valid then
+      trip.drone.surface.pollute(trip.drone.position, POLLUTION_PER_SECOND * DISPATCH_INTERVAL / 60, DRONE)
+    end
     if trip.searching and game.tick - trip.searching >= SEARCH_TIMEOUT then
       reroute(id, trip)
     elseif
@@ -996,6 +1018,19 @@ function end_trip(id, trip, lost)
   end
 end
 
+-- A freighter destroyed on the way (by enemies, say): it is lost, with its cargo. Its depot is
+-- now one short of the freighters it had (or was being topped up to), so it asks robots for a
+-- replacement; one put in by hand counts too.
+local function lose(id, trip)
+  local home = storage.depots[trip.request]
+  local entity = home and home.entity.valid and home.entity
+  local had = entity and math.max(logistics.freighter_total(entity), home.freighter_target or 0)
+  end_trip(id, trip, true)
+  if entity then
+    logistics.match_freighters(entity, had)
+  end
+end
+
 local function depot_entity(unit_number)
   local depot = storage.depots[unit_number]
   return depot and depot.entity.valid and depot.entity or nil
@@ -1085,8 +1120,12 @@ function logistics.on_ai_command_completed(event)
     return
   end
   upgrade(trip)
+  -- A freighter killed on the way (by enemies, say) fails its command as it dies, at 0 health: it
+  -- is lost, with its cargo, once it is gone (on_object_destroyed), not back from a failed route.
   if not trip.drone.valid then
-    return end_trip(id, trip)
+    return lose(id, trip)
+  elseif trip.drone.health <= 0 then
+    return
   end
   local depot = storage.depots[trip.request]
   if event.result ~= defines.behavior_result.success then
@@ -1409,8 +1448,72 @@ function logistics.on_object_destroyed(event)
     storage.depots[id] = nil
     depot_removed(id)
   elseif storage.trips[id] then
-    -- A freighter destroyed on the way (by enemies, say): it is lost, with its cargo.
-    end_trip(id, upgrade(storage.trips[id]), true)
+    lose(id, upgrade(storage.trips[id]))
+  end
+end
+
+-- Moving freighters run over the enemy units they drive through, as trains do: each takes
+-- IMPACT_DAMAGE as impact damage, at most once a second from the same freighter. The search
+-- covers the ground the freighter crossed since the last look, so a fast one misses nothing in
+-- between. A standing freighter (loading, or waiting for a route) hits nothing, players and other
+-- freighters are never hit, and nothing makes the freighter stop or turn: it drives on.
+function logistics.on_impact_tick()
+  local enemies = {}
+  local reach = prototypes.entity[DRONE].collision_box.right_bottom.x
+  for _, trip in pairs(storage.trips) do
+    local drone = trip.drone
+    if drone.valid then
+      local here, last = drone.position, trip.last_position
+      local moved = last and (here.x ~= last.x or here.y ~= last.y)
+      local area = moved
+        and {
+          { math.min(here.x, last.x) - reach, math.min(here.y, last.y) - reach },
+          { math.max(here.x, last.x) + reach, math.max(here.y, last.y) + reach },
+        }
+      trip.last_position = here
+      local force = drone.force
+      if not enemies[force.name] then
+        local list = {}
+        for _, other in pairs(game.forces) do
+          if force.is_enemy(other) then
+            list[#list + 1] = other
+          end
+        end
+        enemies[force.name] = list
+      end
+      -- Enemies hit in the last second, by unit_number, aren't hit again yet.
+      local hits = trip.hits
+      if hits then
+        for unit_number, tick in pairs(hits) do
+          if game.tick - tick >= IMPACT_COOLDOWN then
+            hits[unit_number] = nil
+          end
+        end
+      end
+      if area and #enemies[force.name] > 0 then
+        for _, enemy in
+          pairs(drone.surface.find_entities_filtered({
+            area = area,
+            type = IMPACT_TYPES,
+            force = enemies[force.name],
+          }))
+        do
+          -- Damage sets off other mods' handlers there and then, and they can remove the freighter
+          -- or an enemy further down this list: check both are still there before reading either.
+          if drone.valid and enemy.valid and not paint.is_drone(enemy.name) then
+            local key = enemy.unit_number
+            if not (key and hits and hits[key]) then
+              if key then
+                hits = hits or {}
+                hits[key] = game.tick
+              end
+              enemy.damage(IMPACT_DAMAGE, force, "impact", drone, drone)
+            end
+          end
+        end
+      end
+      trip.hits = hits and next(hits) and hits or nil
+    end
   end
 end
 
@@ -1659,26 +1762,28 @@ local function add_plan(entity, proxies, plan, removal)
   end
 end
 
--- Ask construction robots to bring `count` freighters (or as many as the slot has room for,
--- counting freighters out, in the chest and already requested) into a request depot's chest.
--- Returns how many were requested.
-function logistics.request_freighters(entity, count)
+-- Ask construction robots to bring freighters into a request depot's chest until it has `goal`
+-- (within its slot's limit), counting freighters in its slot, out, in its chest (except those
+-- waiting to be taken away) and already requested. `goal` becomes the depot's target, what the
+-- requests are for: freighters arriving some other way (put in by hand) count towards it, and
+-- requests beyond it are cancelled. It is kept even when the chest has no free stacks for some or
+-- all of them yet (it also holds the depot's cargo): trim_freighter_requests asks for the rest as
+-- stacks free up. Returns how many were requested now.
+local function request_up_to(entity, goal)
   local in_slot, out, capacity = logistics.freighter_counts(entity)
   if not in_slot then
     return 0
   end
   local chest = freighter_chest(entity)
   local proxies, requested, removing = freighter_requests(entity)
-  -- Freighters in the chest count, except those waiting to be taken away.
-  local in_chest = count_freighters(chest) - removing
-  local room = capacity - in_slot - out - requested - in_chest
-  local amount = math.min(math.floor(tonumber(count) or room), room)
-  if amount <= 0 then
+  local have = in_slot + out + count_freighters(chest) - removing + requested
+  goal = math.min(goal, capacity)
+  if goal <= have then
     return 0
   end
+  request_depot(entity).freighter_target = goal
   -- A stack at a time, into chest stacks that are empty and in no other plan.
-  local positions
-  amount, positions = spread(amount, free_chest_stacks(chest, proxies))
+  local amount, positions = spread(goal - have, free_chest_stacks(chest, proxies))
   if amount <= 0 then
     return 0
   end
@@ -1686,10 +1791,25 @@ function logistics.request_freighters(entity, count)
     id = { name = FREIGHTER, quality = QUALITY },
     items = { in_inventory = positions },
   })
-  -- What these requests are for: the depot ending up with this many. Freighters arriving some
-  -- other way (put in by hand) count towards it, and requests beyond it are cancelled.
-  request_depot(entity).freighter_target = in_slot + out + in_chest + requested + amount
   return amount
+end
+
+-- Ask construction robots to bring `count` more freighters (or as many as the slot has room for)
+-- into a request depot's chest: more than it has and has already asked for, including freighters
+-- still waiting for a free chest stack (its target). Returns how many were requested now.
+function logistics.request_freighters(entity, count)
+  local depot = request_depot(entity)
+  if not depot then
+    return 0
+  end
+  local have, capacity = logistics.freighter_total(entity)
+  local asked = math.max(have, depot.freighter_target or 0)
+  local room = capacity - asked
+  local amount = math.min(math.floor(tonumber(count) or room), room)
+  if amount <= 0 then
+    return 0
+  end
+  return request_up_to(entity, asked + amount)
 end
 
 -- Have construction robots take `count` freighters (or all) out of a request depot's slot, as
@@ -1756,7 +1876,7 @@ function logistics.match_freighters(entity, total)
   total = math.max(0, math.floor(tonumber(total) or 0))
   local have = freighter_total(entity)
   if total > have then
-    return logistics.request_freighters(entity, total - have)
+    return request_up_to(entity, total)
   end
   -- Already as many or more: freighter requests beyond `total` are cancelled. Freighters already
   -- in the depot stay; they are the player's, and taking them away is the player's call.
@@ -1843,7 +1963,7 @@ function logistics.trim_freighter_requests(entity)
     reduce_freighter_requests(entity, total - wanted)
   elseif total < wanted then
     -- Short, with nothing requested to cover it: ask again for the rest.
-    logistics.request_freighters(entity, wanted - total)
+    request_up_to(entity, wanted)
   end
 end
 
@@ -2215,6 +2335,7 @@ end
 
 function logistics.register()
   script.on_nth_tick(DISPATCH_INTERVAL, logistics.on_tick)
+  script.on_nth_tick(IMPACT_INTERVAL, logistics.on_impact_tick)
   script.on_event(defines.events.on_ai_command_completed, logistics.on_ai_command_completed)
   script.on_event(defines.events.on_script_path_request_finished, logistics.on_script_path_request_finished)
   remote.add_interface("jatz-distribution", {
