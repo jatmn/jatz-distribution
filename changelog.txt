@@ -7,6 +7,7 @@ Version: Unreleased
   Changes:
     - Delivering freighters drive at about 4 tiles a second instead of 12, the default speed of Transport Drones' drones.
     - Freighters stop for 1 second at a depot's loading zone to load and to unload, instead of loading and unloading the moment they arrive.
+    - Only belts, pipes and train tracks can be built on road. Depots and other buildings can't, though a depot's loading zone can be on road.
     - Request and liquid request depots with "Request from buffer depots" unticked now fall back to buffer depots for what no provider can supply, instead of ignoring them. Ticked, buffer depots still come first.
   Compatibility:
     - Marked Transport Drones and its Factorio 2.1 forks (Transport Drones (Continuous), Transport Drones (Continued, 2.1, Unofficial) and Transport Drones By Yunli) as incompatible.

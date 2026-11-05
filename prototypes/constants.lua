@@ -23,6 +23,8 @@ return {
   road_art = "assets/roads/yuoki-railways/",
   -- Collision layer on every tile except roads; the freighter drone collides with it alone.
   off_road_layer = "jatz_off_road",
+  -- Collision layer on the road tiles; buildings other than belts, pipes and tracks collide with it.
+  road_layer = "jatz_road",
   -- The freighter that drives itself between depots.
   freighter_drone = "jatz-freighter-drone",
   -- The invisible chest robots bring freighters into for a liquid depot (prototypes/truck-chest.lua).
