@@ -1143,6 +1143,7 @@ do -- The cargo paint: grey out, the load's color from the provider home, the sa
     painted.name == "jatz-freighter-drone-500" and stock.get_item_count("a") == 10
   )
   check("as a new freighter in place of the old one", painted ~= empty and not empty.valid and painted.valid)
+  check("showing its cargo's icon in alt mode", sprites_on(painted) == "utility/entity_info_dark_background item/a")
   check(
     "where it stood, facing the same way, as damaged",
     painted.position.x == empty.position.x
@@ -1186,6 +1187,7 @@ do -- Something stuck to it (fire, acid) stays stuck: it keeps its paint until t
     trip.drone == drone and drone.valid and drone.name == "jatz-freighter-drone"
   )
   check("and drives home", drive.type == defines.command.go_to_location and drive.destination.x == 0.5)
+  check("showing its cargo's icon meanwhile", sprites_on(drone) == "utility/entity_info_dark_background item/a")
   game.tick = 60
   logistics.on_tick()
   check("still not while the sticker lasts", trip.drone == drone and drone.valid and drone.stickers[1] == fire)
@@ -1195,6 +1197,7 @@ do -- Something stuck to it (fire, acid) stays stuck: it keeps its paint until t
   local painted = trip.drone
   check("once it wears off, the next check paints it", painted ~= drone and painted.name == "jatz-freighter-drone-500")
   check("in place of the old one", not drone.valid and storage.trips[painted.unit_number] == trip)
+  check("which shows the icon now", sprites_on(painted) == "utility/entity_info_dark_background item/a")
   drive = painted.commands[#painted.commands]
   check("which drives on home", drive and drive.type == defines.command.go_to_location and drive.destination.x == 0.5)
   game.tick = 180

@@ -334,7 +334,8 @@ end
 
 -- In alt mode a loaded freighter shows what it carries, as machines show their recipe: the item's
 -- or fluid's icon over the dark entity info background. Both are drawn on the freighter, so they
--- move with it and go when it leaves the map. An empty freighter shows nothing.
+-- move with it and go when it leaves the map, or is swapped for another paint (`repaint`): call
+-- this after repainting. An empty freighter shows nothing.
 local function show_cargo(trip)
   if cargo_empty(trip) or not trip.drone.valid then
     return
@@ -818,6 +819,7 @@ function logistics.on_tick()
   for _, id in ipairs(repaint_pending) do
     local trip = storage.trips[id]
     if trip and trip.drone.valid and repaint(id, trip) then
+      show_cargo(trip)
       drive(trip, target(trip))
     end
   end
@@ -1003,7 +1005,6 @@ local function arrived_at_provider(id, trip, depot)
     else
       load(inventory(provider), trip.cargo, trip.item, limit)
     end
-    show_cargo(trip)
   end
   trip.planned = nil
   if not (depot and depot.entity.valid) then
@@ -1012,6 +1013,7 @@ local function arrived_at_provider(id, trip, depot)
   -- Home, loaded or (if there was nothing to load) empty, to unload and park, painted for its load.
   trip.state = TO_REQUEST
   repaint(id, trip)
+  show_cargo(trip)
   drive(trip, (loading_tile(depot.entity)))
 end
 

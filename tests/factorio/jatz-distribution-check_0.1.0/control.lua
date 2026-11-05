@@ -909,6 +909,7 @@ local function interfere(surface)
       and sticky.drone.name == DRONE
       and sticky.sticker.valid
       and sticky.sticker.sticked_to == sticky.drone
+    sticky.loaded_icons = cargo_icons(sticky.drone)
   end
   if sticky.loaded and not sticky.painted then
     for _, drone in pairs(surface.find_entities_filtered({ name = IRON_PAINT, area = sticky.road })) do
@@ -916,6 +917,7 @@ local function interfere(surface)
       -- Painted where the old one was, after the sticker wore off, still on its way home.
       sticky.painted_after_sticker = not sticky.sticker.valid and not sticky.drone.valid
       sticky.painted_on_road = drone.position.x < sticky.request.position.x - 1
+      sticky.painted_icons = cargo_icons(drone)
     end
   end
   if stops.at_provider and not stops.loaded then
@@ -1112,6 +1114,10 @@ local function deliveries_finished(surface, tick, result)
     stops.loaded_icons == "utility/entity_info_dark_background item/iron-plate",
     "a freighter loaded with iron plates shows: " .. stops.loaded_icons
   )
+  -- Kept unswapped while the sticker lasts, it shows the icon; painted after, the new one does.
+  for _, icons in ipairs({ deliveries.sticky.loaded_icons or "", deliveries.sticky.painted_icons or "" }) do
+    assert(icons == "utility/entity_info_dark_background item/iron-plate", "the sticky freighter shows: " .. icons)
+  end
   assert(
     deliveries.cargo_icons["utility/entity_info_dark_background fluid/water"],
     "no freighter carrying water showed its icon"
