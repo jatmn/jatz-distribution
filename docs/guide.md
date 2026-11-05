@@ -161,6 +161,10 @@ More about it:
 
 For example, wire a backup provider to a monitor and give it the condition *iron plate < 100*: it supplies only while the other providers on the road run low.
 
+## Milestones
+
+With [Milestones](https://mods.factorio.com/mod/Milestones) installed, its list (in the Progress group) also tracks your first freighter, 100 freighters and 1,000 road, then every tenfold after those, alongside whatever preset it uses.
+
 ## Copy, paste and blueprints
 
 - Copy and Paste settings, copy and paste, and blueprints carry a request depot's request and its number of freighters. The new depot asks for the freighters (as a ghost request), and construction robots, or you by hand, bring them. This works for liquid depots too.

@@ -239,6 +239,25 @@ end
 script.on_init(setup)
 script.on_configuration_changed(setup)
 
+-- Milestones (optional) calls every remote interface with this function, on a new game and when
+-- mods change, and adds the milestones of each addon whose required mods are all active to the
+-- preset in use. It drops names that aren't prototypes, so keep these our real item names.
+remote.add_interface("jatz-distribution-milestones", {
+  milestones_preset_addons = function()
+    return {
+      ["Jat'z Distribution"] = {
+        required_mods = { "jatz-distribution" },
+        milestones = {
+          { type = "group", name = "Progress" },
+          { type = "item", name = "jatz-quinityn-freighter", quantity = 1 },
+          { type = "item", name = "jatz-quinityn-freighter", quantity = 100, next = "x10" },
+          { type = "item", name = "jatz-road", quantity = 1000, next = "x10" },
+        },
+      },
+    }
+  end,
+})
+
 -- /jatz-freighters: what the freighter slot's requests are worked out from, for the request depot
 -- the player has open or points at.
 commands.add_command("jatz-freighters", { "jatz-gui.freighters-command-help" }, function(command)
