@@ -10,12 +10,15 @@ max_line_length = false
 exclude_files = {"build/**", ".cache/**"}
 
 -- Factorio's data and runtime environments expose different globals.
--- The mod's source at the repository root. pipecoverspictures is a data-stage helper
--- defined by the base game.
+-- The mod's source at the repository root. pipecoverspictures and the circuit connector helpers
+-- are data-stage helpers defined by the base game and core.
 files["data*.lua"].globals = {"data"}
 files["settings*.lua"].globals = {"data"}
 files["prototypes/**"].globals = {"data"}
-files["prototypes/**"].read_globals = {"pipecoverspictures"}
+files["prototypes/**"].read_globals = {
+  "pipecoverspictures", "circuit_connector_definitions", "universal_connector_template",
+  "default_circuit_wire_max_distance",
+}
 files["control.lua"].globals = {"game", "storage"}
 files["control.lua"].read_globals = {"script", "prototypes", "helpers", "remote", "rendering", "commands"}
 files["scripts/**"].globals = {"game", "storage"}

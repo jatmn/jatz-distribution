@@ -25,6 +25,17 @@ local ORDER = {
   "liquid-buffer",
   "fuel",
 }
+-- Every depot takes red and green circuit wires, at the corner a 3x3 assembling machine has
+-- them, whichever way it faces (containers with four directions need one connector per direction;
+-- the steel chest's single one can't be used). Item depots read their contents and tanks their
+-- fluid as usual; delivery depots also have an enable/disable condition in their panel, which
+-- scripts/logistics.lua applies (scripts/depot-circuit.lua).
+local CIRCUIT_CONNECTOR = {
+  variation = 18,
+  main_offset = util.by_pixel(24, 25),
+  shadow_offset = util.by_pixel(35, 31),
+  show_shadow = true,
+}
 -- Tank sizes players can set (settings.lua); every other depot with ports holds 25,000.
 local CAPACITY_SETTINGS = {
   ["liquid-provider"] = "jatz-liquid-provider-depot-capacity",
@@ -85,6 +96,12 @@ for index, role in ipairs(ORDER) do
   entity.icon_size = constants.icon_size
   entity.minable = { mining_time = 0.3, result = name }
   footprint(entity)
+  -- The depots take wires (footprint() leaves the hidden fuel tank under a Fuel depot without).
+  entity.circuit_connector = circuit_connector_definitions.create_vector(
+    universal_connector_template,
+    { CIRCUIT_CONNECTOR, CIRCUIT_CONNECTOR, CIRCUIT_CONNECTOR, CIRCUIT_CONNECTOR }
+  )
+  entity.circuit_wire_max_distance = default_circuit_wire_max_distance
   -- Ground marking on the loading side; it rotates, ghosts and disappears with the depot.
   entity.integration_patch = orientation.loading_zone({ filename = constants.loading_zone, size = 64, scale = 0.5 })
   entity.integration_patch_render_layer = orientation.loading_zone_render_layer

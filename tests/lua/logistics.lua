@@ -14,6 +14,7 @@ defines = {
   behavior_result = { in_progress = 0, fail = 1, success = 2, deleted = 3 },
   target_type = { entity = 1 },
   entity_status_diode = { green = 1, red = 2, yellow = 3 },
+  wire_connector_id = { circuit_red = 1, circuit_green = 2 },
 }
 -- luacheck: globals settings
 -- Runtime settings, as Factorio gives them: an unknown name fails, as `settings.global[name].value`
@@ -49,6 +50,14 @@ prototypes = {
       data = { items = { a = "jatz-freighter-drone-500" }, fluids = { water = "jatz-freighter-drone-013" } },
     },
   },
+  virtual_signal = {
+    ["signal-A"] = {},
+    ["signal-B"] = {},
+    ["signal-everything"] = {},
+    ["signal-anything"] = {},
+    ["signal-each"] = {},
+  },
+  quality = { normal = {} },
 }
 prototypes.item.cell =
   { name = "cell", stack_size = 50, fuel_value = 30000000, burnt_result = prototypes.item["used-cell"] }
@@ -1972,6 +1981,164 @@ do -- Fuel turned off (0 per tile): nothing burns and nobody looks for fuel.
   trip = trips_from(empty)[1]
   check("and one sent with an empty tank sets off at full speed", trip and not trip.dry and trip.drone.speed == nil)
   SETTINGS["jatz-freighter-fuel-per-tile"] = 10
+end
+
+-- Circuit networks on an entity's red and green wires: `red` and `green` map signal names to
+-- values (virtual signals, or items given as "item:name"); nil for no wire of that colour.
+local function wire(target, red, green)
+  local function network(values)
+    if not values then
+      return nil
+    end
+    local signals = {}
+    for key, count in pairs(values) do
+      local kind, name = key:match("^item:(.+)$") and "item" or "virtual", key:match("^item:(.+)$") or key
+      signals[#signals + 1] = { signal = { type = kind ~= "item" and kind or nil, name = name }, count = count }
+    end
+    return {
+      signals = #signals > 0 and signals or nil,
+      get_signal = function(id)
+        local key = (id.type == nil or id.type == "item") and "item:" .. id.name or id.name
+        return values[key] or 0
+      end,
+    }
+  end
+  local networks = { [1] = network(red), [2] = network(green) }
+  target.get_circuit_network = function(connector)
+    return networks[connector]
+  end
+end
+
+local A = { type = "virtual", name = "signal-A" }
+
+do -- Conditions are compared like the game's: red and green added, signals or a constant.
+  local circuit = require("scripts.depot-circuit")
+  local target = {}
+  local function holds(condition, red, green)
+    wire(target, red, green)
+    return circuit.allows(target, true, circuit.condition(condition))
+  end
+  check(
+    "red and green are added together",
+    holds({ first_signal = A, comparator = "=", constant = 5 }, { ["signal-A"] = 2 }, { ["signal-A"] = 3 })
+  )
+  check("a missing signal reads 0", holds({ first_signal = A, comparator = "<", constant = 1 }, {}))
+  check("no first signal never holds", not holds({ comparator = "<", constant = 100 }, {}))
+  check(
+    "compared with a second signal",
+    holds(
+      { first_signal = A, comparator = ">", second_signal = { type = "virtual", name = "signal-B" } },
+      { ["signal-A"] = 3, ["signal-B"] = 2 }
+    )
+  )
+  check("'>=' is stored as the game writes it", circuit.condition({ comparator = ">=" }).comparator == "≥")
+  check("an unknown comparator becomes '<'", circuit.condition({ comparator = "~" }).comparator == "<")
+  check("a fraction is a whole number", circuit.condition({ constant = 2.7 }).constant == 2)
+  local everything = { first_signal = { type = "virtual", name = "signal-everything" }, comparator = ">", constant = 0 }
+  local anything = { first_signal = { type = "virtual", name = "signal-anything" }, comparator = ">", constant = 0 }
+  check("everything holds with no signals", holds(everything, {}))
+  check("everything needs every signal to match", not holds(everything, { ["signal-A"] = 1, ["signal-B"] = -1 }))
+  check("anything needs one", holds(anything, { ["signal-A"] = -1, ["signal-B"] = 1 }))
+  check("and fails with none", not holds(anything, {}))
+  check(
+    "each can't be used",
+    circuit.condition({ first_signal = { type = "virtual", name = "signal-each" } }).first_signal == nil
+  )
+  check(
+    "nor everything as the second signal",
+    circuit.condition({ second_signal = { type = "virtual", name = "signal-everything" } }).second_signal == nil
+  )
+  check("an unknown signal is dropped", circuit.condition({ first_signal = { name = "nothing" } }).first_signal == nil)
+  check(
+    "an item signal read back without a type is an item",
+    circuit.condition({ first_signal = { name = "a" } }).first_signal.type == "item"
+  )
+  wire(target, nil, nil)
+  check("without a wire the condition has no effect", circuit.allows(target, true, circuit.condition({})))
+  check("unticked, it has none either", circuit.allows({}, false, nil))
+end
+
+do -- A provider switched off by its circuit condition: no freighter is sent to fetch from it.
+  local logistics = reset()
+  local request, near = setup(logistics)
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 20 })
+  logistics.add(far)
+  wire(near, { ["signal-A"] = 0 })
+  check(
+    "a delivery depot takes a condition",
+    logistics.set_circuit(near, true, { first_signal = A, comparator = ">", constant = 0 })
+  )
+  check(
+    "and reads it back",
+    logistics.get_circuit(near).enabled and logistics.get_circuit(near).condition.first_signal.name == "signal-A"
+  )
+  check("which doesn't hold", logistics.get_circuit(near).connected and not logistics.get_circuit(near).fulfilled)
+  logistics.on_tick()
+  check("the switched-off provider isn't asked about", #requests == 1 and requests[1].goal.x == 40.5)
+  answer(logistics, 1, "route")
+  check("the freighter goes to the other one", trip_of(request).provider == far.unit_number)
+  wire(near, { ["signal-A"] = 1 })
+  check("switched on, it is asked about again", logistics.get_circuit(near).fulfilled)
+  check(
+    "the remote interface's and the panel's setter refuse other entities",
+    not logistics.set_circuit({ valid = false }, true, {})
+  )
+end
+
+do -- A provider switched off while a search for it runs: no freighter goes there.
+  local logistics = reset()
+  local request, provider = setup(logistics)
+  wire(provider, { ["signal-A"] = 1 })
+  logistics.set_circuit(provider, true, { first_signal = A, comparator = ">", constant = 0 })
+  logistics.on_tick()
+  check("an enabled provider is asked about", #requests == 1)
+  wire(provider, { ["signal-A"] = 0 })
+  answer(logistics, 1, "route")
+  check("switched off before the answer, it gets no freighter", not has_trip(request))
+end
+
+do -- A request depot switched off by its circuit condition sends nothing until switched on.
+  local logistics = reset()
+  local request = setup(logistics)
+  wire(request, nil, { ["signal-A"] = 0 })
+  logistics.set_circuit(request, true, { first_signal = A, comparator = ">", constant = 0 })
+  logistics.on_tick()
+  check("a switched-off request depot asks for no route", #requests == 0)
+  check("and says why", logistics.get_status(request) == "disabled")
+  wire(request, nil, { ["signal-A"] = 3 })
+  game.tick = 60
+  logistics.on_tick()
+  check("switched on, it searches", #requests == 1)
+  wire(request, nil, { ["signal-A"] = 0 })
+  answer(logistics, 1, "route")
+  check("an answer arriving after it was switched off sends nobody", not has_trip(request))
+  logistics.set_circuit(request, false, nil)
+  game.tick = 120
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  check("unticked, it delivers whatever the wire says", has_trip(request))
+end
+
+do -- A condition naming a signal whose mod was removed loses it on load, rather than failing.
+  local logistics = reset()
+  local request = setup(logistics)
+  logistics.set_circuit(request, true, { first_signal = A, comparator = ">", constant = 0 })
+  prototypes.virtual_signal["signal-A"] = nil
+  logistics.add_all()
+  prototypes.virtual_signal["signal-A"] = {}
+  check(
+    "a signal from a removed mod leaves the condition",
+    storage.depots[request.unit_number].circuit_condition.first_signal == nil
+  )
+end
+
+do -- Without a wire a ticked condition has no effect, as in the game.
+  local logistics = reset()
+  local request = setup(logistics)
+  wire(request, nil, nil)
+  logistics.set_circuit(request, true, { first_signal = A, comparator = ">", constant = 0 })
+  logistics.on_tick()
+  check("an unwired depot with a condition still searches", #requests == 1)
 end
 
 print("all logistics checks passed")

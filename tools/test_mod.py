@@ -33,7 +33,7 @@ CHECK = ROOT / 'tests/factorio/jatz-distribution-check_0.1.0'
 OURS = ('jatz-distribution', 'jatz-distribution-check')
 # Dependency prefixes Factorio loads with the mod: required ('' and '~') and recommended ('+').
 LOADED_WITH = re.compile(r'^\s*(?:~|\+)?\s*([A-Za-z0-9_-]+)')
-EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pipe_connections': 20,
+EXPECTED = {'free_recipes': 10, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pipe_connections': 20,
             'cleared_zones': 28,
             # Deliveries (tests/factorio/jatz-distribution-check_0.1.0/control.lua): 30 of the
             # provider's 50 iron plates reach the request over the road; the request on an
@@ -117,6 +117,16 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             'ambush_freighters_home': 3, 'freighters_polluted': True,
             # The request panel's status light: the game's four status indicator sprites exist.
             'status_lights': 4,
+            # Every depot takes a red wire in all four directions. A provider switched off by its
+            # circuit condition supplies nothing (its request depot finds no provider) until a
+            # combinator switches it on at tick 300; a request depot switched off sends nothing
+            # until then. The road network monitor, beside one road, shows what its provider and
+            # liquid provider hold, leaving out a switched-off provider, request depots and the
+            # other road. Only delivery depots take a condition; players can't open the monitor.
+            'wired_depots': 28, 'circuit_refused_elsewhere': False, 'monitor_operable': False,
+            'circuit_before': {'walls': 0, 'lamps': 0, 'walls_status': 'no-provider', 'lamps_status': 'disabled',
+                               'monitor': {'walls': 0, 'water': 1000, 'lamps': 0}},
+            'circuit_walls': 10, 'circuit_lamps': 10, 'circuit_after': {'walls': 10, 'water': 1000, 'lamps': 0},
             # Blueprints keep a request depot's request (tag) and freighters (insert plan): the
             # ghost built from one asks for 7 wood and has robots bring 3 freighters. Copy and Paste
             # settings has robots bring what the destination lacks (1 -> 3). Freighters put in by

@@ -16,10 +16,13 @@ Version: Unreleased
     - Fuel depots take fuel items (by hand, inserters or robots) and burnable fluids (by pipe). Their window shows the fluid, with a button to flush it.
     - Map settings for a freighter's fuel tank (20 MJ by default) and how much it burns a tile (10 kJ by default; 0 turns fuel off).
     - The mod has a thumbnail, the freighter, shown in the in-game mod browser and on the mod portal.
+    - Provider, request and buffer depots (item and liquid) have an Enable/disable circuit condition, like a logistic chest's: switched off, a depot sends no freighters and none come to fetch from it.
+    - Road network monitor: built on or beside road, it sends what the provider and buffer depots on that road network hold to the circuit network, like a roboport.
   Changes:
     - Mod setting tooltips are easier to read: each has icons, line breaks and colored text, with its range and default in green and yellow, and warnings in red.
     - Freighters can no longer be placed and driven like a car unless the new startup setting "Place freighters as cars" is turned on. Freighters already placed stay drivable.
     - Delivering freighters drive at about 4 tiles a second instead of 12, the default speed of Transport Drones' drones.
+    - Every depot shows a circuit connector where red and green wires attach.
     - Freighters stop for 1 second at a depot's loading zone to load and to unload, instead of loading and unloading the moment they arrive.
     - Only belts, pipes and train tracks can be built on road. Depots and other buildings can't, though a depot's loading zone can be on road.
     - Request and liquid request depots with "Request from buffer depots" unticked now fall back to buffer depots for what no provider can supply, instead of ignoring them. Ticked, buffer depots still come first.
