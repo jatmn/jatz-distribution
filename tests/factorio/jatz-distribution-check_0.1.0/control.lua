@@ -1159,9 +1159,10 @@ local function deliveries_finished(surface, tick, result)
   result.cut_turnaround = cut.returned - cut.done
   assert(result.cut_turnaround < 240, "the cut was noticed late: " .. result.cut_turnaround .. " ticks")
   -- Without a retry on road changes, the 10 s cooldown would hold this one back. The trip includes
-  -- its two 1 s stops to load and unload.
+  -- its two 1 s stops to load and unload, and the 12-tile drive there and back at the drone's speed.
   result.mended_delay = deliveries.mended.delivered - deliveries.mended.done
-  assert(result.mended_delay < 400 + 2 * 60, "the mended road was used late: " .. result.mended_delay .. " ticks")
+  local mended_trip = 2 * 12 / prototypes.entity[DRONE].speed + 2 * 60
+  assert(result.mended_delay < mended_trip + 280, "the mended road was used late: " .. result.mended_delay .. " ticks")
   result.rerouted_received = count(deliveries.rerouted.request, "stone-brick")
   result.rerouted_from_farther = 10 - count(deliveries.rerouted.provider, "stone-brick")
   result.orphaned_provider_left = count(deliveries.orphaned.provider, "wooden-chest")
