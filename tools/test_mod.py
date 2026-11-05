@@ -137,7 +137,11 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             'fallback_from_buffers': False, 'fallback_delivered': 300, 'fallback_buffer_left': 700,
             # A hand-placed freighter lowers the same request proxy (5 -> 4) instead of replacing
             # it, so an open window keeps showing the request.
-            'hand_fill_same_proxy': True, 'hand_fill_requested': 4}
+            'hand_fill_same_proxy': True, 'hand_fill_requested': 4,
+            # Tank sizes: the check mod sets the liquid provider and liquid buffer settings to
+            # 40,000 and 15,000 (settings-updates.lua); the other tanks keep 25,000.
+            'tank_sizes': {'fuel': 25000, 'liquid-provider': 40000, 'liquid-request': 25000,
+                           'liquid-buffer': 15000}}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 

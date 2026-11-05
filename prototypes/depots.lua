@@ -23,6 +23,11 @@ local ORDER = {
   "liquid-buffer",
   "fuel",
 }
+-- Tank sizes players can set (settings.lua); every other depot with ports holds 25,000.
+local CAPACITY_SETTINGS = {
+  ["liquid-provider"] = "jatz-liquid-provider-depot-capacity",
+  ["liquid-buffer"] = "jatz-liquid-buffer-depot-capacity",
+}
 
 for index, role in ipairs(ORDER) do
   local definition = definitions[role][SIZE]
@@ -39,7 +44,7 @@ for index, role in ipairs(ORDER) do
     entity = table.deepcopy(data.raw["storage-tank"]["storage-tank"])
     entity.two_direction_only = false
     entity.fluid_box = {
-      volume = 25000,
+      volume = CAPACITY_SETTINGS[role] and settings.startup[CAPACITY_SETTINGS[role]].value or 25000,
       pipe_connections = orientation.ports(role, definition.ports),
       pipe_covers = pipecoverspictures(),
       pipe_picture = pipe_pictures(constants.mod_name, constants.connector_sheets),

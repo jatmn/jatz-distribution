@@ -160,6 +160,7 @@ local function check_depot(surface, role, row, result)
     if entity.type == "container" then
       assert(entity.insert({ name = "iron-plate", count = 10 }) == 10, name .. ": cannot store items")
     else
+      result.tank_sizes[role] = entity.get_fluid_capacity(1)
       local fluid = role == "fuel" and "light-oil" or "water"
       assert(entity.insert_fluid({ name = fluid, amount = 500 }) == 500, name .. ": cannot store fluid")
     end
@@ -1147,6 +1148,7 @@ script.on_init(function()
     pipe_connections = 0,
     localised_names = {},
     cleared_zones = 0,
+    tank_sizes = {},
   }
   for row, role in ipairs(ROLES) do
     check_depot(surface, role, row - 1, result)
