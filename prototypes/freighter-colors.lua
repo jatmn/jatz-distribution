@@ -4,25 +4,44 @@
 -- prototype "jatz-freighter-colors": { items = { [item] = drone }, fluids = { [fluid] = drone } }.
 -- Anything not listed gets the artwork's slate blue.
 --
+-- This works from the data alone, so the items of overhaul mods (Bob's, Angel's, Krastorio 2)
+-- get colors as well as the base game's. It aims at what freighters haul: ores, plates and other
+-- intermediates, and fluids. Buildings often come out slate blue, which matters less.
+--
 -- Fluids have their own color (base_color, as fluid bars and wagons show it). Items have none, so
 -- an item's color is the first of:
--- 1. A color of its own below, for base game and Space Age items no rule colors well.
+-- 1. A color of its own below: base game ores and plates (whatever an overhaul does to their
+--    recipes, their icons don't change), and base game and Space Age items no rule colors well.
 -- 2. The map color of the resource it is mined from (iron ore blue-grey, copper ore orange).
 -- 3. The fluid it holds: a barrel, emptied by a recipe giving back the fluid and the container.
 -- 4. A recipe making it: the recipe's crafting tint (sulfur yellow, plastic white), as a chemical
---    plant shows its recipe; otherwise the color of its one ingredient (iron plate from iron ore,
---    copper cable from copper plate), or of its one fluid ingredient if it has no item ones.
---    Recipes are tried with the one named after the item first, then by name, until one gives a
---    color. Recycling recipes, and recipes with several products (but for their main product),
---    don't count.
+--    plant shows its recipe; otherwise the color of its one item ingredient (iron plate from iron
+--    ore, copper cable from copper plate), or of its one fluid ingredient if it has no item ones;
+--    otherwise its main item ingredient's: a mined one first (titanium plate from rutile ore, not
+--    from the calcium chloride beside it), then the largest amount (brass from its copper), the
+--    first with a color. Recipes are tried with the one named after the item first, then by
+--    name, until one gives a color. Recycling recipes, and recipes with several products (but for
+--    their main product), don't count.
 local paint = require("scripts.freighter-paint")
 
 local colors = {}
 
--- Items whose color everyone knows but no rule finds: circuits and science packs are made from
--- several ingredients without a crafting tint, uranium comes out of a recipe with two products,
--- wood and Space Age's plants grow.
+-- Items whose color everyone knows but no rule finds: base game ores and plates (overhauls such as
+-- Angel's remove their resources or remake them from other ores), circuits and science packs made
+-- from several ingredients without a crafting tint, uranium from a recipe with two products, wood
+-- and Space Age's plants that grow.
+local IRON, COPPER = { 0.415, 0.525, 0.58 }, { 0.803, 0.388, 0.215 }
+local STONE = { 0.69, 0.611, 0.427 }
 colors.own = {
+  ["iron-ore"] = IRON,
+  ["iron-plate"] = IRON,
+  ["steel-plate"] = IRON,
+  ["copper-ore"] = COPPER,
+  ["copper-plate"] = COPPER,
+  ["coal"] = { 0, 0, 0 },
+  ["stone"] = STONE,
+  ["stone-brick"] = STONE,
+  ["uranium-ore"] = { 0, 0.7, 0 },
   ["wood"] = { 0.55, 0.36, 0.2 },
   ["electronic-circuit"] = { 0.2, 0.7, 0.25 },
   ["advanced-circuit"] = { 0.8, 0.2, 0.2 },
@@ -103,8 +122,9 @@ function colors.derive(raw, item_types)
   for _, name in ipairs(sorted_keys(raw.resource)) do
     local resource = raw.resource[name]
     local minable = resource.minable or {}
+    -- As the engine does, `results` wins over `result`.
     local results = entries(minable.results)
-    if type(minable.result) == "string" then
+    if #results == 0 and type(minable.result) == "string" then
       results = { { type = "item", name = minable.result } }
     end
     for _, result in ipairs(results) do
@@ -149,8 +169,41 @@ function colors.derive(raw, item_types)
     end)
   end
 
+  local function amount(entry)
+    local value = tonumber(entry.amount)
+    if not value and tonumber(entry.amount_min) and tonumber(entry.amount_max) then
+      value = (entry.amount_min + entry.amount_max) / 2
+    end
+    return value or 1
+  end
+
   local found, visiting = {}, {}
-  local function color(item)
+  local color
+  -- The color of a recipe's main item ingredient: a mined one first, then the largest amount, then
+  -- the first listed, the first that has a color.
+  local function main_ingredient(solids)
+    local order = {}
+    for index, entry in ipairs(solids) do
+      order[index] = { entry = entry, index = index, mined = mined[entry.name] ~= nil, amount = amount(entry) }
+    end
+    table.sort(order, function(a, b)
+      if a.mined ~= b.mined then
+        return a.mined
+      end
+      if a.amount ~= b.amount then
+        return a.amount > b.amount
+      end
+      return a.index < b.index
+    end)
+    for _, candidate in ipairs(order) do
+      local result = color(candidate.entry.name)
+      if result then
+        return result
+      end
+    end
+  end
+
+  function color(item)
     if found[item] ~= nil or visiting[item] then
       return found[item] or nil
     end
@@ -174,6 +227,8 @@ function colors.derive(raw, item_types)
           result = color(solids[1].name)
         elseif #solids == 0 and #liquids == 1 and raw.fluid and raw.fluid[liquids[1].name] then
           result = raw.fluid[liquids[1].name].base_color
+        elseif #solids > 1 then
+          result = main_ingredient(solids)
         end
         if result then
           break

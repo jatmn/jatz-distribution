@@ -853,10 +853,19 @@ local function interfere(surface)
   end
   if stops.at_provider and not stops.loaded and count(deliveries.provider) < 50 then
     stops.loaded = game.tick
-    -- It came empty, and loading put it in its cargo's paint: a new freighter in its place.
+    -- It came empty, and loading put it in its cargo's paint: a new freighter where it stood (seen
+    -- a tick later, so it may have moved off at 0.2 tiles a tick).
     stops.swapped = not stops.drone.valid
-    stops.drone = standing_at(-60.5, 47.5)
-    stops.home_paint = stops.drone and stops.drone.name
+    local painted = standing_at(-60.5, 47.5)
+    assert(
+      painted and (painted.position.x - stops.standing.x) ^ 2 + (painted.position.y - stops.standing.y) ^ 2 < 0.3 ^ 2,
+      "the loaded freighter is not the one that stood at the provider"
+    )
+    stops.drone = painted
+    stops.home_paint = painted.name
+  end
+  if stops.at_provider and not stops.loaded then
+    stops.standing = stops.drone.position
   end
   if stops.loaded and not stops.at_home and standing_at(-40.5, 47.5) then
     stops.at_home = game.tick
