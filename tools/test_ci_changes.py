@@ -213,6 +213,7 @@ class RoutingTests(unittest.TestCase):
             (['.luacheckrc'], {'freighter', 'depots', 'mod', 'repository'}),
             (['.stylua.toml', '.ruff.toml', '.gitattributes'], {'freighter', 'depots', 'mod', 'repository'}),
             (['requirements.txt'], {'freighter', 'freighter_art', 'depots', 'depots_art', 'repository'}),
+            (['tools/test_art_dependencies.py'], {'freighter', 'freighter_art', 'depots', 'depots_art', 'repository'}),
             (['.github/workflows/ci.yml'], set(KEYS)),
             (['.github/workflows/area.yml'], set(KEYS)),
             (['tools/ci_changes.py'], set(KEYS)),

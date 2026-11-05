@@ -28,7 +28,7 @@ DOCUMENTATION = {'README.md', 'AGENTS.md', 'CONTRIBUTING.md', 'SECURITY.md', 'NO
                  'COPYING.LESSER', '.gitignore'}
 ART_SUFFIXES = {'.blend', '.png', '.webp', '.json'}
 # The art check, icon generator and their Python dependencies cover both art areas.
-ART_TOOLS = {'tools/check_blender_sources.py', 'tools/make_icons.py', 'requirements.txt'}
+ART_TOOLS = {'tools/check_blender_sources.py', 'tools/make_icons.py', 'tools/test_art_dependencies.py', 'requirements.txt'}
 
 
 def area_of(path):

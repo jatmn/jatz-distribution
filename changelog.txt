@@ -1,0 +1,7 @@
+---------------------------------------------------------------------------------------------------
+Version: 0.1.0
+  Features:
+    - Road-bound freighters deliver items and fluids between provider, buffer and request depots.
+    - Placeable freighters and seven depot designs with recolorable artwork.
+  Info:
+    - Development baseline: recipes are free, and fuel and balance are unfinished.

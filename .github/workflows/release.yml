@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing stable tag to retry publishing; leave blank for Release Please'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stable-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main' && inputs.tag == ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      created: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - name: Require the dedicated release credential
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_TOKEN" ]; then
+            echo '::error::Connect RELEASE_PLEASE_TOKEN as described in docs/releases.md.'
+            exit 1
+          fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+      - name: Validate current release metadata and package
+        run: |
+          python3 tools/package_mod.py
+          python3 tools/validate_package.py
+      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
+        id: release
+        with:
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          target-branch: main
+          config-file: .github/release-please-config.json
+          manifest-file: .github/release-please-manifest.json
+      - name: Finalize player notes on the verified release branch
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+        run: |
+          branch=release-please--branches--main
+          head="$(gh pr list --base main --head "$branch" --state open --json headRefOid,isCrossRepository --jq '[.[] | select(.isCrossRepository == false)] | .[0].headRefOid // empty')"
+          if [ -z "$head" ]; then exit 0; fi
+          git fetch origin "refs/heads/$branch"
+          test "$(git rev-parse FETCH_HEAD)" = "$head"
+          # Never execute changed code from a bot branch while holding its token.
+          git diff --quiet "$GITHUB_SHA" "$head" -- . \
+            ':(exclude)info.json' ':(exclude)changelog.txt' \
+            ':(exclude).github/version.txt' ':(exclude).github/release-please-manifest.json' \
+            ':(exclude)docs/CHANGELOG.md'
+          for path in info.json changelog.txt .github/version.txt .github/release-please-manifest.json docs/CHANGELOG.md; do
+            mode="$(git ls-tree "$head" -- "$path")"
+            if [ -n "$mode" ] && [[ "$mode" != '100644 blob '* ]]; then
+              echo "::error::Release metadata must be a regular file: $path"
+              exit 1
+            fi
+          done
+          git show "$GITHUB_SHA:changelog.txt" > "$RUNNER_TEMP/player-notes.txt"
+          git checkout -B "$branch" FETCH_HEAD
+          python3 tools/release_metadata.py --date "$(date -u +%F)" --notes-from "$RUNNER_TEMP/player-notes.txt"
+          python3 tools/package_mod.py
+          python3 tools/validate_package.py
+          if git diff --quiet -- changelog.txt; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add changelog.txt
+          git commit -m 'chore: finalize player release notes'
+          git push origin "HEAD:refs/heads/$branch"
+
+  publish:
+    needs: prepare
+    if: >-
+      always() && github.ref == 'refs/heads/main' &&
+      (needs.prepare.outputs.created == 'true' ||
+       (github.event_name == 'workflow_dispatch' && inputs.tag != ''))
+    permissions:
+      contents: write
+    uses: ./.github/workflows/publish.yml
+    with:
+      tag: ${{ inputs.tag || needs.prepare.outputs.tag }}
+    secrets:
+      FACTORIO_API_KEY: ${{ secrets.FACTORIO_API_KEY }}

@@ -156,9 +156,8 @@ jobs:
         if: inputs.art
         run: |
           python3 -m venv "$RUNNER_TEMP/art"
-          # Only the pinned image packages; OpenEXR is for rendering, not these checks.
-          grep -E '^(numpy|Pillow)==' requirements.txt > "$RUNNER_TEMP/art-requirements.txt"
-          "$RUNNER_TEMP/art/bin/pip" install --quiet --requirement "$RUNNER_TEMP/art-requirements.txt"
+          "$RUNNER_TEMP/art/bin/pip" install --quiet --requirement requirements.txt
+          "$RUNNER_TEMP/art/bin/python" tools/test_art_dependencies.py
       - name: Redraw icons and markings and compare them with the committed images
         if: inputs.art
         env:

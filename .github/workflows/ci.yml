@@ -119,11 +119,29 @@ jobs:
     with:
       area: repository
 
+  package:
+    name: Installable package
+    needs: changes
+    if: >-
+      needs.changes.outputs.mod == 'true' || needs.changes.outputs.repository == 'true' ||
+      needs.changes.outputs.freighter_art == 'true' || needs.changes.outputs.depots_art == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Build the complete installable ZIP and verify its contents
+        run: |
+          python3 tools/test_releases.py
+          python3 tools/package_mod.py
+          python3 tools/validate_package.py
+
   # Stable name for a required status check: routed jobs are skipped or renamed
   # depending on the diff, so require this job instead of the individual checks.
   result:
     name: CI result
-    needs: [changes, freighter, depots, mod, repository]
+    needs: [changes, freighter, depots, mod, repository, package]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 1
