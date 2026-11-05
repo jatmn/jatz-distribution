@@ -36,7 +36,9 @@ local function drone(name, cargo)
     selection_box = art.box(0.8, 0.8),
     selection_priority = 60,
     run_animation = animation,
-    movement_speed = 0.2,
+    -- Tiles per tick: Transport Drones' default (0.066, before speed research), about 4 tiles a
+    -- second (14.3 km/h). It was 0.2.
+    movement_speed = 0.066,
     distance_per_frame = 1,
     rotation_speed = 0.05,
     vision_distance = 0,
