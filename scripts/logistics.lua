@@ -75,6 +75,12 @@ logistics.depots = {
   [LIQUID_REQUEST] = "request",
   [LIQUID_BUFFER] = "buffer",
 }
+-- Mining Drones' mining depot, with one of its mods installed, is an item provider depot of what
+-- its drones mine: that collects in its output inventory, which freighters load from.
+local MINING_DEPOT = loading_zone.mining_depot
+if loading_zone.depots[MINING_DEPOT] then
+  logistics.depots[MINING_DEPOT] = "provider"
+end
 local LIQUID = { [LIQUID_PROVIDER] = true, [LIQUID_REQUEST] = true, [LIQUID_BUFFER] = true }
 logistics.liquid = LIQUID
 -- Depots that request (send freighters out for an item or fluid): request and buffer depots.
@@ -147,7 +153,11 @@ local function cancel_search(depot)
   depot.searching = nil
 end
 
+-- A depot's item inventory: its chest, or a mining depot's output.
 local function inventory(entity)
+  if entity.name == MINING_DEPOT then
+    return entity.get_output_inventory()
+  end
   return entity.get_inventory(defines.inventory.chest)
 end
 

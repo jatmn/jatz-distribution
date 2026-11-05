@@ -6,6 +6,9 @@
   "factorio_version": "2.1",
   "dependencies": [
     "base >= 2.1.0",
+    "? Mining_Drones",
+    "? Mining_Drones_Remastered",
+    "? Mining_Drones_Mod",
     "! Transport_Drones",
     "! Transport_Drones_Continued_Fixed",
     "! Transport_Drones_Continued_Unofficial",

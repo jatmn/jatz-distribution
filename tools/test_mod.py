@@ -12,6 +12,10 @@ Space Age. Also checks that every item, recipe and entity name the game shows ha
 an English translation. Works with the free headless server.
 
 python3 tools/test_mod.py --factorio /path/to/factorio/bin/x64/factorio
+
+--mod adds another mod's zip to both runs. With one of the Mining Drones mods
+(Mining_Drones, Mining_Drones_Remastered or Mining_Drones_Mod), a request depot must
+also fetch iron ore from a mining depot's output, at the road it lays behind the depot.
 """
 import argparse
 import json
@@ -20,6 +24,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import zipfile
 
 from package_mod import build
 
@@ -159,6 +164,9 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # 40,000 and 15,000 (settings-updates.lua); the other tanks keep 25,000.
             'tank_sizes': {'fuel': 25000, 'liquid-provider': 40000, 'liquid-request': 25000,
                            'liquid-buffer': 15000}}
+# With a Mining Drones mod: the mining depot's road, and 30 of its 40 iron ore delivered.
+MINING_DRONES = {'Mining_Drones', 'Mining_Drones_Remastered', 'Mining_Drones_Mod'}
+EXPECTED_MINING = {'zone': 'jatz-depot-road', 'delivered': 30, 'left': 10}
 # Long enough for the check mod's deliveries (it fails itself at tick 1700).
 TICKS = 1800
 
@@ -172,6 +180,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--factorio', required=True, type=Path)
     parser.add_argument('--data-dir', type=Path)
+    parser.add_argument('--mod', action='append', default=[], type=Path,
+                        help="another mod's zip to load too, such as one of the Mining Drones mods (repeatable)")
     args = parser.parse_args()
     binary = args.factorio.expanduser().resolve()
     data = args.data_dir.resolve() if args.data_dir else binary.parents[2] / 'data'
@@ -182,9 +192,10 @@ def main():
     setups = {'base game': {'base'}, **({'Space Age': space_age} if space_age else {})}
     if not space_age:
         print('Space Age, or a mod it needs, is not installed: checking the base game only.')
+    extra = {mod_name(path): path.resolve() for path in args.mod}
     failed = False
     for label, enabled in setups.items():
-        failed |= not check(binary, data, bundled, enabled, label)
+        failed |= not check(binary, data, bundled, enabled, label, extra)
     raise SystemExit(1 if failed else 0)
 
 
@@ -213,6 +224,14 @@ def enabled_with(name, bundled):
     return found
 
 
+def mod_name(path):
+    """The name in a mod zip's info.json (in its one top-level folder)."""
+    with zipfile.ZipFile(path) as archive:
+        info = [name for name in archive.namelist() if name.count('/') == 1 and name.endswith('/info.json')
+                and not name.startswith('__MACOSX/')]
+        return json.loads(archive.read(info[0]))['name']
+
+
 def locale_keys(root=ROOT):
     """section.key for every English translation in the mod."""
     keys = set()
@@ -227,7 +246,7 @@ def locale_keys(root=ROOT):
     return keys
 
 
-def check(binary, data, bundled, enabled_mods, label):
+def check(binary, data, bundled, enabled_mods, label, extra=None):
     parent = ROOT / '.local/mod-check'
     parent.mkdir(parents=True, exist_ok=True)
     workspace = Path(tempfile.mkdtemp(prefix='run-', dir=parent))
@@ -235,9 +254,12 @@ def check(binary, data, bundled, enabled_mods, label):
     mods.mkdir()
     package, _ = build(mods)
     shutil.copytree(CHECK, mods / CHECK.name)
+    extra = extra or {}
+    for path in extra.values():
+        shutil.copy(path, mods / path.name)
     # List every bundled mod explicitly: Factorio enables installed ones that aren't listed.
     enabled = {name: name in enabled_mods for name in sorted(bundled)}
-    enabled.update({name: True for name in OURS})
+    enabled.update({name: True for name in (*OURS, *extra)})
     (mods / 'mod-list.json').write_text(json.dumps({'mods': [
         {'name': name, 'enabled': state} for name, state in enabled.items()]}))
     write = workspace / 'write'
@@ -263,12 +285,14 @@ def check(binary, data, bundled, enabled_mods, label):
     report = json.loads(report_path.read_text())
     report['loaded_mods'] = loaded
     wrong = {key: report.get(key) for key, value in EXPECTED.items() if report.get(key) != value}
-    expected_mods = sorted(enabled_mods | set(OURS) | {'core'})
+    expected_mods = sorted(enabled_mods | set(OURS) | set(extra) | {'core'})
     translations = locale_keys()
     untranslated = sorted({key for names in report.get('localised_names', {}).values()
                            for key in names.values() if key not in translations})
     if report.get('menu_tab') != 'logistics':
         wrong['menu_tab'] = report.get('menu_tab')
+    if MINING_DRONES & set(extra) and report.get('mining') != EXPECTED_MINING:
+        wrong['mining'] = report.get('mining')
     if wrong or report.get('driven_tiles', 0) <= 1 or loaded != expected_mods or untranslated:
         problems = wrong or {'loaded': loaded, 'expected': expected_mods, 'untranslated': untranslated,
                              'driven_tiles': report.get('driven_tiles')}
@@ -279,7 +303,8 @@ def check(binary, data, bundled, enabled_mods, label):
           f'{report["pipe_connections"]} pipe connections, {report["free_recipes"]} free recipes, '
           f'freighter drove {report["driven_tiles"]:.1f} tiles, {report["delivered"]} iron plates delivered by road '
           f'(a {report["detour"]:.0f}-tile detour, {report["road_samples"]} on-road samples), menu row {report["menu_row_order"]!r} directly above '
-          f'the car row {report["car_row_order"]!r} in {report["menu_tab"]}. Mods loaded: {", ".join(loaded)}')
+          f'the car row {report["car_row_order"]!r} in {report["menu_tab"]}. Mods loaded: {", ".join(loaded)}'
+          + (f'. Mining depot: {report["mining"]["delivered"]} iron ore delivered' if 'mining' in report else ''))
     return True
 
 

@@ -1265,4 +1265,55 @@ do -- Fluids get their color, and keep it while what didn't fit goes back.
   check("and it parks once the fluid is back", provider.held.amount == 1000 and next(storage.trips) == nil)
 end
 
+do -- Without a Mining Drones mod there is no mining depot: an entity of that name is no depot.
+  local logistics = reset()
+  logistics.add(entity("mining-depot", 20.5, 0))
+  check("no mining depot without Mining Drones", next(storage.depots) == nil)
+end
+
+do -- With Mining Drones, a mining depot is an item provider of what collects in its output.
+  prototypes.entity["mining-depot"] = {}
+  package.loaded["scripts.loading-zone"] = nil
+  local logistics = reset()
+  local loading_zone = require("scripts.loading-zone")
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  local mine = entity("mining-depot", 20.5, 0)
+  -- An assembling machine: no chest, its ore in the output inventory.
+  local output = stocked(mine, "a", 30)
+  mine.get_inventory = function()
+    return nil
+  end
+  function mine.get_output_inventory()
+    return output
+  end
+  local home = stocked(request)
+  logistics.add(request)
+  logistics.add(mine)
+  assert(logistics.set_request(request, "a", 10))
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 5)) == 5)
+  check("a mining depot is a provider depot, priority 5", logistics.get_priority(mine) == 5)
+  local zones = {}
+  for _, direction in ipairs({ "north", "east", "south", "west" }) do
+    mine.direction = defines.direction[direction]
+    local x, y = loading_zone.tile_centre(mine)
+    zones[#zones + 1] = (x - 20.5) .. "," .. y
+  end
+  mine.direction = defines.direction.north
+  check(
+    "its loading zone is the tile behind it, turning with it",
+    table.concat(zones, " ") == "0,4.5 -4.5,0 0,-4.5 4.5,0"
+  )
+  logistics.on_tick()
+  check("the search asks for a road to it", #requests == 1 and requests[1].goal.x == 20.5 and requests[1].goal.y == 4.5)
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  check("a freighter drives to its loading zone", trip and trip.destination.x == 20.5 and trip.destination.y == 4.5)
+  arrive(logistics, trip)
+  check("and loads from its output", output.get_item_count("a") == 20 and trip.state == "to-request")
+  arrive(logistics, trip)
+  check("which it delivers", home.get_item_count("a") == 10 and next(storage.trips) == nil)
+  prototypes.entity["mining-depot"] = nil
+  package.loaded["scripts.loading-zone"] = nil
+end
+
 print("all logistics checks passed")

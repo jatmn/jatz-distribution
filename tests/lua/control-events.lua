@@ -122,9 +122,12 @@ for _, name in ipairs(RELATIVE_GUI_TYPES) do
   rawset(defines.relative_gui_type, name, "relative_gui_type." .. name)
 end
 local nth = {}
+-- The filters each event was registered with.
+local filters = {}
 script = {
-  on_event = function(event, handler)
+  on_event = function(event, handler, filter)
     handlers[event] = handler
+    filters[event] = filter
   end,
   on_nth_tick = function(ticks, handler)
     nth[ticks] = handler
@@ -145,7 +148,8 @@ prototypes = {
   decorative = {},
   item = { ["jatz-quinityn-freighter"] = { stack_size = 10 }, wood = { stack_size = 100 } },
   fluid = { water = {} },
-  entity = {},
+  -- As with one of the Mining Drones mods installed (tests/lua/logistics.lua checks without).
+  entity = { ["mining-depot"] = { type = "assembling-machine" } },
 }
 
 local tiles = {}
@@ -998,6 +1002,43 @@ do -- Liquid depots: the same panels, beside the storage tank window, choosing a
   logistics.match_freighters = match
   check("the depot built from it asks robots for them", asked and asked.entity == built and asked.count == 4)
   check("and requests the fluid", logistics.get_request(built).item == "water")
+end
+
+do -- Mining Drones' mining depot: a provider depot that lays road behind it, with a priority panel.
+  local logistics = require("scripts.logistics")
+  local registered = false
+  for _, filter in ipairs(filters.on_built_entity) do
+    registered = registered or filter.name == "mining-depot"
+  end
+  check("building a mining depot is handled", registered)
+  -- 5 by 8 tiles, facing north: its loading zone is the tile (400, 4), behind its southern end.
+  local mine = depot(400)
+  mine.name, mine.type, mine.position = "mining-depot", "assembling-machine", { x = 400.5, y = 0 }
+  cell(400, 4).name = "concrete"
+  fire("on_built_entity", { entity = mine })
+  check("it lays road behind it", cell(400, 4).name == "jatz-depot-road")
+  check("and is a provider depot", logistics.get_priority(mine) == 5)
+  local relative = element()
+  local player = { index = 13, valid = true, gui = { relative = relative } }
+  game.get_player = function()
+    return player
+  end
+  storage.request_gui = {}
+  fire("on_gui_opened", { player_index = 13, entity = mine })
+  local frame = relative.jatz_request_frame
+  check(
+    "whose priority panel is beside its assembling machine window",
+    frame
+      and frame.anchor.gui == "relative_gui_type.assembling_machine_gui"
+      and frame.children[1].priority_row
+      and #frame.children[1].children == 1
+  )
+  -- Turned east it is 8 by 5, centred on a tile edge across: its loading zone is the tile (395, 0).
+  mine.direction, mine.position = defines.direction.east, { x = 400, y = 0.5 }
+  fire("on_player_rotated_entity", { entity = mine })
+  check("turned, its road follows", cell(395, 0).name == "jatz-depot-road" and cell(400, 4).name == "concrete")
+  removed(mine)
+  check("removed, the ground comes back", cell(395, 0).name == "grass-1")
 end
 
 print("all control event checks passed")

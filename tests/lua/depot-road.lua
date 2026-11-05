@@ -7,6 +7,7 @@ package.path = "./?.lua;" .. package.path
 
 defines = { direction = { north = 0, east = 4, south = 8, west = 12 } }
 script = { register_on_object_destroyed = function() end }
+prototypes = { entity = {} }
 
 local surface, next_unit
 

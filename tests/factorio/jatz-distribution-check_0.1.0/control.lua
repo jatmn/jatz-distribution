@@ -888,6 +888,24 @@ local function count(entity, item)
   return entity.get_inventory(defines.inventory.chest).get_item_count(item or "iron-plate")
 end
 
+-- With one of the Mining Drones mods (tools/test_mod.py --mod): a mining depot is a provider of
+-- what its drones mine, which collects in its output inventory. Facing north it mines to the north
+-- and loads from the tile behind its southern end; a request depot for 30 of its 40 iron ore stands
+-- 12 tiles along a straight road from there. North of everything else, by the map's edge.
+local function setup_mining(surface)
+  if not prototypes.entity["mining-depot"] then
+    return
+  end
+  local mine =
+    surface.create_entity({ name = "mining-depot", position = { 4.5, -66 }, force = "player", raise_built = true })
+  mine.set_recipe("mine-iron-ore")
+  assert(mine.get_output_inventory().insert({ name = "iron-ore", count = 40 }) == 40, "mining: cannot stock")
+  local request = depot(surface, "request", 16.5, -63.5)
+  lay_road(surface, 5, -62, 16, -62)
+  assert(remote.call("jatz-distribution", "set_request", request, "iron-ore", 30), "mining: request refused")
+  storage.deliveries.mining = { mine = mine, request = request, zone = surface.get_tile(4, -62).name }
+end
+
 local function status(entity)
   return remote.call("jatz-distribution", "get_status", entity)
 end
@@ -1098,6 +1116,7 @@ local function deliveries_finished(surface, tick, result)
     and count(deliveries.buffering.request, "copper-cable") == 20
     and count(deliveries.buffering.filling, "copper-cable") == 15
     and count(deliveries.prioritised.request, "stone") == 10
+    and (not deliveries.mining or count(deliveries.mining.request, "iron-ore") == 30)
     and deliveries.liquid.request.get_fluid_count("water") == 1200
     and deliveries.steam.request.get_fluid_count("steam") == 300
     and deliveries.fallback.request.get_fluid_count("crude-oil") == 300
@@ -1143,6 +1162,13 @@ local function deliveries_finished(surface, tick, result)
     return false
   end
   result.delivered = count(deliveries.connected)
+  if deliveries.mining then
+    result.mining = {
+      zone = deliveries.mining.zone,
+      delivered = count(deliveries.mining.request, "iron-ore"),
+      left = deliveries.mining.mine.get_output_inventory().get_item_count("iron-ore"),
+    }
+  end
   result.provider_left = count(deliveries.provider)
   result.island_received = count(deliveries.island)
   result.request_status = status(deliveries.connected)
@@ -1347,6 +1373,7 @@ script.on_init(function()
   setup_depot_roads(surface, result)
   check_menu_placement(result)
   setup_deliveries(surface, result)
+  setup_mining(surface)
   local start = { 0.5, 30.5 }
   assert(surface.can_place_entity({ name = FREIGHTER, position = start, force = "player" }), "freighter: cannot place")
   local freighter = surface.create_entity({ name = FREIGHTER, position = start, force = "player" })
