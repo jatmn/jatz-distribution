@@ -26,8 +26,9 @@ ROAD_ART = tuple(f'{name}.png' for name in ('slag1', 'slag2', 'slag4', 'concrete
 
 
 def mod_files(root=REPO):
-    files = [root / name for name in ('info.json', 'settings.lua', 'data.lua', 'data-final-fixes.lua', 'control.lua', 'COPYING',
-                                      'COPYING.LESSER', 'NOTICE', 'changelog.txt')]
+    # thumbnail.png is shown in the in-game mod browser and on the mod portal (tools/make_icons.py).
+    files = [root / name for name in ('info.json', 'thumbnail.png', 'settings.lua', 'data.lua', 'data-final-fixes.lua',
+                                      'control.lua', 'COPYING', 'COPYING.LESSER', 'NOTICE', 'changelog.txt')]
     files += sorted((root / 'prototypes').glob('*.lua'))
     files += sorted((root / 'scripts').glob('*.lua'))
     files += sorted((root / 'locale').rglob('*.cfg'))

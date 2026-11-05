@@ -12,13 +12,17 @@ padding (docs: types/IconData). Each icon is 120 x 64 px: 64 px at (0, 0),
 32 at (64, 0), 16 at (96, 0) and 8 at (112, 0), each scaled straight from
 the full-size frame for clarity at small sizes. Use it with icon_size = 64.
 
+The mod's thumbnail.png, shown in the in-game mod browser and on the mod portal,
+is the freighter icon's frame at the 144 x 144 px Factorio 2.1 asks for
+(auxiliary/mod-structure), with the same margin and no mipmaps.
+
 Each icons/icons.json records the source sheet, the frame used, and both SHA-256
 hashes, so tools/check_blender_sources.py catches icons left behind by a re-render
 or edited by hand. Run after re-rendering or re-packaging the sprites:
 
     .venv/bin/python tools/make_icons.py
 
-With --check it writes nothing and fails unless every committed icon has exactly the
+With --check it writes nothing and fails unless every committed icon and the thumbnail have exactly the
 pixels made from its sprite sheet; CI runs that whenever an area's art changes.
 """
 import argparse
@@ -42,6 +46,7 @@ ALPHA_THRESHOLD = 8  # ignore near-invisible pixels when finding the art's bound
 FRAME = 512  # game frame size in the preview sheets
 FREIGHTER_DIRECTION = 24  # south-east: 64 directions, clockwise from north
 DEPOT_DIRECTION = 2  # south: sheets are ordered north, east, south, west
+THUMBNAIL_SIZE = 144  # Factorio's mod thumbnail size
 ROLES = ('provider', 'request', 'buffer', 'fuel', 'liquid-provider', 'liquid-request', 'liquid-buffer')
 
 
@@ -62,6 +67,12 @@ def sources(root=REPO, areas=('freighter', 'depots')):
         for role in ROLES:
             yield (depots / 'icons', f'{role}-depot.png', depots / role / '3/sheets/preview.png',
                    frame_box(DEPOT_DIRECTION, 4))
+
+
+def thumbnail_source(root=REPO):
+    """(thumbnail path, preview sheet, frame box): the freighter as its icon shows it."""
+    _, _, sheet, box = next(sources(root, ('freighter',)))
+    return root / 'thumbnail.png', sheet, box
 
 
 def padded_art(sheet_bytes, box, label):
@@ -114,14 +125,28 @@ def replace_atomically(target, data):
             os.unlink(temporary)
 
 
-def check(root, areas):
-    """Fail unless every committed icon has exactly the pixels made from its sprite sheet."""
-    stale = []
+def thumbnail(sheet_bytes, box, label):
+    """The mod thumbnail: the frame's art on a transparent 144 px square."""
+    return scaled(padded_art(sheet_bytes, box, label), THUMBNAIL_SIZE)
+
+
+def images(root, areas):
+    """(target, make, sheet, box) for every icon of the areas, and the thumbnail with the freighter."""
     for folder, name, sheet, box in sources(root, areas):
-        expected = np.asarray(icon(sheet.read_bytes(), box, sheet.relative_to(root)))
-        actual = np.asarray(Image.open(folder / name).convert('RGBA'))
-        if actual.shape != expected.shape or not np.array_equal(actual, expected):
-            stale.append(str((folder / name).relative_to(root)))
+        yield folder / name, icon, sheet, box
+    if 'freighter' in areas:
+        target, sheet, box = thumbnail_source(root)
+        yield target, thumbnail, sheet, box
+
+
+def check(root, areas):
+    """Fail unless every committed icon and the thumbnail have exactly the pixels made from their sprite sheet."""
+    stale = []
+    for target, make, sheet, box in images(root, areas):
+        expected = np.asarray(make(sheet.read_bytes(), box, sheet.relative_to(root)))
+        actual = np.asarray(Image.open(target).convert('RGBA')) if target.is_file() else None
+        if actual is None or actual.shape != expected.shape or not np.array_equal(actual, expected):
+            stale.append(str(target.relative_to(root)))
     if stale:
         raise SystemExit('Not made from the current sprite sheets: ' + ', '.join(stale)
                          + '; run tools/make_icons.py and commit the result (never edit icons by hand)')
@@ -149,6 +174,12 @@ def main(root=REPO, areas=('freighter', 'depots')):
         print(f'{target.relative_to(root)} from {sheet.relative_to(root)} frame {box}')
     for folder, record in records.items():
         replace_atomically(folder / 'icons.json', (json.dumps(record, indent=2) + '\n').encode())
+    if 'freighter' in areas:
+        target, sheet, box = thumbnail_source(root)
+        encoded = BytesIO()
+        thumbnail(sheet.read_bytes(), box, sheet.relative_to(root)).save(encoded, format='PNG', optimize=True)
+        replace_atomically(target, encoded.getvalue())
+        print(f'{target.relative_to(root)} from {sheet.relative_to(root)} frame {box}')
 
 
 if __name__ == '__main__':

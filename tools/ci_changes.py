@@ -33,8 +33,9 @@ ART_TOOLS = {'tools/check_blender_sources.py', 'tools/make_icons.py', 'tools/tes
 
 def area_of(path):
     """The area a path belongs to, or None for documentation and concept art."""
+    # The mod thumbnail is made from the freighter's sprites by tools/make_icons.py.
     if path.startswith(('assets/quinityn-freighter/', 'tests/factorio/freighter-art-check_')) or path in {
-        'tools/test_factorio.py', 'tools/prepare_test_mod.py'
+        'tools/test_factorio.py', 'tools/prepare_test_mod.py', 'thumbnail.png'
     }:
         return 'freighter'
     if path.startswith(('assets/depots/', 'tests/factorio/depot-art-check_')) or path in {
@@ -54,6 +55,7 @@ def touches_art(path):
     """Whether a change can invalidate the Blender sources check for its area."""
     suffix = PurePosixPath(path).suffix
     return (path.startswith('assets/') and suffix in ART_SUFFIXES
+            or path == 'thumbnail.png'
             or path.startswith('assets/depots/archive/')
             or path in {'assets/depots/tools/render_connector.py', 'assets/depots/tools/make_loading_zone.py',
                         # The art jobs run the sprite extractor (tools/test_art_dependencies.py).
