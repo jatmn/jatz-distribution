@@ -205,6 +205,18 @@ local function answer(logistics, id, result)
   })
 end
 
+-- A freighter reaches where it was driving (`result`: success unless given). After a successful
+-- arrival it stands at the loading zone for a moment: that ends too, and it loads or unloads.
+local function arrive(logistics, trip, result)
+  logistics.on_ai_command_completed({
+    unit_number = trip.drone.unit_number,
+    result = result or defines.behavior_result.success,
+  })
+  if trip.loading then
+    logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = defines.behavior_result.success })
+  end
+end
+
 -- The (first) trip of a request depot, and whether it has any.
 local function trip_of(depot)
   return storage.trips[next(storage.depots[depot.unit_number].trips) or 0]
@@ -455,8 +467,8 @@ do -- "On its way" means a freighter is bringing the item: not one driving home 
   logistics.on_tick()
   answer(logistics, 1, "route")
   local trip = trips_from(request)[1]
-  local success, fail = defines.behavior_result.success, defines.behavior_result.fail
-  logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = success }) -- nothing to load
+  local fail = defines.behavior_result.fail
+  arrive(logistics, trip) -- nothing to load
   game.tick = 60
   logistics.on_tick()
   check("a freighter driving home empty isn't 'on its way'", logistics.get_status(request) ~= "delivering")
@@ -485,9 +497,8 @@ do -- A freighter goes back into the slot after its trip; one destroyed on the w
   logistics.on_tick()
   answer(logistics, 1, "route")
   local trip = trips_from(request)[1]
-  local success = defines.behavior_result.success
-  logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = success }) -- at provider
-  logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = success }) -- home
+  arrive(logistics, trip) -- at provider
+  arrive(logistics, trip) -- home
   check("a freighter back from its trip is in the slot again", logistics.freighter_counts(request) == 2)
   game.tick = 60
   logistics.on_tick()
@@ -755,13 +766,6 @@ local function liquids(logistics, wanted, trucks)
   return request, provider
 end
 
-local function arrive(logistics, trip, result)
-  logistics.on_ai_command_completed({
-    unit_number = trip.drone.unit_number,
-    result = result or defines.behavior_result.success,
-  })
-end
-
 do -- Requests: fluids for liquid depots, items for item depots.
   local logistics = reset()
   local request = tank("jatz-liquid-request-depot", 0.5, 0.5)
@@ -803,6 +807,64 @@ do -- A fluid delivery: 500 per freighter, at the provider's temperature.
   logistics.on_tick()
   answer(logistics, #requests, "route")
   check("the next freighter fetches the remaining 300", trips_from(request)[1].planned == 300)
+end
+
+do -- A freighter stands at each loading zone for a moment before it loads or unloads.
+  local logistics = reset()
+  local request, provider = liquids(logistics)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  local function reached()
+    logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = defines.behavior_result.success })
+  end
+  local function last_command()
+    return trip.drone.commands[#trip.drone.commands]
+  end
+  reached()
+  local stop = last_command()
+  check("at the provider it stops for one second", stop.type == defines.command.stop and stop.ticks_to_wait == 60)
+  check("before pumping anything", provider.held.amount == 1000 and trip.fluid.amount == 0)
+  logistics.on_roads_changed(1, false, true)
+  check("a road change doesn't cut its stop short", last_command() == stop)
+  reached()
+  check("then it loads", provider.held.amount == 500 and trip.fluid.amount == 500)
+  check("and drives home", last_command().type == defines.command.go_to_location)
+  reached()
+  stop = last_command()
+  check("at home it stops again", stop.type == defines.command.stop and stop.ticks_to_wait == 60)
+  check("before unloading", request.held.amount == 0 and trip.fluid.amount == 500)
+  reached()
+  check("then it unloads", request.held.amount == 500)
+  check("and parks", logistics.freighter_counts(request) == 3 and not storage.trips[trip.drone.unit_number])
+end
+
+do -- One coming home empty parks at once; one unloading at a removed depot takes its cargo back.
+  local logistics = reset()
+  local request, provider = liquids(logistics)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  provider.held.amount = 0
+  arrive(logistics, trip)
+  check("setup: nothing to load", trip.fluid.amount == 0)
+  logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = defines.behavior_result.success })
+  check("an empty freighter parks without stopping", not storage.trips[trip.drone.unit_number])
+  provider.held.amount = 1000
+  game.tick = 60
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  trip = trips_from(request)[1]
+  arrive(logistics, trip)
+  logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = defines.behavior_result.success })
+  check("setup: stopped at home to unload", trip.loading and trip.fluid.amount == 500)
+  request.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = request.unit_number })
+  local drive = trip.drone.commands[#trip.drone.commands]
+  check("a removed request depot sends it back at once", trip.state == "returning" and not trip.loading)
+  check("driving", drive.type == defines.command.go_to_location and drive.destination.x == 10.5)
+  arrive(logistics, trip)
+  check("and the fluid goes back into the provider", provider.held.amount == 1000)
 end
 
 do -- A large request: several freighters, one a second, each promising what it can carry.

@@ -364,6 +364,9 @@ local function setup_deliveries(surface, result)
     unpaved = unpaved,
     road_samples = 0,
     deepest = 0,
+    -- Ticks the connected pair's freighter reached the provider's loading zone, loaded, got home
+    -- and unloaded.
+    stops = {},
   }
   storage.deliveries = deliveries
 
@@ -803,6 +806,37 @@ local function interfere(surface)
     roads.shared_b.destroy()
   end
   local deliveries = storage.deliveries
+  -- The connected pair's freighter stops at each loading zone before its cargo moves.
+  local stops = deliveries.stops
+  local function standing_at(x, y)
+    for _, drone in pairs(surface.find_entities_filtered({ name = DRONE, position = { x, y }, radius = 3 })) do
+      -- It stops about a tile short of the loading zone's centre.
+      if (drone.position.x - x) ^ 2 + (drone.position.y - y) ^ 2 <= 1.25 ^ 2 then
+        return drone
+      end
+    end
+  end
+  if not stops.at_provider then
+    stops.drone = standing_at(-60.5, 47.5)
+    if stops.drone then
+      stops.at_provider = game.tick
+    end
+  end
+  if stops.at_provider and not stops.loaded and count(deliveries.provider) < 50 then
+    stops.loaded = game.tick
+  end
+  if stops.loaded and not stops.at_home and standing_at(-40.5, 47.5) then
+    stops.at_home = game.tick
+  end
+  if stops.at_home and not stops.unloaded and count(deliveries.connected) > 0 then
+    stops.unloaded = game.tick
+  end
+  if stops.at_provider and not stops.unloaded then
+    assert(stops.drone.valid, "the freighter disappeared before unloading at home")
+    if stops.at_home then
+      assert(standing_at(-40.5, 47.5) == stops.drone, "a different freighter came home")
+    end
+  end
   -- Once robots have brought the 3 requested freighters, have them take 2 away again.
   if not deliveries.removal_started then
     local in_slot = remote.call("jatz-distribution", "freighter_counts", deliveries.remote)
@@ -955,6 +989,16 @@ local function deliveries_finished(surface, tick, result)
   -- The road's south edge is the tile row at y 57; the straight route stays at y 47.
   result.detour = deliveries.deepest - 47.5
   assert(result.road_samples > 0, "no freighter was ever seen driving")
+  -- It stands one second at each loading zone before loading, and before unloading.
+  local stops = deliveries.stops
+  result.loading_stop = stops.loaded - stops.at_provider
+  result.unloading_stop = stops.unloaded - stops.at_home
+  for _, stop in ipairs({ result.loading_stop, result.unloading_stop }) do
+    assert(stop >= 50 and stop <= 70, "a freighter stood " .. stop .. " ticks to load or unload, not 60")
+  end
+  local home, out = remote.call("jatz-distribution", "freighter_counts", deliveries.connected)
+  assert(home == 3 and out == 0, "the delivered freighter was not returned to its slot")
+  assert(not stops.drone.valid, "the unloaded freighter did not park")
   assert(result.detour > 9, "the freighter did not follow the road south")
   local delivered = armor.request.get_inventory(defines.inventory.chest).find_item_stack("modular-armor")
   result.armor_equipment = delivered.grid and #delivered.grid.equipment or 0
@@ -975,9 +1019,10 @@ local function deliveries_finished(surface, tick, result)
   -- Without re-planning, a freighter stands stuck about six seconds before giving up.
   result.cut_turnaround = cut.returned - cut.done
   assert(result.cut_turnaround < 240, "the cut was noticed late: " .. result.cut_turnaround .. " ticks")
-  -- Without a retry on road changes, the 10 s cooldown would hold this one back.
+  -- Without a retry on road changes, the 10 s cooldown would hold this one back. The trip includes
+  -- its two 1 s stops to load and unload.
   result.mended_delay = deliveries.mended.delivered - deliveries.mended.done
-  assert(result.mended_delay < 400, "the mended road was used late: " .. result.mended_delay .. " ticks")
+  assert(result.mended_delay < 400 + 2 * 60, "the mended road was used late: " .. result.mended_delay .. " ticks")
   result.rerouted_received = count(deliveries.rerouted.request, "stone-brick")
   result.rerouted_from_farther = 10 - count(deliveries.rerouted.provider, "stone-brick")
   result.orphaned_provider_left = count(deliveries.orphaned.provider, "wooden-chest")

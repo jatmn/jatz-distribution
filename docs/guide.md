@@ -28,7 +28,7 @@ Freighters drive **only on road**. Road is a floor tile you craft and place like
 2. Open the request depot and choose an item and an amount to keep in stock.
 3. Put freighters in its freighter slot.
 
-Within a second, a freighter sets off for a provider depot that has the item. It loads what the request depot still needs and has room for, up to ten stacks, then drives back, unloads and parks in the slot again.
+Within a second, a freighter sets off for a provider depot that has the item. It stops for about a second to load what the request depot still needs and has room for, up to ten stacks, then drives back, stops again for about a second to unload and parks in the slot again.
 
 If one freighter isn't enough, or one provider doesn't have it all, the depot sends more, one a second, each to the next provider that still has some.
 

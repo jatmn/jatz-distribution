@@ -13,7 +13,7 @@ import zipfile
 
 from package_mod import REPO, build, mod_files
 import publish_mod
-from release_metadata import PENDING, finalize, package_metadata
+from release_metadata import PENDING, finalize, package_metadata, split_notes
 from validate_package import validate
 
 
@@ -37,7 +37,10 @@ class Releases(unittest.TestCase):
             target.write_bytes(original.read_bytes())
         self.version = json.loads((self.root / 'info.json').read_text())['version']
         self.tag = 'v' + self.version
-        self.history = (self.root / 'changelog.txt').read_text()
+        # The tests add their own pending notes: start from the numbered history alone, without
+        # the repository's own Unreleased notes.
+        _, self.history = split_notes((self.root / 'changelog.txt').read_text())
+        (self.root / 'changelog.txt').write_text(self.history)
 
     def bump(self):
         parts = [int(part) for part in self.version.split('.')]
