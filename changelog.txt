@@ -5,6 +5,8 @@ Version: Unreleased
   Changes:
     - Freighters stop for 1 second at a depot's loading zone to load and to unload, instead of loading and unloading the moment they arrive.
     - Request and liquid request depots with "Request from buffer depots" unticked now fall back to buffer depots for what no provider can supply, instead of ignoring them. Ticked, buffer depots still come first.
+  Compatibility:
+    - Marked Transport Drones and its Factorio 2.1 forks (Transport Drones (Continuous), Transport Drones (Continued, 2.1, Unofficial) and Transport Drones By Yunli) as incompatible.
 ---------------------------------------------------------------------------------------------------
 Version: 0.1.0
   Features:
