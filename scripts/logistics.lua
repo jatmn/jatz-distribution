@@ -34,12 +34,13 @@ local logistics = {}
 local PROVIDER = "jatz-provider-depot"
 local REQUEST = "jatz-request-depot"
 -- Buffer depots request like request depots (their own request, freighters and panel), but their
--- freighters only fetch from provider depots; request depots set to "request from buffer depots"
--- also fetch from them.
+-- freighters only fetch from provider depots. Request depots fetch from them too: first if set to
+-- "request from buffer depots", otherwise only for what no provider can supply.
 local BUFFER = "jatz-buffer-depot"
 -- Provider and buffer depots have a priority from 1 to 10: a requesting depot fetches from the
 -- highest it can reach by road, nearest first among equals. Priority only orders depots of one
--- kind: buffer depots (for request depots that request from them) still all come before providers.
+-- kind: buffer depots all still come before providers for request depots that request from them,
+-- and after them for the rest.
 local PRIORITY_MIN, PRIORITY_MAX, PRIORITY_DEFAULT = 1, 10, 5
 logistics.priority = { min = PRIORITY_MIN, max = PRIORITY_MAX, default = PRIORITY_DEFAULT }
 local ROAD = "jatz-road"
@@ -52,9 +53,10 @@ local FREIGHTER = "jatz-quinityn-freighter"
 -- freighter item stacks to 10, so the slot is that many stacks, shown as one slot in the panel.
 local FREIGHTER_CAPACITY = 100
 -- Liquid depots work like the item depots of the same role, for fluids: a liquid request depot
--- keeps a fluid in stock, fetched from liquid provider depots (and liquid buffer depots, if set to);
--- a liquid buffer depot fetches from liquid providers only. Items and fluids never meet: item
--- depots deal only with item depots, liquid depots only with liquid depots.
+-- keeps a fluid in stock, fetched from liquid provider depots and liquid buffer depots (buffers
+-- first if set to, last otherwise); a liquid buffer depot fetches from liquid providers only.
+-- Items and fluids never meet: item depots deal only with item depots, liquid depots only with
+-- liquid depots.
 local LIQUID_PROVIDER = "jatz-liquid-provider-depot"
 local LIQUID_REQUEST = "jatz-liquid-request-depot"
 local LIQUID_BUFFER = "jatz-liquid-buffer-depot"
@@ -347,8 +349,9 @@ local function restart_depot_searches(depot)
   end
 end
 
--- Whether a request depot also fetches from buffer depots, like a requester chest's "request from
--- buffer chests". Only request depots have it: buffer depots fetch from providers alone.
+-- Whether a request depot fetches from buffer depots first, like a requester chest's "request from
+-- buffer chests" (without it, buffers come after providers, for what no provider can supply). Only
+-- request depots have it: buffer depots fetch from providers alone.
 function logistics.get_from_buffers(entity)
   local depot = request_depot(entity)
   return depot and depot.role == "request" and depot.from_buffers == true or false
@@ -451,15 +454,19 @@ local function need(depot, except)
   return wanted, math.max(0, math.min(wanted, chest.get_insertable_count(id) - coming))
 end
 
--- Every depot that could serve a requesting depot: provider depots, and for a request depot set to
--- request from buffer depots, buffer depots too, which come first however near a provider is (a
--- buffer depot itself fetches only from providers); on the same surface and force, with road at
--- its loading zone, holding the item and not on cooldown for this request. Within each kind, the
--- highest priority first; within each priority, nearest first in a straight line from `from`. Also says whether one was skipped for cooldown.
+-- Every depot that could serve a requesting depot: provider depots, and for a request depot,
+-- buffer depots too (a buffer depot itself fetches only from providers). A request depot set to
+-- request from buffer depots ranks buffers first, however near a provider is; one not set to ranks
+-- them last, so it falls back to a buffer only for what no provider can supply. All on the same
+-- surface and force, with road at its loading zone, holding the item and not on cooldown for this
+-- request. Within each kind, the highest priority first; within each priority, nearest first in a
+-- straight line from `from`. Also says whether one was skipped for cooldown.
 local function candidates(depot, from)
   local entity = depot.entity
   local found, waiting = {}, false
-  local buffers = depot.role == "request" and depot.from_buffers
+  local buffers = depot.role == "request"
+  -- The kind of depot asked about first.
+  local first = buffers and depot.from_buffers and "buffer" or "provider"
   for unit_number, provider in pairs(storage.depots) do
     local candidate = provider.entity
     if
@@ -482,8 +489,9 @@ local function candidates(depot, from)
             position = position,
             distance = math.sqrt(dx * dx + dy * dy),
             -- With "request from buffer depots", buffer depots come first, nearer providers or not,
-            -- whatever either's priority; then the higher priority, nearer or not.
-            rank = (provider.role == "buffer" and 0 or PRIORITY_MAX)
+            -- whatever either's priority; without it, providers come first. Then the higher
+            -- priority, nearer or not.
+            rank = (provider.role == first and 0 or PRIORITY_MAX)
               + PRIORITY_MAX
               - (provider.priority or PRIORITY_DEFAULT),
           }
@@ -1200,8 +1208,9 @@ function logistics.on_script_path_request_finished(event)
   end
   -- A road is never shorter than the straight line, so stop at the first candidate that is
   -- already farther away in a straight line than the best road found. Candidates come in ranks
-  -- (buffer depots before providers, for a request depot that requests from buffers; then by
-  -- priority): once one of a rank has a road, the next rank isn't asked at all.
+  -- (buffer depots before providers for a request depot that requests from buffers, after them for
+  -- one that doesn't; then by priority): once one of a rank has a road, the next rank isn't asked
+  -- at all.
   search.index = search.index + 1
   local next_candidate = search.candidates[search.index]
   if

@@ -33,7 +33,7 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | Nearer of two providers removed mid-trip: the same freighter goes on to the other one and delivers | Passed |
 | Request depot removed mid-trip: its freighter leaves at once and the provider keeps its stock | Passed |
 | Provider nearest by road chosen: 8 tiles away in a straight line but 34 by road loses to 16 tiles on a straight road (all 10 coal from the farther one) | Passed |
-| No road route to any provider: no freighter is sent at all | Passed |
+| No road route to any provider or buffer depot: no freighter is sent at all | Passed |
 | Depot road: laid under each depot's loading zone (over grass, which it hides); road ending one tile short of both depots' zones delivers (5 poles) | Passed |
 | Depot road removed with its depot, putting back concrete and grass; existing road and a tile laid over depot road stay; a shared tile keeps its road until the second depot goes; nothing laid on water | Passed |
 | Depot road when turning a depot, and mining or covering it by hand (Lua checks against a fake runtime; needs a player in game) | Passed headless; untested in the graphical client |
@@ -51,6 +51,8 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | A freighter request Factorio drops when part of it is filled by hand (5 asked, 1 put in) is requested again for the rest (4), also for a depot built over a blueprint ghost without its tags; taking freighters away stops topping up | Passed headless. In the owner's game (checked with `/jatz-freighters`): the request stays at 4 after 1 is put in by hand; the chest slot's ghost only came back slowly, because a freighter placed from the cursor waited for the next dispatch to move to the slot. Placing from the cursor now moves it at once |
 | Ctrl+click of freighters, and of other items, into a request depot, in the graphical client | Untested |
 | Buffer depots: a request depot set to request from buffers takes its 20 from a buffer 20 tiles away, not a provider 10 away; a buffer fills from the provider only (15); buffers have no request-from-buffers setting; the checkbox and Copy and Paste settings route through control.lua | Passed |
+| Fallback to buffer depots with "Request from buffer depots" unticked (November 4, 2026, Factorio 2.1.24 headless, base game and Space Age): a liquid request depot takes its 300 crude oil from a liquid buffer 30 tiles away when the liquid provider 10 tiles away is empty (700 left in the buffer). Before the fix it got nothing and showed "no provider" | Passed |
+| Fallback against a fake runtime: unticked, the provider still comes first with the buffer not asked; an empty provider, or one with no road route, leaves it to the buffer, for item and liquid request depots | Passed headless |
 | Buffer depot panel and the "Request from buffer depots" checkbox, in the graphical client | **Passed:** checked by the owner on November 3, 2026 |
 | Priority: a request depot takes its 10 stone from a provider 30 tiles away at priority 9, none from one 10 tiles away at priority 2; providers start at 5; request depots have none | Passed |
 | Priority ordering against a fake runtime: a higher priority first however near a lower one is, the lower one when the higher has no road, nearest among equals, a priority 1 buffer before priority 10 providers, a changed priority restarting a waiting search; the slider panels, Copy and Paste settings, clones and blueprint tags, routed through control.lua | Passed headless |

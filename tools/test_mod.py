@@ -132,6 +132,9 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             'liquid_refuses_items': False, 'item_depot_refuses_fluids': False,
             'steam_delivered': 300, 'steam_temperature': 500, 'steam_buffer_left': 700,
             'steam_provider_left': 1000, 'liquid_requested': 2, 'liquid_robots_delivered': 2,
+            # Not set to request from buffers, with the only liquid provider empty, a liquid request
+            # depot falls back to the liquid buffer for its 300 crude oil.
+            'fallback_from_buffers': False, 'fallback_delivered': 300, 'fallback_buffer_left': 700,
             # A hand-placed freighter lowers the same request proxy (5 -> 4) instead of replacing
             # it, so an open window keeps showing the request.
             'hand_fill_same_proxy': True, 'hand_fill_requested': 4}
