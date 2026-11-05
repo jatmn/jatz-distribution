@@ -823,7 +823,7 @@ do -- A freighter stands at each loading zone for a moment before it loads or un
   end
   reached()
   local stop = last_command()
-  check("at the provider it stops for two seconds", stop.type == defines.command.stop and stop.ticks_to_wait == 120)
+  check("at the provider it stops for one second", stop.type == defines.command.stop and stop.ticks_to_wait == 60)
   check("before pumping anything", provider.held.amount == 1000 and trip.fluid.amount == 0)
   logistics.on_roads_changed(1, false, true)
   check("a road change doesn't cut its stop short", last_command() == stop)
@@ -832,7 +832,7 @@ do -- A freighter stands at each loading zone for a moment before it loads or un
   check("and drives home", last_command().type == defines.command.go_to_location)
   reached()
   stop = last_command()
-  check("at home it stops again", stop.type == defines.command.stop and stop.ticks_to_wait == 120)
+  check("at home it stops again", stop.type == defines.command.stop and stop.ticks_to_wait == 60)
   check("before unloading", request.held.amount == 0 and trip.fluid.amount == 500)
   reached()
   check("then it unloads", request.held.amount == 500)

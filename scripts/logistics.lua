@@ -94,7 +94,7 @@ local RETRY_TICKS = 10 * 60
 -- How close a freighter must get to a loading zone's centre to load or unload there.
 local ARRIVAL_RADIUS = 0.5
 -- How long a freighter stands at a loading zone to load or unload before it moves on.
-local LOADING_TICKS = 2 * 60
+local LOADING_TICKS = 60
 -- A search for the nearest provider by road that hasn't answered in this long (a save loaded
 -- mid-search, say) is started again.
 local SEARCH_TIMEOUT = 10 * 60

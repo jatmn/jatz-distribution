@@ -1,7 +1,7 @@
 ---------------------------------------------------------------------------------------------------
 Version: Unreleased
   Changes:
-    - Freighters stop for 2 seconds at a depot's loading zone to load and to unload, instead of loading and unloading the moment they arrive.
+    - Freighters stop for 1 second at a depot's loading zone to load and to unload, instead of loading and unloading the moment they arrive.
 ---------------------------------------------------------------------------------------------------
 Version: 0.1.0
   Features:
