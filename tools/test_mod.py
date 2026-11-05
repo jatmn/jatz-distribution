@@ -67,6 +67,9 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # The freighter is drawn at 60% of the artwork's scale (1.5 x 4.5 tiles measured): 0.9 x 2.7,
             # as the engine stores it, in 1/256 tiles rounded towards the centre.
             'freighter_box': [0.8984375, 2.6953125],
+            # Players can't place the freighter as a car unless the jatz-freighter-drivable startup
+            # setting, off by default, is on.
+            'freighter_placeable': False,
             # The freighter's cargo is light grey on the way to the provider; loading iron plates
             # swaps it for the freighter in iron ore's map color, which drives them home. Water
             # takes its own color.

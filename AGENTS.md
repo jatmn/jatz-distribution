@@ -1,6 +1,6 @@
 # Contributor and agent rules
 
-Jat'z Distribution is an in-development Factorio 2.1 mod. The artwork is finished and tested in game, the freighter and depots are placeable and drivable with free recipes, and freighters deliver items from provider and buffer depots to request depots, and fluids between the liquid depots, driving only on road. Fuel, and balanced recipes, are next.
+Jat'z Distribution is an in-development Factorio 2.1 mod. The artwork is finished and tested in game, the depots are placeable with free recipes (the freighter too, as a drivable car, only with the `jatz-freighter-drivable` startup setting, off by default: `prototypes/freighter.lua` then leaves its item without a `place_result` and hides the car, which stays defined so placed ones survive), and freighters deliver items from provider and buffer depots to request depots, and fluids between the liquid depots, driving only on road. Fuel, and balanced recipes, are next.
 
 ## Where things are
 
