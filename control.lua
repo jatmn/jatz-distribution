@@ -59,9 +59,11 @@ end
 -- Freighters and liquid depots' truck chests cloned along with an area are removed: they belong
 -- to the original's trips and depots, and a cloned liquid depot makes its own truck chest.
 local clone_filters = {
-  { filter = "name", name = logistics.drone },
   { filter = "name", name = logistics.truck_chest },
 }
+for _, name in ipairs(logistics.drones) do
+  clone_filters[#clone_filters + 1] = { filter = "name", name = name }
+end
 for _, filter in ipairs(filters) do
   clone_filters[#clone_filters + 1] = filter
 end

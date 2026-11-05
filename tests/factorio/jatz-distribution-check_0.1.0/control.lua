@@ -10,7 +10,22 @@ local HEADINGS = { defines.direction.north, defines.direction.east, defines.dire
 local VECTORS = { [0] = { 0, -1 }, [4] = { 1, 0 }, [8] = { 0, 1 }, [12] = { -1, 0 } }
 local DRIVE_TICKS = 120
 local ROAD = "jatz-road"
+-- The delivering freighter, empty; loaded ones are its painted twins (scripts/freighter-paint.lua),
+-- so finding freighters looks for every one of them.
 local DRONE = "jatz-freighter-drone"
+local DRONES = { DRONE, DRONE .. "-loaded" }
+for r = 0, 5 do
+  for g = 0, 5 do
+    for b = 0, 5 do
+      DRONES[#DRONES + 1] = string.format("%s-%d%d%d", DRONE, r, g, b)
+    end
+  end
+end
+-- Iron plates take iron ore's map color, water its own (prototypes/freighter-colors.lua).
+local IRON_PAINT, WATER_PAINT = DRONE .. "-233", DRONE .. "-023"
+-- Stuck to the sticky pair's freighter as it reaches the provider, for this long (data.lua): it
+-- wears off a little after loading, on the way home.
+local STICKER, STICKER_TICKS = "jatz-check-sticker", 90
 -- Deliveries have this long to finish; tools/test_mod.py runs a little longer.
 local DELIVERY_DEADLINE = 1700
 -- A failed route must have been tried and reported before the report is written.
@@ -365,6 +380,8 @@ local function setup_deliveries(surface, result)
     unpaved = unpaved,
     road_samples = 0,
     deepest = 0,
+    -- Every cargo icon seen on a freighter.
+    cargo_icons = {},
     -- Ticks the connected pair's freighter reached the provider's loading zone, loaded, got home
     -- and unloaded.
     stops = {},
@@ -402,6 +419,10 @@ local function setup_deliveries(surface, result)
   -- The request changes to another item while the freighter is on its way out: it must not load
   -- the old item.
   deliveries.changed = pair(40, 2, 12, "plastic-bar", 20, 10)
+  -- Something stuck to the freighter when it loads (interfere sticks a sticker to it): it keeps
+  -- its paint, and the sticker, until the sticker wears off. A long road, so that is on the way.
+  deliveries.sticky = pair(-10, 2, 24, "iron-plate", 10, 10)
+  deliveries.sticky.road = { { -10, 3 }, { 14, 6 } }
   -- The road is cut behind a loaded freighter: it brings the cargo back to the provider, at once.
   deliveries.cut = pair(20, 20, 24, "iron-gear-wheel", 30, 20)
   -- A road with a gap: the first trip fails; mending the road sends a freighter at once, without
@@ -772,10 +793,26 @@ local function setup_deliveries(surface, result)
     and remote.call("jatz-distribution", "get_request", clone) == nil
 end
 
+-- The sprites the mod draws on a freighter (its alt-mode cargo icon), in drawing order.
+local function cargo_icons(drone)
+  local sprites = {}
+  for _, object in pairs(rendering.get_all_objects("jatz-distribution")) do
+    if object.type == "sprite" and object.target.entity == drone then
+      assert(object.only_in_alt_mode, "a freighter's cargo icon shows outside alt mode")
+      sprites[#sprites + 1] = object.sprite
+    end
+  end
+  return table.concat(sprites, " ")
+end
+
 -- Every freighter on the way must stand wholly on road.
 local function check_freighters_on_road(surface)
   local deliveries = storage.deliveries
-  for _, drone in pairs(surface.find_entities_filtered({ name = DRONE })) do
+  for _, drone in pairs(surface.find_entities_filtered({ name = DRONES })) do
+    local icons = cargo_icons(drone)
+    if icons ~= "" then
+      deliveries.cargo_icons[icons] = true
+    end
     local box = drone.bounding_box
     for _, corner in ipairs({
       { box.left_top.x, box.left_top.y },
@@ -825,7 +862,7 @@ local function interfere(surface)
   -- The connected pair's freighter stops at each loading zone before its cargo moves.
   local stops = deliveries.stops
   local function standing_at(x, y)
-    for _, drone in pairs(surface.find_entities_filtered({ name = DRONE, position = { x, y }, radius = 3 })) do
+    for _, drone in pairs(surface.find_entities_filtered({ name = DRONES, position = { x, y }, radius = 3 })) do
       -- It stops about a tile short of the loading zone's centre.
       if (drone.position.x - x) ^ 2 + (drone.position.y - y) ^ 2 <= 1.25 ^ 2 then
         return drone
@@ -836,19 +873,65 @@ local function interfere(surface)
     stops.drone = standing_at(-60.5, 47.5)
     if stops.drone then
       stops.at_provider = game.tick
+      stops.empty_paint = stops.drone.name
+      stops.empty_icons = cargo_icons(stops.drone)
     end
   end
   if stops.at_provider and not stops.loaded and count(deliveries.provider) < 50 then
     stops.loaded = game.tick
+    -- It came empty, and loading put it in its cargo's paint: a new freighter where it stood (seen
+    -- a tick later, so it may have moved off at 0.2 tiles a tick).
+    stops.swapped = not stops.drone.valid
+    local painted = standing_at(-60.5, 47.5)
+    assert(
+      painted and (painted.position.x - stops.standing.x) ^ 2 + (painted.position.y - stops.standing.y) ^ 2 < 0.3 ^ 2,
+      "the loaded freighter is not the one that stood at the provider"
+    )
+    stops.drone = painted
+    stops.home_paint = painted.name
+  end
+  -- A freighter with something stuck to it (here a sticker like fire) loads without being swapped,
+  -- so the sticker and its damage go on exactly as they would, and takes its cargo's paint on the
+  -- way home once the sticker has worn off.
+  local sticky = deliveries.sticky
+  if not sticky.drone then
+    sticky.drone = standing_at(sticky.provider.position.x, sticky.provider.position.y + 2)
+    if sticky.drone then
+      sticky.sticker =
+        surface.create_entity({ name = STICKER, position = sticky.drone.position, target = sticky.drone })
+      assert(sticky.sticker and sticky.sticker.sticked_to == sticky.drone, "the test sticker did not stick")
+      sticky.sticker.time_to_live = STICKER_TICKS
+    end
+  end
+  if sticky.drone and not sticky.loaded and count(sticky.provider, sticky.item) < 10 then
+    sticky.loaded = game.tick
+    sticky.kept = sticky.drone.valid
+      and sticky.drone.name == DRONE
+      and sticky.sticker.valid
+      and sticky.sticker.sticked_to == sticky.drone
+    sticky.loaded_icons = cargo_icons(sticky.drone)
+  end
+  if sticky.loaded and not sticky.painted then
+    for _, drone in pairs(surface.find_entities_filtered({ name = IRON_PAINT, area = sticky.road })) do
+      sticky.painted = game.tick
+      -- Painted where the old one was, after the sticker wore off, still on its way home.
+      sticky.painted_after_sticker = not sticky.sticker.valid and not sticky.drone.valid
+      sticky.painted_on_road = drone.position.x < sticky.request.position.x - 1
+      sticky.painted_icons = cargo_icons(drone)
+    end
+  end
+  if stops.at_provider and not stops.loaded then
+    stops.standing = stops.drone.position
   end
   if stops.loaded and not stops.at_home and standing_at(-40.5, 47.5) then
     stops.at_home = game.tick
+    stops.loaded_icons = cargo_icons(stops.drone)
   end
   if stops.at_home and not stops.unloaded and count(deliveries.connected) > 0 then
     stops.unloaded = game.tick
   end
-  if stops.at_provider and not stops.unloaded then
-    assert(stops.drone.valid, "the freighter disappeared before unloading at home")
+  if stops.loaded and not stops.unloaded then
+    assert(stops.drone and stops.drone.valid, "the freighter disappeared before unloading at home")
     if stops.at_home then
       assert(standing_at(-40.5, 47.5) == stops.drone, "a different freighter came home")
     end
@@ -863,6 +946,7 @@ local function interfere(surface)
     end
   end
   local multi = deliveries.multi
+  -- Freighters setting off, so still empty: loaded ones coming home are other, painted freighters.
   for _, drone in pairs(surface.find_entities_filtered({ name = DRONE, position = { -66.5, 30.5 }, radius = 1 })) do
     multi.seen[drone.unit_number] = multi.seen[drone.unit_number] or game.tick
   end
@@ -871,7 +955,7 @@ local function interfere(surface)
   end
   local destroyed = deliveries.destroyed
   if not destroyed.done and status(destroyed.request) == "delivering" then
-    local drones = surface.find_entities_filtered({ name = DRONE, position = { 32.5, 4.5 }, radius = 3 })
+    local drones = surface.find_entities_filtered({ name = DRONES, position = { 32.5, 4.5 }, radius = 3 })
     if #drones == 1 then
       drones[1].destroy()
       destroyed.done = true
@@ -902,7 +986,7 @@ local function interfere(surface)
   -- The freighter that set off from a request depot's loading zone (centre 2 tiles south).
   local function freighter_of(entity)
     local drones = surface.find_entities_filtered({
-      name = DRONE,
+      name = DRONES,
       position = { entity.position.x, entity.position.y + 2 },
       radius = 3,
     })
@@ -918,8 +1002,14 @@ local function interfere(surface)
     rerouted.nearer.destroy()
     rerouted.done = true
   end
-  if rerouted.done and not rerouted.freighter.valid and count(rerouted.request, "stone-brick") < 10 then
-    -- The freighter gave up instead of going on to the other provider.
+  if
+    rerouted.done
+    and not rerouted.freighter.valid
+    and count(rerouted.request, "stone-brick") < 10
+    and count(rerouted.provider, "stone-brick") == 10
+  then
+    -- The freighter gave up instead of going on to the other provider (it is repainted, so
+    -- replaced, once it loads there).
     rerouted.replaced = true
   end
   local orphaned = deliveries.orphaned
@@ -941,6 +1031,7 @@ local function deliveries_finished(surface, tick, result)
   -- A depot's status updates at its next dispatch, up to a second after the last unload.
   local done = count(deliveries.connected) >= 30
     and status(deliveries.connected) ~= "delivering"
+    and count(deliveries.sticky.request, "iron-plate") == 10
     and count(armor.request, armor.item) == 1
     and (not deliveries.food or count(deliveries.food.request, "yumako") == 20)
     and destroyed.done
@@ -963,7 +1054,7 @@ local function deliveries_finished(surface, tick, result)
     and deliveries.removal_started
     and select(2, remote.call("jatz-distribution", "requested_freighters", deliveries.remote)) == 0
     and deliveries.store.get_item_count(FREIGHTER) == 4
-    and #surface.find_entities_filtered({ name = DRONE }) == 0
+    and #surface.find_entities_filtered({ name = DRONES }) == 0
   if not done or tick < DELIVERY_SETTLE then
     if tick >= DELIVERY_DEADLINE then
       error(
@@ -994,7 +1085,7 @@ local function deliveries_finished(surface, tick, result)
           deliveries.fallback.request.get_fluid_count("crude-oil"),
           tostring(status(deliveries.fallback.request)),
           remote.call("jatz-distribution", "freighter_counts", deliveries.liquid_remote),
-          #surface.find_entities_filtered({ name = DRONE })
+          #surface.find_entities_filtered({ name = DRONES })
         )
       )
     end
@@ -1017,9 +1108,36 @@ local function deliveries_finished(surface, tick, result)
   for _, stop in ipairs({ result.loading_stop, result.unloading_stop }) do
     assert(stop >= 50 and stop <= 70, "a freighter stood " .. stop .. " ticks to load or unload, not 60")
   end
+  -- In alt mode a loaded freighter shows its cargo's icon, an empty one nothing.
+  result.empty_icons = stops.empty_icons
+  result.loaded_icons = stops.loaded_icons
+  assert(stops.empty_icons == "", "an empty freighter shows a cargo icon: " .. stops.empty_icons)
+  assert(
+    stops.loaded_icons == "utility/entity_info_dark_background item/iron-plate",
+    "a freighter loaded with iron plates shows: " .. stops.loaded_icons
+  )
+  -- Kept unswapped while the sticker lasts, it shows the icon; painted after, the new one does.
+  for _, icons in ipairs({ deliveries.sticky.loaded_icons or "", deliveries.sticky.painted_icons or "" }) do
+    assert(icons == "utility/entity_info_dark_background item/iron-plate", "the sticky freighter shows: " .. icons)
+  end
+  assert(
+    deliveries.cargo_icons["utility/entity_info_dark_background fluid/water"],
+    "no freighter carrying water showed its icon"
+  )
   local home, out = remote.call("jatz-distribution", "freighter_counts", deliveries.connected)
   assert(home == 3 and out == 0, "the delivered freighter was not returned to its slot")
   assert(not stops.drone.valid, "the unloaded freighter did not park")
+  -- Grey on the way out, iron plates' paint on the way home.
+  result.paint_out = stops.empty_paint
+  result.paint_home = stops.home_paint
+  result.paint_swapped = stops.swapped
+  local sticky = deliveries.sticky
+  result.sticker_kept = sticky.kept == true
+  result.sticker_then_painted = sticky.painted_after_sticker == true and sticky.painted_on_road == true
+  result.sticky_received = count(sticky.request, sticky.item)
+  local paints = prototypes.mod_data["jatz-freighter-colors"].data
+  result.paint_iron_plate = paints.items["iron-plate"] == IRON_PAINT
+  result.paint_water = paints.fluids.water == WATER_PAINT
   assert(result.detour > 9, "the freighter did not follow the road south")
   local delivered = armor.request.get_inventory(defines.inventory.chest).find_item_stack("modular-armor")
   result.armor_equipment = delivered.grid and #delivered.grid.equipment or 0

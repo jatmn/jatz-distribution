@@ -18,6 +18,12 @@ prototypes = {
   entity = { ["jatz-freighter-drone"] = { collision_box = {}, collision_mask = {} } },
   item = { a = { stack_size = 50 }, b = { stack_size = 50 }, ["jatz-quinityn-freighter"] = { stack_size = 10 } },
   fluid = { water = {}, steam = {} },
+  -- prototypes/freighter-colors.lua's output: item b and steam have no color of their own.
+  mod_data = {
+    ["jatz-freighter-colors"] = {
+      data = { items = { a = "jatz-freighter-drone-500" }, fluids = { water = "jatz-freighter-drone-013" } },
+    },
+  },
 }
 script = { register_on_object_destroyed = function() end }
 
@@ -33,6 +39,47 @@ local function inventory(contents)
 end
 
 local surface, requests, next_unit
+
+-- Factorio 2.1's LuaRendering.draw_sprite parameters, and its entity info icon render layers.
+local DRAW_SPRITE = {}
+for _, key in ipairs({
+  "blink_interval",
+  "forces",
+  "light_mode",
+  "only_in_alt_mode",
+  "orientation",
+  "orientation_target",
+  "oriented_offset",
+  "players",
+  "render_layer",
+  "render_mode",
+  "sprite",
+  "surface",
+  "tall",
+  "target",
+  "time_to_live",
+  "tint",
+  "use_target_orientation",
+  "visible",
+  "x_scale",
+  "y_scale",
+}) do
+  DRAW_SPRITE[key] = true
+end
+local ENTITY_INFO_LAYERS =
+  { ["entity-info-icon"] = true, ["entity-info-icon-above"] = true, ["air-entity-info-icon"] = true }
+
+-- The alt-mode sprites drawn on a freighter, in drawing order.
+local function sprites_on(drone)
+  local sprites = {}
+  for _, drawn in ipairs(surface.sprites) do
+    if drawn.target == drone then
+      assert(drawn.only_in_alt_mode, "a freighter's cargo icon shows outside alt mode")
+      sprites[#sprites + 1] = drawn.sprite
+    end
+  end
+  return table.concat(sprites, " ")
+end
 
 -- An item stack and a script inventory, as far as the dispatcher uses them.
 local function stack(name, count)
@@ -168,6 +215,7 @@ local function reset()
   surface.created = {}
   function surface.create_entity(parameters)
     local drone = entity(parameters.name, parameters.position.x, parameters.position.y)
+    drone.target = parameters.target
     surface.created[#surface.created + 1] = drone
     drone.commands = {}
     drone.commandable = {
@@ -175,12 +223,31 @@ local function reset()
         drone.commands[#drone.commands + 1] = command
       end,
     }
-    drone.force = "player"
+    drone.force = parameters.force or "player"
     function drone.destroy()
       drone.valid = false
     end
     return drone
   end
+  -- Sprites drawn on entities (alt-mode cargo icons), strict to Factorio 2.1's draw_sprite: only
+  -- its parameters, its entity info render layers, and sprites that exist.
+  surface.sprites = {}
+  rendering = {
+    draw_sprite = function(parameters)
+      for key in pairs(parameters) do
+        assert(DRAW_SPRITE[key], "rendering.draw_sprite has no parameter " .. key)
+      end
+      local kind, name = parameters.sprite:match("^(%a+)/(.+)$")
+      assert(
+        parameters.sprite == "utility/entity_info_dark_background"
+          or (kind == "item" or kind == "fluid") and prototypes[kind][name],
+        "no sprite " .. parameters.sprite
+      )
+      assert(ENTITY_INFO_LAYERS[parameters.render_layer], "not an entity info layer: " .. parameters.render_layer)
+      assert(parameters.target.valid and parameters.surface == parameters.target.surface, "drawn off its target")
+      surface.sprites[#surface.sprites + 1] = parameters
+    end,
+  }
   storage = {}
   function surface.find_entities_filtered()
     return {}
@@ -469,6 +536,7 @@ do -- "On its way" means a freighter is bringing the item: not one driving home 
   local trip = trips_from(request)[1]
   local fail = defines.behavior_result.fail
   arrive(logistics, trip) -- nothing to load
+  check("an empty freighter shows no cargo icon", sprites_on(trip.drone) == "")
   game.tick = 60
   logistics.on_tick()
   check("a freighter driving home empty isn't 'on its way'", logistics.get_status(request) ~= "delivering")
@@ -822,6 +890,10 @@ do -- A fluid delivery: 500 per freighter, at the provider's temperature.
   arrive(logistics, trip)
   check("it pumps 500 out of the provider", provider.held.amount == 500 and trip.fluid.amount == 500)
   check("at the provider's temperature", trip.fluid.temperature == 60)
+  check(
+    "showing the fluid's icon in alt mode",
+    sprites_on(trip.drone) == "utility/entity_info_dark_background fluid/water"
+  )
   arrive(logistics, trip)
   check("and into the request depot's tank", request.held.name == "water" and request.held.amount == 500)
   check("hot", request.held.temperature == 60)
@@ -1026,6 +1098,171 @@ do -- A liquid request depot mined: its freighters go to the miner, its truck ch
   request.valid = false
   logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = request.unit_number })
   check("and its truck chest is removed", chest.valid == false)
+end
+
+-- Give a depot a chest of real stacks (the fake chests only count), holding `count` of `name`.
+local function stocked(depot, name, count)
+  local chest = script_inventory(4)
+  if count then
+    chest[1] = stack(name, count)
+    chest[1].quality = { name = "normal" }
+  end
+  function chest.get_item_count(id)
+    local wanted = type(id) == "table" and id.name or id
+    local total = 0
+    for index = 1, 4 do
+      if chest[index].valid_for_read and chest[index].name == wanted then
+        total = total + chest[index].count
+      end
+    end
+    return total
+  end
+  function chest.get_insertable_count()
+    return 1000
+  end
+  depot.get_inventory = function()
+    return chest
+  end
+  return chest
+end
+
+do -- The cargo paint: grey out, the load's color from the provider home, the same trip throughout.
+  local logistics = reset()
+  local request, provider = setup(logistics)
+  local stock, home = stocked(provider, "a", 20), stocked(request)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  local empty = trip.drone
+  check("a freighter sets off in the empty paint", empty.name == "jatz-freighter-drone")
+  empty.orientation, empty.health = 0.25, 321
+  arrive(logistics, trip)
+  local painted = trip.drone
+  check(
+    "loading paints it for its item",
+    painted.name == "jatz-freighter-drone-500" and stock.get_item_count("a") == 10
+  )
+  check("as a new freighter in place of the old one", painted ~= empty and not empty.valid and painted.valid)
+  check("showing its cargo's icon in alt mode", sprites_on(painted) == "utility/entity_info_dark_background item/a")
+  check(
+    "where it stood, facing the same way, as damaged",
+    painted.position.x == empty.position.x
+      and painted.position.y == empty.position.y
+      and painted.orientation == 0.25
+      and painted.health == 321
+  )
+  check(
+    "the trip moves to the new freighter",
+    storage.trips[painted.unit_number] == trip
+      and not storage.trips[empty.unit_number]
+      and trip_of(request) == trip
+      and not storage.depots[request.unit_number].trips[empty.unit_number]
+  )
+  local drive = painted.commands[#painted.commands]
+  check("and drives home", drive and drive.type == defines.command.go_to_location and drive.destination.x == 0.5)
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = empty.unit_number })
+  check("the old freighter's removal ends nothing", storage.trips[painted.unit_number] == trip)
+  check("one freighter is still out", logistics.freighter_counts(request) == 4)
+  arrive(logistics, trip)
+  check("it unloads and parks as usual", home.get_item_count("a") == 10 and logistics.freighter_counts(request) == 5)
+  check("leaving no freighter behind", not painted.valid and next(storage.trips) == nil)
+end
+
+do -- Something stuck to it (fire, acid) stays stuck: it keeps its paint until that wears off.
+  local logistics = reset()
+  local request, provider = setup(logistics)
+  stocked(provider, "a", 20)
+  local home = stocked(request)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  local drone = trip.drone
+  local fire = { valid = true, name = "fire-sticker" }
+  drone.stickers = { fire }
+  arrive(logistics, trip)
+  local drive = drone.commands[#drone.commands]
+  check("a freighter with a sticker loads", trip.cargo.get_item_count("a") == 10)
+  check(
+    "but is not swapped for a painted one",
+    trip.drone == drone and drone.valid and drone.name == "jatz-freighter-drone"
+  )
+  check("and drives home", drive.type == defines.command.go_to_location and drive.destination.x == 0.5)
+  check("showing its cargo's icon meanwhile", sprites_on(drone) == "utility/entity_info_dark_background item/a")
+  game.tick = 60
+  logistics.on_tick()
+  check("still not while the sticker lasts", trip.drone == drone and drone.valid and drone.stickers[1] == fire)
+  drone.stickers = {}
+  game.tick = 120
+  logistics.on_tick()
+  local painted = trip.drone
+  check("once it wears off, the next check paints it", painted ~= drone and painted.name == "jatz-freighter-drone-500")
+  check("in place of the old one", not drone.valid and storage.trips[painted.unit_number] == trip)
+  check("which shows the icon now", sprites_on(painted) == "utility/entity_info_dark_background item/a")
+  drive = painted.commands[#painted.commands]
+  check("which drives on home", drive and drive.type == defines.command.go_to_location and drive.destination.x == 0.5)
+  game.tick = 180
+  logistics.on_tick()
+  check("and is left alone after", trip.drone == painted and #painted.commands == 1)
+  arrive(logistics, trip)
+  check("it unloads and parks", home.get_item_count("a") == 10 and next(storage.trips) == nil)
+end
+
+do -- A freighter standing to load or unload is never painted from on_tick.
+  local logistics = reset()
+  local request, provider = setup(logistics)
+  stocked(provider, "a", 20)
+  stocked(request)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  local drone = trip.drone
+  drone.stickers = { { valid = true, name = "fire-sticker" } }
+  arrive(logistics, trip)
+  drone.stickers = nil
+  logistics.on_ai_command_completed({ unit_number = drone.unit_number, result = defines.behavior_result.success })
+  check("setup: it stands at home to unload", trip.loading and trip.drone == drone)
+  game.tick = 60
+  logistics.on_tick()
+  check("on_tick leaves it standing", trip.drone == drone and drone.valid and trip.loading)
+end
+
+do -- Nothing to load keeps the empty paint; an item with no color of its own gets the artwork's.
+  local logistics = reset()
+  local request, provider = setup(logistics)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  local empty = trip.drone
+  stocked(request)
+  local stock = stocked(provider)
+  arrive(logistics, trip)
+  check("a freighter with nothing to load stays as it is", trip.drone == empty and empty.valid)
+  arrive(logistics, trip)
+  stock[1] = stack("b", 20)
+  stock[1].quality = { name = "normal" }
+  assert(logistics.set_request(request, "b", 10))
+  game.tick = 60
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  trip = trip_of(request)
+  arrive(logistics, trip)
+  check("an item with no color gets the artwork's paint", trip.drone.name == "jatz-freighter-drone-loaded")
+end
+
+do -- Fluids get their color, and keep it while what didn't fit goes back.
+  local logistics = reset()
+  local request, provider = liquids(logistics)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  check("a liquid freighter sets off empty too", trip.drone.name == "jatz-freighter-drone")
+  arrive(logistics, trip)
+  check("loading water paints it the water's color", trip.drone.name == "jatz-freighter-drone-013")
+  request.held.name, request.held.amount = "steam", 100
+  arrive(logistics, trip)
+  check("cargo going back keeps its paint", trip.state == "returning" and trip.drone.name == "jatz-freighter-drone-013")
+  arrive(logistics, trip)
+  check("and it parks once the fluid is back", provider.held.amount == 1000 and next(storage.trips) == nil)
 end
 
 print("all logistics checks passed")
