@@ -33,7 +33,7 @@ Latest in-game results for the current artwork. The full screenshots and reports
 | Nearer of two providers removed mid-trip: the same freighter goes on to the other one and delivers | Passed |
 | Request depot removed mid-trip: its freighter leaves at once and the provider keeps its stock | Passed |
 | Provider nearest by road chosen: 8 tiles away in a straight line but 34 by road loses to 16 tiles on a straight road (all 10 coal from the farther one) | Passed |
-| No road route to any provider: no freighter is sent at all | Passed |
+| No road route to any provider or buffer depot: no freighter is sent at all | Passed |
 | Depot road: laid under each depot's loading zone (over grass, which it hides); road ending one tile short of both depots' zones delivers (5 poles) | Passed |
 | Depot road removed with its depot, putting back concrete and grass; existing road and a tile laid over depot road stay; a shared tile keeps its road until the second depot goes; nothing laid on water | Passed |
 | Depot road when turning a depot, and mining or covering it by hand (Lua checks against a fake runtime; needs a player in game) | Passed headless; untested in the graphical client |

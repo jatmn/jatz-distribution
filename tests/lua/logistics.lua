@@ -651,7 +651,8 @@ do -- Changing "request from buffer depots" restarts searches under way, freight
 end
 
 -- Priority: within each kind of depot, the highest priority it can reach by road first, however
--- near a lower one is; buffer depots still all come before providers.
+-- near a lower one is; buffer depots all still come before providers for a request depot that
+-- requests from them, and after them for one that doesn't.
 local function prioritised(logistics, from_buffers)
   local request = entity("jatz-request-depot", 0.5, 0.5)
   local near = entity("jatz-provider-depot", 10.5, 0.5, { a = 30 })

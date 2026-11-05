@@ -60,11 +60,11 @@ end
 
 -- The status light beside the request: the game's own status indicators, answering "can I get
 -- this item?". Hovering it shows the status in words.
--- * green: stocked, or on its way (a freighter out, or finding the provider nearest by road);
+-- * green: stocked, or on its way (a freighter out, or finding the depot to fetch from by road);
 -- * yellow: the item is there, but something is in the way (no road route right now, no
 --   freighters, loading zone not on road, the depot full or its tank holding another fluid, a
 --   freighter couldn't be sent);
--- * red: no provider depot has the item;
+-- * red: no depot it fetches from has the item (no provider, nor any buffer for a request depot);
 -- * grey: nothing requested.
 local LIGHTS = {
   satisfied = "utility/status_working",

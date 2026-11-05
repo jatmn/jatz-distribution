@@ -56,7 +56,7 @@ Of the depots that have the item and can be reached by road, freighters go to th
 2. **Higher priority before lower**, even when the lower one is nearer. See [Priority](#priority).
 3. **Nearest by road among equals**, not in a straight line. A provider just across a wall of concrete loses to one farther away with a shorter road.
 
-If there's no road route to a provider, no freighter is sent there. The request depot shows why and tries another provider.
+If there's no road route to a depot, no freighter is sent there. The depot that asked shows why and tries the next one in this order, so a request depot with **Request from buffer depots** unticked moves on to buffer depots when no provider can be reached.
 
 ## The status light
 
@@ -64,9 +64,9 @@ A light beside the request shows at a glance whether it can be filled. Hover it 
 
 | Light | Meaning |
 | --- | --- |
-| 🟢 Green | Stocked, a freighter is on its way, or it's finding a provider by road |
-| 🟡 Yellow | Waiting on something in the way: no room in the depot, its loading zone isn't on road, no road route to a provider that has it, no freighters (or none could be sent), or a liquid depot's tank holds another fluid |
-| 🔴 Red | No provider or buffer depot with road at its loading zone has it |
+| 🟢 Green | Stocked, a freighter is on its way, or it's finding a provider (or, for a request depot, a buffer depot) by road |
+| 🟡 Yellow | Waiting on something in the way: no room in the depot, its loading zone isn't on road, no road route to a provider (or, for a request depot, a buffer depot) that has it, no freighters (or none could be sent), or a liquid depot's tank holds another fluid |
+| 🔴 Red | No provider depot with road at its loading zone has it (nor, for a request depot, any buffer depot) |
 | ⚪ Grey | Nothing requested |
 
 ## When roads or depots change
