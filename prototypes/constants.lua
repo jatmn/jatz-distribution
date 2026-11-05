@@ -29,4 +29,6 @@ return {
   freighter_drone = "jatz-freighter-drone",
   -- The invisible chest robots bring freighters into for a liquid depot (prototypes/truck-chest.lua).
   truck_chest = "jatz-truck-chest",
+  -- The hidden tank under a Fuel depot that holds its liquid fuel (prototypes/depots.lua).
+  fuel_tank = "jatz-fuel-depot-tank",
 }

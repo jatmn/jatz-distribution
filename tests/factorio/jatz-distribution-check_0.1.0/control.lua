@@ -26,8 +26,10 @@ local IRON_PAINT, WATER_PAINT = DRONE .. "-233", DRONE .. "-023"
 -- Stuck to the sticky pair's freighter as it reaches the provider, for this long (data.lua): it
 -- wears off a little after loading, on the way home.
 local STICKER, STICKER_TICKS = "jatz-check-sticker", 90
--- Deliveries have this long to finish; tools/test_mod.py runs a little longer.
-local DELIVERY_DEADLINE = 1700
+-- Deliveries have this long to finish; tools/test_mod.py runs a little longer. The dry freighter
+-- sets the pace: it waits out the 10-second retry after coal arrives at tick 300, then crawls to
+-- the Fuel depot at a tenth of the drone's 0.066 tiles a tick before its round trip.
+local DELIVERY_DEADLINE = 2500
 -- A failed route must have been tried and reported before the report is written.
 local DELIVERY_SETTLE = 600
 -- The designed pipe ports (assets/depots/README.md, "Using it in Factorio"), written out here
@@ -119,8 +121,15 @@ local function check_recipe(name, result, unplaceable)
   result.free_recipes = result.free_recipes + 1
 end
 
+-- The Fuel depot is a container; its port is on the hidden tank under it, which holds its liquid fuel.
+local FUEL_TANK = "jatz-fuel-depot-tank"
+
 local function check_port_layout(name, role)
   local expected = EXPECTED_PORTS[role]
+  if role == "fuel" then
+    assert(#prototypes.entity[name].fluidbox_prototypes == 0, name .. ": the port belongs to its tank")
+    name = FUEL_TANK
+  end
   local fluidboxes = prototypes.entity[name].fluidbox_prototypes
   if #expected == 0 then
     assert(#fluidboxes == 0, name .. ": a cargo depot must not have pipe ports")
@@ -159,8 +168,17 @@ local function check_depot(surface, role, row, result)
       surface.can_place_entity({ name = name, position = position, direction = heading, force = "player" }),
       name .. ": cannot place"
     )
-    local entity = surface.create_entity({ name = name, position = position, direction = heading, force = "player" })
+    -- Built as a player would (raising the event), a Fuel depot gets its tank.
+    local entity = surface.create_entity({
+      name = name,
+      position = position,
+      direction = heading,
+      force = "player",
+      raise_built = role == "fuel",
+    })
     assert(entity and entity.direction == heading, name .. ": placed direction")
+    local tank = role == "fuel" and surface.find_entity(FUEL_TANK, position)
+    assert(role ~= "fuel" or (tank and tank.direction == heading), name .. ": no tank facing as it does")
     result.placed = result.placed + 1
     for step = 1, 4 do
       assert(entity.rotate({}), name .. ": rotation failed")
@@ -173,7 +191,7 @@ local function check_depot(surface, role, row, result)
       local pipe =
         surface.create_entity({ name = "pipe", position = { position[1] + x, position[2] + y }, force = "player" })
       local connected = false
-      for _, connection in ipairs(entity.get_fluid_box_pipe_connections(1)) do
+      for _, connection in ipairs((tank or entity).get_fluid_box_pipe_connections(1)) do
         connected = connected or connection.target == pipe
       end
       assert(connected, name .. ": pipe port did not connect")
@@ -181,10 +199,16 @@ local function check_depot(surface, role, row, result)
     end
     if entity.type == "container" then
       assert(entity.insert({ name = "iron-plate", count = 10 }) == 10, name .. ": cannot store items")
-    else
-      result.tank_sizes[role] = entity.get_fluid_capacity(1)
+    end
+    if entity.type ~= "container" or tank then
+      result.tank_sizes[role] = (tank or entity).get_fluid_capacity(1)
       local fluid = role == "fuel" and "light-oil" or "water"
-      assert(entity.insert_fluid({ name = fluid, amount = 500 }) == 500, name .. ": cannot store fluid")
+      assert((tank or entity).insert_fluid({ name = fluid, amount = 500 }) == 500, name .. ": cannot store fluid")
+    end
+    if tank and index == 1 then
+      -- Turned by a script, which raises no event: its tank must follow within a second.
+      assert(entity.rotate({}), name .. ": rotation failed")
+      storage.turned_fuel = { depot = entity, tank = tank, from = heading }
     end
   end
 end
@@ -606,6 +630,49 @@ local function setup_deliveries(surface, result)
   result.fallback_from_buffers = remote.call("jatz-distribution", "get_from_buffers", fallback.request)
   assert(remote.call("jatz-distribution", "set_request", fallback.request, "crude-oil", 300), "oil: refused")
   deliveries.fallback = fallback
+  -- Fuel (loading zones at y 66). Each request depot has one freighter, its tank set low.
+  -- * fuelled: fuel for 10 tiles and a provider 20 tiles east: it first drives 4 tiles west to a
+  --   Fuel depot holding coal, fills up (5 coal for 20 MJ), then fetches 10 iron ore.
+  -- * liquid_fuelled: the same with a Fuel depot holding 100 petroleum gas, which the mod makes
+  --   burn at 0.4 MJ (data-final-fixes.lua): it takes 50, and fetches 10 copper ore.
+  -- * dry: an empty tank, and the only Fuel depot on its road holds stone. The freighter can't
+  --   reach the provider and stays home (status no-fuel), until coal is put in that Fuel depot
+  --   (tick 300): then it sets off at once (delivering by tick 420), crawls there, fills up, and
+  --   fetches 10 sulfur.
+  local fuelled = {
+    fuel = depot(surface, "fuel", -70.5, 64.5),
+    request = depot(surface, "request", -66.5, 64.5, 1),
+    provider = depot(surface, "provider", -46.5, 64.5),
+  }
+  lay_road(surface, -71, 66, -47, 66)
+  assert(fuelled.fuel.insert({ name = "coal", count = 10 }) == 10, "fuel: cannot stock coal")
+  assert(fuelled.provider.insert({ name = "iron-ore", count = 20 }) == 20, "ore: cannot stock")
+  assert(remote.call("jatz-distribution", "set_freighter_fuel", fuelled.request, 100000) == 1, "fuel: not set")
+  assert(remote.call("jatz-distribution", "set_request", fuelled.request, "iron-ore", 10), "ore: refused")
+  deliveries.fuelled = fuelled
+  local liquid_fuelled = {
+    fuel = depot(surface, "fuel", -40.5, 64.5),
+    request = depot(surface, "request", -34.5, 64.5, 1),
+    provider = depot(surface, "provider", -24.5, 64.5),
+  }
+  lay_road(surface, -41, 66, -25, 66)
+  liquid_fuelled.tank = surface.find_entity(FUEL_TANK, liquid_fuelled.fuel.position)
+  assert(liquid_fuelled.tank.insert_fluid({ name = "petroleum-gas", amount = 100 }) == 100, "fuel: no gas")
+  assert(liquid_fuelled.provider.insert({ name = "copper-ore", count = 20 }) == 20, "copper ore: cannot stock")
+  assert(remote.call("jatz-distribution", "set_freighter_fuel", liquid_fuelled.request, 100000) == 1, "not set")
+  assert(remote.call("jatz-distribution", "set_request", liquid_fuelled.request, "copper-ore", 10), "refused")
+  deliveries.liquid_fuelled = liquid_fuelled
+  local dry = {
+    request = depot(surface, "request", -14.5, 64.5, 1),
+    fuel = depot(surface, "fuel", -10.5, 64.5),
+    provider = depot(surface, "provider", 5.5, 64.5),
+  }
+  lay_road(surface, -15, 66, 5, 66)
+  assert(dry.fuel.insert({ name = "stone", count = 10 }) == 10, "dry: cannot stock stone")
+  assert(dry.provider.insert({ name = "sulfur", count = 20 }) == 20, "sulfur: cannot stock")
+  assert(remote.call("jatz-distribution", "set_freighter_fuel", dry.request, 0) == 1, "dry: not set")
+  assert(remote.call("jatz-distribution", "set_request", dry.request, "sulfur", 10), "sulfur: refused")
+  deliveries.dry = dry
   -- Freighters, one after another, from more than one provider: a request depot with 5 freighters
   -- asks for 60 iron sticks; the provider 10 tiles away has 30, the one 30 tiles away 40.
   local multi = {
@@ -864,6 +931,32 @@ local function setup_deliveries(surface, result)
   result.cloned_request = cloned and (cloned.item .. " x" .. cloned.count) or "none"
   result.request_cleared = remote.call("jatz-distribution", "set_request", clone, nil) == true
     and remote.call("jatz-distribution", "get_request", clone) == nil
+
+  -- A cloned Fuel depot keeps its fuel, items and liquid: cloned alone (LuaEntity::clone) it gets the
+  -- original's fluid in a tank of its own; cloned with its hidden tank (LuaSurface::clone_entities)
+  -- it keeps that tank. The original keeps its own. Water, which needs no fuel value to be held.
+  local fuel_source = depot(surface, "fuel", 64.5, -6.5)
+  local source_tank = surface.find_entity(FUEL_TANK, fuel_source.position)
+  assert(fuel_source.insert({ name = "coal", count = 10 }) == 10, "clone: cannot stock coal")
+  assert(source_tank.insert_fluid({ name = "water", amount = 1234 }) == 1234, "clone: cannot fill the tank")
+  local function fuel_held(entity)
+    if not (entity and entity.valid) then
+      return "missing"
+    end
+    local contents = remote.call("jatz-distribution", "fuel_contents", entity)
+    local tanks = surface.find_entities_filtered({ name = FUEL_TANK, position = entity.position, radius = 0.5 })
+    return string.format(
+      "%s %d, %d coal, %d tank(s)",
+      contents.fluid or "none",
+      math.floor(contents.amount + 0.5),
+      entity.get_item_count("coal"),
+      #tanks
+    )
+  end
+  result.fuel_clone_alone = fuel_held(fuel_source.clone({ position = { 64.5, 2.5 } }))
+  surface.clone_entities({ entities = { fuel_source, source_tank }, destination_offset = { -10, 0 } })
+  result.fuel_clone_with_tank = fuel_held(surface.find_entity("jatz-fuel-depot", { 54.5, -6.5 }))
+  result.fuel_clone_source = fuel_held(fuel_source)
 end
 
 -- The sprites the mod draws on a freighter (its alt-mode cargo icon), in drawing order.
@@ -900,7 +993,8 @@ local function check_freighters_on_road(surface)
       )
     end
     deliveries.road_samples = deliveries.road_samples + 1
-    if drone.position.x < -30 and drone.position.y > 40 then
+    -- The connected pair's U (its bottom row at y 57), not the fuel checks' road at y 66.
+    if drone.position.x < -30 and drone.position.y > 40 and drone.position.y < 62 then
       deliveries.deepest = math.max(deliveries.deepest, drone.position.y)
     end
   end
@@ -1026,6 +1120,35 @@ local function interfere(surface)
     if stops.at_home then
       assert(standing_at(-40.5, 47.5) == stops.drone, "a different freighter came home")
     end
+  end
+  -- Fuel: the low freighter stops at the Fuel depot before it loads at the provider; the dry one
+  -- waits at home until there is fuel.
+  local fuelled = deliveries.fuelled
+  local at_fuel = not fuelled.at_fuel and standing_at(-70.5, 66.5)
+  if at_fuel then
+    fuelled.at_fuel = game.tick
+    -- Its fuel on hover (its status), as the game reads it back: low, before it fills up.
+    local hover = at_fuel.custom_status
+    if hover then
+      fuelled.hover = hover.label[1]
+      for name, value in pairs(defines.entity_status_diode) do
+        if hover.diode == value then
+          fuelled.hover_diode = name
+        end
+      end
+    end
+  end
+  if not fuelled.loaded and count(fuelled.provider, "iron-ore") < 20 then
+    fuelled.loaded = game.tick
+  end
+  local dry = deliveries.dry
+  if game.tick == 300 then
+    dry.waiting_status = status(dry.request)
+    dry.waiting_received = count(dry.request, "sulfur")
+    assert(dry.fuel.insert({ name = "coal", count = 5 }) == 5, "dry: cannot add coal")
+  elseif game.tick == 420 then
+    -- Its depot looks every second for fuel to get, not after its 10-second wait.
+    dry.after_coal_status = status(dry.request)
   end
   -- Once robots have brought the 3 requested freighters, have them take 2 away again.
   if not deliveries.removal_started then
@@ -1182,6 +1305,9 @@ local function deliveries_finished(surface, tick, result)
     and deliveries.steam.request.get_fluid_count("steam") == 300
     and deliveries.fallback.request.get_fluid_count("crude-oil") == 300
     and remote.call("jatz-distribution", "freighter_counts", deliveries.liquid_remote) == 2
+    and count(deliveries.fuelled.request, "iron-ore") == 10
+    and count(deliveries.liquid_fuelled.request, "copper-ore") == 10
+    and count(deliveries.dry.request, "sulfur") == 10
     and deliveries.removal_started
     and select(2, remote.call("jatz-distribution", "requested_freighters", deliveries.remote)) == 0
     and deliveries.store.get_item_count(FREIGHTER) == 4
@@ -1190,7 +1316,13 @@ local function deliveries_finished(surface, tick, result)
     if tick >= DELIVERY_DEADLINE then
       error(
         string.format(
-          "deliveries did not finish in time: iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), pipes after mending %d (%s), bricks rerouted %d, buffered request %d (%s), buffer filled %d (%s), prioritised %d (%s), water %d (%s), steam %d (%s), oil fallback %d (%s), liquid robots %d, run over %d (%s), ambushed %d (%s, killed %s), %d freighter(s) out",
+          "deliveries did not finish in time: fuel ore %d (%s), liquid fuel ore %d (%s), dry sulfur %d (%s), iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), pipes after mending %d (%s), bricks rerouted %d, buffered request %d (%s), buffer filled %d (%s), prioritised %d (%s), water %d (%s), steam %d (%s), oil fallback %d (%s), liquid robots %d, run over %d (%s), ambushed %d (%s, killed %s), %d freighter(s) out",
+          count(deliveries.fuelled.request, "iron-ore"),
+          tostring(status(deliveries.fuelled.request)),
+          count(deliveries.liquid_fuelled.request, "copper-ore"),
+          tostring(status(deliveries.liquid_fuelled.request)),
+          count(deliveries.dry.request, "sulfur"),
+          tostring(status(deliveries.dry.request)),
           count(deliveries.connected),
           tostring(status(deliveries.connected)),
           count(armor.request, armor.item),
@@ -1400,6 +1532,27 @@ local function deliveries_finished(surface, tick, result)
   -- No cargo was left on the ground anywhere.
   local _, other = on_ground(surface, { { -80, -80 }, { 80, 80 } })
   result.spilled = other
+  -- Fuel: filled up before loading, 5 of 10 coal (20 MJ) or 50 of 100 petroleum gas taken, the
+  -- freighter home with a full tank less the 44 tiles it drove after; the dry one stayed home
+  -- until there was fuel. A Fuel depot turned by script turned its tank too.
+  local fuelled, liquid_fuelled, dry = deliveries.fuelled, deliveries.liquid_fuelled, deliveries.dry
+  result.fuel_stop_first = fuelled.at_fuel ~= nil and fuelled.loaded ~= nil and fuelled.at_fuel < fuelled.loaded
+  result.fuel_delivered = count(fuelled.request, "iron-ore")
+  result.fuel_coal_left = count(fuelled.fuel, "coal")
+  result.fuel_hover, result.fuel_hover_diode = fuelled.hover, fuelled.hover_diode
+  result.fuel_left_mj =
+    math.floor(remote.call("jatz-distribution", "freighter_fuel", fuelled.request).home[1] / 1000000)
+  result.liquid_fuel_delivered = count(liquid_fuelled.request, "copper-ore")
+  result.liquid_fuel_taken = math.floor(100 - liquid_fuelled.tank.get_fluid_count("petroleum-gas") + 0.5)
+  result.no_fuel_status = dry.waiting_status
+  result.no_fuel_received_before = dry.waiting_received
+  result.no_fuel_status_after_coal = dry.after_coal_status
+  result.no_fuel_received_after = count(dry.request, "sulfur")
+  result.no_fuel_coal_left = count(dry.fuel, "coal")
+  local turned = storage.turned_fuel
+  result.fuel_tank_turned = turned.tank.valid
+    and turned.tank.direction == turned.depot.direction
+    and turned.depot.direction ~= turned.from
   return true
 end
 

@@ -8,6 +8,13 @@ Version: Unreleased
     - Freighters out on deliveries make a little pollution, as Transport Drones' drones do.
     - A request depot whose freighter is destroyed asks construction robots for a replacement, as soon as its chest has a free stack for it. You can also put one in by hand.
     - A delivering freighter that is destroyed explodes and leaves a wreck, which disappears after 15 minutes, as the drivable freighter does.
+    - Freighters need fuel. They come with a full tank, burn it as they drive, and fill up at fuel depots by themselves: one too low for where it is going stops at the fuel depot nearest by road first, then carries on. Any fuel item or burnable fluid works, from any mod.
+    - Freighters too low on fuel to reach the provider stay home until there is fuel to get, never waiting at an empty fuel depot. The request depot's light is yellow while the fuel depots have no fuel and red when no fuel depot is connected by road; they set off as soon as one has fuel. Fuel in other depots stays ordinary cargo.
+    - Hovering a freighter on the road shows its fuel (green, yellow when low, red when dry), and the request depot's window shows the fuel of the freighters in its slot.
+    - A fuel item worth more than a freighter's tank (some mods' items hold 10 GJ) goes in whole, and the freighter keeps all of it until used up.
+    - Petroleum gas burns for freighters, 50 to a full tank, unless another mod already gives it a fuel value.
+    - Fuel depots take fuel items (by hand, inserters or robots) and burnable fluids (by pipe). Their window shows the fluid, with a button to flush it.
+    - Map settings for a freighter's fuel tank (20 MJ by default) and how much it burns a tile (10 kJ by default; 0 turns fuel off).
   Changes:
     - Freighters can no longer be placed and driven like a car unless the new startup setting "Place freighters as cars" is turned on. Freighters already placed stay drivable.
     - Delivering freighters drive at about 4 tiles a second instead of 12, the default speed of Transport Drones' drones.
@@ -19,6 +26,7 @@ Version: Unreleased
     - Freighters requested for a request depot whose chest has no free stack (it is full of cargo, say) are now brought once a stack frees up, together with any more asked for meanwhile. Before, the request was dropped.
   Compatibility:
     - With Mining Drones, Mining Drones 2 Remastered or Mining Drones Mod installed, mining depots are item provider depots of what their drones mine: freighters fetch it from the tile behind the depot, opposite its mining area, where the depot lays road like any other depot. They have a priority like provider depots.
+    - Fuel depots placed in earlier versions are removed when the save loads: the fuel depot is now a chest with a tank under it.
     - Marked Transport Drones and its Factorio 2.1 forks (Transport Drones (Continuous), Transport Drones (Continued, 2.1, Unofficial) and Transport Drones By Yunli) as incompatible.
 ---------------------------------------------------------------------------------------------------
 Version: 0.1.0

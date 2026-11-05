@@ -144,10 +144,28 @@ commands = {
     console[name] = handler
   end,
 }
+-- luacheck: globals settings
+-- Runtime settings, as Factorio gives them: an unknown name fails, as `settings.global[name].value`
+-- would on nil in game.
+local SETTINGS = { ["jatz-freighter-fuel-capacity"] = 20, ["jatz-freighter-fuel-per-tile"] = 10 }
+settings = {
+  global = setmetatable({}, {
+    __index = function(_, name)
+      local value = SETTINGS[name]
+      if value == nil then
+        error("FAILED: no runtime-global setting " .. tostring(name), 2)
+      end
+      return { value = value }
+    end,
+  }),
+}
 prototypes = {
   decorative = {},
-  item = { ["jatz-quinityn-freighter"] = { stack_size = 10 }, wood = { stack_size = 100 } },
-  fluid = { water = {} },
+  item = {
+    ["jatz-quinityn-freighter"] = { stack_size = 10, fuel_value = 0 },
+    wood = { stack_size = 100, fuel_value = 2000000 },
+  },
+  fluid = { water = { fuel_value = 0 } },
   -- As with one of the Mining Drones mods installed (tests/lua/logistics.lua checks without).
   entity = { ["mining-depot"] = { type = "assembling-machine" } },
 }
@@ -212,6 +230,20 @@ function surface.create_entity(spec)
       self.valid = false
     end,
   }
+  if spec.name == "jatz-fuel-depot-tank" then
+    -- A Fuel depot's hidden tank, holding 300 water.
+    created.direction = spec.direction
+    created.held = { name = "water", amount = 300 }
+    created.get_fluid = function(index)
+      return index == 1 and created.held.amount > 0 and created.held or nil
+    end
+    created.get_fluid_capacity = function()
+      return 25000
+    end
+    created.clear_fluid_inside = function()
+      created.held.amount = 0
+    end
+  end
   surface.created[#surface.created + 1] = created
   return created
 end
@@ -949,6 +981,13 @@ do -- Liquid depots: the same panels, beside the storage tank window, choosing a
   check("with the request-from-buffers checkbox", inner.jatz_request_from_buffers ~= nil)
   check("and no priority", inner.priority_row == nil)
   check("and a freighter slot", inner.freighter_row and inner.freighter_row.jatz_request_freighters)
+  check(
+    "and its freighters' fuel under it",
+    inner.freighter_fuel
+      and inner.freighter_fuel.visible
+      and inner.freighter_fuel.caption[1] == "jatz-gui.freighter-fuel-none"
+      and inner.freighter_fuel.tooltip[1] == "jatz-gui.freighter-fuel-tooltip"
+  )
   chooser.elem_value = "water"
   fire("on_gui_elem_changed", { player_index = 12, element = chooser })
   local request_set = logistics.get_request(request)
@@ -1039,6 +1078,34 @@ do -- Mining Drones' mining depot: a provider depot that lays road behind it, wi
   check("turned, its road follows", cell(395, 0).name == "jatz-depot-road" and cell(400, 4).name == "concrete")
   removed(mine)
   check("removed, the ground comes back", cell(395, 0).name == "grass-1")
+end
+
+do -- The Fuel depot's panel: its liquid fuel, which has no window of its own, and a flush button.
+  local relative = element()
+  local player = { index = 13, valid = true, gui = { relative = relative } }
+  game.get_player = function()
+    return player
+  end
+  storage.request_gui = {}
+  local fuel = depot(400)
+  fuel.name = "jatz-fuel-depot"
+  fire("on_built_entity", { entity = fuel })
+  local tank = surface.created[#surface.created]
+  check("building a Fuel depot makes its tank, facing as it does", tank.name == "jatz-fuel-depot-tank")
+  fire("on_gui_opened", { player_index = 13, entity = fuel })
+  local frame = relative.jatz_request_frame
+  local row = frame and frame.children[1].fuel_row
+  check("a Fuel depot's window gets a panel", frame and frame.caption[1] == "jatz-gui.fuel-title")
+  check("anchored to its chest window", frame.anchor.gui == "relative_gui_type.container_gui")
+  check("showing the fluid in its tank", row and row.jatz_fuel_fluid.sprite == "fluid/water")
+  local caption = row.jatz_fuel_amount.caption
+  check("how much, and that it doesn't burn", caption[2][2] == 300 and caption[4][1] == "jatz-gui.fuel-not-burnable")
+  check("with no priority", frame.children[1].priority_row == nil)
+  fire("on_gui_click", { player_index = 13, element = row.jatz_fuel_flush })
+  check("flush empties the tank", tank.held.amount == 0 and row.jatz_fuel_amount.caption[2] == 0)
+  check("and the panel shows it empty", row.jatz_fuel_fluid.sprite == "")
+  nth[30]()
+  check("refresh leaves the panel in place", relative.jatz_request_frame == frame)
 end
 
 print("all control event checks passed")
