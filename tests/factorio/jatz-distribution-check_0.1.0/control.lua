@@ -513,8 +513,9 @@ local function setup_deliveries(surface, result)
   deliveries.runover.bystander =
     surface.create_entity({ name = "character", position = { 5.5, 66.5 }, force = "player" })
   -- On a second road, behemoth biters are set on a freighter as it drives out: they destroy it,
-  -- with any cargo it has loaded, and its depot asks robots for a replacement, which the
-  -- roboport's robots bring. Its other freighters fill the request from the provider's other 10.
+  -- with any cargo it has loaded, and it explodes and leaves a wreck where it dies. Its depot
+  -- asks robots for a replacement, which the roboport's robots bring. Its other freighters fill
+  -- the request from the provider's other 10.
   deliveries.ambush = pair(-9, 54, 20, "copper-ore", 20, 10)
   -- Buffer depots, on one road (loading zones at y -25): a provider (100 copper cable), a request
   -- depot 10 tiles away set to request from buffer depots, a buffer depot right beside it asking
@@ -1043,8 +1044,16 @@ local function interfere(surface)
         ambush.biters[#ambush.biters + 1] = behemoth
       end
     end
-  elseif not ambush.killed and not ambush.drone.valid then
+  elseif not ambush.killed and ambush.drone.valid then
+    ambush.position = ambush.drone.position
+  elseif not ambush.killed then
     ambush.killed = game.tick
+    -- Where it died: an explosion, and the wreck it leaves.
+    local around = { position = ambush.position, radius = 3 }
+    around.name = "car-explosion"
+    ambush.exploded = #surface.find_entities_filtered(around) > 0
+    around.name = "car-remnants"
+    ambush.wrecks = #surface.find_entities_filtered(around)
     ambush.requested = remote.call("jatz-distribution", "requested_freighters", ambush.request)
     for _, behemoth in ipairs(ambush.biters) do
       if behemoth.valid then
@@ -1261,6 +1270,8 @@ local function deliveries_finished(surface, tick, result)
   result.runover_biter = killed[runover.biter_id] or "alive"
   result.bystander_unhurt = runover.bystander.health == runover.bystander.max_health
   result.ambush_killed_by = killed[ambush.drone_id] or "unknown"
+  result.ambush_exploded = ambush.exploded
+  result.ambush_wrecks = ambush.wrecks
   result.ambush_replacement_requested = ambush.requested
   result.ambush_received = count(ambush.request, ambush.item)
   result.ambush_freighters_home = remote.call("jatz-distribution", "freighter_counts", ambush.request)

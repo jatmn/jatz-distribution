@@ -99,12 +99,13 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             'removal_marked': 1, 'removal_cancelled': 1, 'robots_removal_marked': 2, 'slot_after_removal': 2,
             'storage_after_removal': 4,
             # Enemies: a freighter runs over a biter on the road (impact damage) and delivers
-            # anyway, leaving the player beside it unhurt; biters destroy another freighter, whose
-            # depot asks robots for a replacement at once, is filled by its other freighters, and
-            # the robots bring the replacement (3 again). Freighters out show up in the pollution
-            # statistics.
+            # anyway, leaving the player beside it unhurt; biters destroy another freighter, which
+            # explodes and leaves the car's wreck where it died. Its depot asks robots for a
+            # replacement at once, is filled by its other freighters, and the robots bring the
+            # replacement (3 again). Freighters out show up in the pollution statistics.
             'runover_received': 10, 'runover_biter': 'jatz-freighter-drone/impact', 'bystander_unhurt': True,
-            'ambush_killed_by': 'behemoth-biter/physical', 'ambush_replacement_requested': 1, 'ambush_received': 10,
+            'ambush_killed_by': 'behemoth-biter/physical', 'ambush_exploded': True, 'ambush_wrecks': 1,
+            'ambush_replacement_requested': 1, 'ambush_received': 10,
             'ambush_freighters_home': 3, 'freighters_polluted': True,
             # The request panel's status light: the game's four status indicator sprites exist.
             'status_lights': 4,

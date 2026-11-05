@@ -3,7 +3,8 @@
 -- it. Its only collision layer is "jatz_off_road", which every tile but the road has
 -- (prototypes/off-road.lua), so every path it finds stays on roads. It collides with no
 -- buildings, players or other freighters, and runs without fuel for now. Enemies can attack and
--- destroy it; it never fights back. scripts/logistics.lua creates one per delivery and removes it
+-- destroy it; it never fights back. Destroyed, it explodes and leaves a wreck, as the drivable
+-- freighter does. scripts/logistics.lua creates one per delivery and removes it
 -- when the delivery is done, and makes it run over enemy units it drives through and pollute a
 -- little while out.
 --
@@ -28,6 +29,10 @@ local function drone(name, cargo)
     hidden = true,
     flags = { "placeable-player", "placeable-off-grid", "not-repairable", "not-blueprintable", "not-deconstructable" },
     max_health = 500,
+    -- Dies like the drivable freighter, a copy of the base car (prototypes/freighter.lua): it
+    -- explodes and leaves the car's wreck, which the game removes after 15 minutes.
+    dying_explosion = data.raw.car.car.dying_explosion,
+    corpse = data.raw.car.car.corpse,
     -- A target enemies go for, as they do the player's other vehicles and units (a unit's
     -- default, said here because deliveries rely on it).
     is_military_target = true,
