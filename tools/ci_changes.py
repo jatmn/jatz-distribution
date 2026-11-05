@@ -55,7 +55,9 @@ def touches_art(path):
     suffix = PurePosixPath(path).suffix
     return (path.startswith('assets/') and suffix in ART_SUFFIXES
             or path.startswith('assets/depots/archive/')
-            or path in {'assets/depots/tools/render_connector.py', 'assets/depots/tools/make_loading_zone.py'})
+            or path in {'assets/depots/tools/render_connector.py', 'assets/depots/tools/make_loading_zone.py',
+                        # The art jobs run the sprite extractor (tools/test_art_dependencies.py).
+                        'assets/quinityn-freighter/tools/package_sprites.py'})
 
 
 def classify(paths):

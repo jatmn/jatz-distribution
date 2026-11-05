@@ -179,8 +179,10 @@ class RoutingTests(unittest.TestCase):
     def test_area_selection(self):
         cases = [
             (['assets/quinityn-freighter/factorio/freighter-animation.lua'], {'freighter', 'mod'}),
-            (['assets/quinityn-freighter/tools/package_sprites.py', 'tools/test_factorio.py',
-              'tools/prepare_test_mod.py', 'tests/factorio/freighter-art-check_0.1.0/control.lua'], {'freighter'}),
+            (['tools/test_factorio.py', 'tools/prepare_test_mod.py',
+              'tests/factorio/freighter-art-check_0.1.0/control.lua'], {'freighter'}),
+            # The art jobs exercise the sprite extractor, so changing it runs the freighter art checks.
+            (['assets/quinityn-freighter/tools/package_sprites.py'], {'freighter', 'freighter_art'}),
             (['assets/quinityn-freighter/source/quinityn-freighter.blend'], {'freighter', 'freighter_art'}),
             (['assets/quinityn-freighter/sheets/freighter-base.png',
               'assets/quinityn-freighter/checksums.json'], {'freighter', 'freighter_art'}),
