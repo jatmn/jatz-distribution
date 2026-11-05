@@ -49,6 +49,9 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             'depot_on_road': False, 'depot_ghost_on_road': False, 'depot_zone_on_road': True,
             'on_road': {'small-electric-pole': False, 'inserter': False, 'wooden-chest': False,
                         'transport-belt': True, 'pipe': True, 'straight-rail': True, 'jatz-quinityn-freighter': True},
+            # Nor can road be laid under any of them, a gate included while it stands open.
+            'road_under': {'open_gate': 'grass-1', 'closed_gate': 'grass-1', 'pole': 'grass-1',
+                           'gate_still_open': True, 'gate_closed': True},
             # Road and depot changes take effect at once: a mended road is used, a removed provider
             # is replaced by the next one, a removed request depot's freighter leaves.
             'rerouted_received': 10, 'rerouted_from_farther': 10, 'orphaned_provider_left': 10,

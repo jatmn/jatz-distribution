@@ -271,6 +271,38 @@ local function check_road_placement(surface, result)
     result.on_road[name] = can_place(name, { 66.5, 66.5 })
   end
   result.on_road["straight-rail"] = can_place("straight-rail", { 67, 67 })
+  -- Road can't be laid under them either, a gate included while it stands open (an open gate
+  -- uses its opened collision mask): an open gate, a closed one and a pole on grass, where
+  -- `lay_road_under` tries road once the first is open.
+  local under = {}
+  for index, name in ipairs({ "gate", "gate", "small-electric-pole" }) do
+    local position = { 70 + index * 2, 66 }
+    surface.set_tiles({ { name = "grass-1", position = position } })
+    under[index] = surface.create_entity({
+      name = name,
+      position = { position[1] + 0.5, position[2] + 0.5 },
+      force = "player",
+    })
+  end
+  under[1].request_to_open("player", 3600)
+  storage.road_under = under
+end
+
+-- Once the open gate is fully open, try laying road under it, the closed gate and the pole, one
+-- tile at a time, as building a tile does: refused wherever an entity collides with road.
+local function lay_road_under(surface, result)
+  local under = storage.road_under
+  if result.road_under or not under[1].is_opened() then
+    return
+  end
+  result.road_under = {}
+  for index, key in ipairs({ "open_gate", "closed_gate", "pole" }) do
+    local position = { 70 + index * 2, 66 }
+    surface.set_tiles({ { name = ROAD, position = position } }, true, "abort_on_collision")
+    result.road_under[key] = surface.get_tile(position[1], position[2]).name
+  end
+  result.road_under.gate_still_open = under[1].is_opened()
+  result.road_under.gate_closed = under[2].is_closed()
 end
 
 -- Lay road over every tile from one corner to the other (inclusive).
@@ -1341,6 +1373,7 @@ script.on_event(defines.events.on_tick, function(event)
     check_freighters_on_road(surface)
   end
   interfere(surface)
+  lay_road_under(surface, result)
   if not result.driven_tiles and event.tick >= DRIVE_TICKS then
     local freighter = storage.freighter
     local dx, dy = freighter.position.x - storage.start.x, freighter.position.y - storage.start.y
