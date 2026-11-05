@@ -37,13 +37,19 @@ local LIQUID_RECIPES = {
   "jatz-liquid-buffer-depot",
 }
 
--- A 256 px technology icon (tools/make_icons.py), with the game's "constant" badge for upgrades.
+-- A 256 px technology icon (tools/make_icons.py), with the game's "constant" badge for upgrades
+-- and, for fluid capacity, the game's water icon in the top left corner, so it reads as the
+-- freighter carrying fluid rather than a liquid depot holding more.
 local FREIGHTER = constants.freighter_technology_icon
 local LIQUID = constants.liquid_technology_icon
-local function icons(icon, overlay)
+local FLUID_BADGE = "__base__/graphics/icons/fluid/water.png"
+local function icons(icon, overlay, badge)
   local layers = { { icon = icon, icon_size = constants.technology_icon_size } }
+  if badge then
+    layers[#layers + 1] = { icon = badge, icon_size = 64, scale = 0.75, shift = { -40, -40 }, draw_background = true }
+  end
   if overlay then
-    layers[2] = {
+    layers[#layers + 1] = {
       icon = "__core__/graphics/icons/technology/constants/" .. overlay .. ".png",
       icon_size = 128,
       scale = 0.5,
@@ -91,12 +97,12 @@ local technologies = {
 }
 
 -- `levels` finite levels of an upgrade, each after the one before, the first after `first`.
-local function upgrades(name, levels, first, icon, overlay, effect)
+local function upgrades(name, levels, first, layers, effect)
   for level = 1, levels do
     technologies[#technologies + 1] = {
       type = "technology",
       name = name .. "-" .. level,
-      icons = icons(icon, overlay),
+      icons = table.deepcopy(layers),
       upgrade = true,
       effects = { effect },
       prerequisites = { level > 1 and name .. "-" .. (level - 1) or first },
@@ -108,7 +114,13 @@ end
 
 local percent = tostring(math.floor(research.speed_bonus * 100 + 0.5))
 local speed_effect = nothing(constants.freighter_icon, { "modifier-description.jatz-freighter-speed", percent })
-upgrades(research.speed, research.speed_levels, research.system, FREIGHTER, "constant-movement-speed", speed_effect)
+upgrades(
+  research.speed,
+  research.speed_levels,
+  research.system,
+  icons(FREIGHTER, "constant-movement-speed"),
+  speed_effect
+)
 -- Then one level after another for ever, each costing twice the last.
 local infinite_level = research.speed_levels + 1
 technologies[#technologies + 1] = {
@@ -131,11 +143,23 @@ local item_effect = nothing(
   constants.freighter_icon,
   { "modifier-description.jatz-freighter-item-capacity", tostring(research.stacks_per_level) }
 )
-upgrades(research.item_capacity, research.capacity_levels, research.system, FREIGHTER, "constant-capacity", item_effect)
+upgrades(
+  research.item_capacity,
+  research.capacity_levels,
+  research.system,
+  icons(FREIGHTER, "constant-capacity"),
+  item_effect
+)
 local fluid_effect = nothing(
-  string.format(constants.depot_icon, "liquid-provider"),
+  constants.freighter_icon,
   { "modifier-description.jatz-freighter-fluid-capacity", tostring(research.fluid_per_level) }
 )
-upgrades(research.fluid_capacity, research.capacity_levels, research.liquid, LIQUID, "constant-capacity", fluid_effect)
+upgrades(
+  research.fluid_capacity,
+  research.capacity_levels,
+  research.liquid,
+  icons(FREIGHTER, "constant-capacity", FLUID_BADGE),
+  fluid_effect
+)
 
 data:extend(technologies)
