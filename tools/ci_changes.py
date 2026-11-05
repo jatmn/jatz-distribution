@@ -24,8 +24,8 @@ NO_COMMIT = '0' * 40
 EVERYTHING = {'.github/workflows/ci.yml', '.github/workflows/area.yml', 'tools/ci_changes.py'}
 # Shared lint configuration: every area's code is checked again, in full.
 SHARED_LINT = {'.luacheckrc', '.stylua.toml', '.ruff.toml', '.gitattributes'}
-DOCUMENTATION = {'README.md', 'AGENTS.md', 'NOTICE', 'COPYING', 'COPYING.LESSER',
-                 '.gitignore'}
+DOCUMENTATION = {'README.md', 'AGENTS.md', 'CONTRIBUTING.md', 'SECURITY.md', 'NOTICE', 'COPYING',
+                 'COPYING.LESSER', '.gitignore'}
 ART_SUFFIXES = {'.blend', '.png', '.webp', '.json'}
 # The art check, icon generator and their Python dependencies cover both art areas.
 ART_TOOLS = {'tools/check_blender_sources.py', 'tools/make_icons.py', 'requirements.txt'}

@@ -208,7 +208,7 @@ class RoutingTests(unittest.TestCase):
             (['assets/depots/icons/fuel-depot.png', 'assets/depots/icons/icons.json'], {'depots', 'depots_art'}),
             (['assets/quinityn-freighter/icons/quinityn-freighter.png'], {'freighter', 'freighter_art'}),
             (['tools/test_check_blender_sources.py', 'tools/test_ci_changes.py'], {'repository'}),
-            (['README.md', 'AGENTS.md', 'NOTICE', 'COPYING', 'COPYING.LESSER',
+            (['README.md', 'AGENTS.md', 'CONTRIBUTING.md', 'SECURITY.md', 'NOTICE', 'COPYING', 'COPYING.LESSER',
               '.gitignore', 'docs/testing.md', 'docs/images/x.jpg', 'concepts/depots/images/fuel.png'], set()),
             (['.luacheckrc'], {'freighter', 'depots', 'mod', 'repository'}),
             (['.stylua.toml', '.ruff.toml', '.gitattributes'], {'freighter', 'depots', 'mod', 'repository'}),

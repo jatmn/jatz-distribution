@@ -54,7 +54,7 @@ CI (`.github/workflows/ci.yml`) is based on yuoki-quinityn's, but routed by repo
 | Mod | The mod source at the repository root, `tools/package_mod.py`, `tools/test_mod.py` and its check mod, plus anything else that isn't documentation | Lua and Python lint |
 | Repository | `.github/`, the other `tools/` | Python lint, the `tools/test_*.py` repository tests, actionlint |
 
-- Documentation (`README.md`, `AGENTS.md`, `docs/`, `concepts/`, licence files) runs no area checks.
+- Documentation (`README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `SECURITY.md`, `docs/`, `concepts/`, licence files) runs no area checks.
 - Shared lint configuration (`.luacheckrc`, `.stylua.toml`, `.ruff.toml`, `.gitattributes`) re-checks every area in full. Editing `ci.yml`, `area.yml` or the router runs everything.
 - **Lua:** Lua 5.2 syntax, Luacheck and StyLua. Pull requests check the area's changed `.lua` files; pushes to `main` check all of them.
 - **Python:** syntax and Ruff (syntax errors and Pyflakes). The frozen 1×1 archive tools are exempt from Pyflakes.
