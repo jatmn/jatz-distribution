@@ -125,7 +125,13 @@ EXPECTED = {'free_recipes': 10, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'p
             # other road. Only delivery depots take a condition; players can't open the monitor.
             'wired_depots': 28, 'circuit_refused_elsewhere': False, 'monitor_operable': False,
             'circuit_before': {'walls': 0, 'lamps': 0, 'walls_status': 'no-provider', 'lamps_status': 'disabled',
-                               'monitor': {'walls': 0, 'water': 1000, 'lamps': 0}},
+                               'monitor': {'walls': 0, 'water': 1000, 'lamps': 0},
+                               # The switched-off provider's hover panel says so with a red light;
+                               # the request depot, which has no condition, shows its own status.
+                               'gated_status': {'red': True, 'label': 'jatz-circuit-status.entity-off'},
+                               'request_status': False},
+            # Switched on at tick 300, the provider shows its own status again.
+            'circuit_status_after': True,
             'circuit_walls': 10, 'circuit_lamps': 10, 'circuit_after': {'walls': 10, 'water': 1000, 'lamps': 0},
             # Reading the circuit network, a depot leaves out its own wood: 300 here and 2800 at the
             # depot wired to it (or counted by the monitor) is not more than 3000, but is more than

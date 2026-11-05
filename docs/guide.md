@@ -140,7 +140,7 @@ Provider, request and buffer depots, item and liquid, also have an **Enable/disa
   - **Circuit network**: the red and green wires, leaving out this depot's own contents. A depot sends what it holds on its wires, and a road network monitor counts it too, so without this a depot asking for *wood > 3000* would switch on with 2,800 wood elsewhere and 300 of its own. Without a wire, the condition does nothing.
   - **This depot's contents**: only what this depot holds, each quality its own signal and fluids in whole units. No wire needed. For example, a provider with *iron plate > 200* supplies only while it holds more than 200.
 - The depot takes part in deliveries only while the condition holds. Switched off, a request or buffer depot sends no freighters, and no freighter is sent to fetch from a provider or buffer depot. Freighters already on their way finish their trips.
-- The light beside the checkbox is green while the depot is on, red while the condition switches it off, and grey while the condition has no effect.
+- The light beside the checkbox is green while the depot is on, red while the condition switches it off, and grey while the condition has no effect. Pointing at a switched-off depot shows "Switched off by its circuit condition" with a red light too.
 
 ### Road network monitor
 

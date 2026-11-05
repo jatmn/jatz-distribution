@@ -752,6 +752,19 @@ local function enabled(depot)
 end
 logistics.enabled = enabled
 
+-- The entity info panel (hover) shows a depot's own status, "Normal" for a chest. While its
+-- circuit condition switches it off, it shows that instead (LuaEntity.custom_status, a red light),
+-- as the game shows an entity its circuit condition disabled; switched on, its own status again.
+-- Written only when it changes (`depot.shown_off`): once a second, and when the setting changes.
+local SWITCHED_OFF = { diode = defines.entity_status_diode.red, label = { "jatz-circuit-status.entity-off" } }
+local function show_switched(depot)
+  local off = (depot.circuit_enabled and not enabled(depot)) or nil
+  if depot.shown_off ~= off and depot.entity.valid then
+    depot.entity.custom_status = off and SWITCHED_OFF or nil
+    depot.shown_off = off
+  end
+end
+
 -- A provider, request or buffer depot (item or liquid) by its entity, or nil: the depots that have
 -- a circuit condition. Fuel depots are registered too, but freighters refuel there whatever its
 -- wires say, so they have none.
@@ -794,6 +807,7 @@ function logistics.set_circuit(entity, enable, condition, mode)
   if mode ~= nil then
     depot.circuit_mode = stored
   end
+  show_switched(depot)
   return true
 end
 
@@ -1379,10 +1393,15 @@ function logistics.on_tick()
         depot.tank.destroy()
       end
       storage.depots[id] = nil
-    elseif REQUESTING[depot.role] then
-      dispatch(depot)
-    elseif depot.role == "fuel" then
-      fuel_tank(depot.entity)
+    else
+      if depot.circuit_enabled or depot.shown_off then
+        show_switched(depot)
+      end
+      if REQUESTING[depot.role] then
+        dispatch(depot)
+      elseif depot.role == "fuel" then
+        fuel_tank(depot.entity)
+      end
     end
   end
 end

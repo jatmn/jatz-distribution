@@ -153,6 +153,7 @@ local function strict(what, names)
   end
   return list
 end
+defines.entity_status_diode = strict("defines.entity_status_diode", { "green", "red", "yellow" })
 defines.control_behavior = {
   type = strict("defines.control_behavior.type", {
     "accumulator",

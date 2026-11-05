@@ -2113,12 +2113,21 @@ do -- A provider switched off by its circuit condition: no freighter is sent to 
     logistics.get_circuit(near).enabled and logistics.get_circuit(near).condition.first_signal.name == "signal-A"
   )
   check("which doesn't hold", logistics.get_circuit(near).connected and not logistics.get_circuit(near).fulfilled)
+  check(
+    "its hover panel says it is switched off, with a red light",
+    near.custom_status
+      and near.custom_status.diode == defines.entity_status_diode.red
+      and near.custom_status.label[1] == "jatz-circuit-status.entity-off"
+  )
   logistics.on_tick()
   check("the switched-off provider isn't asked about", #requests == 1 and requests[1].goal.x == 40.5)
   answer(logistics, 1, "route")
   check("the freighter goes to the other one", trip_of(request).provider == far.unit_number)
   wire(near, { ["signal-A"] = 1 })
   check("switched on, it is asked about again", logistics.get_circuit(near).fulfilled)
+  game.tick = 60
+  logistics.on_tick()
+  check("and within a second its hover panel shows its own status again", near.custom_status == nil)
   check(
     "the remote interface's and the panel's setter refuse other entities",
     not logistics.set_circuit({ valid = false }, true, {})

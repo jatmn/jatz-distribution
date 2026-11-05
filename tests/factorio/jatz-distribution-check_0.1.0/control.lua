@@ -1193,6 +1193,12 @@ local function interfere(surface)
       walls_status = status(circuit.request),
       lamps_status = status(circuit.lamps),
       monitor = monitor_reading(circuit.monitor),
+      -- The hover panel of the provider switched off, and of the request depot on its road.
+      gated_status = circuit.gated.custom_status and {
+        red = circuit.gated.custom_status.diode == defines.entity_status_diode.red,
+        label = circuit.gated.custom_status.label[1],
+      },
+      request_status = circuit.request.custom_status ~= nil,
     }
     for _, switch in ipairs({ circuit.switch_a, circuit.switch_b }) do
       switch.get_control_behavior().get_section(1).set_slot(1, {
@@ -1660,6 +1666,7 @@ local function deliveries_finished(surface, tick, result)
   result.circuit_walls = count(circuit.request, "stone-wall")
   result.circuit_lamps = count(circuit.lamps, "small-lamp")
   result.circuit_after = monitor_reading(circuit.monitor)
+  result.circuit_status_after = circuit.gated.custom_status == nil
   -- What each condition reads, long after the monitor first counted: the circuit network without
   -- the depot's own wood, or its own wood.
   local modes = deliveries.modes
