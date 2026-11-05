@@ -15,6 +15,7 @@ Version: Unreleased
     - Petroleum gas burns for freighters, 50 to a full tank, unless another mod already gives it a fuel value.
     - Fuel depots take fuel items (by hand, inserters or robots) and burnable fluids (by pipe). Their window shows the fluid, with a button to flush it.
     - Map settings for a freighter's fuel tank (20 MJ by default) and how much it burns a tile (10 kJ by default; 0 turns fuel off).
+    - The mod has a thumbnail, the freighter, shown in the in-game mod browser and on the mod portal.
   Changes:
     - Freighters can no longer be placed and driven like a car unless the new startup setting "Place freighters as cars" is turned on. Freighters already placed stay drivable.
     - Delivering freighters drive at about 4 tiles a second instead of 12, the default speed of Transport Drones' drones.

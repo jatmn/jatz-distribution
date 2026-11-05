@@ -209,6 +209,8 @@ class RoutingTests(unittest.TestCase):
             (['tools/make_icons.py'], {'repository', 'freighter', 'freighter_art', 'depots', 'depots_art'}),
             (['assets/depots/icons/fuel-depot.png', 'assets/depots/icons/icons.json'], {'depots', 'depots_art'}),
             (['assets/quinityn-freighter/icons/quinityn-freighter.png'], {'freighter', 'freighter_art'}),
+            # The art job redraws the thumbnail from the freighter's sprites; the package job then runs too.
+            (['thumbnail.png'], {'freighter', 'freighter_art'}),
             (['tools/test_check_blender_sources.py', 'tools/test_ci_changes.py'], {'repository'}),
             (['README.md', 'AGENTS.md', 'CONTRIBUTING.md', 'SECURITY.md', 'NOTICE', 'COPYING', 'COPYING.LESSER',
               '.gitignore', 'docs/testing.md', 'docs/images/x.jpg', 'concepts/depots/images/fuel.png'], set()),
