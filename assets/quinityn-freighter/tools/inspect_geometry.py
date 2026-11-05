@@ -9,6 +9,10 @@ from mathutils import Vector
 asset=Path(__file__).resolve().parents[1]
 root=bpy.data.objects['Freighter | rotate this assembly']
 scene=bpy.data.scenes['Scene']
+# Published previews must not expose the local model path or workstation name.
+scene.render.use_stamp_filename = False
+scene.render.use_stamp_hostname = False
+scene.render.use_stamp_date = False
 root.rotation_euler[2]=0
 bpy.context.view_layer.update()
 dg=bpy.context.evaluated_depsgraph_get()

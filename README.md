@@ -94,7 +94,7 @@ Copy the resulting `dist/jatz-distribution_0.1.0.zip` into your [Factorio mods f
 | [`tools/`](tools/) | Mod packager, test runners and CI tools |
 | [`docs/`](docs/) | [Testing guide](docs/testing.md), [test results](docs/test-results.md) and README images |
 
-Each asset folder's README explains its files, how to use the sprites in Factorio, and how to edit and re-render the models. Read [AGENTS.md](AGENTS.md) before changing anything; it holds the project rules for human and AI contributors.
+Each asset folder's README explains its files, how to use the sprites in Factorio, and how to edit and re-render the models. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and read [AGENTS.md](AGENTS.md) before changing anything; it holds the project rules for human and AI contributors. Report vulnerabilities privately using [SECURITY.md](SECURITY.md).
 
 You need Python 3.13 and Factorio 2.1; the free [headless server](https://factorio.com/download) is enough for the automated checks. Blender 4.3.2 is only needed to edit models and re-render sprites.
 

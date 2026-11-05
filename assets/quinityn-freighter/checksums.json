@@ -1,6 +1,6 @@
 {
   "factorio/freighter-animation.lua": "1e67fecbd6381fe4760d5ba4892201c93ecc739870b1d0e2289092874936e6d5",
-  "masters/hero-default-palette.png": "4581bf458953194ffdf7055f9d767e8002be4ec48e433a009d3b389f0fd60521",
+  "masters/hero-default-palette.png": "f9010d72d57aa5152c7728802e0d282ee156891e501a3a82bf9016430ce78b9e",
   "previews/all-64-directions.png": "cfe45351f5ef019df0c53bb5200b4a20f2baca8787e0e916b9f624cd293cb304",
   "previews/compass-base.png": "8db5abd8f2ba729d70ac05e51b79f8b3d15cc2d38f8c6ab3d75bc5d3abdcf921",
   "previews/compass-mask-cab.png": "31726534adfbe9606268dafc8b9f95a97e9d1b7dca57f2e9f6b236c25393a41e",
@@ -8,7 +8,7 @@
   "previews/compass-mask-trim.png": "035c2a0bcece882e196b24595e54a00660c55923547cf0acd6090d109c6b64b1",
   "previews/compass-preview.png": "57e4279d4ab1b46b274b7d508e016df16e0d04576ac37a464fd788c7c5827bfa",
   "previews/compass-shadow.png": "c85f93c105f9dd268ff5422f2fce8eb314e7ee02d8cccc80ac1c4899c9eb4310",
-  "previews/service-bay-clearance.png": "78828598546d5ca0e3d0282fcee86419c7db73b48254f2db4f7a664f9dff2529",
+  "previews/service-bay-clearance.png": "f4c0bd308e9b432fbe22c2561d0773137b93695e35c2e5bf2899d06848a383bc",
   "previews/turntable.webp": "36dc681cc6883bac05cf144353a919ba0e2d79edac1d530f1646c5b80f0c6736",
   "sheets/freighter-base.png": "dc2a0bbb2ed8abca50a7e688c7b6a4f33a40525d72f6e81c19ea29c233b4cf66",
   "sheets/freighter-mask-cab.png": "ef4e857d18a30c73b71798ca710e4f4d6261e9a4f2bb0d4ff835e65fa0dc72d4",
@@ -21,9 +21,9 @@
   "source/quinityn-freighter.blend": "2ee3b273ea7b84552537abe88fea851550420ad7b4953aa46f527447fb934299",
   "tools/build_master.py": "88827d45b6d3e2432bd0f9c7d694cdc4fe0dbdf62d7aca593102c5527dc63d8a",
   "tools/create_preview.py": "e6c9a1eba5591ab2afb0eb4bbadf3b9424d97a34145cf0b07ffba80b10e4ac70",
-  "tools/inspect_geometry.py": "8c8395060d85da14826b4946086227242d7a85acb4ac839e37af460636a42dfa",
+  "tools/inspect_geometry.py": "41f5a8f0cd39c1306ff3ccc1d948afccd5b5b55dd81c21504457150943aa50e6",
   "tools/package_sprites.py": "5aa837bacd93390fd6dd177938a0338d1a94373d5aedcfa6bea1952c1c3a8abe",
-  "tools/render_directions.py": "ca81670e351a2d99a7a321e6694835b93bf6b571c5af6ed8df1417e4bc6f3c9c",
+  "tools/render_directions.py": "c9c49e6a420aa03274bff6a3426ea163497dbd4bc0753406c6b14fc373ebe6dd",
   "tools/render_freighter.py": "58892721a5668c152f85399da61ca651d4d5da7d42c0e15467133159b0a74c11",
   "tools/validate_assets.py": "b0c23cbc4ddaa07292dcd820a6a4c0e6ea25311a118693db0e240246d75326ec"
 }

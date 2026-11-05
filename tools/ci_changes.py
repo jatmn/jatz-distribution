@@ -25,10 +25,10 @@ EVERYTHING = {'.github/workflows/ci.yml', '.github/workflows/area.yml', 'tools/c
 # Shared lint configuration: every area's code is checked again, in full.
 SHARED_LINT = {'.luacheckrc', '.stylua.toml', '.ruff.toml', '.gitattributes'}
 DOCUMENTATION = {'README.md', 'AGENTS.md', 'NOTICE', 'COPYING', 'COPYING.LESSER',
-                 '.gitignore', 'requirements.txt'}
+                 '.gitignore'}
 ART_SUFFIXES = {'.blend', '.png', '.webp', '.json'}
-# The art check and the icon generator cover both art areas.
-ART_TOOLS = {'tools/check_blender_sources.py', 'tools/make_icons.py'}
+# The art check, icon generator and their Python dependencies cover both art areas.
+ART_TOOLS = {'tools/check_blender_sources.py', 'tools/make_icons.py', 'requirements.txt'}
 
 
 def area_of(path):

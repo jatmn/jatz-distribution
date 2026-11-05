@@ -59,6 +59,7 @@ CI (`.github/workflows/ci.yml`) is based on yuoki-quinityn's, but routed by repo
 - **Lua:** Lua 5.2 syntax, Luacheck and StyLua. Pull requests check the area's changed `.lua` files; pushes to `main` check all of them.
 - **Python:** syntax and Ruff (syntax errors and Pyflakes). The frozen 1×1 archive tools are exempt from Pyflakes.
 - **Blender sources** (`tools/check_blender_sources.py`, no Blender needed): every `.blend` is saved uncompressed by Blender 4.3; each model matches the hashes in its render, packaging and inspection records; freighter sprites match `checksums.json`; the freighter and every depot have an icon in Factorio's 120 × 64 mipmap layout (decoded and checked for blank levels and stray pixels), made from the current sprite sheets; the loading zone marking is a 64 px tile, not blank, and current with its drawing script; and the 1×1 archive matches its manifest. The art jobs then install the pinned numpy and Pillow, redraw the icons (`tools/make_icons.py --check`) and the marking (`make_loading_zone.py --check`), and require the committed pixels to match exactly. Re-render, re-package and re-inspect after editing a model, so the records follow it.
+- Changes to `requirements.txt` run both artwork checks so dependency updates must reproduce the committed icons and marking.
 - The routing job runs `git diff --check` on every change, except binary files.
 
 **Downloads stay small.** CI checks out text only: blobs over 256 KiB and the binary types in `.gitattributes` are never downloaded, and an area's art is fetched only for its Blender sources check. So text files must stay under 256 KiB; mark larger generated files as `binary` in `.gitattributes` (the routing job fails with that advice otherwise). Keep the checkout exclusions in `ci.yml` and `area.yml` equal to the binary patterns in `.gitattributes`; `tools/test_ci_changes.py` checks that they match.
@@ -81,12 +82,14 @@ The project is licensed LGPL-3.0-only. `COPYING.LESSER` and `COPYING` hold the l
 
 ## Repository
 
-Keep the repository private until the owner decides to publish it. Releases also need the owner's go-ahead.
+The owner has authorized public development. Releases still need the owner's go-ahead. Report vulnerabilities privately using `SECURITY.md`; contribution guidance is in `CONTRIBUTING.md`.
 
 Branch rules are kept as two rulesets matching yuoki-quinityn:
 - `.github/main-ruleset.json`: no deleting or force-pushing `main`, and changes go through pull requests with all review threads resolved.
 - `.github/ci-ruleset.json`: the `CI result` check must pass.
 
 GitHub only enforces rulesets on private repositories with a paid plan, so apply them when the repository goes public (or the plan is upgraded), and again after editing either file. `python3 tools/apply_rulesets.py` needs `gh` signed in with admin rights. It creates a missing ruleset, updates an existing one by name, and keeps only the oldest if two runs created duplicates; a failed lookup changes nothing.
+
+Dependabot proposes weekly updates for pip and GitHub Actions (`.github/dependabot.yml`); review and test updates before merging. Keep GitHub secret scanning, push protection, private vulnerability reporting, and Python/Actions code scanning enabled. Require approval for outside collaborators' workflow runs and keep action references pinned to commit SHAs.
 
 Pullfrog (`.github/workflows/pullfrog.yml`) runs an AI agent only when the owner posts a new issue or PR comment whose first line is `@pullfrog <instruction>`. `tools/pullfrog_command.py` checks that before any credentials are used; run `python3 tools/test_pullfrog_command.py` after changing either file.
