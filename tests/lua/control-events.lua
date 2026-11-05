@@ -981,6 +981,13 @@ do -- Liquid depots: the same panels, beside the storage tank window, choosing a
   check("with the request-from-buffers checkbox", inner.jatz_request_from_buffers ~= nil)
   check("and no priority", inner.priority_row == nil)
   check("and a freighter slot", inner.freighter_row and inner.freighter_row.jatz_request_freighters)
+  check(
+    "and its freighters' fuel under it",
+    inner.freighter_fuel
+      and inner.freighter_fuel.visible
+      and inner.freighter_fuel.caption[1] == "jatz-gui.freighter-fuel-none"
+      and inner.freighter_fuel.tooltip[1] == "jatz-gui.freighter-fuel-tooltip"
+  )
   chooser.elem_value = "water"
   fire("on_gui_elem_changed", { player_index = 12, element = chooser })
   local request_set = logistics.get_request(request)

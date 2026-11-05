@@ -13,6 +13,7 @@ defines = {
   distraction = { none = 0 },
   behavior_result = { in_progress = 0, fail = 1, success = 2, deleted = 3 },
   target_type = { entity = 1 },
+  entity_status_diode = { green = 1, red = 2, yellow = 3 },
 }
 -- luacheck: globals settings
 -- Runtime settings, as Factorio gives them: an unknown name fails, as `settings.global[name].value`
@@ -38,6 +39,8 @@ prototypes = {
     ["jatz-quinityn-freighter"] = { stack_size = 10, fuel_value = 0 },
     coal = { name = "coal", stack_size = 50, fuel_value = 4000000 },
     ["used-cell"] = { name = "used-cell", stack_size = 50, fuel_value = 0 },
+    -- Worth far more than a tank, as some mods' fuel items are (a 10 GJ item).
+    megacell = { name = "megacell", stack_size = 10, fuel_value = 10000000000 },
   },
   fluid = { water = { fuel_value = 0 }, steam = { fuel_value = 0 }, diesel = { fuel_value = 1000000 } },
   -- prototypes/freighter-colors.lua's output: item b and steam have no color of their own.
@@ -1792,6 +1795,70 @@ do -- A Fuel depot of fuel cells with no room left for used ones gives nothing: 
   answer(logistics, 2, "route")
   check("so a freighter that can't make it stays home", not has_trip(request))
   check("waiting for fuel", logistics.get_status(request) == "no-fuel")
+end
+
+do -- A freighter shows its fuel on hover: green, yellow when low, red when dry; nothing if off.
+  local logistics = reset()
+  local request, provider = fuelled(logistics, 20 * MJ)
+  stocked(provider, "a", 20)
+  stocked(request)
+  local trip = trips_from(request)[1]
+  local status = trip.drone.custom_status
+  check(
+    "a full freighter's status is green, its fuel against a full tank",
+    status
+      and status.diode == defines.entity_status_diode.green
+      and status.label[1] == "jatz-gui.freighter-fuel"
+      and status.label[2][1] == "jatz-gui.energy-mj"
+      and status.label[2][2] == "20.0"
+      and status.label[3][2] == "20.0"
+  )
+  trip.energy = 3 * MJ
+  game.tick = 60
+  logistics.on_tick()
+  check("low, yellow, and says how much", trip.drone.custom_status.diode == defines.entity_status_diode.yellow)
+  check("as it burns", trip.drone.custom_status.label[2][2] == "3.0")
+  trip.energy = 0
+  game.tick = 120
+  logistics.on_tick()
+  check("dry, red", trip.drone.custom_status.diode == defines.entity_status_diode.red)
+  trip.energy = 10 * MJ
+  arrive(logistics, trip)
+  check("painted for its load, the new freighter shows it too", trip.drone.custom_status.label[2][2] == "10.0")
+  check("(it was swapped)", trip.drone.name == "jatz-freighter-drone-500")
+  SETTINGS["jatz-freighter-fuel-per-tile"] = 0
+  game.tick = 180
+  logistics.on_tick()
+  check("with fuel turned off, no status", trip.drone.custom_status == nil)
+  check("and the panel's fuel is marked unused", logistics.freighter_fuel(request).used == false)
+  SETTINGS["jatz-freighter-fuel-per-tile"] = 10
+end
+
+do -- A fuel item worth more than a tank (10 GJ) goes in whole, and stays with the freighter parked.
+  local logistics = reset()
+  local fuel
+  local request = fuelled(logistics, 0.5 * MJ, function()
+    fuel = fuel_depot(logistics, -10.5, 0.5, { { "megacell", 3 } })
+    return fuel
+  end)
+  local trip = trips_from(request)[1]
+  answer(logistics, 2, "route")
+  arrive(logistics, trip)
+  check("one item is taken", fuel.chest.count("megacell") == 2)
+  check("all 10 GJ of it", trip.energy == 10000.5 * MJ)
+  check("shown in GJ", trip.drone.custom_status.label[2][1] == "jatz-gui.energy-gj")
+  check("green", trip.drone.custom_status.diode == defines.entity_status_diode.green)
+  arrive(logistics, trip)
+  arrive(logistics, trip)
+  local energy = trip.energy
+  check("it parks with all it has left", logistics.freighter_fuel(request).home[1] == energy and energy > 9 * 1e9)
+  check("the others are full", logistics.freighter_fuel(request).home[5] == 0.5 * MJ)
+  game.tick = 600
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  local again = trips_from(request)[1]
+  check("the fullest goes next: the one with the big fill", again and again.energy == energy)
+  check("and needs no fuel stop", again and not again.fuel_search and not again.refuel)
 end
 
 do -- Freighters taken out take their fuel with them; new ones put in come with a full tank.

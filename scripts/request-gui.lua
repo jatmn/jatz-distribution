@@ -124,6 +124,49 @@ local function show_freighters(inner, entity)
   row[SLOT_LABEL].tooltip = breakdown
 end
 
+-- Fuel amounts, as "a, b, c", nested so that any number of them fits in one localised string.
+local function energy_list(energies)
+  local list = { "" }
+  for index, energy in ipairs(energies) do
+    if #list > 17 then
+      list = { "", list }
+    end
+    if index > 1 then
+      list[#list + 1] = ", "
+    end
+    list[#list + 1] = logistics.energy_caption(energy)
+  end
+  return list
+end
+
+-- Under the slot: the fuel of the freighters in it (how many are full, and the lowest), with
+-- every freighter's fuel, here and out, when hovered. Nothing while fuel is turned off.
+local function show_freighter_fuel(inner, entity)
+  local label = inner.freighter_fuel
+  local fuel = logistics.freighter_fuel(entity)
+  if not (label and fuel) then
+    return
+  end
+  label.visible = fuel.used
+  if not fuel.used then
+    return
+  end
+  local home, full = fuel.home, 0
+  for _, energy in ipairs(home) do
+    if energy >= fuel.capacity then
+      full = full + 1
+    end
+  end
+  label.caption = #home > 0 and { "jatz-gui.freighter-fuel-home", full, #home, logistics.energy_caption(home[#home]) }
+    or { "jatz-gui.freighter-fuel-none" }
+  label.tooltip = {
+    "jatz-gui.freighter-fuel-tooltip",
+    #home > 0 and energy_list(home) or "-",
+    #fuel.out > 0 and energy_list(fuel.out) or "-",
+    logistics.energy_caption(fuel.capacity),
+  }
+end
+
 -- Show a provider or buffer depot's priority on its slider and beside it.
 local function show_priority(inner, entity)
   local row = inner.priority_row
@@ -269,6 +312,8 @@ local function open(player, entity)
   })
   freighters.add({ type = "label", name = SLOT_LABEL })
   show_freighters(inner, entity)
+  inner.add({ type = "label", name = "freighter_fuel" })
+  show_freighter_fuel(inner, entity)
 end
 
 -- The depot whose panel a player has open: any, or (`requesting`) only a request or buffer depot.
@@ -508,7 +553,7 @@ local function refresh()
         show_fuel(inner, entity)
       elseif
         not (inner.priority_row or ROLES[entity.name] == "request")
-        or (requesting and not (inner.request_row and inner.request_row[STATUS]))
+        or (requesting and not (inner.request_row and inner.request_row[STATUS] and inner.freighter_fuel))
       then
         -- A panel opened before an update that changed its layout: build it again.
         open(player, entity)
@@ -517,6 +562,7 @@ local function refresh()
       if requesting then
         show_status(inner.request_row[STATUS], entity)
         show_freighters(inner, entity)
+        show_freighter_fuel(inner, entity)
       end
       show_priority(inner, entity)
     else

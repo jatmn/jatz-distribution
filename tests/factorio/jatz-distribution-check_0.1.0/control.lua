@@ -633,8 +633,8 @@ local function setup_deliveries(surface, result)
   -- Fuel (loading zones at y 66). Each request depot has one freighter, its tank set low.
   -- * fuelled: fuel for 10 tiles and a provider 20 tiles east: it first drives 4 tiles west to a
   --   Fuel depot holding coal, fills up (5 coal for 20 MJ), then fetches 10 iron ore.
-  -- * liquid_fuelled: the same with a Fuel depot holding 100 petroleum gas, which the check mod
-  --   makes burnable at 1 MJ (data.lua): it takes 20, and fetches 10 copper ore.
+  -- * liquid_fuelled: the same with a Fuel depot holding 100 petroleum gas, which the mod makes
+  --   burn at 0.4 MJ (data-final-fixes.lua): it takes 50, and fetches 10 copper ore.
   -- * dry: an empty tank, and the only Fuel depot on its road holds stone. The freighter can't
   --   reach the provider and stays home (status no-fuel), until coal is put in that Fuel depot
   --   (tick 300): then it sets off at once (delivering by tick 420), crawls there, fills up, and
@@ -1098,8 +1098,19 @@ local function interfere(surface)
   -- Fuel: the low freighter stops at the Fuel depot before it loads at the provider; the dry one
   -- waits at home until there is fuel.
   local fuelled = deliveries.fuelled
-  if not fuelled.at_fuel and standing_at(-70.5, 66.5) then
+  local at_fuel = not fuelled.at_fuel and standing_at(-70.5, 66.5)
+  if at_fuel then
     fuelled.at_fuel = game.tick
+    -- Its fuel on hover (its status), as the game reads it back: low, before it fills up.
+    local hover = at_fuel.custom_status
+    if hover then
+      fuelled.hover = hover.label[1]
+      for name, value in pairs(defines.entity_status_diode) do
+        if hover.diode == value then
+          fuelled.hover_diode = name
+        end
+      end
+    end
   end
   if not fuelled.loaded and count(fuelled.provider, "iron-ore") < 20 then
     fuelled.loaded = game.tick
@@ -1495,13 +1506,14 @@ local function deliveries_finished(surface, tick, result)
   -- No cargo was left on the ground anywhere.
   local _, other = on_ground(surface, { { -80, -80 }, { 80, 80 } })
   result.spilled = other
-  -- Fuel: filled up before loading, 5 of 10 coal (20 MJ) or 20 of 100 petroleum gas taken, the
+  -- Fuel: filled up before loading, 5 of 10 coal (20 MJ) or 50 of 100 petroleum gas taken, the
   -- freighter home with a full tank less the 44 tiles it drove after; the dry one stayed home
   -- until there was fuel. A Fuel depot turned by script turned its tank too.
   local fuelled, liquid_fuelled, dry = deliveries.fuelled, deliveries.liquid_fuelled, deliveries.dry
   result.fuel_stop_first = fuelled.at_fuel ~= nil and fuelled.loaded ~= nil and fuelled.at_fuel < fuelled.loaded
   result.fuel_delivered = count(fuelled.request, "iron-ore")
   result.fuel_coal_left = count(fuelled.fuel, "coal")
+  result.fuel_hover, result.fuel_hover_diode = fuelled.hover, fuelled.hover_diode
   result.fuel_left_mj =
     math.floor(remote.call("jatz-distribution", "freighter_fuel", fuelled.request).home[1] / 1000000)
   result.liquid_fuel_delivered = count(liquid_fuelled.request, "copper-ore")

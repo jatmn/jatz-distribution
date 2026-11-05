@@ -274,6 +274,18 @@ local function fuel_capacity()
   return settings.global["jatz-freighter-fuel-capacity"].value * 1000000
 end
 
+-- Below this share of a full tank, a freighter's fuel shows yellow on hover.
+local LOW_FUEL = 0.25
+
+-- An amount of fuel (joules) as text: MJ, or GJ from 1,000 MJ (a mod's item can hold far more
+-- than a tank).
+function logistics.energy_caption(joules)
+  if joules >= 1e9 then
+    return { "jatz-gui.energy-gj", string.format("%.1f", joules / 1e9) }
+  end
+  return { "jatz-gui.energy-mj", string.format("%.1f", joules / 1e6) }
+end
+
 local function fuel_per_tile()
   return settings.global["jatz-freighter-fuel-per-tile"].value * 1000
 end
@@ -434,9 +446,10 @@ local function a_freighter(depot)
   end
 end
 
--- The fuel of the freighters parked in a requesting depot's slot whose tank isn't full, in joules,
--- lowest first; the others have a full tank (new freighters come with one). Freighters taken out
--- of the slot (by hand, by robots, or with the depot) take the fullest entries with them.
+-- The fuel of the freighters parked in a requesting depot's slot whose tank isn't exactly full, in
+-- joules, lowest first: less than a tank, or more (a fuel item worth more than a tank goes in
+-- whole); the others have a full tank (new freighters come with one). Freighters taken out of the
+-- slot (by hand, by robots, or with the depot) take the full ones first, then the fullest entries.
 local function parked_fuel(depot)
   local parked = depot.fuel or {}
   depot.fuel = parked
@@ -489,6 +502,26 @@ end
 -- stuck to this unit for good, and one made anew on another unit would restart its damage cycle,
 -- adding or skipping a hit. A paint is only a look, so the freighter keeps its old one until they
 -- wear off, and logistics.on_tick paints it then (`repaint_pending`).
+-- Show a freighter's fuel on hover, as its status: green, yellow below LOW_FUEL of a tank, red
+-- once dry. Nothing while fuel is turned off.
+local function show_fuel(trip)
+  local drone = trip.drone
+  if not drone.valid then
+    return
+  end
+  if fuel_per_tile() <= 0 then
+    drone.custom_status = nil
+    return
+  end
+  local capacity = fuel_capacity()
+  local energy = trip.energy or capacity
+  local diode = energy <= 0 and "red" or energy < capacity * LOW_FUEL and "yellow" or "green"
+  drone.custom_status = {
+    diode = defines.entity_status_diode[diode],
+    label = { "jatz-gui.freighter-fuel", logistics.energy_caption(energy), logistics.energy_caption(capacity) },
+  }
+end
+
 local function repaint(id, trip)
   local old = trip.drone
   local name = paint_of(trip)
@@ -515,6 +548,7 @@ local function repaint(id, trip)
   end
   script.register_on_object_destroyed(drone)
   trip.drone = drone
+  show_fuel(trip)
   -- Its on_object_destroyed finds no trip under the old number, so nothing else happens.
   old.destroy()
   return true
@@ -799,11 +833,12 @@ local function start_trip(depot, provider, from, planned, length)
   end
   local parked = parked_fuel(depot)
   local energy
-  if trucks_of(depot).get_item_count() > #parked then
+  if #parked > 0 and (trucks_of(depot).get_item_count() <= #parked or parked[#parked] > fuel_capacity()) then
+    -- The fullest parked one: more than a tank, or (with none full) the most short of one.
+    energy = table.remove(parked)
+  else
     -- One with a full tank.
     energy = fuel_capacity()
-  else
-    energy = table.remove(parked)
   end
   local trip = {
     drone = drone,
@@ -834,6 +869,7 @@ local function start_trip(depot, provider, from, planned, length)
     trip.dry = true
     drone.speed = prototypes.entity[DRONE].speed * DRY_SPEED
   end
+  show_fuel(trip)
   set_off(drone.unit_number, trip, length)
   return storage.trips[drone.unit_number] ~= nil
 end
@@ -1176,6 +1212,7 @@ function logistics.on_tick()
   local repaint_pending = {}
   for id, trip in pairs(storage.trips) do
     burn(trip)
+    show_fuel(trip)
     -- Every freighter out pollutes a little, standing or driving.
     if trip.drone.valid then
       trip.drone.surface.pollute(trip.drone.position, POLLUTION_PER_SECOND * DISPATCH_INTERVAL / 60, DRONE)
@@ -1355,8 +1392,8 @@ function end_trip(id, trip, lost)
       else
         truck.count = truck.count - inserted
       end
-      -- It parks with what is left in its tank.
-      if inserted > 0 and trip.energy and trip.energy < fuel_capacity() then
+      -- It parks with what is left in its tank, more than a tank's worth too.
+      if inserted > 0 and trip.energy and trip.energy ~= fuel_capacity() then
         local parked = depot.fuel or {}
         parked[#parked + 1] = trip.energy
         depot.fuel = parked
@@ -1443,6 +1480,7 @@ local function arrived_at_fuel(id, trip)
     trip.dry = nil
     trip.drone.speed = prototypes.entity[DRONE].speed
   end
+  show_fuel(trip)
   if storage.trips[id] then
     drive(trip, target(trip))
   end
@@ -2779,7 +2817,7 @@ function logistics.describe_freighters(entity)
 end
 
 -- A requesting depot's freighters' fuel, in joules: those in its slot, fullest first, and those
--- out on trips; and what a full tank holds. Nil for anything else.
+-- out on trips; what a full tank holds; and whether fuel is used at all. Nil for anything else.
 function logistics.freighter_fuel(entity)
   local depot = request_depot(entity)
   if not depot then
@@ -2791,16 +2829,19 @@ function logistics.freighter_fuel(entity)
   for _ = 1, trucks_of(depot).get_item_count() - #parked do
     home[#home + 1] = capacity
   end
-  for index = #parked, 1, -1 do
-    home[#home + 1] = parked[index]
+  for _, energy in ipairs(parked) do
+    home[#home + 1] = energy
   end
+  table.sort(home, function(a, b)
+    return a > b
+  end)
   for id in pairs(trips_of(depot)) do
     local trip = storage.trips[id]
     if trip then
       out[#out + 1] = trip.energy or capacity
     end
   end
-  return { home = home, out = out, capacity = capacity }
+  return { home = home, out = out, capacity = capacity, used = fuel_per_tile() > 0 }
 end
 
 -- Give every freighter in a requesting depot's slot `energy` joules of fuel (other mods, tests).
@@ -2812,7 +2853,7 @@ function logistics.set_freighter_fuel(entity, energy)
   end
   local count = trucks_of(depot).get_item_count()
   local parked = {}
-  if energy < fuel_capacity() then
+  if energy ~= fuel_capacity() then
     for index = 1, count do
       parked[index] = math.max(0, energy)
     end

@@ -15,7 +15,7 @@ Build depots where goods are made and where they're needed, connect them with ro
 2. **Place a provider depot** and fill it with goods.
 3. **Place a request depot**, open it, and choose an item and how many to keep in stock.
 4. **Give it freighters.** Put freighters in the request depot's freighter slot.
-5. **Fuel them.** Freighters come with a full tank and burn fuel as they drive. Place a fuel depot on the road, with any fuel item in it or any burnable fluid piped in, and they fill up there by themselves.
+5. **Fuel them.** Freighters come with a full tank and burn fuel as they drive. Place a fuel depot on the road, with any fuel item in it or any burnable fluid piped in (petroleum gas burns for them), and they fill up there by themselves. Hover a freighter to see its fuel.
 
 That's it. Freighters set off for the provider that's nearest **by road**, load up and bring the goods home. A status light on the request depot tells you at a glance if anything is wrong.
 
