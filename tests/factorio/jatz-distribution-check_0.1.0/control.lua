@@ -497,6 +497,21 @@ local function setup_deliveries(surface, result)
   assert(remote.call("jatz-distribution", "set_from_buffers", steam.request, true), "steam: from buffers refused")
   assert(remote.call("jatz-distribution", "set_request", steam.request, "steam", 300), "steam: refused")
   deliveries.steam = steam
+  -- Liquid fallback (loading zones at y -15): a liquid request depot NOT set to request from
+  -- buffer depots asks for 300 crude oil; the liquid provider 10 tiles away is empty, and a liquid
+  -- buffer 30 tiles away holds 1000. With no provider able to supply it, the oil comes from the
+  -- buffer.
+  local fallback = {
+    request = depot(surface, "liquid-request", 20.5, -16.5),
+    provider = depot(surface, "liquid-provider", 30.5, -16.5),
+    buffer = depot(surface, "liquid-buffer", 50.5, -16.5),
+  }
+  lay_road(surface, 20, -15, 50, -15)
+  assert(fallback.buffer.insert_fluid({ name = "crude-oil", amount = 1000 }) == 1000, "oil: cannot stock buffer")
+  assert(remote.call("jatz-distribution", "add_freighters", fallback.request, 1) == 1, "oil: no freighters")
+  result.fallback_from_buffers = remote.call("jatz-distribution", "get_from_buffers", fallback.request)
+  assert(remote.call("jatz-distribution", "set_request", fallback.request, "crude-oil", 300), "oil: refused")
+  deliveries.fallback = fallback
   -- Freighters, one after another, from more than one provider: a request depot with 5 freighters
   -- asks for 60 iron sticks; the provider 10 tiles away has 30, the one 30 tiles away 40.
   local multi = {
@@ -940,6 +955,7 @@ local function deliveries_finished(surface, tick, result)
     and count(deliveries.prioritised.request, "stone") == 10
     and deliveries.liquid.request.get_fluid_count("water") == 1200
     and deliveries.steam.request.get_fluid_count("steam") == 300
+    and deliveries.fallback.request.get_fluid_count("crude-oil") == 300
     and remote.call("jatz-distribution", "freighter_counts", deliveries.liquid_remote) == 2
     and deliveries.removal_started
     and select(2, remote.call("jatz-distribution", "requested_freighters", deliveries.remote)) == 0
@@ -949,7 +965,7 @@ local function deliveries_finished(surface, tick, result)
     if tick >= DELIVERY_DEADLINE then
       error(
         string.format(
-          "deliveries did not finish in time: iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), pipes after mending %d (%s), bricks rerouted %d, buffered request %d (%s), buffer filled %d (%s), prioritised %d (%s), water %d (%s), steam %d (%s), liquid robots %d, %d freighter(s) out",
+          "deliveries did not finish in time: iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), pipes after mending %d (%s), bricks rerouted %d, buffered request %d (%s), buffer filled %d (%s), prioritised %d (%s), water %d (%s), steam %d (%s), oil fallback %d (%s), liquid robots %d, %d freighter(s) out",
           count(deliveries.connected),
           tostring(status(deliveries.connected)),
           count(armor.request, armor.item),
@@ -972,6 +988,8 @@ local function deliveries_finished(surface, tick, result)
           tostring(status(deliveries.liquid.request)),
           deliveries.steam.request.get_fluid_count("steam"),
           tostring(status(deliveries.steam.request)),
+          deliveries.fallback.request.get_fluid_count("crude-oil"),
+          tostring(status(deliveries.fallback.request)),
           remote.call("jatz-distribution", "freighter_counts", deliveries.liquid_remote),
           #surface.find_entities_filtered({ name = DRONE })
         )
@@ -1074,6 +1092,9 @@ local function deliveries_finished(surface, tick, result)
   result.steam_temperature = math.floor(steam.request.get_fluid(1).temperature + 0.5)
   result.steam_buffer_left = steam.buffer.get_fluid_count("steam")
   result.steam_provider_left = steam.provider.get_fluid_count("steam")
+  local fallback = deliveries.fallback
+  result.fallback_delivered = fallback.request.get_fluid_count("crude-oil")
+  result.fallback_buffer_left = fallback.buffer.get_fluid_count("crude-oil")
   result.liquid_robots_delivered = remote.call("jatz-distribution", "freighter_counts", deliveries.liquid_remote)
   result.trimmed_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.trimmed)
   result.dropped_requested_again = remote.call("jatz-distribution", "requested_freighters", deliveries.dropped)

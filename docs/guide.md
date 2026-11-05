@@ -52,7 +52,7 @@ Other items ctrl+clicked in go into the depot's inventory as usual.
 
 Of the depots that have the item and can be reached by road, freighters go to the one that comes first in this order:
 
-1. **Buffer depots before providers**, but only for a request depot with **Request from buffer depots** ticked. See [Buffer depots](#buffer-depots).
+1. **Buffer depots before providers** for a request depot with **Request from buffer depots** ticked; **providers before buffer depots** when it's unticked. See [Buffer depots](#buffer-depots).
 2. **Higher priority before lower**, even when the lower one is nearer. See [Priority](#priority).
 3. **Nearest by road among equals**, not in a straight line. A provider just across a wall of concrete loses to one farther away with a shorter road.
 
@@ -66,7 +66,7 @@ A light beside the request shows at a glance whether it can be filled. Hover it 
 | --- | --- |
 | 🟢 Green | Stocked, a freighter is on its way, or it's finding a provider by road |
 | 🟡 Yellow | Waiting on something in the way: no room in the depot, its loading zone isn't on road, no road route to a provider that has it, no freighters (or none could be sent), or a liquid depot's tank holds another fluid |
-| 🔴 Red | No provider depot with road at its loading zone has it |
+| 🔴 Red | No provider or buffer depot with road at its loading zone has it |
 | ⚪ Grey | Nothing requested |
 
 ## When roads or depots change
@@ -79,21 +79,24 @@ A light beside the request shows at a glance whether it can be filled. Hover it 
 
 Buffer depots keep stock close to where it's needed. They work like request depots, with their own request and freighters, but they fetch only from provider depots and send nothing anywhere themselves.
 
-Tick **Request from buffer depots** on a request depot (like a requester chest's "request from buffer chests") and it takes from buffer depots first, even when a provider is nearer. It goes to providers only for what no buffer can supply.
+Request depots take from buffer depots too. The **Request from buffer depots** checkbox (like a requester chest's "request from buffer chests") decides which come first:
+
+- **Ticked:** buffer depots first, even when a provider is nearer. It goes to providers only for what no buffer can supply.
+- **Unticked** (the default): provider depots first, however near a buffer is. It falls back to buffer depots only for what no provider can supply: when no provider has the item, none can be reached by road, or what they have is already promised to other freighters.
 
 ## Priority
 
 Provider and buffer depots have a **priority** slider from 1 to 10 (5 to start with) in the panel beside their window.
 
 - Freighters go to the highest-priority depot they can reach by road, even when a lower one is nearer, and to the nearest among equals.
-- Priority only orders depots of the same kind: a buffer at 1 still comes before a provider at 10.
+- Priority only orders depots of the same kind: with **Request from buffer depots** ticked, a buffer at 1 still comes before a provider at 10; unticked, a provider at 1 still comes before a buffer at 10.
 - Copy and Paste settings, blueprints and clones keep it.
 
 ## Liquid depots
 
 Liquid depots work the same way for fluids.
 
-- A **liquid request** depot keeps a fluid in its tank, sending its freighters to liquid provider depots (and liquid buffer depots, if ticked), 500 units at a time.
+- A **liquid request** depot keeps a fluid in its tank, sending its freighters to liquid provider depots and liquid buffer depots (buffers first if **Request from buffer depots** is ticked, only when no provider can supply it otherwise), 500 units at a time.
 - A **liquid buffer** depot fills from liquid providers only.
 - Liquid provider and buffer depots have the same priority slider.
 - Fluids keep their temperature on the way.
