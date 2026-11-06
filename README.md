@@ -7,7 +7,7 @@
 Build depots where goods are made and where they're needed, connect them with road, and heavy freighters do the hauling. The gameplay is inspired by Klonan's [Transport Drones](https://mods.factorio.com/mod/Transport_Drones), with trucks in place of drones and a rugged industrial look inspired by the Yuoki mods.
 
 > [!NOTE]
-> **In development.** Item and fluid deliveries, fuel, research and recipes already work; balance may still change. The mod isn't on the Mod Portal yet: see [Try it](#try-it).
+> **Early release.** Item and fluid deliveries, fuel, research and recipes all work, but balance may still change between versions. Read the [changelog](changelog.txt) before updating, and back up your saves. See [Try it](#try-it) to install it.
 
 ## How it works
 
@@ -62,13 +62,15 @@ A sealed freight hauler with an armored cab, three clamped cargo bays and an exp
 
 Built for **Factorio 2.1** (tested on 2.1.24). It needs only the base game and also works with Space Age.
 
-The mod isn't on the Mod Portal yet, so build it from this repository with Python 3.13:
+Install **Jat'z Distribution** from the in-game mod browser (**Mods → Install**), or download it from the [Factorio Mod Portal](https://mods.factorio.com/mod/jatz-distribution). You'll find everything in the Logistics tab of the crafting menu, in the row just above the car and tank.
+
+To try the latest changes from `main` instead, build the mod from this repository with Python 3.13:
 
 ```sh
 python3 tools/package_mod.py
 ```
 
-Copy `dist/jatz-distribution_0.1.0.zip` into your [Factorio mods folder](https://wiki.factorio.com/Application_directory#User_data_directory) and enable **Jat'z Distribution**. You'll find everything in the Logistics tab of the crafting menu, in the row just above the car and tank.
+Then copy the zip from `dist/` into your [Factorio mods folder](https://wiki.factorio.com/Application_directory#User_data_directory) and enable it in place of the Mod Portal version.
 
 ## Roadmap
 
@@ -80,7 +82,7 @@ Copy `dist/jatz-distribution_0.1.0.zip` into your [Factorio mods folder](https:/
 - [ ] Freighter wheel animation and final stats
 - [x] Research: unlocking, liquid freight, freighter speed (infinite), item and fluid capacity
 - [x] Recipes and balance
-- [ ] Release on the Factorio Mod Portal
+- [x] Release on the Factorio Mod Portal
 
 ## Credits
 
