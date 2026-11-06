@@ -118,12 +118,15 @@ Upgrade levels add science packs as they climb, from red and green up to utility
 ## Fuel that works like fuel
 
 - A new freighter comes with a full tank: 20 MJ, about 2,000 tiles of driving.
-- Before every leg of a trip, a freighter checks whether its tank will get it there. If not, it drives to the **fuel depot nearest by road** first, fills up and carries on, cargo and all.
+- Before every leg of a trip (setting off from home, leaving the provider, or heading for a new provider after a reroute) a freighter checks its tank against that leg's road distance, plus 25% to spare and a 10% reserve.
+- If it's short, it **re-routes to the fuel depot nearest by road** from where it stands, fills up, then carries on to where it was going, cargo and all.
 - Freighters that can't reach a provider on what they have wait at home until there is fuel to get, rather than queueing at an empty fuel depot. The request depot's light tells you why.
 - A freighter that runs dry anyway crawls on at a tenth of its speed, so it's never stranded.
 - Fuel in other depots is ordinary cargo: freighters deliver it like anything else and never burn it.
 - Hover a freighter to see its fuel. Tank size and use per tile are map settings, and setting the use to 0 turns fuel off.
 - Piped in something that doesn't burn? The fuel depot's window says so, with a button to flush it.
+
+**Where you put fuel depots matters.** A freighter low on fuel goes to the nearest fuel depot by road, however far away that is, before it finishes its delivery. If your only fuel depot is on the other side of the factory, every freighter that runs low drives all the way over there, then all the way to where it was going, and its delivery waits the whole time. Put fuel depots along the routes your freighters already drive, near busy provider and request depots, and add more as your road network grows. A detour of a few tiles costs almost nothing. One across the map ties up freighters, and on a large network a freighter can even run dry on the way and crawl the rest at a tenth of its speed.
 
 [![A fuel depot's window warning that the water piped into it doesn't burn, with a flush button](images/fuel-depot-flush.jpg)](gallery/09-fuel-depot-flush.png)
 
