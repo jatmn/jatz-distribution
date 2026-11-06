@@ -16,7 +16,11 @@ The mod's thumbnail.png, shown in the in-game mod browser and on the mod portal,
 is the freighter icon's frame at the 144 x 144 px Factorio 2.1 asks for
 (auxiliary/mod-structure), with the same margin and no mipmaps.
 
-Each icons/icons.json records the source sheet, the frame used, and both SHA-256
+Technology icons (technology/, for prototypes/technologies.lua) are made the same way at
+256 px, the size Factorio's technology screen draws, with no mipmaps: the 512 px game frames
+keep them sharp where a scaled-up 64 px icon is blurred. Use them with icon_size = 256.
+
+Each icons/icons.json and technology/icons.json records the source sheet, the frame used, and both SHA-256
 hashes, so tools/check_blender_sources.py catches icons left behind by a re-render
 or edited by hand. Run after re-rendering or re-packaging the sprites:
 
@@ -26,6 +30,7 @@ With --check it writes nothing and fails unless every committed icon and the thu
 pixels made from its sprite sheet; CI runs that whenever an area's art changes.
 """
 import argparse
+from functools import partial
 import hashlib
 from io import BytesIO
 import json
@@ -44,6 +49,7 @@ MIPMAPS = 4
 MARGIN = 1 / 16
 ALPHA_THRESHOLD = 8  # ignore near-invisible pixels when finding the art's bounds
 FRAME = 512  # game frame size in the preview sheets
+TECHNOLOGY_SIZE = 256
 FREIGHTER_DIRECTION = 24  # south-east: 64 directions, clockwise from north
 DEPOT_DIRECTION = 2  # south: sheets are ordered north, east, south, west
 THUMBNAIL_SIZE = 144  # Factorio's mod thumbnail size
@@ -60,23 +66,31 @@ def frame_box(direction, columns):
 
 
 def sources(root=REPO, areas=('freighter', 'depots')):
-    """(icon folder, icon file name, preview sheet, frame box) for every icon the mod uses."""
+    """(icon folder, icon file name, preview sheet, frame box, size, mipmap levels) for every icon
+    the mod uses: the in-game icons, then the technology icons."""
     if 'freighter' in areas:
         freighter = root / 'assets/quinityn-freighter'
-        yield (freighter / 'icons', 'quinityn-freighter.png', freighter / 'sheets/freighter-preview.png',
-               frame_box(FREIGHTER_DIRECTION, 8))
+        sheet, box = freighter / 'sheets/freighter-preview.png', frame_box(FREIGHTER_DIRECTION, 8)
+        yield (freighter / 'icons', 'quinityn-freighter.png', sheet, box, ICON_SIZE, MIPMAPS)
+        yield (freighter / 'technology', 'quinityn-freighter.png', sheet, box, TECHNOLOGY_SIZE, 1)
     if 'depots' in areas:
         depots = root / 'assets/depots'
         for role in ROLES:
             yield (depots / 'icons', f'{role}-depot.png', depots / role / '3/sheets/preview.png',
-                   frame_box(DEPOT_DIRECTION, 4))
+                   frame_box(DEPOT_DIRECTION, 4), ICON_SIZE, MIPMAPS)
         yield (depots / 'icons', f'{MONITOR}.png', depots / MONITOR / '1/sheets/preview.png',
-               frame_box(MONITOR_DIRECTION, 4))
+               frame_box(MONITOR_DIRECTION, 4), ICON_SIZE, MIPMAPS)
+        # Liquid freight research (the liquid depots) and fluid capacity research.
+        yield (depots / 'technology', 'liquid-provider-depot.png', depots / 'liquid-provider/3/sheets/preview.png',
+               frame_box(DEPOT_DIRECTION, 4), TECHNOLOGY_SIZE, 1)
+        # Road network monitor research.
+        yield (depots / 'technology', f'{MONITOR}.png', depots / MONITOR / '1/sheets/preview.png',
+               frame_box(MONITOR_DIRECTION, 4), TECHNOLOGY_SIZE, 1)
 
 
 def thumbnail_source(root=REPO):
     """(thumbnail path, preview sheet, frame box): the freighter as its icon shows it."""
-    _, _, sheet, box = next(sources(root, ('freighter',)))
+    _, _, sheet, box, _, _ = next(sources(root, ('freighter',)))
     return root / 'thumbnail.png', sheet, box
 
 
@@ -103,15 +117,15 @@ def scaled(square, size):
     return square.convert('RGBa').resize((size, size), Image.Resampling.LANCZOS).convert('RGBA')
 
 
-def icon(sheet_bytes, box, label):
-    """A 64 px icon with its three custom mipmaps, laid out as Factorio expects."""
+def icon(sheet_bytes, box, label, size=ICON_SIZE, mipmaps=MIPMAPS):
+    """An icon of `size` px with its custom mipmaps (mipmaps - 1 of them), laid out as Factorio expects."""
     square = padded_art(sheet_bytes, box, label)
-    sizes = [ICON_SIZE >> level for level in range(MIPMAPS)]
-    sheet = Image.new('RGBA', (sum(sizes), ICON_SIZE))
+    sizes = [size >> level for level in range(mipmaps)]
+    sheet = Image.new('RGBA', (sum(sizes), size))
     x = 0
-    for size in sizes:
-        sheet.paste(scaled(square, size), (x, 0))
-        x += size
+    for level_size in sizes:
+        sheet.paste(scaled(square, level_size), (x, 0))
+        x += level_size
     return sheet
 
 
@@ -136,9 +150,9 @@ def thumbnail(sheet_bytes, box, label):
 
 
 def images(root, areas):
-    """(target, make, sheet, box) for every icon of the areas, and the thumbnail with the freighter."""
-    for folder, name, sheet, box in sources(root, areas):
-        yield folder / name, icon, sheet, box
+    """(target, make, sheet, box) for every icon (in-game and technology) of the areas, and the thumbnail with the freighter."""
+    for folder, name, sheet, box, size, mipmaps in sources(root, areas):
+        yield folder / name, partial(icon, size=size, mipmaps=mipmaps), sheet, box
     if 'freighter' in areas:
         target, sheet, box = thumbnail_source(root)
         yield target, thumbnail, sheet, box
@@ -160,21 +174,21 @@ def check(root, areas):
 
 def main(root=REPO, areas=('freighter', 'depots')):
     records = {}
-    for folder, name, sheet, box in sources(root, areas):
+    for folder, name, sheet, box, size, mipmaps in sources(root, areas):
         folder.mkdir(parents=True, exist_ok=True)
         target = folder / name
         # Hash and decode the same bytes, so the record names exactly what the icon was made from.
         sheet_bytes = sheet.read_bytes()
         encoded = BytesIO()
-        icon(sheet_bytes, box, sheet.relative_to(root)).save(encoded, format='PNG', optimize=True)
+        icon(sheet_bytes, box, sheet.relative_to(root), size, mipmaps).save(encoded, format='PNG', optimize=True)
         replace_atomically(target, encoded.getvalue())
         records.setdefault(folder, {})[name] = {
             'source': sheet.relative_to(root).as_posix(),
             'source_frame': list(box),
             'source_sha256': hashlib.sha256(sheet_bytes).hexdigest(),
             'sha256': hashlib.sha256(encoded.getvalue()).hexdigest(),
-            'icon_size': ICON_SIZE,
-            'mipmaps': MIPMAPS,
+            'icon_size': size,
+            'mipmaps': mipmaps,
         }
         print(f'{target.relative_to(root)} from {sheet.relative_to(root)} frame {box}')
     for folder, record in records.items():

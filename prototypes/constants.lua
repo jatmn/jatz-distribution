@@ -14,6 +14,11 @@ return {
   -- string.format pattern taking the depot role.
   depot_icon = "__jatz-distribution__/assets/depots/icons/%s-depot.png",
   icon_size = 64,
+  -- 256 px technology icons, made by tools/make_icons.py from the same game frames.
+  freighter_technology_icon = "__jatz-distribution__/assets/quinityn-freighter/technology/quinityn-freighter.png",
+  liquid_technology_icon = "__jatz-distribution__/assets/depots/technology/liquid-provider-depot.png",
+  monitor_technology_icon = "__jatz-distribution__/assets/depots/technology/road-monitor.png",
+  technology_icon_size = 256,
   -- The 1x1 loading zone marking (assets/depots/tools/make_loading_zone.py): 64 px at scale 0.5.
   loading_zone = "__jatz-distribution__/assets/depots/loading-zone/loading-zone.png",
   -- The road tile, its item and recipe; Yuoki slag path art (assets/roads/README.md).

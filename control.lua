@@ -7,6 +7,7 @@ local loading_zone = require("scripts.loading-zone")
 local depot_road = require("scripts.depot-road")
 local logistics = require("scripts.logistics")
 local request_gui = require("scripts.request-gui")
+local research = require("scripts.research")
 local road_monitor = require("scripts.road-monitor")
 
 -- Road laid (`added`) or removed or covered (`removed`) on a surface: deliveries re-plan, and road
@@ -236,8 +237,14 @@ local function setup()
   loading_zone.clear_all()
   road_monitor.add_all()
 end
-script.on_init(setup)
-script.on_configuration_changed(setup)
+script.on_init(function()
+  research.init()
+  setup()
+end)
+script.on_configuration_changed(function()
+  research.on_configuration_changed()
+  setup()
+end)
 
 -- Milestones (optional) calls every remote interface with this function, on a new game and when
 -- mods change, and adds the milestones of each addon whose required mods are all active to the

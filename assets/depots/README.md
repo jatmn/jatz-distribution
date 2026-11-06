@@ -14,6 +14,8 @@ Seven 3×3 depot buildings: Provider, Request, Buffer, Fuel, Liquid Provider, Li
 | `<role>/3/masters/hero-default-palette.png` | 2048px presentation render |
 | `loading-zone/loading-zone.png` | The 1×1 loading zone ground marking (64 px, drawn at scale 0.5). It's drawn by `tools/make_loading_zone.py`, which is its source; `loading-zone.json` records both hashes |
 | `icons/<role>-depot.png` | In-game icons: each depot facing south, taken from the south frame of its `sheets/preview.png` by `tools/make_icons.py`. 64 px with three custom mipmaps (120 × 64); `icons/icons.json` records their sources |
+| `technology/liquid-provider-depot.png` | Technology icon (Liquid freight research): the liquid provider depot's south frame at 256 px, no mipmaps, made by `tools/make_icons.py`; `technology/icons.json` records its source |
+| `technology/road-monitor.png` | Technology icon (Road network monitor research): the road network monitor's north frame, as its item icon shows it, at 256 px, no mipmaps, made by `tools/make_icons.py` |
 | `<role>/3/previews/four-directions.png` | Four-direction preview strip |
 | `<role>/3/asset.json` | Palette, scale, pipe-port positions and source model |
 | `connectors/sheets/` | Connector game sprites and shadow |

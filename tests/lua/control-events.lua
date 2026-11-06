@@ -206,6 +206,8 @@ defines.control_behavior = {
 local nth = {}
 -- The filters each event was registered with.
 local filters = {}
+-- control.lua's on_init and on_configuration_changed handlers.
+local lifecycle = {}
 script = {
   on_event = function(event, handler, filter)
     handlers[event] = handler
@@ -214,9 +216,13 @@ script = {
   on_nth_tick = function(ticks, handler)
     nth[ticks] = handler
   end,
-  on_init = function() end,
+  on_init = function(handler)
+    lifecycle.init = handler
+  end,
   on_load = function() end,
-  on_configuration_changed = function() end,
+  on_configuration_changed = function(handler)
+    lifecycle.configuration_changed = handler
+  end,
   register_on_object_destroyed = function() end,
 }
 remote = { add_interface = function() end }
@@ -1711,6 +1717,55 @@ do -- The road network monitor shows what the provider and buffer depots on its 
   monitor.valid = false
   fire("on_object_destroyed", { type = defines.target_type.entity, useful_id = monitor.unit_number })
   check("a removed monitor is forgotten", storage.road_monitors[monitor.unit_number] == nil)
+end
+
+do -- Research finished or undone reaches the freighters (tests/lua/logistics.lua checks what it does).
+  local logistics = require("scripts.logistics")
+  check("finished research is handled", handlers.on_research_finished == logistics.on_research_changed)
+  check("so is research undone", handlers.on_research_reversed == logistics.on_research_changed)
+  fire("on_research_finished", { research = { name = "automation", force = { index = 1 } } })
+  check("other research changes nothing", true)
+end
+
+do -- A save from before research keeps its recipes; a new game, or a save the mod is added to, doesn't.
+  local research = require("scripts.research")
+  -- Each force's unlocking technologies, unresearched, as Factorio leaves them after resetting the
+  -- technology effects of a save from before research.
+  local function forces()
+    local list = {}
+    for _, name in ipairs({ "player", "enemy" }) do
+      local technologies = {}
+      for _, technology in ipairs(research.unlocks) do
+        technologies[technology] = { researched = false }
+      end
+      list[name] = { technologies = technologies }
+    end
+    return list
+  end
+  local function researched(list)
+    local count = 0
+    for _, force in pairs(list) do
+      for _, technology in ipairs(research.unlocks) do
+        count = count + (force.technologies[technology].researched and 1 or 0)
+      end
+    end
+    return count
+  end
+  local before = storage
+  storage = {}
+  game.forces = forces()
+  lifecycle.init()
+  check("a new game researches nothing", researched(game.forces) == 0)
+  lifecycle.configuration_changed()
+  check("nor does a later mod change", researched(game.forces) == 0)
+  storage = { depots = {} }
+  game.forces = forces()
+  lifecycle.configuration_changed()
+  check("a save from before research gets every unlock, for every force", researched(game.forces) == 6)
+  game.forces = forces()
+  lifecycle.configuration_changed()
+  check("once only", researched(game.forces) == 0)
+  storage = before
 end
 
 print("all control event checks passed")

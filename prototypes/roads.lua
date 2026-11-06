@@ -91,10 +91,11 @@ data:extend({
     },
   },
   {
-    -- Free while the mod is in development; each craft makes ten tiles.
+    -- Free while the mod is in development, unlocked by research (prototypes/technologies.lua);
+    -- each craft makes ten tiles.
     type = "recipe",
     name = name,
-    enabled = true,
+    enabled = false,
     energy_required = 0.5,
     ingredients = {},
     results = { { type = "item", name = name, amount = 10 } },
