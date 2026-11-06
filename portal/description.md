@@ -24,6 +24,8 @@ Build depots where goods are made and where they're needed, lay road between the
 
 You'll feel at home: roads, provider and request depots, buffers, fluids and fuel all work the way you expect. Here is what's different.
 
+**Not a drop-in replacement.** Jat'z Distribution is its own mod, not an update or fork of Transport Drones, and the two can't be enabled together. Nothing is migrated: Transport Drones' roads, depots, drones and their settings don't turn into ours. If you remove Transport Drones from a save, Factorio deletes everything it placed, along with the items stored in its depots, so empty them first and plan to rebuild your network with our depots and road. Back up your save before switching.
+
 | | Transport Drones | Jat'z Distribution |
 | --- | --- | --- |
 | **The vehicle** | Small drones | The Quinityn freighter: an armored eight-wheel truck, rendered in 64 directions |
