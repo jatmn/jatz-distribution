@@ -72,7 +72,8 @@ def publish(output, tag, token, license_id=None, root=REPO):
         raise ValueError('A newer version is already published on the portal')
     endpoint, fields = '/api/v2/mods/releases/init_upload', {}
     if mod is None:
-        if not isinstance(license_id, str) or not re.fullmatch(r'custom_[0-9]+', license_id):
+        # Custom licence IDs are the code at the end of the portal's licence edit page, such as custom_6aee33da2a59c98152d81dc1.
+        if not isinstance(license_id, str) or not re.fullmatch(r'custom_[0-9A-Za-z]+', license_id):
             raise ValueError('First publication needs FACTORIO_LICENSE_ID for the mixed-licence package')
         endpoint = '/api/v2/mods/init_publish'
         fields = {'license': license_id, 'category': 'content',

@@ -130,17 +130,18 @@ class Releases(unittest.TestCase):
     def test_first_portal_publication_needs_licence_and_never_forwards_key(self):
         archive, _ = build(self.output, self.root)
         with patch.object(publish_mod, 'listing', return_value=None), patch.object(publish_mod, 'request_json') as request:
-            with self.assertRaisesRegex(ValueError, 'FACTORIO_LICENSE_ID'):
-                publish_mod.publish(self.output, self.tag, 'fixture-key', root=self.root)
+            for licence in (None, 'default_mit', 'custom_', 'custom_6aee33da 2a59'):
+                with self.subTest(licence=licence), self.assertRaisesRegex(ValueError, 'FACTORIO_LICENSE_ID'):
+                    publish_mod.publish(self.output, self.tag, 'fixture-key', licence, self.root)
             request.assert_not_called()
         with patch.object(publish_mod, 'listing', side_effect=[None, self.portal_release(archive)]), patch.object(
             publish_mod, 'request_json', side_effect=[{'upload_url': 'https://uploads.example.test/upload'}, {'success': True}]
         ) as request:
-            publish_mod.publish(self.output, self.tag, 'fixture-key', 'custom_1', self.root)
+            publish_mod.publish(self.output, self.tag, 'fixture-key', 'custom_6aee33da2a59c98152d81dc1', self.root)
             self.assertEqual(request.call_args_list[0].kwargs['token'], 'fixture-key')
             self.assertEqual(request.call_args_list[0].args[0], publish_mod.PORTAL + '/api/v2/mods/init_publish')
             self.assertNotIn('token', request.call_args_list[1].kwargs)
-            self.assertEqual(request.call_args_list[1].args[1]['license'], 'custom_1')
+            self.assertEqual(request.call_args_list[1].args[1]['license'], 'custom_6aee33da2a59c98152d81dc1')
 
     def test_portal_retry_requires_identical_bytes_and_refuses_downgrades(self):
         archive, _ = build(self.output, self.root)
