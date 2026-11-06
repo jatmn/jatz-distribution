@@ -13,6 +13,12 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels the scan of its previous commit;
+# pushes to main and scheduled scans never cancel each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
