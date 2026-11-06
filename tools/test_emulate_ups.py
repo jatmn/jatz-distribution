@@ -58,6 +58,18 @@ class EmulatorCountsOnlyTheModTests(unittest.TestCase):
         inject(self.emulator, '  function inv.get_item_count(id)\n', LOOP)
         self.assertEqual(self.emulate(), before)
 
+    def test_a_fake_prototype_method_outside_native_is_refused(self):
+        # Prototypes are plain tables (not wrapped as a whole, as inventories and entities are), and
+        # a method read once per item can run only before the measured ticks, where no count shows
+        # it: the emulator checks every function in them before it runs.
+        anchor = 'local NORMAL = prototypes.quality.normal\n'
+        inject(self.emulator, anchor, 'prototypes.item["iron-plate"].get_spoil_ticks = function()\n  return 0\nend\n')
+        result = subprocess.run([LUA, str(self.emulator), str(self.mod), PRESET, TICKS], capture_output=True,
+                                text=True, timeout=600)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('prototypes.item.iron-plate.get_spoil_ticks is a fake runtime function outside native',
+                      result.stderr)
+
     def test_work_inside_a_fake_property_is_not_counted(self):
         before = self.emulate()
         inject(self.emulator, '        __index = function(_, field)\n          if field == "position" then\n',
