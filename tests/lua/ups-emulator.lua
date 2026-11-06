@@ -6,11 +6,15 @@
 -- its base exactly (tools/emulate_ups.py). The fake answers path requests a tick later with the
 -- shortest road route, drives freighters along it at their prototype speed, and completes stop
 -- commands after their wait; it doesn't model the engine's own cost (pathfinding, movement), which
--- only the real benchmark measures. Harness work (routes, movement, stocking) isn't counted.
+-- only the real benchmark measures. Freighters move along their route at the speed the mod sets
+-- (`LuaEntity::speed`), so fuel burns and impact checks see them move. Fuel depots are kept stocked
+-- with solid fuel; there are no enemies. Harness work (routes, movement, stocking) isn't counted
+-- where it is the fake's own bookkeeping (positions along a route).
 --
 -- lua5.2 tests/lua/ups-emulator.lua [mod root] [preset] [ticks]   (prints one JSON object)
 -- It reads the freighter prototype (io) and times the handlers (os.clock), outside the game.
 -- luacheck: read globals io os
+-- luacheck: globals settings
 local MOD_ROOT, PRESET, TICKS = arg[1] or ".", arg[2] or "quick", tonumber(arg[3])
 local HERE = (arg[0]:match("^(.*)/[^/]*$") or ".")
 package.path = MOD_ROOT .. "/?.lua;" .. HERE .. "/../factorio/ups-benchmark_0.1.0/?.lua;" .. package.path
@@ -27,6 +31,7 @@ debug.sethook(function()
 end, "", STEP)
 
 local DRONE, FREIGHTER, ROAD = "jatz-freighter-drone", "jatz-quinityn-freighter", "jatz-road"
+local FUEL_TANK = "jatz-fuel-depot-tank"
 local STACK_SIZE = {
   ["iron-plate"] = 100,
   ["copper-plate"] = 100,
@@ -38,8 +43,11 @@ local STACK_SIZE = {
   stone = 50,
   ["plastic-bar"] = 100,
   ["stone-brick"] = 100,
+  ["solid-fuel"] = 50,
   [FREIGHTER] = 10,
 }
+-- Fuel values in joules (base game); other items don't burn.
+local FUEL_VALUE = { coal = 4000000, ["solid-fuel"] = 12000000 }
 -- The freighter's speed in tiles per tick, from its prototype.
 local SPEED = 0.2
 do
@@ -56,6 +64,7 @@ local handlers, nth, interfaces = {}, {}, {}
 defines = setmetatable({
   direction = { north = 0, east = 4, south = 8, west = 12 },
   inventory = { chest = 1 },
+  entity_status_diode = { green = 1, red = 2, yellow = 3 },
   target_type = { entity = 1 },
   behavior_result = { in_progress = 0, fail = 1, success = 2, deleted = 3 },
   command = { go_to_location = 1, stop = 2 },
@@ -101,15 +110,54 @@ remote = {
 commands = { add_command = function() end }
 prototypes = {
   item = {},
-  entity = { [DRONE] = { collision_box = { { -0.4, -0.4 }, { 0.4, 0.4 } }, collision_mask = {} } },
+  entity = {
+    [DRONE] = {
+      collision_box = { left_top = { x = -0.4, y = -0.4 }, right_bottom = { x = 0.4, y = 0.4 } },
+      collision_mask = {},
+      speed = SPEED,
+    },
+  },
   fluid = {},
   decorative = {},
   quality = { normal = { name = "normal" } },
+  -- Nothing researched: a technology's `level` is its own, and none is done.
+  technology = {},
+  -- No cargo colours: every load takes the unknown paint, a swap all the same.
+  mod_data = {},
 }
 for name, size in pairs(STACK_SIZE) do
-  prototypes.item[name] = { name = name, stack_size = size }
+  prototypes.item[name] = { name = name, stack_size = size, fuel_value = FUEL_VALUE[name] or 0 }
 end
 local NORMAL = prototypes.quality.normal
+local technologies = {}
+for _, name in ipairs({ "jatz-freighter-speed", "jatz-freighter-item-capacity", "jatz-freighter-fluid-capacity" }) do
+  for level = 1, 5 do
+    prototypes.technology[name .. "-" .. level] = { name = name .. "-" .. level }
+    technologies[name .. "-" .. level] = { researched = false, level = level }
+  end
+end
+for _, name in ipairs({ "jatz-freight-system", "jatz-liquid-freight", "jatz-road-network-monitor" }) do
+  prototypes.technology[name] = { name = name }
+  technologies[name] = { researched = false, level = 1 }
+end
+-- The runtime settings at their defaults (settings.lua); any other name fails.
+local function strict(values, kind)
+  return setmetatable({}, {
+    __index = function(_, name)
+      return { value = assert(values[name], "emulator: unknown " .. kind .. " setting " .. tostring(name)) }
+    end,
+  })
+end
+settings = {
+  global = strict({ ["jatz-freighter-fuel-capacity"] = 20, ["jatz-freighter-fuel-per-tile"] = 10 }, "global"),
+  startup = strict({}, "startup"),
+}
+-- Alt-mode cargo icons: drawn, never read back.
+rendering = {
+  draw_sprite = function()
+    return { valid = true, destroy = function() end }
+  end,
+}
 
 -- Item stacks: name, count (0 clears), quality, transfer_stack, clear.
 local function new_stack()
@@ -272,7 +320,25 @@ local function schedule(at, event)
   table.insert(queue[at], event)
 end
 local stats = { path_requests = 0, commands = 0, drones = 0, spilled = 0 }
-local force = { name = "player", index = 1 }
+-- The player's force, at war with the enemy force as in a new game (no enemies are on the map).
+local force = { name = "player", index = 1, technologies = technologies }
+-- How each freighter finishes its route, when the arrival comes (by freighter).
+local arrive = setmetatable({}, { __mode = "k" })
+local forces = {
+  player = force,
+  enemy = { name = "enemy", index = 2, technologies = {} },
+  neutral = { name = "neutral", index = 3, technologies = {} },
+}
+function force.is_enemy(other)
+  return other.name == "enemy"
+end
+for _, other in pairs(forces) do
+  if other ~= force then
+    function other.is_enemy(them)
+      return them.name == "player"
+    end
+  end
+end
 local destroyed = {}
 
 local function tile_key(x, y)
@@ -378,21 +444,107 @@ local function new_surface(index, plan)
     schedule(tick + 1, { name = "on_script_path_request_finished", event = { id = id, path = path } })
     return id
   end
+  function surface.pollute() end
+  -- A Fuel depot's hidden tank: no liquid fuel is piped in.
+  local function new_tank(parameters)
+    next_unit = next_unit + 1
+    local position = parameters.position
+    local tank = {
+      valid = true,
+      name = FUEL_TANK,
+      unit_number = next_unit,
+      position = { x = position.x or position[1], y = position.y or position[2] },
+      direction = parameters.direction,
+      surface = surface,
+      surface_index = surface.index,
+      force = parameters.force,
+    }
+    function tank.get_fluid()
+      return nil
+    end
+    function tank.get_fluid_capacity()
+      return 1000
+    end
+    function tank.remove_fluid()
+      return nil
+    end
+    function tank.destroy()
+      tank.valid = false
+    end
+    return tank
+  end
   function surface.create_entity(parameters)
-    assert(parameters.name == DRONE, "emulator only creates freighters, not " .. parameters.name)
+    if parameters.name == FUEL_TANK then
+      return new_tank(parameters)
+    end
+    assert(
+      parameters.name:sub(1, #DRONE) == DRONE,
+      "emulator only creates freighters and tanks, not " .. parameters.name
+    )
     stats.drones = stats.drones + 1
     next_unit = next_unit + 1
     local position = parameters.position
+    -- Where it stands, or the route it drives: from `from` at tick `since`, through `points`.
+    local at = { x = position.x or position[1], y = position.y or position[2] }
+    local fields = { speed = SPEED, orientation = 0, health = 100 }
+    local moving
+    local function where(now)
+      if not moving then
+        return at.x, at.y
+      end
+      local left = (now - moving.since) * fields.speed
+      local x, y = moving.from.x, moving.from.y
+      for _, point in ipairs(moving.points) do
+        local dx, dy = point.x - x, point.y - y
+        local length = math.abs(dx) + math.abs(dy)
+        if left <= length then
+          local share = length > 0 and left / length or 0
+          return x + dx * share, y + dy * share
+        end
+        left, x, y = left - length, point.x, point.y
+      end
+      return x, y
+    end
+    -- Stop where it is now (a new command, or a change of speed restarts the route from here).
+    local function halt()
+      at.x, at.y = where(tick)
+      moving = nil
+    end
     local drone = {
       valid = true,
-      name = DRONE,
+      name = parameters.name,
       unit_number = next_unit,
-      position = { x = position.x or position[1], y = position.y or position[2] },
       surface = surface,
       surface_index = surface.index,
-      force = force,
+      force = parameters.force or force,
       version = 0,
     }
+    -- Drive the rest of `points` from here at the current speed; arrival is scheduled for when
+    -- it gets there.
+    local function drive(points, event)
+      moving = { from = { x = at.x, y = at.y }, since = tick, points = points, event = event }
+      local length, x, y = 0, at.x, at.y
+      for _, point in ipairs(points) do
+        length, x, y = length + math.abs(point.x - x) + math.abs(point.y - y), point.x, point.y
+      end
+      drone.version = drone.version + 1
+      local arrival = tick + math.max(1, math.ceil(length / math.max(fields.speed, 1e-6)))
+      moving.until_tick = arrival
+      schedule(arrival, { name = "on_ai_command_completed", event = event, drone = drone, version = drone.version })
+    end
+    -- What's left of the route from where it stands now.
+    local function remaining()
+      local left = (tick - moving.since) * fields.speed
+      local x, y, rest = moving.from.x, moving.from.y, {}
+      for _, point in ipairs(moving.points) do
+        local length = math.abs(point.x - x) + math.abs(point.y - y)
+        if left < length then
+          rest[#rest + 1] = point
+        end
+        left, x, y = math.max(0, left - length), point.x, point.y
+      end
+      return rest
+    end
     function drone.destroy()
       drone.valid = false
       surface.entities[drone] = nil
@@ -404,26 +556,72 @@ local function new_surface(index, plan)
     drone.commandable = {
       set_command = function(command)
         stats.commands = stats.commands + 1
+        local was = counting
+        counting = false
+        halt()
         drone.version = drone.version + 1
-        local version = drone.version
         local event = { unit_number = drone.unit_number, result = defines.behavior_result.success }
-        local at
         if command.type == defines.command.go_to_location then
-          local _, length = surface.route(drone.position, command.destination)
-          if length then
-            at = tick + math.max(1, math.ceil(length / SPEED))
-            event.arrive = command.destination
+          local path = surface.route(at, command.destination)
+          if path then
+            local points = {}
+            for _, waypoint in ipairs(path) do
+              points[#points + 1] = waypoint.position
+            end
+            points[#points] = { x = command.destination.x, y = command.destination.y }
+            drive(points, event)
           else
-            at, event.result = tick + 60, defines.behavior_result.fail
+            event.result = defines.behavior_result.fail
+            schedule(
+              tick + 60,
+              { name = "on_ai_command_completed", event = event, drone = drone, version = drone.version }
+            )
           end
         else
-          at = tick + (command.ticks_to_wait or 1)
+          schedule(
+            tick + (command.ticks_to_wait or 1),
+            { name = "on_ai_command_completed", event = event, drone = drone, version = drone.version }
+          )
         end
-        schedule(at, { name = "on_ai_command_completed", event = event, drone = drone, version = version })
+        counting = was
       end,
     }
+    arrive[drone] = function()
+      if moving then
+        local last = moving.points[#moving.points]
+        if last then
+          at.x, at.y = last.x, last.y
+        end
+        moving = nil
+      end
+    end
     surface.entities[drone] = true
-    return drone
+    return setmetatable(drone, {
+      __index = function(_, field)
+        if field == "position" then
+          local was = counting
+          counting = false
+          local x, y = where(tick)
+          counting = was
+          return { x = x, y = y }
+        end
+        return fields[field]
+      end,
+      __newindex = function(_, field, value)
+        if field == "speed" and moving and value ~= fields.speed then
+          -- The rest of the route at the new speed, arriving later or sooner.
+          local was = counting
+          counting = false
+          local rest, event = remaining(), moving.event
+          halt()
+          fields.speed = value
+          drive(rest, event)
+          counting = was
+          return
+        end
+        fields[field] = value
+      end,
+    })
   end
   return surface
 end
@@ -431,6 +629,7 @@ end
 game = {
   tick = 0,
   surfaces = {},
+  forces = forces,
   players = {},
   connected_players = {},
   create_inventory = new_inventory,
@@ -505,6 +704,9 @@ for index, plan in ipairs(map.surfaces) do
     if depot.role == "request" then
       assert(jatz.set_request(entity, depot.item, STACK_SIZE[depot.item] * CHEST_SLOTS), "request refused")
       jatz.add_freighters(entity, depot.freighters)
+      jatz.set_freighter_fuel(entity, depot.fuel * settings.global["jatz-freighter-fuel-capacity"].value * 1000000)
+    elseif depot.role == "fuel" then
+      chest.insert({ name = depot.item, count = STACK_SIZE[depot.item] * CHEST_SLOTS })
     end
     serviced[#serviced + 1] = { role = depot.role, item = depot.item, chest = chest }
   end
@@ -529,9 +731,7 @@ for current = 1, warmup + measured do
     if item.name == "on_ai_command_completed" then
       local drone = item.drone
       if drone.valid and drone.version == item.version then
-        if item.event.arrive then
-          drone.position = { x = item.event.arrive.x, y = item.event.arrive.y }
-        end
+        arrive[drone]()
         item.event.tick = current
         call(handlers[defines.events.on_ai_command_completed], item.event)
       end
@@ -541,6 +741,10 @@ for current = 1, warmup + measured do
     end
   end
   queue[current] = nil
+  -- The game raises on_tick before on_nth_tick.
+  if handlers[defines.events.on_tick] then
+    call(handlers[defines.events.on_tick], { tick = current })
+  end
   local ticks = {}
   for interval in pairs(nth) do
     ticks[#ticks + 1] = interval
@@ -553,7 +757,7 @@ for current = 1, warmup + measured do
   end
   for index = current % PERIOD + 1, #serviced, PERIOD do
     local depot = serviced[index]
-    if depot.role == "provider" then
+    if depot.role == "provider" or depot.role == "fuel" then
       depot.chest.insert({ name = depot.item, count = STACK_SIZE[depot.item] * CHEST_SLOTS })
     else
       local count = depot.chest.get_item_count(depot.item)
@@ -593,6 +797,7 @@ local result = {
   providers = summary.providers,
   requests = summary.requests,
   freighters = summary.freighters,
+  fuel_depots = summary.fuel,
   instructions_per_tick = total / measured,
   instructions_p99 = sorted[math.max(1, math.floor(#sorted * 0.99))],
   instructions_max = peak,

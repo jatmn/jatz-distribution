@@ -10,15 +10,16 @@ Players may run hundreds of depots and thousands of freighters on several surfac
 - 12% of the remaining grid links added back as extra crossings, and dead-end spurs at 15% of junctions;
 - every 8th grid line a 5-tile-wide road, with 30% of its links missing so traffic must drive around the gaps; all other roads 1 tile wide;
 - provider and request depots in equal numbers beside 1-tile roads, with their loading zone on the road. 10% of request depots face a provider across the same road tile, so some deliveries cross a single tile; the rest go anywhere on the surface, up to about 500 tiles away in a straight line and much farther by road;
-- 5 to 100 freighters (Transport Drones: drones) in each request depot; ten different items.
+- 5 to 100 freighters (Transport Drones: drones) in each request depot; ten different items;
+- Fuel depots, one for every ten depots, kept full of solid fuel. Jat'z freighters fill up there by themselves; Transport Drones keeps its drones' fuel in the request depot, so it doesn't build them. They are placed last, from a random stream of their own, so the other depots stand in exactly the same places for both mods.
 
-The benchmark mod keeps every depot busy: once a second each provider is filled up and each request depot is emptied, a sixtieth of the depots each tick, so demand never stops. Jat'z request depots ask for a full chest (48 stacks) of their item.
+The benchmark mod keeps every depot busy: once a second each provider and Fuel depot is filled up and each request depot is emptied, a sixtieth of the depots each tick, so demand never stops. Jat'z request depots ask for a full chest (48 stacks) of their item. A full tank lasts 2,000 tiles, longer than the measured window, so each Jat'z request depot's freighters start with part of a tank, spread evenly from 5% to full across the depots, as after hours of play; some of them go to fill up during the run.
 
 | Preset | Surfaces | Depots | Freighters | Road tiles | Warm-up | Measured |
 | --- | --- | --- | --- | --- | --- | --- |
-| `quick` | 1 (160 × 160) | 40 | 1,048 | 4,443 | 1,800 ticks | 1,800 ticks |
-| `standard` | 2 (352 × 352) | 160 | 4,403 | 35,141 | 7,200 ticks | 3,600 ticks |
-| `stress` | 3 (352 × 352) | 600 | 16,293 | 52,476 | 7,200 ticks | 3,600 ticks |
+| `quick` | 1 (160 × 160) | 40, and 4 Fuel depots | 1,048 | 4,443 | 1,800 ticks | 1,800 ticks |
+| `standard` | 2 (352 × 352) | 160, and 16 Fuel depots | 4,403 | 35,141 | 7,200 ticks | 3,600 ticks |
+| `stress` | 3 (352 × 352) | 600, and 60 Fuel depots | 16,293 | 52,476 | 7,200 ticks | 3,600 ticks |
 
 The warm-up lets traffic reach a steady state before measuring (Transport Drones sends one drone per depot per second, so its fleets take about two minutes to get going). Results are only comparable on the same preset and the same map: changing `presets.lua` or `layout.lua` means recording the baseline again.
 
@@ -82,6 +83,6 @@ Every pull request that changes the mod includes the before and after table from
 
 ## CI: the UPS benchmark check
 
-CI has no Factorio, so its **UPS benchmark** check runs `tools/emulate_ups.py --base <base>` for pull requests that change the mod and adds its table to the check's summary and to a comment on the pull request (one comment, edited on later pushes; pull requests from forks get a read-only token, so for them the table is only in the summary). `tests/lua/ups-emulator.lua` loads the real `control.lua` and `scripts/` with Lua 5.2 against a fake runtime on the same map, with the same stocking: path requests are answered a tick later with the shortest road route, freighters drive it at their prototype's speed, stop commands complete after their wait. It counts the Lua instructions the mod executes (not the fake's), per tick: the mean, the 99th percentile and the worst tick. Instruction counts don't depend on the machine, so before and after differ only by the change (repeated runs agree to within about 0.01%). It also reports path requests and unit commands, which stand for engine work the emulation can't time.
+CI has no Factorio, so its **UPS benchmark** check runs `tools/emulate_ups.py --base <base>` for pull requests that change the mod and adds its table to the check's summary and to a comment on the pull request (one comment, edited on later pushes; pull requests from forks get a read-only token, so for them the table is only in the summary). `tests/lua/ups-emulator.lua` loads the real `control.lua` and `scripts/` with Lua 5.2 against a fake runtime on the same map, with the same stocking: path requests are answered a tick later with the shortest road route, freighters drive it at the speed the mod gives them (so fuel burns, and a dry freighter crawls), stop commands complete after their wait, and `on_tick` runs every tick before the `on_nth_tick` handlers, as in the game. There are no enemies, so impact checks find nothing. It counts the Lua instructions the mod executes (not the fake's), per tick: the mean, the 99th percentile and the worst tick. Instruction counts don't depend on the machine, so before and after differ only by the change (repeated runs agree to within about 0.01%). It also reports path requests and unit commands, which stand for engine work the emulation can't time.
 
 It can't measure the engine's own cost (pathfinding, unit movement), so it complements the in-game benchmark rather than replacing it. A rise of more than 5% in the mean or worst tick is flagged as a warning; the check fails only if the emulator itself breaks on the pull request. To run it locally: `python3 tools/emulate_ups.py --base origin/main` (`--preset quick` takes about a second, `standard` about 15 seconds).
