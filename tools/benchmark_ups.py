@@ -166,6 +166,7 @@ def table(variants, preset, warmup, ticks):
 
 def describe(summary):
     return (f'{summary["surfaces"]} surface(s), {summary["providers"]} providers, {summary["requests"]} request depots, '
+            f'{summary.get("fuel", 0)} fuel depots, '
             f'{summary["freighters_placed"]} of {summary["freighters"]} freighters placed, {summary["road_tiles"]} road tiles, '
             f'{summary["target"]} {summary["target_version"]}')
 

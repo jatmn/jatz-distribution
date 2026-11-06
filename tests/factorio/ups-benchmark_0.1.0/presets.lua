@@ -17,6 +17,9 @@ local common = {
   across_share = 0.1,
   -- Freighters (drones) per request depot, lowest and highest.
   freighters = { 5, 100 },
+  -- Fuel depots, as a share of the depots above (built only for mods whose freighters fill up at
+  -- them: Transport Drones keeps its drones' fuel in the request depot).
+  fuel_share = 0.1,
 }
 
 local function preset(values)

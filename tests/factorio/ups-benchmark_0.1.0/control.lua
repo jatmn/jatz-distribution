@@ -1,8 +1,9 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- Builds the benchmark map (layout.lua) for whichever logistics mod is loaded, Jat'z Distribution
--- or Transport Drones, and keeps it busy: providers are topped up and request depots emptied, each
--- depot once a second, spread over the ticks so no tick carries all of it. Both mods get exactly the
--- same map, stock and demand. tools/benchmark_ups.py runs the save with `--benchmark` and reads the
+-- or Transport Drones, and keeps it busy: providers and fuel depots are topped up and request depots
+-- emptied, each depot once a second, spread over the ticks so no tick carries all of it. Both mods
+-- get exactly the same map, stock and demand; only Jat'z Distribution builds the fuel depots, since
+-- Transport Drones keeps its drones' fuel in each request depot. tools/benchmark_ups.py runs the save with `--benchmark` and reads the
 -- per-tick timings; this mod writes what was built and how busy it was to
 -- script-output/ups-benchmark.json.
 local layout = require("layout")
@@ -17,10 +18,11 @@ local CHEST_SLOTS = 48
 
 local adapters = {}
 
--- Jat'z Distribution: road tile, depots and freighters through its remote interface.
+-- Jat'z Distribution: road tile, depots and freighters through its remote interface. Freighters
+-- fill up at the fuel depots by themselves.
 adapters["jatz-distribution"] = {
   road = "jatz-road",
-  entity = { provider = "jatz-provider-depot", request = "jatz-request-depot" },
+  entity = { provider = "jatz-provider-depot", request = "jatz-request-depot", fuel = "jatz-fuel-depot" },
   -- Unrotated, a depot loads to the south (prototypes/orientation.lua): the direction to face for
   -- a road on each side, and where the loading tile then is from the depot's centre.
   direction = {
@@ -34,7 +36,13 @@ adapters["jatz-distribution"] = {
   request = function(entity, depot)
     local count = prototypes.item[depot.item].stack_size * CHEST_SLOTS
     assert(remote.call("jatz-distribution", "set_request", entity, depot.item, count), "request refused")
-    return remote.call("jatz-distribution", "add_freighters", entity, depot.freighters)
+    local added = remote.call("jatz-distribution", "add_freighters", entity, depot.freighters)
+    -- Versions from before fuel (benchmarked with --compare) have neither.
+    if remote.interfaces["jatz-distribution"].set_freighter_fuel then
+      local tank = settings.global["jatz-freighter-fuel-capacity"].value * 1000000
+      remote.call("jatz-distribution", "set_freighter_fuel", entity, depot.fuel * tank)
+    end
+    return added
   end,
   output = function(entity)
     return entity.get_inventory(defines.inventory.chest)
@@ -44,7 +52,8 @@ adapters["jatz-distribution"] = {
 
 -- Transport Drones: request depots are crafting machines whose recipe is the request, holding
 -- drones and the drones' fuel. Fuel is kept topped up here rather than by fuel depots, so the
--- drones' fuel bookkeeping runs but no fuel deliveries do (Jat'z Distribution has no fuel yet).
+-- drones' fuel bookkeeping runs but no fuel deliveries do. It has no depot for the map's fuel
+-- depots (nil), so they aren't built.
 local function td_fuel()
   return prototypes.recipe["fuel-depots"].products[1].name
 end
@@ -99,6 +108,19 @@ local function make_surface(name, extent)
   return surface
 end
 
+local function build_depot(adapter, surface, force, depot)
+  local shift = adapter.shift[depot.side]
+  local entity = surface.create_entity({
+    name = adapter.entity[depot.role],
+    position = { depot.x + 0.5 - shift[1], depot.y + 0.5 - shift[2] },
+    direction = adapter.direction[depot.side],
+    force = force,
+    raise_built = true,
+  })
+  assert(entity, "ups-benchmark: cannot place " .. depot.role .. " depot at " .. depot.x .. "," .. depot.y)
+  return entity
+end
+
 local function build()
   local name = target()
   local adapter = adapters[name]
@@ -109,6 +131,7 @@ local function build()
   local summary = layout.summary(map)
   summary.target, summary.target_version, summary.preset = name, script.active_mods[name], preset_name
   summary.freighters_placed = 0
+  summary.fuel = 0
   local depots = {}
   for _, plan in ipairs(map.surfaces) do
     local surface = make_surface(plan.name, plan.extent)
@@ -122,19 +145,17 @@ local function build()
     end
     surface.set_tiles(tiles, true, true, true, true)
     for _, depot in ipairs(plan.depots) do
-      local shift = adapter.shift[depot.side]
-      local entity = surface.create_entity({
-        name = adapter.entity[depot.role],
-        position = { depot.x + 0.5 - shift[1], depot.y + 0.5 - shift[2] },
-        direction = adapter.direction[depot.side],
-        force = force,
-        raise_built = true,
-      })
-      assert(entity, "ups-benchmark: cannot place " .. depot.role .. " depot at " .. depot.x .. "," .. depot.y)
-      if depot.role == "request" then
-        summary.freighters_placed = summary.freighters_placed + adapter.request(entity, depot)
+      -- Fuel depots only where the mod has them (not Transport Drones, nor versions before fuel).
+      local entity_name = adapter.entity[depot.role]
+      if depot.role ~= "fuel" or (entity_name and prototypes.entity[entity_name]) then
+        local entity = build_depot(adapter, surface, force, depot)
+        if depot.role == "request" then
+          summary.freighters_placed = summary.freighters_placed + adapter.request(entity, depot)
+        elseif depot.role == "fuel" then
+          summary.fuel = summary.fuel + 1
+        end
+        depots[#depots + 1] = { entity = entity, role = depot.role, item = depot.item }
       end
-      depots[#depots + 1] = { entity = entity, role = depot.role, item = depot.item }
     end
   end
   storage.depots = depots
@@ -143,7 +164,8 @@ local function build()
   storage.delivered = 0
 end
 
--- One share of the depots: providers filled up, request depots emptied (counted as delivered).
+-- One share of the depots: providers and fuel depots filled up, request depots emptied (counted as
+-- delivered).
 local function service(tick)
   local adapter = adapters[storage.summary.target]
   local depots = storage.depots
@@ -151,7 +173,7 @@ local function service(tick)
     local depot = depots[index]
     local entity = depot.entity
     if entity.valid then
-      if depot.role == "provider" then
+      if depot.role == "provider" or depot.role == "fuel" then
         entity.insert({ name = depot.item, count = prototypes.item[depot.item].stack_size * CHEST_SLOTS })
       else
         local output = adapter.output(entity)
