@@ -356,8 +356,26 @@ local function reset()
     }
     drone.force = parameters.force or PLAYER
     drone.health = 500
+    -- Destroyed, it answers the mod only `valid`, as in the game: reading anything else from an
+    -- invalid LuaEntity is an error (start_trip read a freighter its own set_off had sent home).
+    -- These checks may still look at what it was.
     function drone.destroy()
+      local was = {}
+      for key, value in pairs(drone) do
+        was[key] = value
+      end
+      for key in pairs(was) do
+        drone[key] = nil
+      end
       drone.valid = false
+      setmetatable(drone, {
+        __index = function(_, key)
+          if debug.getinfo(2, "S").source:find("scripts/", 1, true) then
+            error("LuaEntity API call when LuaEntity was invalid: " .. tostring(key), 2)
+          end
+          return was[key]
+        end,
+      })
     end
     return drone
   end

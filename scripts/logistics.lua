@@ -1541,8 +1541,10 @@ local function start_trip(depot, provider, from, planned, length)
     drone.speed = freighter_speed(drone.force) * DRY_SPEED
   end
   show_fuel(trip)
-  set_off(drone.unit_number, trip, length)
-  return storage.trips[drone.unit_number] ~= nil
+  -- set_off may send it straight back into the slot (too little fuel, nowhere to fill up), which
+  -- destroys the unit: only its id can be read after.
+  set_off(trip.key, trip, length)
+  return storage.trips[trip.key] ~= nil
 end
 
 -- Searches belong to a request depot (finding a provider to send a freighter to) or to a trip (a

@@ -1,4 +1,8 @@
 ---------------------------------------------------------------------------------------------------
+Version: Unreleased
+  Bugfixes:
+    - Fixed a crash when a request depot's freighter was too low on fuel for the trip and no fuel depot was reachable: the freighter now stays home as intended.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.1
 Date: 2026-11-06
   Features:
