@@ -1947,29 +1947,31 @@ end
 -- `any_quality`, items of every quality move (freighters do), not only normal quality (cargo).
 function load(from, to, item, limit, leave, any_quality)
   local moved = 0
-  -- Of one quality, a `to` stack that couldn't take all of one stack (full, or holding something
-  -- else) can't take any of the next either: later stacks start after it. Stacks of any quality
-  -- can still top up an earlier stack of their own quality, so they look at every one.
+  local size = stack_size_of(item)
+  -- Each `to` stack looked at is an object for Lua to collect, so later stacks start after the
+  -- leading ones that can take nothing more: full, or holding another item. A stack of `item` with
+  -- room is looked at again, though it refused one stack: stacks merge only when their quality and
+  -- data (health, tags, durability...) match, so it can still take a later one.
   local first = 1
   for index = 1, #from do
-    local stack = from[index]
     if moved >= limit then
       break
     end
+    local stack = from[index]
     if stack.valid_for_read and stack.name == item and (any_quality or stack.quality.name == QUALITY) then
       local kept = leave and leave[index] or 0
-      for slot = any_quality and 1 or first, #to do
-        local into = to[slot]
+      for slot = first, #to do
         local movable = (stack.valid_for_read and stack.count or 0) - kept
         if moved >= limit or movable <= 0 then
           break
         end
+        local into = to[slot]
         if not into.valid_for_read or into.name == item then
           local before = stack.count
           into.transfer_stack(stack, math.min(movable, limit - moved))
           moved = moved + before - (stack.valid_for_read and stack.count or 0)
         end
-        if (stack.valid_for_read and stack.count or 0) - kept > 0 and moved < limit then
+        if slot == first and into.valid_for_read and (into.name ~= item or into.count >= size) then
           first = slot + 1
         end
       end

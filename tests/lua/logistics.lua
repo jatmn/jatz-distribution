@@ -152,23 +152,33 @@ local function sprites_on(drone)
   return table.concat(sprites, " ")
 end
 
--- An item stack and a script inventory, as far as the dispatcher uses them.
+-- An item stack and a script inventory, as far as the dispatcher uses them. As in the game, a
+-- stack holds at most its item's stack size, and stacks merge only when their item data match
+-- (`health` stands for it here: health, tags, durability...).
 local function stack(name, count)
   local self = { name = name, count = count or 0, valid_for_read = (count or 0) > 0 }
   function self.clear()
-    self.name, self.count, self.valid_for_read = nil, 0, false
+    self.name, self.count, self.valid_for_read, self.health = nil, 0, false, nil
   end
   function self.transfer_stack(from, amount)
     amount = math.min(amount or from.count, from.count)
-    if self.valid_for_read and self.name ~= from.name then
+    if self.valid_for_read and (self.name ~= from.name or self.health ~= from.health) then
       return false
     end
-    self.name, self.count, self.valid_for_read = from.name, self.count + amount, true
-    from.count = from.count - amount
+    local item = prototypes.item[from.name]
+    local moved = math.min(amount, (item and item.stack_size or math.huge) - self.count)
+    if moved <= 0 then
+      return false
+    end
+    if not self.valid_for_read then
+      self.health, self.quality = from.health, from.quality
+    end
+    self.name, self.count, self.valid_for_read = from.name, self.count + moved, true
+    from.count = from.count - moved
     if from.count == 0 then
       from.clear()
     end
-    return true
+    return moved == amount
   end
   return self
 end
@@ -1459,9 +1469,11 @@ do -- A liquid request depot mined: its freighters go to the miner, its truck ch
   check("and its truck chest is removed", chest.valid == false)
 end
 
--- Give a depot a chest of real stacks (the fake chests only count), holding `count` of `name`.
-local function stocked(depot, name, count)
-  local chest = script_inventory(4)
+-- Give a depot a chest of real stacks (the fake chests only count), holding `count` of `name`, of
+-- `size` stacks (4 unless given).
+local function stocked(depot, name, count, size)
+  size = size or 4
+  local chest = script_inventory(size)
   if count then
     chest[1] = stack(name, count)
     chest[1].quality = { name = "normal" }
@@ -1469,7 +1481,7 @@ local function stocked(depot, name, count)
   function chest.get_item_count(id)
     local wanted = type(id) == "table" and id.name or id
     local total = 0
-    for index = 1, 4 do
+    for index = 1, size do
       if chest[index].valid_for_read and chest[index].name == wanted then
         total = total + chest[index].count
       end
@@ -1483,6 +1495,32 @@ local function stocked(depot, name, count)
     return chest
   end
   return chest
+end
+
+do -- Loading fills every cargo stack it can, though stacks of one item differ in their data: a
+  -- damaged stack doesn't merge into a stack at full health, and a later one at full health does.
+  local logistics = reset()
+  local request, provider = setup(logistics)
+  local stock = stocked(provider, nil, nil, 20)
+  stocked(request)
+  for index = 1, 20 do
+    stock[index] = stack("a", 25)
+    stock[index].quality = { name = "normal" }
+    stock[index].health = index % 2 == 1 and 1 or 0.5
+  end
+  assert(logistics.set_request(request, "a", 500))
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  check("setup: a freighter to fetch ten stacks' worth", trip.planned == 500 and #trip.cargo == 10)
+  arrive(logistics, trip)
+  local loaded, mixed = 0, false
+  for index = 1, #trip.cargo do
+    loaded = loaded + trip.cargo[index].count
+    mixed = mixed or (trip.cargo[index].valid_for_read and trip.cargo[index].count ~= 50)
+  end
+  check("all 500 load, in ten full stacks, each of one health", loaded == 500 and not mixed)
+  check("and leave the provider", stock.get_item_count("a") == 0)
 end
 
 do -- The cargo paint: grey out, the load's color from the provider home, the same trip throughout.
