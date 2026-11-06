@@ -8,10 +8,16 @@
 -- commands after their wait; it doesn't model the engine's own cost (pathfinding, movement), which
 -- only the real benchmark measures. Freighters move along their route at the speed the mod sets
 -- (`LuaEntity::speed`), so fuel burns and impact checks see them move. Fuel depots are kept stocked
--- with solid fuel; there are no enemies. What is counted: the mod's own Lua, plus the fake API
--- calls it makes that stand in for real ones (inventories and item stacks), as a rough stand-in
--- for the API's own cost. Not counted: the engine's work the fake does for it (path answers,
--- freighter movement and positions) and the harness's stocking, which runs outside the handlers.
+-- with solid fuel; there are no enemies.
+--
+-- Only the mod's own Lua is counted, exactly, one instruction at a time. Every function and
+-- computed property of the fake runtime is wrapped by `native`, the one boundary between the mod
+-- and the fake: counting stops when the mod calls into it and starts again when it returns, so how
+-- the fake does its work (inventory loops, path answers, movement) never shows. The few instructions
+-- of the boundary itself are measured once at start-up and taken off. Calls into the runtime's
+-- functions (methods such as get_item_count, request_path or create_entity, not property reads)
+-- are counted separately, as `api_calls`: a machine-independent stand-in for the API's own cost.
+-- Only measured ticks are counted; the harness's stocking runs outside the mod's handlers.
 --
 -- lua5.2 tests/lua/ups-emulator.lua [mod root] [preset] [ticks]   (prints one JSON object)
 -- It reads the freighter prototype (io) and times the handlers (os.clock), outside the game.
@@ -23,14 +29,75 @@ package.path = MOD_ROOT .. "/?.lua;" .. HERE .. "/../factorio/ups-benchmark_0.1.
 local layout = require("layout")
 local preset = require("presets")[PRESET] or error("no preset " .. PRESET)
 
--- Instruction counting, only while the mod's handlers run.
-local counting, instructions = false, 0
-local STEP = 100
-debug.sethook(function()
-  if counting then
-    instructions = instructions + STEP
+-- Instruction counting: a count hook on every instruction, armed only while the mod's own Lua runs
+-- in a measured tick. `native` wraps everything the fake runtime offers the mod: while armed, a call
+-- through it disarms the hook, runs the fake's code, and arms it again on the way back.
+local instructions, armed = 0, false
+-- Crossings of the boundary: calls of runtime functions, and computed property reads and writes.
+local crossings = { call = 0, property = 0 }
+local sethook = debug.sethook
+local function tally()
+  instructions = instructions + 1
+end
+local function arm()
+  armed = true
+  sethook(tally, "", 1)
+end
+local function disarm()
+  armed = false
+  sethook()
+end
+local function resume(...)
+  arm()
+  return ...
+end
+-- `kind`: "call" for a runtime function (the default), "property" for a metamethod.
+local function native(fn, kind)
+  kind = kind or "call"
+  return function(...)
+    if not armed then
+      return fn(...)
+    end
+    disarm()
+    crossings[kind] = crossings[kind] + 1
+    return resume(fn(...))
   end
-end, "", STEP)
+end
+-- Every function in a fake object, wrapped in place.
+local function natives(object)
+  for key, value in pairs(object) do
+    if type(value) == "function" then
+      object[key] = native(value)
+    end
+  end
+  return object
+end
+-- A metatable whose __index and __newindex functions are computed properties.
+local function properties(meta)
+  for _, key in ipairs({ "__index", "__newindex" }) do
+    if type(meta[key]) == "function" then
+      meta[key] = native(meta[key], "property")
+    end
+  end
+  return meta
+end
+-- The instructions one crossing costs on the mod's side of the boundary (the wrapper's own, before
+-- it disarms and after it arms again), so they can be taken off: a call through a wrapped empty
+-- function less a bare arm and disarm, less the caller's own two (load the function, call it).
+local BOUNDARY
+do
+  local probe = native(function() end)
+  arm()
+  disarm()
+  local bare = instructions
+  instructions = 0
+  arm()
+  probe()
+  disarm()
+  BOUNDARY = instructions - bare - 2
+  instructions, crossings.call = 0, 0
+  assert(BOUNDARY >= 0 and BOUNDARY < 32, "emulator: unexpected boundary cost " .. BOUNDARY)
+end
 
 local DRONE, FREIGHTER, ROAD = "jatz-freighter-drone", "jatz-quinityn-freighter", "jatz-road"
 local FUEL_TANK = "jatz-fuel-depot-tank"
@@ -63,28 +130,37 @@ local PERIOD, CHEST_SLOTS = 60, 48
 
 -- Runtime globals the mod reads.
 local handlers, nth, interfaces = {}, {}, {}
-defines = setmetatable({
-  direction = { north = 0, east = 4, south = 8, west = 12 },
-  inventory = { chest = 1 },
-  entity_status_diode = { green = 1, red = 2, yellow = 3 },
-  target_type = { entity = 1 },
-  behavior_result = { in_progress = 0, fail = 1, success = 2, deleted = 3 },
-  command = { go_to_location = 1, stop = 2 },
-  distraction = { none = 0 },
-  events = setmetatable({}, {
+defines = setmetatable(
+  {
+    direction = { north = 0, east = 4, south = 8, west = 12 },
+    inventory = { chest = 1 },
+    entity_status_diode = { green = 1, red = 2, yellow = 3 },
+    target_type = { entity = 1 },
+    behavior_result = { in_progress = 0, fail = 1, success = 2, deleted = 3 },
+    command = { go_to_location = 1, stop = 2 },
+    distraction = { none = 0 },
+    events = setmetatable(
+      {},
+      properties({
+        __index = function(_, name)
+          return name
+        end,
+      })
+    ),
+  },
+  properties({
     __index = function(_, name)
-      return name
+      return setmetatable(
+        {},
+        properties({
+          __index = function(_, key)
+            return name .. "." .. key
+          end,
+        })
+      )
     end,
-  }),
-}, {
-  __index = function(_, name)
-    return setmetatable({}, {
-      __index = function(_, key)
-        return name .. "." .. key
-      end,
-    })
-  end,
-})
+  })
+)
 local registrations = {}
 script = {
   on_event = function(event, handler)
@@ -104,12 +180,13 @@ script = {
   end,
   active_mods = { ["jatz-distribution"] = "emulated" },
 }
-remote = {
+natives(script)
+remote = natives({
   add_interface = function(name, functions)
     interfaces[name] = functions
   end,
-}
-commands = { add_command = function() end }
+})
+commands = natives({ add_command = function() end })
 prototypes = {
   item = {},
   entity = {
@@ -144,22 +221,25 @@ for _, name in ipairs({ "jatz-freight-system", "jatz-liquid-freight", "jatz-road
 end
 -- The runtime settings at their defaults (settings.lua); any other name fails.
 local function strict(values, kind)
-  return setmetatable({}, {
-    __index = function(_, name)
-      return { value = assert(values[name], "emulator: unknown " .. kind .. " setting " .. tostring(name)) }
-    end,
-  })
+  return setmetatable(
+    {},
+    properties({
+      __index = function(_, name)
+        return { value = assert(values[name], "emulator: unknown " .. kind .. " setting " .. tostring(name)) }
+      end,
+    })
+  )
 end
 settings = {
   global = strict({ ["jatz-freighter-fuel-capacity"] = 20, ["jatz-freighter-fuel-per-tile"] = 10 }, "global"),
   startup = strict({}, "startup"),
 }
 -- Alt-mode cargo icons: drawn, never read back.
-rendering = {
+rendering = natives({
   draw_sprite = function()
-    return { valid = true, destroy = function() end }
+    return natives({ valid = true, destroy = function() end })
   end,
-}
+})
 
 -- Item stacks: name, count (0 clears), quality, transfer_stack, clear.
 local function new_stack()
@@ -193,25 +273,29 @@ local function new_stack()
     from.count = from.count - moved
     return true
   end
-  return setmetatable(stack, {
-    __index = function(_, field)
-      if field == "valid_for_read" then
-        return data.count > 0
-      elseif field == "valid" then
-        return true
-      elseif field == "count" or field == "name" or field == "quality" then
-        return data[field]
-      end
-      return methods[field]
-    end,
-    __newindex = function(_, field, value)
-      assert(field == "count", "stack field " .. field)
-      data.count = value
-      if value <= 0 then
-        methods.clear()
-      end
-    end,
-  })
+  natives(methods)
+  return setmetatable(
+    stack,
+    properties({
+      __index = function(_, field)
+        if field == "valid_for_read" then
+          return data.count > 0
+        elseif field == "valid" then
+          return true
+        elseif field == "count" or field == "name" or field == "quality" then
+          return data[field]
+        end
+        return methods[field]
+      end,
+      __newindex = function(_, field, value)
+        assert(field == "count", "stack field " .. field)
+        data.count = value
+        if value <= 0 then
+          methods.clear()
+        end
+      end,
+    })
+  )
 end
 
 local function item_name(id)
@@ -310,7 +394,7 @@ local function new_inventory(size)
   function inv.destroy()
     inv.valid = false
   end
-  return inv
+  return natives(inv)
 end
 
 -- The world: surfaces with road tiles, entities, scheduled engine events.
@@ -340,6 +424,7 @@ for _, other in pairs(forces) do
       return them.name == "player"
     end
   end
+  natives(other)
 end
 local destroyed = {}
 
@@ -410,13 +495,13 @@ local function new_surface(index, plan)
   end
   function surface.get_tile(x, y)
     local road = surface.road[tile_key(math.floor(x), math.floor(y))]
-    return {
+    return natives({
       valid = true,
       name = road and ROAD or "lab-dark-1",
       collides_with = function()
         return false
       end,
-    }
+    })
   end
   function surface.get_hidden_tile()
     return nil
@@ -442,11 +527,7 @@ local function new_surface(index, plan)
     stats.path_requests = stats.path_requests + 1
     next_unit = next_unit + 1
     local id = next_unit
-    -- The answer is the engine's work, not the mod's: worked out with counting off.
-    local was = counting
-    counting = false
     local path = surface.route(parameters.start, parameters.goal)
-    counting = was
     schedule(tick + 1, { name = "on_script_path_request_finished", event = { id = id, path = path } })
     return id
   end
@@ -477,7 +558,7 @@ local function new_surface(index, plan)
     function tank.destroy()
       tank.valid = false
     end
-    return tank
+    return natives(tank)
   end
   function surface.create_entity(parameters)
     if parameters.name == FUEL_TANK then
@@ -560,10 +641,8 @@ local function new_surface(index, plan)
       return true
     end
     drone.commandable = {
-      set_command = function(command)
+      set_command = native(function(command)
         stats.commands = stats.commands + 1
-        local was = counting
-        counting = false
         halt()
         drone.version = drone.version + 1
         local event = { unit_number = drone.unit_number, result = defines.behavior_result.success }
@@ -589,8 +668,7 @@ local function new_surface(index, plan)
             { name = "on_ai_command_completed", event = event, drone = drone, version = drone.version }
           )
         end
-        counting = was
-      end,
+      end),
     }
     arrive[drone] = function()
       if moving then
@@ -602,34 +680,34 @@ local function new_surface(index, plan)
       end
     end
     surface.entities[drone] = true
-    return setmetatable(drone, {
-      __index = function(_, field)
-        if field == "position" then
-          local was = counting
-          counting = false
-          local x, y = where(tick)
-          counting = was
-          return { x = x, y = y }
-        end
-        return fields[field]
-      end,
-      __newindex = function(_, field, value)
-        if field == "speed" and moving and value ~= fields.speed then
-          -- The rest of the route at the new speed, arriving later or sooner.
-          local was = counting
-          counting = false
-          local rest, event = remaining(), moving.event
-          halt()
-          fields.speed = value
-          drive(rest, event)
-          counting = was
-          return
-        end
-        fields[field] = value
-      end,
-    })
+    drone.destroy = native(drone.destroy)
+    return setmetatable(
+      drone,
+      properties({
+        __index = function(_, field)
+          if field == "position" then
+            local x, y = where(tick)
+            return { x = x, y = y }
+          end
+          return fields[field]
+        end,
+        __newindex = function(_, field, value)
+          if field == "speed" and moving and value ~= fields.speed then
+            -- The rest of the route at the new speed, arriving later or sooner.
+            local rest, event = remaining(), moving.event
+            halt()
+            fields.speed = value
+            drive(rest, event)
+            return
+          end
+          fields[field] = value
+        end,
+      })
+    )
   end
-  return surface
+  -- Everything a surface offers the mod (distances and route are the fake's own, but wrapping them
+  -- changes nothing: the fake calls them with counting already off).
+  return natives(surface)
 end
 
 game = {
@@ -646,6 +724,7 @@ game = {
     return game.surfaces[index]
   end,
 }
+natives(game)
 storage = {}
 
 local function new_depot(surface, name, x, y, direction)
@@ -667,16 +746,20 @@ local function new_depot(surface, name, x, y, direction)
   function entity.insert(spec)
     return chest.insert(spec)
   end
-  return entity, chest
+  return natives(entity), chest
 end
 
--- Run a mod handler with instruction counting on.
-local cpu = 0
+-- Run a mod handler, counting its instructions in measured ticks.
+local cpu, measuring = 0, false
 local function call(handler, event)
   local started = os.clock()
-  counting = true
-  handler(event)
-  counting = false
+  if measuring then
+    arm()
+    handler(event)
+    disarm()
+  else
+    handler(event)
+  end
   cpu = cpu + os.clock() - started
 end
 
@@ -723,7 +806,8 @@ local warmup, measured = preset.warmup, TICKS or preset.ticks
 local per_tick, delivered, vehicles, samples = {}, 0, 0, 0
 for current = 1, warmup + measured do
   tick, game.tick = current, current
-  local before = instructions
+  measuring = current > warmup
+  local before, crossed = instructions, crossings.call + crossings.property
   for _, drone in ipairs(destroyed) do
     call(handlers[defines.events.on_object_destroyed], {
       registration_number = drone.unit_number,
@@ -774,7 +858,9 @@ for current = 1, warmup + measured do
     end
   end
   if current > warmup then
-    per_tick[#per_tick + 1] = instructions - before
+    -- The mod's own: less the boundary's few instructions for each crossing this tick.
+    local crossed_now = crossings.call + crossings.property - crossed
+    per_tick[#per_tick + 1] = instructions - before - BOUNDARY * crossed_now
     if current % 600 == 0 then
       local out = 0
       for _, surface in ipairs(game.surfaces) do
@@ -786,7 +872,7 @@ for current = 1, warmup + measured do
     end
   end
 end
-debug.sethook()
+disarm()
 
 local total, peak = 0, 0
 for _, count in ipairs(per_tick) do
@@ -807,6 +893,7 @@ local result = {
   instructions_per_tick = total / measured,
   instructions_p99 = sorted[math.max(1, math.floor(#sorted * 0.99))],
   instructions_max = peak,
+  api_calls_per_tick = crossings.call / measured,
   path_requests = stats.path_requests,
   commands = stats.commands,
   freighters_sent = stats.drones,

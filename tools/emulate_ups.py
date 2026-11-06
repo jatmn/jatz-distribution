@@ -4,10 +4,12 @@
 
 Runs tests/lua/ups-emulator.lua (Lua 5.2) on the benchmark map, once with the mod's
 control.lua, scripts/ and prototypes/ at --base and once with the working tree, and
-reports the Lua instructions the mod executes per tick: the mean, the 99th percentile
-and the worst tick (the once-a-second dispatch spikes). Instruction counts don't depend
-on the machine, so a difference is the change's own; they don't include the engine's
-pathfinding and movement, which only tools/benchmark_ups.py measures in the game.
+reports the Lua instructions the mod's own code executes per tick: the mean, the 99th
+percentile and the worst tick (the once-a-second dispatch spikes), plus its calls into
+the runtime's functions. Instruction counts don't depend on the machine, and the fake
+runtime's own work is never counted (tools/test_emulate_ups.py checks that), so a
+difference is the change's own; they don't include the engine's pathfinding and
+movement, which only tools/benchmark_ups.py measures in the game.
 
 python3 tools/emulate_ups.py --base origin/main [--preset standard] [--summary FILE]
 
@@ -32,7 +34,8 @@ RUNTIME = ('control.lua', 'scripts', 'prototypes')
 # Marks the workflow's comment so later pushes edit it instead of adding another.
 COMMENT_MARKER = '<!-- ups-benchmark -->'
 METRICS = (('instructions_per_tick', 'Mean per tick'), ('instructions_p99', 'p99 tick'),
-           ('instructions_max', 'Worst tick'), ('path_requests', 'Path requests'),
+           ('instructions_max', 'Worst tick'), ('api_calls_per_tick', 'API calls per tick'),
+           ('path_requests', 'Path requests'),
            ('commands', 'Unit commands'), ('vehicles_out', 'Freighters out'), ('delivered', 'Items delivered'))
 
 
@@ -53,8 +56,9 @@ def extract(revision, target):
 
 
 def table(preset, before, after, warn):
-    lines = [f'Engine-free emulation, preset `{preset}`: Lua instructions the mod runs per tick (lower is better). '
-             'Machine-independent; the game\'s pathfinding and movement are not included.', '',
+    lines = [f'Engine-free emulation, preset `{preset}`: Lua instructions the mod\'s own code runs per tick (lower is '
+             'better), and its calls into the runtime\'s functions. Machine-independent; the game\'s pathfinding and '
+             'movement are not included.', '',
              '| | Before | After | Change |', '| --- | --- | --- | --- |']
     flagged = []
     for key, label in METRICS:

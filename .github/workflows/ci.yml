@@ -150,6 +150,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install --no-install-recommends -y lua5.2
+      - name: Check the emulator counts only the mod's own Lua
+        run: python3 tools/test_emulate_ups.py
       - name: Compare the mod's cost per tick with the base
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
