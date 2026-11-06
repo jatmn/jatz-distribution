@@ -1,5 +1,6 @@
 ---------------------------------------------------------------------------------------------------
-Version: Unreleased
+Version: 0.1.1
+Date: 2026-11-06
   Features:
     - Recipes: depots, the freighter, road and the road network monitor are no longer free. Item depots take a steel chest and the belt they show, liquid depots a storage tank (and pumps to fetch fluid), and the fuel depot a steel chest, a belt and an engine unit. The freighter takes 2 engine units and its full tank's fuel, 5 coal. Road is slag: 5 stone and 5 iron ore make 10 tiles.
     - With Space Age, freighters can also be made with 10 carbon in place of the coal, for planets without coal.
