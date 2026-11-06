@@ -3,6 +3,8 @@ Version: Unreleased
   Bugfixes:
     - Fixed a crash when a request depot's freighter was too low on fuel for the trip and no fuel depot was reachable: the freighter now stays home as intended.
     - Undoing the removal of a depot or road network monitor (cut, deconstruction planner or mined by hand) brings back its settings: a request depot gets its request back and asks robots for its freighters again, and priority, circuit conditions and monitor readings return too.
+  Modding:
+    - Mods can declare their items' colors, which freighters then paint their cargo with: a mod-data prototype with data_type "item-colors" and data = { items = { [item name] = color } }. A declared color comes before every other rule, so by-products no recipe makes (such as Yuoki's slag) and items whose recipes mislead get the right paint.
 ---------------------------------------------------------------------------------------------------
 Version: 0.1.1
 Date: 2026-11-06

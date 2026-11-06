@@ -10,11 +10,15 @@
 --
 -- Fluids have their own color (base_color, as fluid bars and wagons show it). Items have none, so
 -- an item's color is the first of:
--- 1. A color of its own below: base game ores and plates (whatever an overhaul does to their
+-- 1. The color its mod declares: a mod-data prototype with data_type "item-colors" and
+--    data = { items = { [item] = Color } }, for example read from the item icons (Yuoki does).
+--    Prototypes are read by name, and the first to name an item colors it. This is how a mod
+--    colors by-products no recipe makes, and items whose recipes say nothing of their color.
+-- 2. A color of its own below: base game ores and plates (whatever an overhaul does to their
 --    recipes, their icons don't change), and base game and Space Age items no rule colors well.
--- 2. The map color of the resource it is mined from (iron ore blue-grey, copper ore orange).
--- 3. The fluid it holds: a barrel, emptied by a recipe giving back the fluid and the container.
--- 4. A recipe making it: the recipe's crafting tint (sulfur yellow, plastic white), as a chemical
+-- 3. The map color of the resource it is mined from (iron ore blue-grey, copper ore orange).
+-- 4. The fluid it holds: a barrel, emptied by a recipe giving back the fluid and the container.
+-- 5. A recipe making it: the recipe's crafting tint (sulfur yellow, plastic white), as a chemical
 --    plant shows its recipe; otherwise the color of its one item ingredient (iron plate from iron
 --    ore, copper cable from copper plate), or of its one fluid ingredient if it has no item ones;
 --    otherwise its main item ingredient's: a mined one first (titanium plate from rutile ore, not
@@ -105,6 +109,18 @@ function colors.derive(raw, item_types)
   for _, name in ipairs(sorted_keys(raw.fluid)) do
     if not raw.fluid[name].parameter then
       fluids[name] = paint.drone_for(raw.fluid[name].base_color)
+    end
+  end
+
+  -- Colors mods declare for their items, by prototype name: the first to name an item colors it.
+  local declared = {}
+  for _, name in ipairs(sorted_keys(raw["mod-data"])) do
+    local entry = raw["mod-data"][name]
+    local list = entry.data_type == "item-colors" and type(entry.data) == "table" and entry.data.items
+    for item, value in pairs(type(list) == "table" and list or {}) do
+      if declared[item] == nil and paint.normalize(value) then
+        declared[item] = value
+      end
     end
   end
 
@@ -209,7 +225,9 @@ function colors.derive(raw, item_types)
     end
     visiting[item] = true
     local result
-    if colors.own[item] then
+    if declared[item] then
+      result = declared[item]
+    elseif colors.own[item] then
       result = colors.own[item]
     elseif mined[item] then
       result = mined[item]

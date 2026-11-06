@@ -59,6 +59,34 @@ local raw = {
   item = {},
   ammo = { bullets = item("bullets") },
   recipe = {},
+  -- Colors mods declare for their items, read by prototype name.
+  ["mod-data"] = {
+    ["a-mod-colors"] = {
+      type = "mod-data",
+      name = "a-mod-colors",
+      data_type = "item-colors",
+      data = {
+        items = {
+          slag = { r = 0.55, g = 0.36, b = 0.17 },
+          ["declared-plate"] = { 0, 0, 1 },
+          stone = { r = 0, g = 0, b = 255 },
+          titanium = "not a color",
+        },
+      },
+    },
+    ["b-mod-colors"] = {
+      type = "mod-data",
+      name = "b-mod-colors",
+      data_type = "item-colors",
+      data = { items = { slag = { 1, 1, 1 } } },
+    },
+    ["other-data"] = {
+      type = "mod-data",
+      name = "other-data",
+      data_type = "something-else",
+      data = { items = { ["blue-steel"] = { 1, 0, 0 } } },
+    },
+  },
 }
 for _, name in ipairs({
   "blue-ore",
@@ -83,6 +111,10 @@ for _, name in ipairs({
   "scrap",
   "scrapped",
   "recycled",
+  "slag",
+  "slag-brick",
+  "declared-plate",
+  "stone",
 }) do
   raw.item[name] = item(name)
 end
@@ -117,6 +149,10 @@ for _, entry in ipairs({
   recipe("scrap-main", { I("red-ore") }, { I("scrapped"), I("sulfur") }, { main_product = "scrapped" }),
   recipe("bullets", { I("blue-plate") }, { I("bullets") }),
   recipe("recycled", { I("sulfur") }, { I("recycled") }, { categories = { "recycling" } }),
+  -- Slag only comes beside another product, so no recipe makes it.
+  recipe("smelt-with-slag", { I("red-ore") }, { I("red-wire"), I("slag") }, { main_product = "red-wire" }),
+  recipe("slag-brick", { I("slag", 2) }, { I("slag-brick") }),
+  recipe("declared-plate", { I("blue-ore") }, { I("declared-plate") }),
 }) do
   raw.recipe[entry.name] = entry
 end
@@ -160,6 +196,13 @@ check("a recipe with several products makes its main product", items.scrapped ==
 check("and nothing else", items.sulfur == "jatz-freighter-drone-550")
 check("recycling makes nothing", items.recycled == nil)
 check("every item type counts", items.bullets == items["blue-ore"])
+check("a by-product takes the color its mod declares", items.slag == "jatz-freighter-drone-321")
+check("the first declaration by name wins", items.slag ~= "jatz-freighter-drone-555")
+check("items made from it follow", items["slag-brick"] == items.slag)
+check("a declared color comes before the recipe rules", items["declared-plate"] == "jatz-freighter-drone-005")
+check("and before a color of our own", items.stone == "jatz-freighter-drone-005")
+check("a declaration that isn't a color is ignored", items.titanium == "jatz-freighter-drone-303")
+check("other mod-data is ignored", items["blue-steel"] == items["blue-ore"])
 check("parameters get no paint", items["parameter-0"] == nil and fluids["parameter-0"] == nil)
 for name, drone in pairs(items) do
   check("item " .. name .. " gets a real freighter", paint.is_drone(drone))
