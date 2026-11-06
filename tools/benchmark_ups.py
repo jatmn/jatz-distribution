@@ -32,6 +32,12 @@ from package_mod import build
 ROOT = Path(__file__).resolve().parents[1]
 BENCH = ROOT / 'tests/factorio/ups-benchmark_0.1.0'
 PRESETS = ('quick', 'standard', 'stress')
+# The seed of nauvis, the one surface the benchmark mod doesn't build itself. Without one, every
+# save gets a random nauvis, some with biters near the spawn and some without, and freighters
+# look for enemy units to run over only while there are some: the script cost moved by about
+# 0.45 ms a tick between saves of the same code. This one has biters (35 enemy units in the
+# measured window), as a real game does, so that cost is always in the numbers.
+NAUVIS_SEED = 1340776561
 # Timings kept from each tick (Factorio's debug view names); wholeUpdate is the whole game update.
 # --benchmark-verbose is given "all": in 2.1.24 a list of names crashes the game after the run.
 COLUMNS = ('wholeUpdate', 'scriptUpdate', 'pathFinder', 'commander', 'entityUpdate')
@@ -88,7 +94,8 @@ def prepare(label, mod, binary, data, preset, parent):
     config.write_text(f'[path]\nread-data={data.as_posix()}\nwrite-data={write.as_posix()}\n')
     command = [str(binary), '--config', str(config), '--mod-directory', str(mods)]
     save = workspace / 'ups-benchmark.zip'
-    if run(command + ['--create', str(save)], workspace / 'create.log', 1800) != 0 or not save.exists():
+    create = ['--create', str(save), '--map-gen-seed', str(NAUVIS_SEED)]
+    if run(command + create, workspace / 'create.log', 1800) != 0 or not save.exists():
         print((workspace / 'create.log').read_text()[-4000:])
         raise SystemExit(f'{label}: creating the benchmark map failed, see {workspace}')
     return {'label': label, 'workspace': workspace, 'command': command, 'save': save, 'runs': []}

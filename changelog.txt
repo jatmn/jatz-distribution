@@ -31,7 +31,7 @@ Version: Unreleased
   Bugfixes:
     - A freighter killed by enemies is now lost, with its cargo. Before, it could go back into its depot's freighter slot as if its route had failed.
     - Freighters requested for a request depot whose chest has no free stack (it is full of cargo, say) are now brought once a stack frees up, together with any more asked for meanwhile. Before, the request was dropped.
-    - Large networks no longer stutter once a second. Request depots and freighters are now checked spread over each second instead of all in the same tick, and finding a provider no longer looks at every freighter in the game: on a map with 600 depots and 16,000 freighters, the slowest tick went from over a second to under 19 ms, and the mod's script time fell from 16 ms to about 1 ms a tick.
+    - Large networks no longer stutter once a second. Request depots and freighters are now checked spread over each second instead of all in the same tick, and finding a provider no longer looks at every freighter in the game: on a map with 600 depots and 16,000 freighters, the slowest tick went from over a second to about 20 ms, and the mod's script time fell from 16 ms to about 1 ms a tick.
   Compatibility:
     - With Mining Drones, Mining Drones 2 Remastered or Mining Drones Mod installed, mining depots are item provider depots of what their drones mine: freighters fetch it from the tile behind the depot, opposite its mining area, where the depot lays road like any other depot. They have a priority like provider depots.
     - Fuel depots placed in earlier versions are removed when the save loads: the fuel depot is now a chest with a tank under it.
