@@ -212,7 +212,7 @@ logistics.status = {
 local TO_PROVIDER, TO_REQUEST, RETURNING = "to-provider", "to-request", "returning"
 
 -- Defined further down; dispatch, the search and on_tick need them first.
-local end_trip, load, freighter_requests, load_fluid, unload_fluid, set_off, target, upgrade
+local end_trip, load, freighter_requests, load_fluid, unload_fluid, set_off, target, upgrade, burn
 
 local function init_storage()
   storage.depots = storage.depots or {}
@@ -1125,11 +1125,14 @@ end
 -- in it, so two legs (out to a provider and back) are never measured as one (they would cancel).
 -- A trip in a list is still out while storage.trips[trip.id] is that trip (`repaint` moves `id`
 -- with it); the others are dropped when their phase comes round. Kept in storage, so every
--- player's game agrees.
+-- player's game agrees, and kept as it is when the configuration changes (add_all): a trip given
+-- a new phase could go up to two seconds without a check (Pullfrog's review of 0125590).
 local function trip_phases()
   local phases = storage.trip_phases
   if not phases then
-    -- First use in a save, or after add_all: the trips out share the phases in turn.
+    -- First use in a save from before phases (every trip was checked at the same tick): the trips
+    -- out share the phases in turn. Each burns what it has driven since its last check first, so
+    -- its next check, at its new phase, is less than a second after a sample whatever that phase.
     phases = {}
     for phase = 1, DISPATCH_INTERVAL do
       phases[phase] = {}
@@ -1137,6 +1140,7 @@ local function trip_phases()
     local count = 0
     for id, trip in pairs(storage.trips) do
       trip.id = id
+      burn(trip)
       local list = phases[count % DISPATCH_INTERVAL + 1]
       list[#list + 1] = trip
       count = count + 1
@@ -1567,7 +1571,7 @@ local function dispatch(depot)
 end
 
 -- Burn the fuel a freighter used driving since last time: what the tiles it covered take.
-local function burn(trip)
+function burn(trip)
   local drone = trip.drone
   if not drone.valid then
     return
@@ -2746,8 +2750,6 @@ function logistics.add_all()
     depot.surface_index = depot.surface_index or (depot.entity.valid and depot.entity.surface_index)
   end
   file_promises()
-  -- The trips kept get their phases afresh.
-  storage.trip_phases = nil
 end
 
 -- A request depot's freighters: how many are in its slot, how many are out on trips, and the most

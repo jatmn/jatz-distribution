@@ -2693,4 +2693,102 @@ do -- Fuel is burned by the straight-line distance between a freighter's checks,
   )
 end
 
+-- A freighter's checks stay less than a second apart through a change of schedule while it is
+-- out: a configuration change (add_all, from on_configuration_changed), or the first schedule in
+-- a save from before phases. Two freighters set off, so the one left out is on phase 1; `disrupt`
+-- runs while it loads, just before a check whose tick a new phase could move away. Returns the
+-- energy it parks with and its one leg's length (Pullfrog's review of 0125590).
+local function round_trip_through(disrupt)
+  local logistics = reset()
+  local provider = entity("jatz-provider-depot", 5.5, 0.5, { a = 40 })
+  local stock = script_inventory(1)
+  stock[1].name, stock[1].count, stock[1].valid_for_read = "a", 40, true
+  stock[1].quality = { name = "normal" }
+  provider.get_inventory = function()
+    return stock
+  end
+  logistics.add(provider)
+  local depots, chests = {}, {}
+  for index = 1, 2 do
+    local request = entity("jatz-request-depot", 0.5, 0.5 + (index - 1) * 0.001)
+    logistics.add(request)
+    assert(logistics.set_request(request, "a", 10))
+    assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+    chests[index] = script_inventory(4)
+    chests[index].get_insertable_count = request.chest.get_insertable_count
+    local chest = chests[index]
+    request.get_inventory = function()
+      return chest
+    end
+    depots[index] = request
+  end
+  local trip, home, there, events = nil, nil, nil, {}
+  for tick = 0, 600 do
+    game.tick = tick
+    if events[tick] then
+      events[tick]()
+    end
+    logistics.on_tick_share(tick)
+    if events[-tick] then
+      events[-tick]()
+    end
+    if not trip and #requests == 2 then
+      answer(logistics, 1, "route")
+      answer(logistics, 2, "route")
+      -- The first freighter is lost at once; the second, on phase 1, makes the round trip.
+      local gone = trips_from(depots[1])[1]
+      gone.drone.valid = false
+      logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = gone.drone.unit_number })
+      trip = trips_from(depots[2])[1]
+      home = { x = trip.drone.position.x, y = trip.drone.position.y }
+      there = requests[2].goal
+      -- Its first check, at home, is at the next tick of phase 1.
+      local c1 = tick + 1
+      while c1 % 60 ~= 1 do
+        c1 = c1 + 1
+      end
+      local function complete()
+        logistics.on_ai_command_completed({
+          unit_number = trip.drone.unit_number,
+          result = defines.behavior_result.success,
+        })
+      end
+      events[c1 + 4] = function()
+        trip.drone.position = { x = there.x, y = there.y }
+        complete()
+      end
+      -- While it loads, after the checks of the tick before its own (phase 0).
+      events[-(c1 + 59)] = function()
+        disrupt(logistics)
+      end
+      events[c1 + 64] = complete
+      events[c1 + 69] = function()
+        trip.drone.position = { x = home.x, y = home.y }
+        complete()
+      end
+      events[c1 + 129] = complete
+    end
+  end
+  assert(next(storage.trips) == nil and chests[2].get_item_count() == 10, "the round trip finished")
+  local parked = storage.depots[depots[2].unit_number].fuel or {}
+  return parked[1], math.sqrt((there.x - home.x) ^ 2 + (there.y - home.y) ^ 2)
+end
+
+do
+  local energy, leg = round_trip_through(function(logistics)
+    logistics.add_all()
+  end)
+  check(
+    "a configuration change while a freighter loads keeps its checks: both legs burn",
+    leg > 0 and energy and math.abs(energy - (20000000 - 2 * leg * 10000)) < 1e-6
+  )
+  energy, leg = round_trip_through(function()
+    storage.trip_phases = nil
+  end)
+  check(
+    "so does the first schedule of a save from before phases",
+    leg > 0 and energy and math.abs(energy - (20000000 - 2 * leg * 10000)) < 1e-6
+  )
+end
+
 print("all logistics checks passed")
