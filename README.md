@@ -7,7 +7,7 @@
 Build depots where goods are made and where they're needed, connect them with road, and heavy freighters do the hauling. The gameplay is inspired by Klonan's [Transport Drones](https://mods.factorio.com/mod/Transport_Drones), with trucks in place of drones and a rugged industrial look inspired by the Yuoki mods.
 
 > [!NOTE]
-> **In development.** Item and fluid deliveries, and fuel, already work. Real recipes and balance are still to come, and everything is free to craft for now, once you research **Freight system**. The mod isn't on the Mod Portal yet: see [Try it](#try-it).
+> **In development.** Item and fluid deliveries, fuel, research and recipes already work; balance may still change. The mod isn't on the Mod Portal yet: see [Try it](#try-it).
 
 ## How it works
 
@@ -79,7 +79,7 @@ Copy `dist/jatz-distribution_0.1.0.zip` into your [Factorio mods folder](https:/
 - [x] Fuel for freighters, and refueling at the Fuel depot
 - [ ] Freighter wheel animation and final stats
 - [x] Research: unlocking, liquid freight, freighter speed (infinite), item and fluid capacity
-- [ ] Recipes and balance
+- [x] Recipes and balance
 - [ ] Release on the Factorio Mod Portal
 
 ## Credits

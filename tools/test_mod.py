@@ -34,8 +34,35 @@ CHECK = ROOT / 'tests/factorio/jatz-distribution-check_0.1.0'
 OURS = ('jatz-distribution', 'jatz-distribution-check')
 # Dependency prefixes Factorio loads with the mod: required ('' and '~') and recommended ('+').
 LOADED_WITH = re.compile(r'^\s*(?:~|\+)?\s*([A-Za-z0-9_-]+)')
-EXPECTED = {'free_recipes': 10,
-            # All 10 recipes are free. Research: the freight system (after engine) unlocks the item
+# The recipes (time in seconds, ingredients, how many it makes), as the owner approved them on
+# November 6, 2026.
+RECIPES = {
+    'jatz-provider-depot': {'time': 5, 'made': 1, 'ingredients': {
+        'steel-chest': 1, 'transport-belt': 1, 'iron-gear-wheel': 6, 'iron-plate': 10, 'stone-brick': 4}},
+    'jatz-request-depot': {'time': 5, 'made': 1, 'ingredients': {
+        'steel-chest': 1, 'transport-belt': 1, 'iron-gear-wheel': 6, 'electronic-circuit': 4, 'stone-brick': 4}},
+    'jatz-buffer-depot': {'time': 5, 'made': 1, 'ingredients': {
+        'steel-chest': 1, 'transport-belt': 2, 'iron-gear-wheel': 6, 'electronic-circuit': 4, 'stone-brick': 4}},
+    'jatz-liquid-provider-depot': {'time': 5, 'made': 1, 'ingredients': {
+        'storage-tank': 1, 'pipe': 1, 'iron-gear-wheel': 6, 'stone-brick': 4}},
+    'jatz-liquid-request-depot': {'time': 5, 'made': 1, 'ingredients': {
+        'storage-tank': 1, 'pipe': 1, 'pump': 1, 'electronic-circuit': 4, 'stone-brick': 4}},
+    'jatz-liquid-buffer-depot': {'time': 5, 'made': 1, 'ingredients': {
+        'storage-tank': 1, 'pipe': 4, 'pump': 2, 'electronic-circuit': 8, 'stone-brick': 4}},
+    'jatz-fuel-depot': {'time': 5, 'made': 1, 'ingredients': {
+        'steel-chest': 1, 'transport-belt': 1, 'engine-unit': 1, 'pipe': 1, 'iron-gear-wheel': 5, 'stone-brick': 4}},
+    'jatz-quinityn-freighter': {'time': 4, 'made': 1, 'ingredients': {
+        'engine-unit': 2, 'steel-plate': 5, 'iron-gear-wheel': 5, 'electronic-circuit': 2, 'coal': 5}},
+    'jatz-road': {'time': 1, 'made': 10, 'ingredients': {'stone': 5, 'iron-ore': 5}},
+    'jatz-road-monitor': {'time': 5, 'made': 1, 'ingredients': {
+        'constant-combinator': 1, 'electronic-circuit': 5, 'copper-cable': 5}},
+}
+# With Space Age, the freighter can be fuelled with 10 carbon instead, also by the freight system.
+CARBON_RECIPE = 'jatz-quinityn-freighter-carbon'
+RECIPES_SPACE_AGE = {**RECIPES, CARBON_RECIPE: {'time': 4, 'made': 1, 'ingredients': {
+    'engine-unit': 2, 'steel-plate': 5, 'iron-gear-wheel': 5, 'electronic-circuit': 2, 'carbon': 10}}}
+EXPECTED = {'recipes': RECIPES,
+            # Research: the freight system (after engine) unlocks the item
             # and fuel depots, the freighter and road; liquid freight, after it and fluid handling,
             # the liquid depots; and the road network monitor research, after it and the circuit
             # network, the monitor; each locked until then. Freighter speed has 4 levels then an
@@ -359,6 +386,16 @@ def locale_keys(root=ROOT):
     return keys
 
 
+def expected_for(enabled_mods):
+    """EXPECTED, with Space Age's carbon freighter recipe when it is on."""
+    if 'space-age' not in enabled_mods:
+        return EXPECTED
+    system = dict(EXPECTED['research_unlocks']['jatz-freight-system'], locked=7, unlocked=7)
+    system['recipes'] = [*system['recipes'][:5], CARBON_RECIPE, *system['recipes'][5:]]
+    return {**EXPECTED, 'recipes': RECIPES_SPACE_AGE,
+            'research_unlocks': {**EXPECTED['research_unlocks'], 'jatz-freight-system': system}}
+
+
 def check(binary, data, bundled, enabled_mods, label, extra=None):
     parent = ROOT / '.local/mod-check'
     parent.mkdir(parents=True, exist_ok=True)
@@ -397,7 +434,8 @@ def check(binary, data, bundled, enabled_mods, label, extra=None):
         return False
     report = json.loads(report_path.read_text())
     report['loaded_mods'] = loaded
-    wrong = {key: report.get(key) for key, value in EXPECTED.items() if report.get(key) != value}
+    expected = expected_for(enabled_mods)
+    wrong = {key: report.get(key) for key, value in expected.items() if report.get(key) != value}
     expected_mods = sorted(enabled_mods | set(OURS) | set(extra) | {'core'})
     translations = locale_keys()
     untranslated = sorted({key for names in report.get('localised_names', {}).values()
@@ -415,7 +453,7 @@ def check(binary, data, bundled, enabled_mods, label, extra=None):
         return False
     (workspace / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
     print(f'{label}: {package.name} passed: {report["placed"]} depots placed, {report["rotations"]} rotations, '
-          f'{report["pipe_connections"]} pipe connections, {report["free_recipes"]} free recipes, '
+          f'{report["pipe_connections"]} pipe connections, {len(report["recipes"])} recipes, '
           f'freighter drove {report["driven_tiles"]:.1f} tiles, {report["delivered"]} iron plates delivered by road '
           f'(a {report["detour"]:.0f}-tile detour, {report["road_samples"]} on-road samples), menu row {report["menu_row_order"]!r} directly above '
           f'the car row {report["car_row_order"]!r} in {report["menu_tab"]}. Mods loaded: {", ".join(loaded)}'

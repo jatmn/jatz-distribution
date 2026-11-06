@@ -25,6 +25,65 @@ local ORDER = {
   "liquid-buffer",
   "fuel",
 }
+-- What each depot is made of, in 5 seconds: item depots from a steel chest (their 48 slots) and the
+-- belt their artwork shows (each belt in place of a gear), liquid depots from a storage tank, the
+-- ones fetching fluid with pumps; the Fuel depot from a steel chest, a belt and an engine unit, not
+-- a pump: pumps come with Fluid handling, which the Freight system doesn't need. Everything here is
+-- craftable once the depot is researched (prototypes/technologies.lua).
+local INGREDIENTS = {
+  provider = {
+    { "steel-chest", 1 },
+    { "transport-belt", 1 },
+    { "iron-gear-wheel", 6 },
+    { "iron-plate", 10 },
+    { "stone-brick", 4 },
+  },
+  request = {
+    { "steel-chest", 1 },
+    { "transport-belt", 1 },
+    { "iron-gear-wheel", 6 },
+    { "electronic-circuit", 4 },
+    { "stone-brick", 4 },
+  },
+  buffer = {
+    { "steel-chest", 1 },
+    { "transport-belt", 2 },
+    { "iron-gear-wheel", 6 },
+    { "electronic-circuit", 4 },
+    { "stone-brick", 4 },
+  },
+  ["liquid-provider"] = { { "storage-tank", 1 }, { "pipe", 1 }, { "iron-gear-wheel", 6 }, { "stone-brick", 4 } },
+  ["liquid-request"] = {
+    { "storage-tank", 1 },
+    { "pipe", 1 },
+    { "pump", 1 },
+    { "electronic-circuit", 4 },
+    { "stone-brick", 4 },
+  },
+  ["liquid-buffer"] = {
+    { "storage-tank", 1 },
+    { "pipe", 4 },
+    { "pump", 2 },
+    { "electronic-circuit", 8 },
+    { "stone-brick", 4 },
+  },
+  fuel = {
+    { "steel-chest", 1 },
+    { "transport-belt", 1 },
+    { "engine-unit", 1 },
+    { "pipe", 1 },
+    { "iron-gear-wheel", 5 },
+    { "stone-brick", 4 },
+  },
+}
+local function items(list)
+  local ingredients = {}
+  for index, entry in ipairs(list) do
+    ingredients[index] = { type = "item", name = entry[1], amount = entry[2] }
+  end
+  return ingredients
+end
+
 -- Every depot takes red and green circuit wires, whichever way it faces (containers with four
 -- directions need one connector per direction; the steel chest's single one can't be used). Item
 -- depots read their contents and tanks their fluid as usual; delivery depots also have an
@@ -130,12 +189,12 @@ for index, role in ipairs(ORDER) do
       stack_size = 10,
     },
     {
-      -- Free while the mod is in development; unlocked by research (prototypes/technologies.lua).
+      -- Unlocked by research (prototypes/technologies.lua).
       type = "recipe",
       name = name,
       enabled = false,
-      energy_required = 0.5,
-      ingredients = {},
+      energy_required = 5,
+      ingredients = items(INGREDIENTS[role]),
       results = { { type = "item", name = name, amount = 1 } },
     },
   })

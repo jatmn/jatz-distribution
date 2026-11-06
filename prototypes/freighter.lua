@@ -25,6 +25,17 @@ freighter.collision_box = art.box(0.75, 2.25)
 freighter.selection_box = art.box(0.8, 2.3)
 freighter.hidden = not drivable
 
+-- The freighter's parts and the fuel its full tank is filled with.
+local function freighter_ingredients(fuel, amount)
+  return {
+    { type = "item", name = "engine-unit", amount = 2 },
+    { type = "item", name = "steel-plate", amount = 5 },
+    { type = "item", name = "iron-gear-wheel", amount = 5 },
+    { type = "item", name = "electronic-circuit", amount = 2 },
+    { type = "item", name = fuel, amount = amount },
+  }
+end
+
 data:extend({
   freighter,
   {
@@ -44,12 +55,37 @@ data:extend({
     stack_size = 10,
   },
   {
-    -- Free while the mod is in development; unlocked by research (prototypes/technologies.lua).
+    -- Unlocked by research (prototypes/technologies.lua). New freighters come with a full tank
+    -- (scripts/logistics.lua), so the recipe takes its fuel: 5 coal, the default 20 MJ tank.
     type = "recipe",
     name = name,
     enabled = false,
-    energy_required = 0.5,
-    ingredients = {},
+    energy_required = 4,
+    ingredients = freighter_ingredients("coal", 5),
     results = { { type = "item", name = name, amount = 1 } },
   },
 })
+
+-- With Space Age, the same freighter fuelled with 10 carbon (2 MJ each) instead, for planets
+-- without coal. Recycling a freighter gives back the coal recipe's ingredients: the recycler names
+-- its recipe after the product, so only one of the two may make it.
+if mods["space-age"] and data.raw.item.carbon then
+  data:extend({
+    {
+      type = "recipe",
+      name = constants.freighter_carbon_recipe,
+      localised_name = { "recipe-name." .. constants.freighter_carbon_recipe },
+      icons = {
+        { icon = constants.freighter_icon, icon_size = constants.icon_size },
+        { icon = "__space-age__/graphics/icons/carbon.png", icon_size = 64, scale = 0.25, shift = { -8, -8 } },
+      },
+      subgroup = constants.subgroup,
+      order = "c[freighter]-b[carbon]",
+      enabled = false,
+      auto_recycle = false,
+      energy_required = 4,
+      ingredients = freighter_ingredients("carbon", 10),
+      results = { { type = "item", name = name, amount = 1 } },
+    },
+  })
+end
