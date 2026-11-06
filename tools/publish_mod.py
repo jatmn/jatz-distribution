@@ -20,7 +20,8 @@ from validate_package import validate
 PORTAL = 'https://mods.factorio.com'
 
 
-def request_json(url, fields=None, archive=None, token=None):
+def request_json(url, fields=None, archive=None, token=None, field='file', content_type='application/zip'):
+    """GET, or POST multipart fields and an optional file (`archive`, sent as `field`); returns the JSON reply."""
     headers, body = {}, None
     if fields is not None:
         boundary = uuid.uuid4().hex
@@ -28,8 +29,8 @@ def request_json(url, fields=None, archive=None, token=None):
         for key, value in fields.items():
             sections.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'.encode())
         if archive is not None:
-            sections.append((f'--{boundary}\r\nContent-Disposition: form-data; name="file"; '
-                             f'filename="{archive.name}"\r\nContent-Type: application/zip\r\n\r\n').encode())
+            sections.append((f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"; '
+                             f'filename="{archive.name}"\r\nContent-Type: {content_type}\r\n\r\n').encode())
             sections.extend([archive.read_bytes(), b'\r\n'])
         sections.append(f'--{boundary}--\r\n'.encode())
         body = b''.join(sections)
@@ -71,7 +72,8 @@ def publish(output, tag, token, license_id=None, root=REPO):
         raise ValueError('A newer version is already published on the portal')
     endpoint, fields = '/api/v2/mods/releases/init_upload', {}
     if mod is None:
-        if not isinstance(license_id, str) or not re.fullmatch(r'custom_[0-9]+', license_id):
+        # Custom licence IDs are the code at the end of the portal's licence edit page, such as custom_6aee33da2a59c98152d81dc1.
+        if not isinstance(license_id, str) or not re.fullmatch(r'custom_[0-9A-Za-z]+', license_id):
             raise ValueError('First publication needs FACTORIO_LICENSE_ID for the mixed-licence package')
         endpoint = '/api/v2/mods/init_publish'
         fields = {'license': license_id, 'category': 'content',

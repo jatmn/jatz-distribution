@@ -16,5 +16,5 @@
     "! Transport_Drones_Continued_Unofficial",
     "! Transport_Drones_Yunli"
   ],
-  "description": "Automated freight trucks, depots and roads. In development: freighters deliver items from provider to request depots, driving only on road. Buffer, fuel and liquid depots don't take part yet."
+  "description": "Armored freight trucks that keep your factory supplied by road. Build provider and request depots, lay road between them, and freighters fetch items and fluids from the nearest source by road, refueling themselves at fuel depots. Inspired by Transport Drones, with buffers, priorities, circuit control and blueprints."
 }

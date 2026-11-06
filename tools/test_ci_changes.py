@@ -216,6 +216,8 @@ class RoutingTests(unittest.TestCase):
             # The art job redraws the thumbnail from the freighter's sprites; the package job then runs too.
             (['thumbnail.png'], {'freighter', 'freighter_art'}),
             (['tools/test_check_blender_sources.py', 'tools/test_ci_changes.py'], {'repository'}),
+            # The Mod Portal page: the release syncs it, and the package job checks it.
+            (['portal/description.md', 'portal/summary.txt', 'portal/gallery/01-depots.png'], {'repository'}),
             (['README.md', 'AGENTS.md', 'CONTRIBUTING.md', 'SECURITY.md', 'NOTICE', 'COPYING', 'COPYING.LESSER',
               '.gitignore', 'docs/testing.md', 'docs/images/x.jpg', 'concepts/depots/images/fuel.png'], set()),
             (['.luacheckrc'], {'freighter', 'depots', 'mod', 'repository'}),
