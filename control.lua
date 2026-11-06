@@ -9,6 +9,7 @@ local logistics = require("scripts.logistics")
 local request_gui = require("scripts.request-gui")
 local research = require("scripts.research")
 local road_monitor = require("scripts.road-monitor")
+local undo = require("scripts.undo")
 
 -- Road laid (`added`) or removed or covered (`removed`) on a surface: deliveries re-plan, and road
 -- network monitors there work out their networks again.
@@ -117,12 +118,22 @@ end
 -- A request depot mined by a player, robot or platform hands its freighters (in its slot and out
 -- on trips) to the miner; the mining buffer goes to their inventory.
 for _, event in ipairs({
-  defines.events.on_player_mined_entity,
   defines.events.on_robot_mined_entity,
   defines.events.on_space_platform_mined_entity,
 }) do
   script.on_event(event, logistics.on_depot_mined, requesting_filters)
 end
+-- A depot or road network monitor a player removes (mined by hand, or marked for deconstruction,
+-- as cutting does) keeps its settings on the undo action first (scripts/undo.lua), freighters
+-- still counted, so undoing it brings them back.
+script.on_event(defines.events.on_player_mined_entity, function(event)
+  undo.removed(event.entity, event.player_index)
+  logistics.on_depot_mined(event)
+end, filters)
+script.on_event(defines.events.on_marked_for_deconstruction, function(event)
+  undo.removed(event.entity, event.player_index)
+end, filters)
+script.on_event(defines.events.on_undo_applied, undo.on_undo_applied)
 -- One about to be destroyed (died, or removed by a script that says so) leaves all its freighters,
 -- including any still in its chest, where it stands.
 for _, event in ipairs({ defines.events.on_entity_died, defines.events.script_raised_destroy }) do
@@ -219,6 +230,9 @@ script.on_event(defines.events.on_tick, function(event)
   logistics.sample_circuits()
   logistics.on_tick_share(event.tick)
   logistics.on_impact_share(event.tick)
+  if storage.undo_pending then
+    undo.tag_pending(event.tick)
+  end
 end)
 script.on_nth_tick(logistics.dispatch_interval, road_monitor.update)
 -- Freighters ctrl+ or shift+clicked from a player's inventory into a request depot fill its

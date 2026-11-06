@@ -1781,4 +1781,156 @@ do -- A save from before research keeps its recipes; a new game, or a save the m
   storage = before
 end
 
+do -- Undo: a request depot a player removes keeps its settings on its undo action, and the ghost
+  -- undoing it brings back gets them, so the depot built from it has its request and freighters.
+  local logistics = require("scripts.logistics")
+  local entity = depot(600)
+  entity.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = entity })
+  assert(logistics.set_request(entity, "wood", 5))
+  -- `count` freighters in a depot's slot.
+  local function freighters_in(target, count)
+    local trucks = script_inventory()
+    local slot = trucks[1]
+    slot.name, slot.count, slot.valid_for_read = "jatz-quinityn-freighter", count, true
+    function slot.clear()
+      slot.count, slot.valid_for_read = 0, false
+    end
+    function trucks.destroy()
+      trucks.valid = false
+    end
+    storage.depots[target.unit_number].trucks = trucks
+    return slot
+  end
+  freighters_in(entity, 3)
+  -- The player's undo stack (LuaUndoRedoStack, runtime-api.json 2.1.24): items most recent first,
+  -- each a list of actions; set_undo_tag(item_index, action_index, tag_name, tag), within range.
+  local items, tagged = {}, {}
+  local undo_stack = {
+    get_undo_item_count = function()
+      return #items
+    end,
+    get_undo_item = function(index)
+      assert(items[index], "FAILED: no undo item " .. tostring(index))
+      return items[index]
+    end,
+    set_undo_tag = function(item, action, name, tag)
+      assert(
+        items[item] and items[item][action],
+        "FAILED: no undo action " .. tostring(item) .. "/" .. tostring(action)
+      )
+      assert(type(name) == "string" and type(tag) == "table", "FAILED: set_undo_tag(item, action, tag_name, tag)")
+      tagged[#tagged + 1] = { item = item, action = action, name = name, tag = tag }
+    end,
+  }
+  local player = { index = 20, valid = true, undo_redo_stack = undo_stack }
+  game.get_player = function()
+    return player
+  end
+  check(
+    "depots and the monitor are the only entities whose deconstruction is handled",
+    filters.on_marked_for_deconstruction[1].name == "jatz-road-monitor"
+  )
+  -- Only the undo part of on_tick here: deliveries have their own checks (tests/lua/logistics.lua).
+  local deliveries = {}
+  for _, name in ipairs({ "sample_circuits", "on_tick_share", "on_impact_share" }) do
+    deliveries[name] = logistics[name]
+    logistics[name] = function() end
+  end
+  game.tick = 1000
+  fire("on_marked_for_deconstruction", { entity = entity, player_index = 20 })
+  -- The game's undo item for the cut: another entity, then the depot.
+  items[1] = {
+    { type = "removed-entity", surface_index = 1, target = { name = "wooden-chest", position = { x = 1.5, y = 1.5 } } },
+    { type = "removed-entity", surface_index = 1, target = { name = entity.name, position = { x = 600.5, y = 0.5 } } },
+  }
+  fire("on_tick", { tick = 1000 })
+  check("its undo action is tagged from the next tick, not during the removal's", #tagged == 0)
+  game.tick = 1001
+  fire("on_tick", { tick = 1001 })
+  local settings = tagged[1] and tagged[1].tag
+  check(
+    "then the depot's action, and only it, keeps its settings",
+    #tagged == 1 and tagged[1].item == 1 and tagged[1].action == 2 and tagged[1].name == "jatz_settings"
+  )
+  check(
+    "its request and freighters among them",
+    settings.jatz_request.item == "wood" and settings.jatz_request.count == 5 and settings.jatz_freighters == 3
+  )
+  check("nothing is left pending", storage.undo_pending == nil)
+  for name, handler in pairs(deliveries) do
+    logistics[name] = handler
+  end
+  -- Robots take it away, freighters and all; the player undoes the cut: a bare ghost comes back
+  -- where it stood.
+  local carried = 0
+  fire("on_robot_mined_entity", {
+    entity = entity,
+    buffer = {
+      insert = function(stack)
+        carried = carried + stack.count
+        return stack.count
+      end,
+    },
+  })
+  removed(entity)
+  check("robots took its freighters with it", carried == 3)
+  local ghost = { valid = true, position = { x = 600.5, y = 0.5 }, tags = { other_mod = 1 } }
+  local searched
+  surface.find_entities_filtered = function(filter)
+    searched = filter
+    return { ghost }
+  end
+  fire("on_undo_applied", {
+    player_index = 20,
+    actions = {
+      { type = "removed-entity", surface_index = 1, target = items[1][1].target },
+      {
+        type = "removed-entity",
+        surface_index = 1,
+        target = items[1][2].target,
+        tags = { jatz_settings = settings },
+      },
+    },
+  })
+  surface.find_entities_filtered = function()
+    return {}
+  end
+  check(
+    "undo looks for the depot's ghost where it stood",
+    searched.ghost_name == "jatz-request-depot" and searched.position.x == 600.5
+  )
+  check(
+    "and gives it the settings, keeping its other tags",
+    ghost.tags.jatz_request.item == "wood" and ghost.tags.jatz_freighters == 3 and ghost.tags.other_mod == 1
+  )
+  local built = depot(610)
+  built.name = "jatz-request-depot"
+  fire("on_robot_built_entity", { entity = built, tags = ghost.tags })
+  check("the depot built from it has its request back", logistics.get_request(built).item == "wood")
+  check("and asks robots for its freighters", storage.depots[built.unit_number].freighter_target == 3)
+  -- Mined by hand: noted before its freighters go to the player.
+  local mined = depot(620)
+  mined.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = mined })
+  local slot = freighters_in(mined, 2)
+  fire("on_player_mined_entity", {
+    entity = mined,
+    player_index = 20,
+    buffer = {
+      insert = function(stack)
+        return stack.count
+      end,
+    },
+  })
+  local noted = storage.undo_pending[20][1]
+  check(
+    "a depot mined by hand is noted with its freighters, before they go to the player",
+    noted.tags.jatz_freighters == 2
+  )
+  check("which they still do", not slot.valid_for_read)
+  storage.undo_pending = nil
+  removed(mined)
+end
+
 print("all control event checks passed")
