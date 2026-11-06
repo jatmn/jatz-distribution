@@ -57,15 +57,15 @@ The table's columns, all medians over the runs:
 
 ## Baseline
 
-Recorded on November 6, 2026, all on nauvis seed 1340776561 (`NAUVIS_SEED`): Jat'z Distribution 0.1.1 making fewer engine objects per tick (mod code at `b0d2ac0`, run with `--compare` against `main` at `e207e78`, which has #49's spread checks), with the numbers from before #49 (`e54e75d`, recorded the same day), three runs each; fuel, research, circuit conditions and cargo paint; and Transport Drones 2.1.4 (Klonan/Transport_Drones `2.1-update` branch, commit `c5d0ce2`, the source of the 2.1.4 release), one stress run and three standard runs. Factorio 2.1.24 headless, base game only, on Linux with an AMD Ryzen 7 8845HS (16 threads) and 30 GB of memory. Both mods ran with their default settings, and nothing is researched. Transport Drones' request depots were kept fuelled, so its fuel bookkeeping ran but no fuel deliveries did; Jat'z freighters filled up at the Fuel depots.
+Recorded on November 6, 2026, all on nauvis seed 1340776561 (`NAUVIS_SEED`): Jat'z Distribution 0.1.1 making fewer engine objects per tick (mod code at `8c79ced`, run with `--compare` against `main` at `e207e78`, which has #49's spread checks), with the numbers from before #49 (`e54e75d`, recorded the same day), three runs each; fuel, research, circuit conditions and cargo paint; and Transport Drones 2.1.4 (Klonan/Transport_Drones `2.1-update` branch, commit `c5d0ce2`, the source of the 2.1.4 release), one stress run and three standard runs. Factorio 2.1.24 headless, base game only, on Linux with an AMD Ryzen 7 8845HS (16 threads) and 30 GB of memory. Both mods ran with their default settings, and nothing is researched. Transport Drones' request depots were kept fuelled, so its fuel bookkeeping ran but no fuel deliveries did; Jat'z freighters filled up at the Fuel depots.
 
 ### Stress (medians)
 
 | | Mean update | UPS | Script | Pathfinder | p99 | Max | Vehicles out | Delivered/min |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Transport Drones 2.1.4 | 21.806 | 46 | 0.411 | 1.024 | 26.925 | 37.561 | 12,961 | 985,560 |
-| Jat'z Distribution (`b0d2ac0`) | 1.569 | 637 | 0.675 | 0.129 | 5.814 | 12.847 | 1,642 | 2,598,480 |
-| Jat'z Distribution with #49 only (`e207e78`) | 2.550 | 392 | 1.033 | 0.341 | 11.442 | 18.858 | 1,640 | 2,474,400 |
+| Jat'z Distribution (`8c79ced`) | 1.525 | 656 | 0.661 | 0.124 | 5.105 | 11.041 | 1,642 | 2,598,480 |
+| Jat'z Distribution with #49 only (`e207e78`) | 2.478 | 404 | 1.000 | 0.332 | 11.689 | 18.067 | 1,640 | 2,474,400 |
 | Jat'z Distribution before #49 (`e54e75d`) | 18.215 | 55 | 16.038 | 0.465 | 894.883 | 1,273.251 | 1,575 | 2,347,200 |
 
 ### Standard (three runs each, medians): what pull requests run
@@ -73,8 +73,8 @@ Recorded on November 6, 2026, all on nauvis seed 1340776561 (`NAUVIS_SEED`): Jat
 | | Mean update | UPS | Script | Pathfinder | p99 | Max | Run spread | Vehicles out | Delivered/min |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Transport Drones 2.1.4 | 3.543 | 282 | 0.106 | 0.278 | 5.436 | 10.171 | 0.098 | 3,736 | 203,940 |
-| Jat'z Distribution (`b0d2ac0`) | 0.433 | 2,308 | 0.149 | 0.019 | 1.341 | 2.414 | 0.012 | 388 | 701,040 |
-| Jat'z Distribution with #49 only (`e207e78`) | 0.612 | 1,633 | 0.220 | 0.044 | 2.596 | 5.230 | 0.014 | 416 | 494,280 |
+| Jat'z Distribution (`8c79ced`) | 0.424 | 2,358 | 0.146 | 0.018 | 1.193 | 2.245 | 0.003 | 388 | 701,040 |
+| Jat'z Distribution with #49 only (`e207e78`) | 0.616 | 1,624 | 0.221 | 0.045 | 2.889 | 5.925 | 0.017 | 416 | 494,280 |
 | Jat'z Distribution before #49 (`e54e75d`) | 1.050 | 952 | 0.635 | 0.047 | 31.510 | 44.944 | 0.012 | 412 | 484,320 |
 
 Before #49, every request depot's once-a-second dispatch ran in the same tick, and each provider's unpromised stock was worked out by looking at every trip in the game. The earlier baselines (random nauvis) agree within noise: on November 5, `df05b7e` took 18.237 ms a tick on the stress map (worst tick 1,251.193 ms) and Transport Drones 21.968 ms. The first baseline (November 4, `e157cec`, before fuel) had Jat'z at 39.638 ms mean and a 2,800.848 ms worst tick on the stress map, and 1.538 ms and 73.421 ms on the standard map. `--compare e157cec` on the standard map gives 1.630 ms before and 1.056 ms after (-35.2%), with the worst tick from 73.724 to 45.566 ms. It comes with far fewer deliveries, though: freighters drive at half their old speed since #31, and items delivered per minute fell from 1,173,360 to 484,320 with about the same number of freighters out, so that drop wasn't a fix of the dispatch cost.
@@ -82,7 +82,7 @@ Before #49, every request depot's once-a-second dispatch ran in the same tick, a
 ### What the baseline shows
 
 - **Transport Drones' cost is its drones.** Almost all of its time is the engine moving about 13,000 units (`entityUpdate`); its script stays under half a millisecond.
-- **Jat'z Distribution's script is now small and spread out.** It keeps far fewer freighters on the road (each trip carries up to 10 stacks, and the request depot's 48-slot chest limits what is still needed). Since the fix for issue #37 each depot and freighter is checked once a second in its own share of the second (AGENTS.md, **Spreading the work**), so the stress map's script takes under a millisecond a tick with no once-a-second spike. Its slowest ticks are Lua garbage collections in the mod's own state, whose last steps take longer the more engine objects the mod makes, so it makes few (AGENTS.md, **Spreading the work**): depots remember road lengths instead of asking the pathfinder for every search (each answer builds the whole route in the mod's state), and keep what they would otherwise read again. p99 is about 6 ms and the worst tick about 13 ms (`e207e78`: 11.4 and 18.9 ms). Remembered roads also free the pathfinder, so freighters set off sooner: 5% more delivered on the stress map, 42% more on the standard map with fewer freighters out.
+- **Jat'z Distribution's script is now small and spread out.** It keeps far fewer freighters on the road (each trip carries up to 10 stacks, and the request depot's 48-slot chest limits what is still needed). Since the fix for issue #37 each depot and freighter is checked once a second in its own share of the second (AGENTS.md, **Spreading the work**), so the stress map's script takes under a millisecond a tick with no once-a-second spike. Its slowest ticks are Lua garbage collections in the mod's own state, whose last steps take longer the more engine objects the mod makes, so it makes few (AGENTS.md, **Spreading the work**): depots remember road lengths instead of asking the pathfinder for every search (each answer builds the whole route in the mod's state), and keep what they would otherwise read again. p99 is about 5 ms and the worst tick about 11 ms (`e207e78`: 11.7 and 18.1 ms). Remembered roads also free the pathfinder, so freighters set off sooner: 5% more delivered on the stress map, 42% more on the standard map with fewer freighters out.
 - Jat'z delivers more per vehicle (10-stack trips against Transport Drones' single stacks), so compare `Delivered/min` alongside the times.
 
 ## Pull requests
