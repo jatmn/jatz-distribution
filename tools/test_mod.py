@@ -313,11 +313,14 @@ TICKS = 2600
 # The undo scenario (tests/factorio/jatz-distribution-check_0.1.0/scenarios/undo), run with a player:
 # a cut depot changed before robots took it, and one mined by hand with freighters in its chest,
 # keep their settings as they went on the player's undo actions, and the ghosts given them are
-# rebuilt (by robots, and by the player) with their request and freighters.
+# rebuilt (by robots, and by the player) with their request and freighters; a cut depot a player
+# fails to mine by hand stays marked, and keeps the request it has when robots take it.
 EXPECTED_UNDO = {
     'cut_removed': True,
     'cut_settings': {'request': {'item': 'wood', 'count': 8}, 'freighters': 5},
     'mined_settings': {'freighters': 3},
+    'failed_mining_left_it': True,
+    'kept_settings': {'request': {'item': 'wood', 'count': 9}, 'freighters': 1},
     'cut_rebuilt': {'request': {'item': 'wood', 'count': 8}, 'freighters': 5},
     'mined_rebuilt': {'freighters': 3}}
 UNDO_TICKS = 1300

@@ -118,12 +118,16 @@ end
 -- A request depot mined by a player, robot or platform hands its freighters (in its slot and out
 -- on trips) to the miner; the mining buffer goes to their inventory.
 for _, event in ipairs({
-  defines.events.on_player_mined_entity,
   defines.events.on_robot_mined_entity,
   defines.events.on_space_platform_mined_entity,
 }) do
   script.on_event(event, logistics.on_depot_mined, requesting_filters)
 end
+-- Mined by a player: also the removal undo.player_removing's settings were read for (below).
+script.on_event(defines.events.on_player_mined_entity, function(event)
+  undo.player_removed(event.entity, event.player_index)
+  logistics.on_depot_mined(event)
+end, filters)
 -- A depot or road network monitor a player removes keeps its settings on the removal's undo action
 -- (scripts/undo.lua), read just before it goes, freighters in its chest still counted: marked for
 -- deconstruction (as cutting does) by a player, then taken by robots; or mined by hand.

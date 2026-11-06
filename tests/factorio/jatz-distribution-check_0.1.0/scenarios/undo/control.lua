@@ -6,11 +6,13 @@
 -- mined by hand, with freighters in its chest, must have all of them. Factorio has no script call
 -- for undo itself, so the ghost an undo brings back is made here with the action's tags as
 -- scripts/undo.lua puts them on it (tests/lua/control-events.lua covers that step): rebuilt by
--- robots and by the player, each depot must get its request back and its freighters.
+-- robots and by the player, each depot must get its request back and its freighters. A cut depot a
+-- player then fails to mine by hand (a full inventory) stays marked, and its settings when the
+-- robots take it are the ones kept.
 -- Writes script-output/jatz-undo-check.json.
 local FREIGHTER = "jatz-quinityn-freighter"
 local DEPOT = "jatz-request-depot"
-local CUT, MINED = { x = 6.5, y = 0.5 }, { x = 6.5, y = -6.5 }
+local CUT, MINED, KEPT = { x = 6.5, y = 0.5 }, { x = 6.5, y = -6.5 }, { x = 14.5, y = 0.5 }
 
 local function settings_at(position)
   local stack = game.get_player(1).undo_redo_stack
@@ -79,6 +81,22 @@ script.on_event(defines.events.on_tick, function(event)
     -- Changed before the robots come: a bigger request, and 2 more freighters in its chest.
     assert(remote.call("jatz-distribution", "set_request", cut, "wood", 8))
     cut.get_inventory(defines.inventory.chest).insert({ name = FREIGHTER, count = 2 })
+    -- Cut too, then mined by hand with a full inventory (before the player holds any depot to
+    -- stack it on): the mining fails and it stays, still marked; its request changes before the
+    -- robots take it, which must be what is kept.
+    local kept = surface.create_entity({ name = DEPOT, position = KEPT, force = player.force, raise_built = true })
+    assert(remote.call("jatz-distribution", "set_request", kept, "wood", 5))
+    assert(remote.call("jatz-distribution", "add_freighters", kept, 1) == 1)
+    assert(kept.order_deconstruction(player.force, player, 0))
+    local pockets = player.get_main_inventory()
+    while pockets.can_insert({ name = "stone", count = 50 }) do
+      pockets.insert({ name = "stone", count = 50 })
+    end
+    storage.result.failed_mining_left_it = not player.mine_entity(kept, false)
+      and kept.valid
+      and kept.to_be_deconstructed()
+    pockets.remove({ name = "stone", count = pockets.get_item_count("stone") })
+    assert(remote.call("jatz-distribution", "set_request", kept, "wood", 9))
     -- Mined by hand: 1 freighter in its slot, 2 in its chest.
     local mined = surface.create_entity({ name = DEPOT, position = MINED, force = player.force, raise_built = true })
     assert(remote.call("jatz-distribution", "add_freighters", mined, 1) == 1)
@@ -90,6 +108,8 @@ script.on_event(defines.events.on_tick, function(event)
     result.cut_settings = { request = cut.jatz_request, freighters = cut.jatz_freighters }
     local mined = settings_at(MINED) or {}
     result.mined_settings = { request = mined.jatz_request, freighters = mined.jatz_freighters }
+    local kept = settings_at(KEPT) or {}
+    result.kept_settings = { request = kept.jatz_request, freighters = kept.jatz_freighters }
     -- The ghosts the undos bring back, given the tags as scripts/undo.lua gives them: the cut one
     -- for robots to build, the mined one for the player to build by hand.
     for _, spot in ipairs({ { CUT, cut }, { MINED, mined } }) do

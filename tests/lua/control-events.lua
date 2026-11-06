@@ -1796,6 +1796,7 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
     "on_cancelled_deconstruction",
     "on_robot_pre_mined",
     "on_pre_player_mined_item",
+    "on_player_mined_entity",
   }) do
     local names, count = {}, 0
     for _, filter in ipairs(filters[event] or {}) do
@@ -1977,6 +1978,35 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
   fire("on_marked_for_deconstruction", { entity = kept, player_index = 20 })
   fire("on_cancelled_deconstruction", { entity = kept, player_index = 20 })
   check("a cancelled deconstruction forgets who marked it", storage.undo_marked == nil)
+  -- Marked, then a mining attempt that leaves it standing (by hand with a full inventory, or by a
+  -- robot): it is still marked, and robots taking it later still save its settings as it goes.
+  local survivor = depot(625)
+  survivor.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = survivor })
+  freighters_in(survivor, 1)
+  assert(logistics.set_request(survivor, "wood", 5))
+  fire("on_marked_for_deconstruction", { entity = survivor, player_index = 20 })
+  new_item({ removal("jatz-request-depot", 625.5, 0.5) })
+  game.tick = 1700
+  fire("on_pre_player_mined_item", { entity = survivor, player_index = 20 })
+  fire("on_robot_pre_mined", { entity = survivor })
+  check("a mining attempt that leaves it standing keeps who marked it", storage.undo_marked ~= nil)
+  assert(logistics.set_request(survivor, "wood", 7))
+  freighters_in(survivor, 4)
+  game.tick = 1800
+  robot_takes(survivor)
+  local survivor_settings = items[1][1].tags and items[1][1].tags.jatz_settings
+  check(
+    "robots taking it later save its settings as it went",
+    survivor_settings and survivor_settings.jatz_request.count == 7 and survivor_settings.jatz_freighters == 4
+  )
+  check("its removal then forgets who marked it", storage.undo_marked == nil)
+  check("the failed hand mining leaves nothing waiting", storage.undo_pending == nil)
+  fire("on_tick", { tick = 1801 })
+  check(
+    "so nothing older overwrites what the robots saved",
+    items[1][1].tags.jatz_settings.jatz_request.count == 7 and items[1][1].tags.jatz_settings.jatz_freighters == 4
+  )
   -- Marked by a script, with no player: no undo action of a player's to tag.
   fire("on_marked_for_deconstruction", { entity = kept })
   robot_takes(kept)
@@ -2034,17 +2064,27 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
     items[1][1].tags.jatz_settings.jatz_freighters == 2 and items[2][1].tags.jatz_settings.jatz_freighters == 1
   )
 
-  -- Mined by hand but not removed after all: its settings wait a second, then are dropped.
+  -- Mined by hand but not removed after all: nothing waits, so no later removal at that spot is
+  -- given its settings.
   local stays = depot(660)
   stays.name = "jatz-request-depot"
   fire("on_built_entity", { entity = stays })
   freighters_in(stays, 1)
   game.tick = 5000
   fire("on_pre_player_mined_item", { entity = stays, player_index = 20 })
+  check("a mining attempt that removes nothing leaves nothing waiting", storage.undo_pending == nil)
+  -- A removal whose undo action never turns up is given up after a second, without tagging later.
+  local lost = depot(670)
+  lost.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = lost })
+  freighters_in(lost, 1)
+  hand_mine(lost)
   fire("on_tick", { tick = 5030 })
-  check("an untagged removal still waits for a while", #storage.undo_pending[20] == 1)
+  check("a removal with no undo action yet still waits for a while", #storage.undo_pending[20] == 1)
+  new_item({ removal("jatz-request-depot", 670.5, 0.5) })
   fire("on_tick", { tick = 5060 })
   check("and is given up after a second", storage.undo_pending == nil)
+  check("without tagging an action that turns up later", items[1][1].tags == nil)
 
   for name, handler in pairs(deliveries) do
     logistics[name] = handler

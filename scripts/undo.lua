@@ -13,8 +13,11 @@
 -- before on_*_mined_entity). Probed on 2.1.24 with a player (--test-scenario): marking for
 -- deconstruction makes its undo action right after on_marked_for_deconstruction, and the action
 -- keeps its tags through the robots' removal, so a robot removal tags the action of the player who
--- marked it at once; mining by hand makes its undo item only after on_player_mined_entity, so that
--- removal is tagged from the next tick, and an undo before then takes the settings still waiting.
+-- marked it at once (again, if an attempt left it standing: it stays marked until it is gone or
+-- cancelled). Mining by hand makes its undo item only after on_player_mined_entity, so the
+-- settings read before it are held until that event says it was removed (a failed attempt, a full
+-- inventory say, leaves nothing waiting), tagged from the next tick, and an undo before then takes
+-- the settings still waiting.
 local logistics = require("scripts.logistics")
 
 local undo = {}
@@ -101,7 +104,10 @@ function undo.marked(entity, player_index)
   end
 end
 
--- Its deconstruction cancelled, or it is gone: no removal of it to keep settings for.
+-- Its deconstruction cancelled, or it is gone (on_object_destroyed): no removal of it to keep
+-- settings for. Only then: a mining attempt (by robots or by hand) can fail and leave it standing,
+-- still marked (a player's full inventory, say), and robots taking it later must still find who
+-- marked it.
 function undo.forget(unit_number)
   if storage.undo_marked and unit_number then
     storage.undo_marked[unit_number] = nil
@@ -112,13 +118,12 @@ function undo.forget(unit_number)
 end
 
 -- Robots are about to take a depot or monitor a player marked: its settings go on that player's
--- undo action for it now.
+-- undo action for it now (again, newest, if an earlier attempt left it standing).
 function undo.robot_removing(entity)
   local player_index = storage.undo_marked and entity.valid and storage.undo_marked[entity.unit_number]
   if not player_index then
     return
   end
-  undo.forget(entity.unit_number)
   local entry = note(entity)
   local stack = entry and undo_stack(player_index)
   if stack then
@@ -126,16 +131,34 @@ function undo.robot_removing(entity)
   end
 end
 
--- A player is about to mine a depot or monitor by hand: its settings wait for the undo item the
--- mining makes. (Noted even if the mining doesn't remove it after all: no action turns up then.)
+-- A player is about to mine a depot or monitor by hand: its settings now, held until the mining
+-- removes it (one at a time per player: the latest attempt replaces an earlier one).
 function undo.player_removing(entity, player_index)
   if not (player_index and entity.valid) then
     return
   end
-  undo.forget(entity.unit_number)
   local entry = note(entity)
-  if entry then
-    wait(player_index, { entry })
+  storage.undo_mining = storage.undo_mining or {}
+  storage.undo_mining[player_index] = entry and { unit_number = entity.unit_number, entry = entry } or nil
+  if next(storage.undo_mining) == nil then
+    storage.undo_mining = nil
+  end
+end
+
+-- The player's mining removed it: those settings wait for the undo item the mining makes. A
+-- mining attempt that fails (a full inventory, say) leaves it standing and gets here never, so
+-- nothing waits that a later removal at the same spot could take.
+function undo.player_removed(entity, player_index)
+  local mining = storage.undo_mining and storage.undo_mining[player_index]
+  if not mining then
+    return
+  end
+  storage.undo_mining[player_index] = nil
+  if next(storage.undo_mining) == nil then
+    storage.undo_mining = nil
+  end
+  if entity.valid and mining.unit_number == entity.unit_number then
+    wait(player_index, { mining.entry })
   end
 end
 
@@ -143,21 +166,19 @@ end
 -- some are pending).
 function undo.tag_pending(tick)
   for player_index, pending in pairs(storage.undo_pending) do
+    -- Noted this tick: from the next. Older than GIVE_UP_TICKS: given up, never tagged late.
     local due, waiting = {}, {}
     for _, entry in ipairs(pending) do
-      if entry.tick < tick then
-        due[#due + 1] = entry
-      else
+      if entry.tick >= tick then
         waiting[#waiting + 1] = entry
+      elseif tick - entry.tick < GIVE_UP_TICKS then
+        due[#due + 1] = entry
       end
     end
     local stack = undo_stack(player_index)
-    local missing = stack and tag(stack, due) or due
-    -- Not found yet: looked for again next tick, for a while.
-    for _, entry in ipairs(missing) do
-      if tick - entry.tick < GIVE_UP_TICKS then
-        waiting[#waiting + 1] = entry
-      end
+    -- Not found yet: looked for again next tick, until given up.
+    for _, entry in ipairs(stack and tag(stack, due) or due) do
+      waiting[#waiting + 1] = entry
     end
     storage.undo_pending[player_index] = #waiting > 0 and waiting or nil
   end
