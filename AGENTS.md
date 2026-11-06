@@ -45,6 +45,7 @@ Jat'z Distribution is an in-development Factorio 2.1 mod. The artwork is finishe
 
 ## Testing rules
 
+- **UPS.** Players may run hundreds of depots and thousands of freighters on several surfaces for hundreds of hours, so performance is a requirement. Every pull request that changes the mod includes the before and after table from `python3 tools/benchmark_ups.py --factorio <factorio> --compare origin/main` (the template's "UPS before and after" section); see `docs/benchmark.md`. The benchmark mod `tests/factorio/ups-benchmark_0.1.0` builds the map from `layout.lua` and `presets.lua` (pure Lua, also read by `tests/lua/ups-emulator.lua`); changing a preset or the layout invalidates the baseline in `docs/benchmark.md`, so re-record it in the same pull request. `tools/emulate_ups.py` runs the real `control.lua` against a fake runtime on the same map and counts exactly the Lua instructions the mod's own code runs per tick (and, separately, its calls into the runtime's functions); CI's **UPS benchmark** check compares a pull request with its base this way and only warns on a rise. Keep the emulator's fakes in step with the runtime API the delivery code uses, and wrap every new fake function in `native` (computed properties in `properties`), so the fake's own work is never counted; `tools/test_emulate_ups.py` checks that.
 - Factorio test runners (`tools/test_factorio.py`, `tools/test_depot_art.py`) build their workspaces under `.local/`. Never touch the user's normal Factorio mods, settings or saves. Unit tests that need scratch files use Python's `tempfile`, which cleans up after itself.
 - Headless runs, HTML previews and contact sheets don't prove visual quality. Visual changes need a graphical-client check.
 - Keep machine paths, Factorio binaries, logs, saves and Python environments out of commits.
@@ -58,7 +59,7 @@ CI (`.github/workflows/ci.yml`) is based on yuoki-quinityn's, but routed by repo
 | --- | --- | --- |
 | Freighter | `assets/quinityn-freighter/`, the freighter test mod, `tools/test_factorio.py`, `tools/prepare_test_mod.py` | Lua and Python lint; Blender sources check when models, images or records change |
 | Depots | `assets/depots/` (with the 1×1 archive), the depot test mod, `tools/test_depot_art.py`, `tools/test_depot_lua.py` | Lua and Python lint; generated-Lua test; Blender sources check when models, images or records change |
-| Mod | The mod source at the repository root, `tools/package_mod.py`, `tools/test_mod.py` and its check mod, plus anything else that isn't documentation | Lua and Python lint |
+| Mod | The mod source at the repository root, `tools/package_mod.py`, `tools/test_mod.py` and its check mod, the UPS benchmark (`tools/benchmark_ups.py`, `tools/emulate_ups.py`, `tools/test_emulate_ups.py`, the benchmark mod, `tests/lua/ups-emulator.lua`), plus anything else that isn't documentation | Lua and Python lint; mod setup tests; for pull requests, the **UPS benchmark** check (`ups` in `ci.yml`): `tools/test_emulate_ups.py`, then the engine-free script cost against the base, in its summary and a pull request comment |
 | Repository | `.github/`, the other `tools/` | Python lint, the `tools/test_*.py` repository tests, actionlint |
 
 - Documentation (`README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `SECURITY.md`, `docs/`, `concepts/`, licence files) runs no area checks.
