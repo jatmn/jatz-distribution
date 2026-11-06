@@ -55,26 +55,28 @@ The table's columns, all medians over the runs:
 
 ## Baseline
 
-Recorded on November 4, 2026, Jat'z Distribution `e157cec` (0.1.1) against Transport Drones 2.1.4 (Klonan/Transport_Drones `2.1-update` branch, commit `c5d0ce2`, the source of the 2.1.4 release). Factorio 2.1.24 headless, base game only, on Linux with an AMD Ryzen 7 8845HS (16 threads) and 30 GB of memory. Transport Drones ran with its default settings; the benchmark kept its request depots fuelled, so its fuel bookkeeping ran but no fuel deliveries did (Jat'z freighters don't use fuel yet).
+Recorded on November 5, 2026: Jat'z Distribution `df05b7e` (0.1.1, with fuel, research, circuit conditions and cargo paint) against Transport Drones 2.1.4 (Klonan/Transport_Drones `2.1-update` branch, commit `c5d0ce2`, the source of the 2.1.4 release). Factorio 2.1.24 headless, base game only, on Linux with an AMD Ryzen 7 8845HS (16 threads) and 30 GB of memory. Both mods ran with their default settings, and nothing is researched. Transport Drones' request depots were kept fuelled, so its fuel bookkeeping ran but no fuel deliveries did; Jat'z freighters filled up at the Fuel depots.
 
 ### Stress (one run each)
 
 | | Mean update | UPS | Script | Pathfinder | p99 | Max | Vehicles out | Delivered/min |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Transport Drones 2.1.4 | 23.116 | 43 | 0.424 | 1.032 | 27.740 | 38.842 | 12,962 | 985,620 |
-| Jat'z Distribution 0.1.1 | 39.638 | 25 | 36.183 | 1.104 | 2,159.189 | 2,800.848 | 1,048 | 4,555,560 |
+| Transport Drones 2.1.4 | 21.968 | 46 | 0.410 | 1.041 | 27.655 | 40.396 | 12,962 | 972,180 |
+| Jat'z Distribution `df05b7e` | 18.237 | 55 | 16.029 | 0.462 | 894.990 | 1,251.193 | 1,575 | 2,347,200 |
 
 ### Standard (three runs each, medians): what pull requests run
 
 | | Mean update | UPS | Script | Pathfinder | p99 | Max | Run spread | Vehicles out | Delivered/min |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Transport Drones 2.1.4 | 3.775 | 265 | 0.112 | 0.287 | 6.245 | 9.885 | 0.115 | 3,742 | 205,020 |
-| Jat'z Distribution 0.1.1 | 1.538 | 650 | 0.934 | 0.139 | 56.836 | 73.421 | 0.125 | 445 | 1,146,000 |
+| Transport Drones 2.1.4 | 3.651 | 274 | 0.107 | 0.285 | 5.820 | 9.178 | 0.025 | 3,744 | 199,620 |
+| Jat'z Distribution `df05b7e` | 1.086 | 921 | 0.664 | 0.048 | 32.136 | 49.827 | 0.023 | 412 | 484,320 |
+
+The first baseline (November 4, `e157cec`, before fuel) had Jat'z at 39.638 ms mean and a 2,800.848 ms worst tick on the stress map, and 1.538 ms and 73.421 ms on the standard map. `--compare e157cec` on the standard map gives 1.630 ms before and 1.056 ms after (-35.2%), with the worst tick from 73.724 to 45.566 ms. It comes with far fewer deliveries, though: freighters drive at half their old speed since #31, and items delivered per minute fell from 1,173,360 to 484,320 with about the same number of freighters out, so the drop isn't a fix of the dispatch cost (still every request depot in one tick, below). Transport Drones' numbers match the first baseline's within run-to-run noise.
 
 ### What the baseline shows
 
 - **Transport Drones' cost is its drones.** Almost all of its time is the engine moving about 13,000 units (`entityUpdate`); its script stays under half a millisecond.
-- **Jat'z Distribution's cost is its script, and it comes in spikes.** It keeps far fewer freighters on the road (about 3.5 per request depot: each trip carries up to 10 stacks, and the request depot's 48-slot chest limits what is still needed), yet on the stress map every request depot's once-a-second dispatch runs in the same tick and that tick takes 2 to 3 seconds. Each dispatch ranks every provider on the surface, and each provider's unpromised stock is worked out by looking at every trip in the game, so the work grows with request depots × providers × trips. Between those ticks the game is fast. This is the first thing to improve; the benchmark and the CI emulation measure each step.
+- **Jat'z Distribution's cost is its script, and it comes in spikes.** It keeps far fewer freighters on the road (each trip carries up to 10 stacks, and the request depot's 48-slot chest limits what is still needed), yet on the stress map every request depot's once-a-second dispatch runs in the same tick and that tick takes over a second. Each dispatch ranks every provider on the surface, and each provider's unpromised stock is worked out by looking at every trip in the game, so the work grows with request depots × providers × trips. Each dispatch also counts the freighters in the request depot's chest slot by slot, more than once. Between those ticks the game is fast. Issue #37 tracks the fix; the benchmark and the CI emulation measure each step.
 - Jat'z delivers more per vehicle (10-stack trips against Transport Drones' single stacks), so compare `Delivered/min` alongside the times.
 
 ## Pull requests
