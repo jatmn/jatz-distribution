@@ -8,8 +8,10 @@
 -- commands after their wait; it doesn't model the engine's own cost (pathfinding, movement), which
 -- only the real benchmark measures. Freighters move along their route at the speed the mod sets
 -- (`LuaEntity::speed`), so fuel burns and impact checks see them move. Fuel depots are kept stocked
--- with solid fuel; there are no enemies. Harness work (routes, movement, stocking) isn't counted
--- where it is the fake's own bookkeeping (positions along a route).
+-- with solid fuel; there are no enemies. What is counted: the mod's own Lua, plus the fake API
+-- calls it makes that stand in for real ones (inventories and item stacks), as a rough stand-in
+-- for the API's own cost. Not counted: the engine's work the fake does for it (path answers,
+-- freighter movement and positions) and the harness's stocking, which runs outside the handlers.
 --
 -- lua5.2 tests/lua/ups-emulator.lua [mod root] [preset] [ticks]   (prints one JSON object)
 -- It reads the freighter prototype (io) and times the handlers (os.clock), outside the game.
@@ -440,7 +442,11 @@ local function new_surface(index, plan)
     stats.path_requests = stats.path_requests + 1
     next_unit = next_unit + 1
     local id = next_unit
+    -- The answer is the engine's work, not the mod's: worked out with counting off.
+    local was = counting
+    counting = false
     local path = surface.route(parameters.start, parameters.goal)
+    counting = was
     schedule(tick + 1, { name = "on_script_path_request_finished", event = { id = id, path = path } })
     return id
   end
