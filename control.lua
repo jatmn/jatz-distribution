@@ -130,16 +130,20 @@ script.on_event(defines.events.on_player_mined_entity, function(event)
 end, filters)
 -- A depot or road network monitor a player removes keeps its settings on the removal's undo action
 -- (scripts/undo.lua), read just before it goes, freighters in its chest still counted: marked for
--- deconstruction (as cutting does) by a player, then taken by robots; or mined by hand.
+-- deconstruction (as cutting does) by a player, then taken by robots or a space platform; or mined
+-- by hand.
 script.on_event(defines.events.on_marked_for_deconstruction, function(event)
   undo.marked(event.entity, event.player_index)
 end, filters)
 script.on_event(defines.events.on_cancelled_deconstruction, function(event)
   undo.forget(event.entity.unit_number)
 end, filters)
-script.on_event(defines.events.on_robot_pre_mined, function(event)
-  undo.robot_removing(event.entity)
-end, filters)
+-- Taken by robots, or by a space platform (liquid depots and the monitor can stand on one).
+for _, event in ipairs({ defines.events.on_robot_pre_mined, defines.events.on_space_platform_pre_mined }) do
+  script.on_event(event, function(removing)
+    undo.removing_marked(removing.entity)
+  end, filters)
+end
 script.on_event(defines.events.on_pre_player_mined_item, function(event)
   undo.player_removing(event.entity, event.player_index)
 end, filters)
@@ -242,7 +246,7 @@ script.on_event(defines.events.on_tick, function(event)
   logistics.sample_circuits()
   logistics.on_tick_share(event.tick)
   logistics.on_impact_share(event.tick)
-  if storage.undo_pending then
+  if storage.undo_pending or storage.undo_locating then
     undo.tag_pending(event.tick)
   end
 end)

@@ -323,6 +323,8 @@ EXPECTED_UNDO = {
     'kept_settings': {'request': {'item': 'wood', 'count': 9}, 'freighters': 1},
     'cut_rebuilt': {'request': {'item': 'wood', 'count': 8}, 'freighters': 5},
     'mined_rebuilt': {'freighters': 3}}
+# With Space Age, also a liquid request depot cut on a space platform, which takes it at once.
+EXPECTED_UNDO_PLATFORM = {'platform_settings': {'request': {'item': 'water', 'count': 1000}, 'freighters': 2}}
 UNDO_TICKS = 1300
 
 
@@ -455,7 +457,8 @@ def check(binary, data, bundled, enabled_mods, label, extra=None):
     undone = run(command + ['--test-scenario', f'{CHECK.name.rsplit("_", 1)[0]}/undo', '--test-ticks', str(UNDO_TICKS)],
                  workspace / 'undo.log') == 0
     undo = json.loads(undo_path.read_text()) if undone and undo_path.exists() else None
-    if undo != EXPECTED_UNDO:
+    expected_undo = {**EXPECTED_UNDO, **(EXPECTED_UNDO_PLATFORM if 'space-age' in enabled_mods else {})}
+    if undo != expected_undo:
         wrong['undo'] = undo
     expected_mods = sorted(enabled_mods | set(OURS) | set(extra) | {'core'})
     translations = locale_keys()

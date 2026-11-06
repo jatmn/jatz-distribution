@@ -345,10 +345,11 @@ function surface.create_entity(spec)
     get_inventory = function()
       return stacks
     end,
-    destroy = function(self)
-      self.valid = false
-    end,
   }
+  -- Called as the game's are, created.destroy() with no self.
+  function created.destroy()
+    created.valid = false
+  end
   if spec.name == "jatz-fuel-depot-tank" then
     -- A Fuel depot's hidden tank, holding 300 water.
     created.direction = spec.direction
@@ -1795,6 +1796,7 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
     "on_marked_for_deconstruction",
     "on_cancelled_deconstruction",
     "on_robot_pre_mined",
+    "on_space_platform_pre_mined",
     "on_pre_player_mined_item",
     "on_player_mined_entity",
   }) do
@@ -1818,21 +1820,33 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
   end
 
   -- The player's undo stack (LuaUndoRedoStack, runtime-api.json 2.1.24): items most recent first,
-  -- each a list of actions, whose tags set_undo_tag(item_index, action_index, tag_name, tag) keeps
-  -- (within range) and the undo event then carries.
-  local items = {}
+  -- each a list of actions, whose tags (AnyBasic) set_undo_tag(item_index, action_index, tag_name,
+  -- tag) keeps and get_undo_tag(item_index, action_index, tag_name) reads, within range, and the undo
+  -- event then carries. `reads` counts get_undo_item: each read builds every action of the item.
+  local items, reads = {}, 0
+  local BASIC = { string = true, number = true, boolean = true, table = true }
+  local function action_at(item, action)
+    local entry = items[item] and items[item][action]
+    assert(entry, "FAILED: no undo action " .. tostring(item) .. "/" .. tostring(action))
+    return entry
+  end
   local undo_stack = {
     get_undo_item_count = function()
       return #items
     end,
     get_undo_item = function(index)
       assert(items[index], "FAILED: no undo item " .. tostring(index))
+      reads = reads + 1
       return items[index]
     end,
+    get_undo_tag = function(item, action, name)
+      assert(type(name) == "string", "FAILED: get_undo_tag(item, action, tag_name)")
+      local entry = action_at(item, action)
+      return entry.tags and entry.tags[name]
+    end,
     set_undo_tag = function(item, action, name, tag)
-      local entry = items[item] and items[item][action]
-      assert(entry, "FAILED: no undo action " .. tostring(item) .. "/" .. tostring(action))
-      assert(type(name) == "string" and type(tag) == "table", "FAILED: set_undo_tag(item, action, tag_name, tag)")
+      local entry = action_at(item, action)
+      assert(type(name) == "string" and BASIC[type(tag)], "FAILED: set_undo_tag(item, action, tag_name, tag)")
       entry.tags = entry.tags or {}
       entry.tags[name] = tag
     end,
@@ -1930,17 +1944,41 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
     return carried
   end
 
-  -- Cut: marked by the player, its undo action made just after; robots take it later.
+  -- Cut: marked by the player, its undo action made just after; robots take it later. Cut with two
+  -- more depots, all in one undo item.
   local entity = depot(600)
   entity.name = "jatz-request-depot"
   fire("on_built_entity", { entity = entity })
   assert(logistics.set_request(entity, "wood", 5))
   local _, chest_holds = freighters_in(entity, 3)
+  local others = {}
+  for index, x in ipairs({ 602, 604 }) do
+    others[index] = depot(x)
+    others[index].name = "jatz-request-depot"
+    fire("on_built_entity", { entity = others[index] })
+    freighters_in(others[index], index)
+  end
   game.tick = 1000
   fire("on_marked_for_deconstruction", { entity = entity, player_index = 20 })
-  new_item({ removal("wooden-chest", 1.5, 1.5), removal("jatz-request-depot", 600.5, 0.5) })
+  for _, other in ipairs(others) do
+    fire("on_marked_for_deconstruction", { entity = other, player_index = 20 })
+  end
+  new_item({
+    removal("wooden-chest", 1.5, 1.5),
+    removal("jatz-request-depot", 600.5, 0.5),
+    removal("jatz-request-depot", 602.5, 0.5),
+    removal("jatz-request-depot", 604.5, 0.5),
+  })
+  fire("on_tick", { tick = 1000 })
+  check("its undo action is looked for from the next tick", reads == 0)
   fire("on_tick", { tick = 1001 })
-  check("nothing is tagged at marking: its settings may change before it goes", items[1][2].tags == nil)
+  check("then the cut's undo item is read once for all three depots", reads == 1)
+  check(
+    "nothing is saved at marking: its settings may change before it goes",
+    items[1][2].tags and items[1][2].tags.jatz_settings == nil and items[1][2].tags.jatz_removal_of ~= nil
+  )
+  fire("on_tick", { tick = 1002 })
+  check("and not read again", reads == 1 and storage.undo_locating == nil)
   -- Before the robots come: a bigger request, and 2 more freighters put in its chest.
   assert(logistics.set_request(entity, "wood", 8))
   chest_holds(2)
@@ -1948,11 +1986,19 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
   new_item({ removal("wooden-chest", 9.5, 9.5) })
   game.tick = 1600
   local carried = robot_takes(entity)
+  for _, other in ipairs(others) do
+    robot_takes(other)
+  end
+  check("robots taking them read no undo item: each goes to its action", reads == 1)
+  check(
+    "the others' actions keep theirs",
+    items[2][3].tags.jatz_settings.jatz_freighters == 1 and items[2][4].tags.jatz_settings.jatz_freighters == 2
+  )
   local settings = items[2][2].tags and items[2][2].tags.jatz_settings
   check("robots taking it tag the marking player's removal action at once", settings ~= nil)
   check("with its settings as it went: the request then", settings.jatz_request.count == 8)
   check("and every freighter, the 2 in its chest too", settings.jatz_freighters == 5)
-  check("only its own action", items[2][1].tags == nil and items[1][1].tags == nil)
+  check("not the chest's, nor the newer item's", items[2][1].tags == nil and items[1][1].tags == nil)
   check("robots took the slot's freighters", carried == 3)
   check("nothing is left waiting", storage.undo_pending == nil and storage.undo_marked == nil)
   -- Undo: its ghost comes back, bare; the undo event carries the action as the stack kept it.
@@ -2055,13 +2101,14 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
   local second = depot(650)
   second.name = "jatz-request-depot"
   fire("on_built_entity", { entity = second })
-  freighters_in(second, 2)
+  -- The newer one bare: nothing to keep, but its own snapshot, so the order holds.
+  freighters_in(second, 0)
   hand_mine(second)
   new_item({ removal("jatz-request-depot", 650.5, 0.5) })
   fire("on_tick", { tick = 4001 })
   check(
-    "two removals at one spot each tag their own action, the newest the newest",
-    items[1][1].tags.jatz_settings.jatz_freighters == 2 and items[2][1].tags.jatz_settings.jatz_freighters == 1
+    "two removals at one spot each tag their own action, the newest the newest, a bare one too",
+    next(items[1][1].tags.jatz_settings) == nil and items[2][1].tags.jatz_settings.jatz_freighters == 1
   )
 
   -- Mined by hand but not removed after all: nothing waits, so no later removal at that spot is
@@ -2085,6 +2132,66 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
   fire("on_tick", { tick = 5060 })
   check("and is given up after a second", storage.undo_pending == nil)
   check("without tagging an action that turns up later", items[1][1].tags == nil)
+
+  -- A robot attempt saves its settings, and leaves it standing; set back to as every new depot is,
+  -- robots taking it then save that, replacing what the attempt saved.
+  local reset = depot(680)
+  reset.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = reset })
+  freighters_in(reset, 2)
+  assert(logistics.set_request(reset, "wood", 5))
+  game.tick = 6000
+  fire("on_marked_for_deconstruction", { entity = reset, player_index = 20 })
+  new_item({ removal("jatz-request-depot", 680.5, 0.5) })
+  fire("on_tick", { tick = 6001 })
+  fire("on_robot_pre_mined", { entity = reset })
+  check("a robot attempt saves its settings", items[1][1].tags.jatz_settings.jatz_freighters == 2)
+  assert(logistics.set_request(reset, nil))
+  freighters_in(reset, 0)
+  robot_takes(reset)
+  check("robots taking it bare save nothing to keep, replacing that", next(items[1][1].tags.jatz_settings) == nil)
+  local bare_ghost = ghost_at(680.5, 0.5)
+  fire("on_undo_applied", { player_index = 20, actions = items[1] })
+  check("so undo leaves its ghost as it is", bare_ghost.tags.jatz_freighters == nil and bare_ghost.tags.other_mod == 1)
+
+  -- A space platform takes a liquid depot in the tick it was marked, before its action was looked
+  -- for: the removal finds it itself.
+  local platform_depot = depot(690)
+  platform_depot.name = "jatz-liquid-request-depot"
+  fire("on_built_entity", { entity = platform_depot })
+  freighters_in(platform_depot, 2)
+  game.tick = 6500
+  fire("on_marked_for_deconstruction", { entity = platform_depot, player_index = 20 })
+  new_item({ removal("jatz-liquid-request-depot", 690.5, 0.5) })
+  local before = reads
+  fire("on_space_platform_pre_mined", { entity = platform_depot })
+  check("a platform taking it tags its action", items[1][1].tags.jatz_settings.jatz_freighters == 2 and reads > before)
+  fire("on_space_platform_mined_entity", {
+    entity = platform_depot,
+    buffer = {
+      insert = function(stack)
+        return stack.count
+      end,
+    },
+  })
+  removed(platform_depot)
+  fire("on_tick", { tick = 6501 })
+  check("and nothing is left to look for", storage.undo_locating == nil and storage.undo_marked == nil)
+
+  -- Its action located, then the stack trimmed at its oldest under it: the mark no longer matches,
+  -- and the removal finds its action itself.
+  local shifted = depot(700)
+  shifted.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = shifted })
+  freighters_in(shifted, 3)
+  game.tick = 7000
+  fire("on_marked_for_deconstruction", { entity = shifted, player_index = 20 })
+  new_item({ removal("jatz-request-depot", 700.5, 0.5) })
+  fire("on_tick", { tick = 7001 })
+  new_item({ removal("wooden-chest", 9.5, 9.5) })
+  table.remove(items)
+  robot_takes(shifted)
+  check("a stack that moved under it still gets its settings", items[2][1].tags.jatz_settings.jatz_freighters == 3)
 
   for name, handler in pairs(deliveries) do
     logistics[name] = handler

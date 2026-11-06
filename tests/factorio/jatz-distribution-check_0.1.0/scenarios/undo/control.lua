@@ -8,20 +8,26 @@
 -- scripts/undo.lua puts them on it (tests/lua/control-events.lua covers that step): rebuilt by
 -- robots and by the player, each depot must get its request back and its freighters. A cut depot a
 -- player then fails to mine by hand (a full inventory) stays marked, and its settings when the
--- robots take it are the ones kept.
+-- robots take it are the ones kept. With Space Age, a liquid request depot cut on a space platform
+-- (the platform takes it at once) keeps its settings too.
 -- Writes script-output/jatz-undo-check.json.
 local FREIGHTER = "jatz-quinityn-freighter"
 local DEPOT = "jatz-request-depot"
 local CUT, MINED, KEPT = { x = 6.5, y = 0.5 }, { x = 6.5, y = -6.5 }, { x = 14.5, y = 0.5 }
+local PLATFORM_DEPOT, AFLOAT = "jatz-liquid-request-depot", { x = 8.5, y = 0.5 }
 
-local function settings_at(position)
+-- The settings on the player's undo action for the removal of `name` (a request depot unless
+-- given) at `position` on the surface `surface_index` (the player's unless given).
+local function settings_at(position, name, surface_index)
   local stack = game.get_player(1).undo_redo_stack
+  surface_index = surface_index or game.get_player(1).surface_index
   for item = 1, stack.get_undo_item_count() do
     for action_index, action in ipairs(stack.get_undo_item(item)) do
       local target = action.target
       if
         action.type == "removed-entity"
-        and target.name == DEPOT
+        and action.surface_index == surface_index
+        and target.name == (name or DEPOT)
         and target.position.x == position.x
         and target.position.y == position.y
       then
@@ -97,6 +103,33 @@ script.on_event(defines.events.on_tick, function(event)
       and kept.to_be_deconstructed()
     pockets.remove({ name = "stone", count = pockets.get_item_count("stone") })
     assert(remote.call("jatz-distribution", "set_request", kept, "wood", 9))
+    -- With Space Age: a liquid request depot on a space platform (gravity stops the item depots
+    -- there), cut; the platform takes it within the tick.
+    if script.active_mods["space-age"] then
+      local platform = player.force.create_space_platform({
+        name = "undo",
+        planet = "nauvis",
+        starter_pack = "space-platform-starter-pack",
+      })
+      platform.apply_starter_pack()
+      local foundation = {}
+      for x = 4, 14 do
+        for y = -5, 5 do
+          foundation[#foundation + 1] = { name = "space-platform-foundation", position = { x, y } }
+        end
+      end
+      platform.surface.set_tiles(foundation)
+      local floating = platform.surface.create_entity({
+        name = PLATFORM_DEPOT,
+        position = AFLOAT,
+        force = player.force,
+        raise_built = true,
+      })
+      assert(remote.call("jatz-distribution", "set_request", floating, "water", 1000))
+      assert(remote.call("jatz-distribution", "add_freighters", floating, 2) == 2)
+      assert(floating.order_deconstruction(player.force, player, 0))
+      storage.platform_surface = platform.surface.index
+    end
     -- Mined by hand: 1 freighter in its slot, 2 in its chest.
     local mined = surface.create_entity({ name = DEPOT, position = MINED, force = player.force, raise_built = true })
     assert(remote.call("jatz-distribution", "add_freighters", mined, 1) == 1)
@@ -108,6 +141,10 @@ script.on_event(defines.events.on_tick, function(event)
     result.cut_settings = { request = cut.jatz_request, freighters = cut.jatz_freighters }
     local mined = settings_at(MINED) or {}
     result.mined_settings = { request = mined.jatz_request, freighters = mined.jatz_freighters }
+    if storage.platform_surface then
+      local afloat = settings_at(AFLOAT, PLATFORM_DEPOT, storage.platform_surface) or {}
+      result.platform_settings = { request = afloat.jatz_request, freighters = afloat.jatz_freighters }
+    end
     local kept = settings_at(KEPT) or {}
     result.kept_settings = { request = kept.jatz_request, freighters = kept.jatz_freighters }
     -- The ghosts the undos bring back, given the tags as scripts/undo.lua gives them: the cut one
