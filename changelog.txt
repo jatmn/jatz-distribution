@@ -30,6 +30,7 @@ Version: Unreleased
     - Freighters check for enemies to run over 3 times a second instead of 6, still covering all the ground they drove over.
     - Request and liquid request depots with "Request from buffer depots" unticked now fall back to buffer depots for what no provider can supply, instead of ignoring them. Ticked, buffer depots still come first.
   Bugfixes:
+    - Freighters no longer stop at junctions and slide sideways before turning, then drive on at an angle. They now swing through the turn and straighten out.
     - A freighter killed by enemies is now lost, with its cargo. Before, it could go back into its depot's freighter slot as if its route had failed.
     - Freighters requested for a request depot whose chest has no free stack (it is full of cargo, say) are now brought once a stack frees up, together with any more asked for meanwhile. Before, the request was dropped.
     - Large networks no longer stutter once a second. Request depots and freighters are now checked spread over each second instead of all in the same tick, and finding a provider no longer looks at every freighter in the game: on a map with 600 depots and 16,000 freighters, the slowest tick went from over a second to about 11 ms, and the mod's script time fell from 16 ms to under 1 ms a tick. Depots remember how far providers are by road for five minutes (forgetting it as soon as road changes) instead of asking the game's pathfinder every time, which also lets freighters set off sooner.

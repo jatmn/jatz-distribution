@@ -36,8 +36,13 @@ local function drone(name, cargo)
     -- A target enemies go for, as they do the player's other vehicles and units (a unit's
     -- default, said here because deliveries rely on it).
     is_military_target = true,
-    -- Narrow enough for a one-tile road; the art is longer, but the unit turns on the spot.
-    collision_box = { { -0.4, -0.4 }, { 0.4, 0.4 } },
+    -- 0.4 tiles, well inside a one-tile road; the art is longer, but the unit turns on the spot.
+    -- The engine's units overshoot a right-angle turn (about 0.3 tiles at the base speed, more
+    -- when faster). With the 0.8-tile box it had, that pinned the freighter against the off-road
+    -- corner across the junction, where it slid sideways before driving back at an angle (the
+    -- owner's video, November 6, 2026); with this one it swerves and settles. Run-over reach
+    -- doesn't follow it (IMPACT_REACH in scripts/logistics.lua).
+    collision_box = { { -0.2, -0.2 }, { 0.2, 0.2 } },
     collision_mask = {
       layers = { [constants.off_road_layer] = true },
       colliding_with_tiles_only = true,
@@ -59,7 +64,7 @@ local function drone(name, cargo)
       allow_try_return_to_spawner = false,
       do_separation = false,
       -- Keep the default path resolution: at a finer one (path_resolution_modifier 1) the
-      -- engine finds no path at all for this 0.8-tile box on a one-tile road.
+      -- engine found no path at all for the earlier 0.8-tile box on a one-tile road.
     },
     -- Units must be able to attack; this one never does: every command it gets is
     -- `distraction = none`, so it neither fights back nor turns aside when attacked.

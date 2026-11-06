@@ -191,7 +191,7 @@ prototypes = {
   item = {},
   entity = {
     [DRONE] = {
-      collision_box = { left_top = { x = -0.4, y = -0.4 }, right_bottom = { x = 0.4, y = 0.4 } },
+      collision_box = { left_top = { x = -0.2, y = -0.2 }, right_bottom = { x = 0.2, y = 0.2 } },
       collision_mask = {},
       speed = SPEED,
     },
