@@ -83,6 +83,9 @@ def sources(root=REPO, areas=('freighter', 'depots')):
         # Liquid freight research (the liquid depots) and fluid capacity research.
         yield (depots / 'technology', 'liquid-provider-depot.png', depots / 'liquid-provider/3/sheets/preview.png',
                frame_box(DEPOT_DIRECTION, 4), TECHNOLOGY_SIZE, 1)
+        # Road network monitor research.
+        yield (depots / 'technology', f'{MONITOR}.png', depots / MONITOR / '1/sheets/preview.png',
+               frame_box(MONITOR_DIRECTION, 4), TECHNOLOGY_SIZE, 1)
 
 
 def thumbnail_source(root=REPO):

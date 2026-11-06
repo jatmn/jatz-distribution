@@ -37,8 +37,9 @@ LOADED_WITH = re.compile(r'^\s*(?:~|\+)?\s*([A-Za-z0-9_-]+)')
 EXPECTED = {'free_recipes': 10,
             # All 10 recipes are free. Research: the freight system (after engine) unlocks the item
             # and fuel depots, the freighter and road; liquid freight, after it and fluid handling,
-            # the liquid depots, locked until then. Freighter speed has 4 levels then an infinite one; item and fluid
-            # capacity 5 each. A force with speed 1-4 and the infinite level written to 7, item
+            # the liquid depots; and the road network monitor research, after it and the circuit
+            # network, the monitor; each locked until then. Freighter speed has 4 levels then an
+            # infinite one; item and fluid capacity 5 each. A force with speed 1-4 and the infinite level written to 7, item
             # capacity 1-2 and fluid capacity 1-3 has 6, 2 and 3 levels; a new force none. Its
             # freighter leaves at 2.2 times the speed, slows to 1.6 times on the road when speed
             # level 4 is undone, and brings 12 stacks (1200 iron plates) a trip, 2000 in all.
@@ -48,7 +49,9 @@ EXPECTED = {'free_recipes': 10,
                     'jatz-quinityn-freighter', 'jatz-road']},
                 'jatz-liquid-freight': {'prerequisites': ['fluid-handling', 'jatz-freight-system'], 'locked': 3,
                                         'unlocked': 3, 'recipes': [
-                    'jatz-liquid-provider-depot', 'jatz-liquid-request-depot', 'jatz-liquid-buffer-depot']}},
+                    'jatz-liquid-provider-depot', 'jatz-liquid-request-depot', 'jatz-liquid-buffer-depot']},
+                'jatz-road-network-monitor': {'prerequisites': ['circuit-network', 'jatz-freight-system'], 'locked': 1,
+                                              'unlocked': 1, 'recipes': ['jatz-road-monitor']}},
             'speed_infinite': True, 'research_levels': {'jatz-freighter-speed': 5, 'jatz-freighter-item-capacity': 5,
                                                         'jatz-freighter-fluid-capacity': 5},
             'researched_levels': {'speed': 6, 'item_capacity': 2, 'fluid_capacity': 3, 'fresh': 0},

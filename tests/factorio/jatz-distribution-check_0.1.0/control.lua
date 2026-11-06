@@ -134,11 +134,12 @@ end
 local FUEL_TANK = "jatz-fuel-depot-tank"
 
 -- Every recipe is locked until researched: the freight system unlocks its recipes, and the liquid
--- ones stay locked until liquid freight is researched after it.
+-- ones stay locked until liquid freight is researched after it, the road network monitor until its
+-- own research.
 local function check_research(result)
   local force = game.forces.player
   result.research_unlocks = {}
-  for _, name in ipairs({ research.system, research.liquid }) do
+  for _, name in ipairs({ research.system, research.liquid, research.monitor }) do
     local technology = prototypes.technology[name]
     local unlocks = { prerequisites = {}, recipes = {}, locked = 0, unlocked = 0 }
     for prerequisite in pairs(technology.prerequisites) do

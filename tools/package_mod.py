@@ -45,7 +45,7 @@ def mod_files(root=REPO):
     # The road network monitor draws its default-colour preview and shadow (prototypes/road-monitor.lua).
     files += [depots / f'road-monitor/1/sheets/{layer}.png' for layer in ('preview', 'shadow')]
     files += [depots / 'icons/road-monitor.png']
-    files += [depots / 'technology/liquid-provider-depot.png']
+    files += [depots / f'technology/{name}.png' for name in ('liquid-provider-depot', 'road-monitor')]
     files += [depots / f'connectors/sheets/{layer}.png' for layer in ('base', 'shadow')]
     files += [depots / 'loading-zone/loading-zone.png']
     # The road art is Yuoki's (CC BY-NC-SA 4.0), so its licence ships beside it.

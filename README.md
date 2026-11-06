@@ -11,7 +11,7 @@ Build depots where goods are made and where they're needed, connect them with ro
 
 ## How it works
 
-1. **Research Freight system**, after Engine, to unlock the item depots, freighters and road (and **Liquid freight** later for the liquid depots).
+1. **Research Freight system**, after Engine, to unlock the item depots, freighters and road (and later **Liquid freight** for the liquid depots, and **Road network monitor** for the monitor).
 2. **Lay road.** Freighters drive only on road, which you'll find in the mod's row of the crafting menu. Each depot lays a road tile under its loading zone (except on space platforms), so just run your road up to it.
 3. **Place a provider depot** and fill it with goods.
 4. **Place a request depot**, open it, and choose an item and how many to keep in stock.

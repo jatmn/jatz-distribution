@@ -1,7 +1,9 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- Research, laid out after Transport Drones' tech tree (its data/technologies/, values only): the
 -- freight system unlocks the item depots, the fuel depot, the freighter and road; liquid freight
--- expands it with the liquid depots. Upgrades: freighter speed (four levels and an infinite one),
+-- expands it with the liquid depots; the road network monitor research, after it and the circuit
+-- network, unlocks the monitor (Transport Drones' depot circuits research). Upgrades: freighter
+-- speed (four levels and an infinite one),
 -- item capacity (five levels) and, after liquid freight, fluid capacity (five levels).
 -- scripts/research.lua applies the levels at runtime.
 local constants = require("prototypes.constants")
@@ -36,12 +38,14 @@ local LIQUID_RECIPES = {
   "jatz-liquid-request-depot",
   "jatz-liquid-buffer-depot",
 }
+local MONITOR_RECIPES = { constants.road_monitor }
 
 -- A 256 px technology icon (tools/make_icons.py), with the game's "constant" badge for upgrades
 -- and, for fluid capacity, the game's water icon in the top left corner, so it reads as the
 -- freighter carrying fluid rather than a liquid depot holding more.
 local FREIGHTER = constants.freighter_technology_icon
 local LIQUID = constants.liquid_technology_icon
+local MONITOR = constants.monitor_technology_icon
 local FLUID_BADGE = "__base__/graphics/icons/fluid/water.png"
 local function icons(icon, overlay, badge)
   local layers = { { icon = icon, icon_size = constants.technology_icon_size } }
@@ -93,6 +97,17 @@ local technologies = {
     prerequisites = { research.system, "fluid-handling" },
     unit = { count = 200, ingredients = LADDER[1], time = 30 },
     order = "j[jatz]-b",
+  },
+  {
+    -- Reads the road network onto the circuit network, so it comes after the circuit network, at
+    -- Transport Drones' depot circuits cost.
+    type = "technology",
+    name = research.monitor,
+    icons = icons(MONITOR),
+    effects = unlocks(MONITOR_RECIPES),
+    prerequisites = { research.system, "circuit-network" },
+    unit = { count = 500, ingredients = LADDER[1], time = 30 },
+    order = "j[jatz]-c",
   },
 }
 

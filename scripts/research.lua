@@ -7,6 +7,8 @@ local research = {}
 research.system = "jatz-freight-system"
 -- Expands it with the liquid depots.
 research.liquid = "jatz-liquid-freight"
+-- Unlocks the road network monitor, after the circuit network.
+research.monitor = "jatz-road-network-monitor"
 -- Upgrades are named <name>-<level>.
 research.speed = "jatz-freighter-speed"
 research.item_capacity = "jatz-freighter-item-capacity"
