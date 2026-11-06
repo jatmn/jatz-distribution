@@ -84,6 +84,13 @@ function prototypes.get_entity_filtered(filters)
 end
 prototypes.item.cell =
   { name = "cell", stack_size = 50, fuel_value = 30000000, burnt_result = prototypes.item["used-cell"] }
+-- None of these spoil unless a check says so (LuaItemPrototype.get_spoil_ticks is 0 then).
+local function never_spoils()
+  return 0
+end
+for _, item in pairs(prototypes.item) do
+  item.get_spoil_ticks = never_spoils
+end
 script = { register_on_object_destroyed = function() end }
 
 local function inventory(contents)
@@ -154,11 +161,12 @@ end
 
 -- An item stack and a script inventory, as far as the dispatcher uses them. As in the game, a
 -- stack holds at most its item's stack size, and stacks merge only when their item data match
--- (`health` stands for it here: health, tags, durability...).
+-- (`health` stands for it here: health, tags, durability...). A stack of an item that spoils
+-- has the tick it spoils (`spoil_tick`, 0 if it doesn't); merged stacks spoil in between.
 local function stack(name, count)
-  local self = { name = name, count = count or 0, valid_for_read = (count or 0) > 0 }
+  local self = { name = name, count = count or 0, valid_for_read = (count or 0) > 0, spoil_tick = 0 }
   function self.clear()
-    self.name, self.count, self.valid_for_read, self.health = nil, 0, false, nil
+    self.name, self.count, self.valid_for_read, self.health, self.spoil_tick = nil, 0, false, nil, 0
   end
   function self.transfer_stack(from, amount)
     amount = math.min(amount or from.count, from.count)
@@ -171,7 +179,9 @@ local function stack(name, count)
       return false
     end
     if not self.valid_for_read then
-      self.health, self.quality = from.health, from.quality
+      self.health, self.quality, self.spoil_tick = from.health, from.quality, from.spoil_tick
+    elseif self.spoil_tick > 0 then
+      self.spoil_tick = math.floor((self.spoil_tick * self.count + from.spoil_tick * moved) / (self.count + moved))
     end
     self.name, self.count, self.valid_for_read = from.name, self.count + moved, true
     from.count = from.count - moved
@@ -191,10 +201,14 @@ local function script_inventory(size)
   function self.is_empty()
     return self.get_item_count() == 0
   end
-  function self.get_item_count()
+  -- Of one item (by name), or of all.
+  function self.get_item_count(item)
+    local name = type(item) == "table" and item.name or item
     local total = 0
     for index = 1, size do
-      total = total + self[index].count
+      if name == nil or self[index].name == name then
+        total = total + self[index].count
+      end
     end
     return total
   end
@@ -424,9 +438,16 @@ end
 -- What each trip is bringing its request depot, as filed for `need` (storage.coming), must match
 -- the trips themselves: what it promised on its way out, its cargo on its way back, nothing
 -- otherwise. Checked with every check below, so a change to a trip that isn't filed shows up.
+-- Cargo that spoils changes by itself: its earliest spoil tick must be filed (storage.spoiling),
+-- and only once that tick has come may what was filed for the depot's item differ from it.
 local function coming_filed()
   if not (storage and storage.coming and storage.trips) then
     return true
+  end
+  local spoiling = storage.spoiling or {}
+  local function due(request, item)
+    local tick = spoiling[request] and spoiling[request][item]
+    return tick and tick <= game.tick
   end
   local expected = {}
   for _, trip in pairs(storage.trips) do
@@ -438,26 +459,39 @@ local function coming_filed()
         amount = trip.fluid.amount
       elseif type(trip.cargo) == "table" and trip.cargo.valid then
         amount = trip.cargo.get_item_count(trip.item)
+        for index = 1, #trip.cargo do
+          local cargo = trip.cargo[index]
+          local filed = spoiling[trip.request] and spoiling[trip.request][trip.item]
+          if cargo.name == trip.item and cargo.spoil_tick > 0 and not (filed and filed <= cargo.spoil_tick) then
+            return false,
+              trip.request .. " " .. trip.item .. " spoils at " .. cargo.spoil_tick .. ", filed " .. tostring(filed)
+          end
+        end
       end
     end
     if amount ~= 0 then
       local key = trip.request .. " " .. trip.item .. " " .. trip.key
-      expected[key] = amount
+      expected[key] = { amount = amount, request = trip.request, item = trip.item }
     end
   end
   for request, items in pairs(storage.coming) do
     for item, trips in pairs(items) do
       for key, amount in pairs(trips) do
         local id = request .. " " .. item .. " " .. key
-        if expected[id] ~= amount then
-          return false, id .. " filed " .. amount .. ", trip has " .. tostring(expected[id])
+        local has = expected[id] and expected[id].amount
+        if has ~= amount and not due(request, item) then
+          return false, id .. " filed " .. amount .. ", trip has " .. tostring(has)
         end
         expected[id] = nil
       end
     end
   end
-  local missing = next(expected)
-  return missing == nil, missing and (missing .. " not filed")
+  for id, trip in pairs(expected) do
+    if not due(trip.request, trip.item) then
+      return false, id .. " not filed"
+    end
+  end
+  return true
 end
 
 local function check(name, condition)
@@ -744,6 +778,67 @@ do -- A save from before what freighters bring was filed, with a freighter from 
   local depot = storage.depots[request.unit_number]
   check("the old freighter's 10 count as coming", logistics.missing(depot) == 100 - 10)
   check("as stacks now", type(trip.cargo) == "table" and trip.cargo.get_item_count("a") == 10)
+end
+
+do -- Cargo that spoils on its way home stops counting as coming once it has spoiled, so the depot
+  -- sends another freighter for it before the first gets home. The game spoils a whole stack just
+  -- after its spoil_tick, inside the cargo and with no event (Pullfrog's review of 7d85b67: with
+  -- the spoiled load still filed as coming, the depot's spare freighter stayed parked).
+  prototypes.item.a.get_spoil_ticks = function()
+    return 1000
+  end
+  local logistics = reset()
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  local provider = entity("jatz-provider-depot", 10.5, 0.5, { a = 30 })
+  logistics.add(request)
+  logistics.add(provider)
+  assert(logistics.set_request(request, "a", 10))
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 2)) == 2)
+  -- Real stacks to load from: one spoiling at tick 200, one later.
+  local stock = script_inventory(2)
+  for index, spoil_tick in ipairs({ 200, 900 }) do
+    stock[index].name, stock[index].count, stock[index].valid_for_read = "a", 15, true
+    stock[index].quality, stock[index].spoil_tick = { name = "normal" }, spoil_tick
+  end
+  provider.get_inventory = function()
+    return stock
+  end
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  arrive(logistics, trip)
+  check("setup: the freighter brings 10, from the stack spoiling first", trip.state == "to-request")
+  check("setup: spoiling at tick 200", trip.cargo.get_item_count("a") == 10 and trip.cargo[1].spoil_tick == 200)
+  local depot = storage.depots[request.unit_number]
+  check("its spoil tick is filed", storage.spoiling[request.unit_number].a == 200)
+  check("while it can still be delivered, the 10 are coming", logistics.missing(depot) == 0)
+  game.tick = 200
+  logistics.on_tick()
+  check("and no other freighter is sent", #trips_from(request) == 1)
+  check("on its spoil tick it hasn't spoiled yet", logistics.missing(depot) == 0)
+  -- The tick after, the game has turned the stack into spoilage.
+  game.tick = 201
+  trip.cargo[1].name, trip.cargo[1].spoil_tick = "spoilage", 0
+  check("once spoiled, nothing is coming", logistics.missing(depot) == 10)
+  check("and nothing of it is left to spoil", storage.spoiling[request.unit_number] == nil)
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  check("so the spare freighter goes for it before the first gets home", #trips_from(request) == 2)
+  prototypes.item.a.get_spoil_ticks = never_spoils
+end
+
+do -- Freighters bringing an item that doesn't spoil file no spoil tick: their cargo is never read
+  -- again until their trip changes.
+  local logistics = reset()
+  local request = supplied(logistics, 2)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  trip.state = "to-request"
+  trip.cargo[1].name, trip.cargo[1].count, trip.cargo[1].valid_for_read = "a", 10, true
+  trip.cargo[1].spoil_tick = 0
+  logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = defines.behavior_result.fail })
+  check("nothing filed to spoil", next(storage.spoiling) == nil)
 end
 
 do -- No freighters: nothing is sent, and the panel says why.

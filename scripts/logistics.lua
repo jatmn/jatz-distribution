@@ -808,14 +808,66 @@ local function bringing(trip)
   return 0
 end
 
+-- The tick from which a returning trip's cargo of its item may have spoiled: its stacks' earliest
+-- spoil_tick, or nil if none can. The game spoils a whole stack at once, just after that tick,
+-- inside the cargo inventory and with no event.
+local spoils_at
+do
+  -- Whether an item spoils, by name (prototype data: Lua only, built again after a load).
+  local spoils = {}
+  function spoils_at(trip)
+    if trip.state ~= TO_REQUEST or trip.fluid then
+      return nil
+    end
+    local item = trip.item
+    if spoils[item] == nil then
+      local prototype = prototypes.item[item]
+      spoils[item] = prototype ~= nil and prototype.get_spoil_ticks() > 0
+    end
+    if not spoils[item] then
+      return nil
+    end
+    local cargo = trip.cargo
+    if not (cargo and cargo.valid) then
+      return nil
+    end
+    local first
+    for index = 1, #cargo do
+      local stack = cargo[index]
+      if stack.valid_for_read and stack.name == item then
+        local tick = stack.spoil_tick
+        if tick > 0 and (not first or tick < first) then
+          first = tick
+        end
+      end
+    end
+    return first
+  end
+end
+
 -- What a request depot's freighters are bringing, filed by `promise` as their state, promise or
 -- cargo changes: storage.coming[request depot unit_number][item][trip key] = amount (only
 -- amounts above 0), and each trip records the amount it has filed (`trip.coming`; a trip's depot
 -- and item never change). So a depot's need is read without looking at each of its trips and
--- their cargo.
+-- their cargo. Cargo that spoils changes with no trip change, so the earliest tick a depot's
+-- filed cargo of an item may spoil is filed too (storage.spoiling[request depot][item] = tick),
+-- and `committed` files that depot's trips for the item again once it comes (`file_spoiled`).
 local file_promises
 local function file_coming(trip, ended)
   local amount = not ended and bringing(trip) or 0
+  local spoil_tick = amount ~= 0 and spoils_at(trip)
+  if spoil_tick then
+    local spoiling = storage.spoiling
+    local items = spoiling[trip.request]
+    if not items then
+      items = {}
+      spoiling[trip.request] = items
+    end
+    local due = items[trip.item]
+    if not due or spoil_tick < due then
+      items[trip.item] = spoil_tick
+    end
+  end
   if (trip.coming or 0) == amount then
     return
   end
@@ -843,6 +895,14 @@ local function file_coming(trip, ended)
       if next(items) == nil then
         coming[trip.request] = nil
       end
+      -- Nothing of the item is coming: no cargo of it left to spoil.
+      local spoiling = storage.spoiling[trip.request]
+      if spoiling then
+        spoiling[trip.item] = nil
+        if next(spoiling) == nil then
+          storage.spoiling[trip.request] = nil
+        end
+      end
     end
   end
   trip.coming = nil
@@ -850,25 +910,52 @@ end
 
 -- What a request depot's freighters, except trip `except` (by id), are bringing of the item it
 -- requests. Trips for an item the depot no longer asks for bring nothing it needs.
-local function committed(depot, except)
-  if not storage.coming then
-    file_promises()
-  end
-  local item = depot.request and depot.request.item
-  local items = item and storage.coming[depot.entity.unit_number]
-  local trips = items and items[item]
-  if not trips then
-    return 0
-  end
-  local skipped = except and storage.trips[except]
-  skipped = skipped and skipped.key
-  local total = 0
-  for key, amount in pairs(trips) do
-    if key ~= skipped then
-      total = total + amount
+local committed
+do
+  -- File a request depot's trips bringing `item` again from their cargo, as some of it may have
+  -- spoiled: from the tick storage.spoiling holds for it (a stack is still there on its
+  -- spoil_tick and gone the tick after, so it may be filed again on both). Each trip files its
+  -- next spoil tick.
+  local function file_spoiled(depot, item)
+    local unit = depot.entity.unit_number
+    local items = storage.spoiling[unit]
+    items[item] = nil
+    if next(items) == nil then
+      storage.spoiling[unit] = nil
+    end
+    for id in pairs(trips_of(depot)) do
+      local trip = storage.trips[id]
+      if trip and trip.item == item then
+        file_coming(trip)
+      end
     end
   end
-  return total
+
+  function committed(depot, except)
+    if not (storage.coming and storage.spoiling) then
+      file_promises()
+    end
+    local item = depot.request and depot.request.item
+    local spoiling = item and storage.spoiling[depot.entity.unit_number]
+    local due = spoiling and spoiling[item]
+    if due and game.tick >= due then
+      file_spoiled(depot, item)
+    end
+    local items = item and storage.coming[depot.entity.unit_number]
+    local trips = items and items[item]
+    if not trips then
+      return 0
+    end
+    local skipped = except and storage.trips[except]
+    skipped = skipped and skipped.key
+    local total = 0
+    for key, amount in pairs(trips) do
+      if key ~= skipped then
+        total = total + amount
+      end
+    end
+    return total
+  end
 end
 
 -- What freighters on their way to a provider have promised to load there:
@@ -881,7 +968,7 @@ end
 -- depot is filed again too (`file_coming`), so call it whenever that may have changed: its state,
 -- promise or cargo.
 local function promise(trip, ended)
-  if not (storage.promised and storage.coming and trip.key) then
+  if not (storage.promised and storage.coming and storage.spoiling and trip.key) then
     -- A save from before promises were filed: file every trip's (this one's too, if still out).
     return file_promises()
   end
@@ -919,7 +1006,7 @@ end
 -- File every trip's promise, and what it is bringing, afresh: on first use in a save from before
 -- they were filed, and after trips were checked against the game as loaded (add_all).
 function file_promises()
-  storage.promised, storage.coming = {}, {}
+  storage.promised, storage.coming, storage.spoiling = {}, {}, {}
   for id, trip in pairs(storage.trips) do
     trip.key = trip.key or id
     trip.promise, trip.coming = nil, nil

@@ -222,8 +222,13 @@ prototypes.get_entity_filtered = native(function(filters)
   end
   return found
 end)
+-- None of the emulated items spoil.
+local function never_spoils()
+  return 0
+end
 for name, size in pairs(STACK_SIZE) do
-  prototypes.item[name] = { name = name, stack_size = size, fuel_value = FUEL_VALUE[name] or 0 }
+  prototypes.item[name] =
+    { name = name, stack_size = size, fuel_value = FUEL_VALUE[name] or 0, get_spoil_ticks = never_spoils }
 end
 local NORMAL = prototypes.quality.normal
 local technologies = {}
