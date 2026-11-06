@@ -30,6 +30,7 @@ Version: Unreleased
     - Freighters stop for 1 second at a depot's loading zone to load and to unload, instead of loading and unloading the moment they arrive.
     - Only belts, pipes and train tracks can be built on road. Depots and other buildings can't, though a depot's loading zone can be on road.
     - Freighters check for enemies to run over 3 times a second instead of 6, still covering all the ground they drove over.
+    - On maps with many depots, finding providers and Fuel depots and working out what a request depot still needs take less time: depots look only at the depots on their own surface, and what freighters are bringing is kept up to date instead of added up each time.
     - Request and liquid request depots with "Request from buffer depots" unticked now fall back to buffer depots for what no provider can supply, instead of ignoring them. Ticked, buffer depots still come first.
   Bugfixes:
     - Freighters no longer stop at junctions and slide sideways before turning, then drive on at an angle. They now swing through the turn and straighten out.

@@ -14,7 +14,8 @@
 -- computed property of the fake runtime is wrapped by `native`, the one boundary between the mod
 -- and the fake: counting stops when the mod calls into it and starts again when it returns, so how
 -- the fake does its work (inventory loops, path answers, movement) never shows. The few instructions
--- of the boundary itself are measured once at start-up and taken off. Calls into the runtime's
+-- of the boundary itself are measured once at start-up and taken off. Prototypes are plain tables, so
+-- before the run every function in them is checked to be a wrapper. Calls into the runtime's
 -- functions (methods such as get_item_count, request_path or create_entity, not property reads)
 -- are counted separately, as `api_calls`: a machine-independent stand-in for the API's own cost.
 -- Only measured ticks are counted; the harness's stocking runs outside the mod's handlers.
@@ -51,10 +52,12 @@ local function resume(...)
   arm()
   return ...
 end
+-- Every wrapper `native` has made, to check the fake prototypes with before the run.
+local wrapped = setmetatable({}, { __mode = "k" })
 -- `kind`: "call" for a runtime function (the default), "property" for a metamethod.
 local function native(fn, kind)
   kind = kind or "call"
-  return function(...)
+  local wrapper = function(...)
     if not armed then
       return fn(...)
     end
@@ -62,6 +65,8 @@ local function native(fn, kind)
     crossings[kind] = crossings[kind] + 1
     return resume(fn(...))
   end
+  wrapped[wrapper] = true
+  return wrapper
 end
 -- Every function in a fake object, wrapped in place.
 local function natives(object)
@@ -223,7 +228,15 @@ prototypes.get_entity_filtered = native(function(filters)
   return found
 end)
 for name, size in pairs(STACK_SIZE) do
-  prototypes.item[name] = { name = name, stack_size = size, fuel_value = FUEL_VALUE[name] or 0 }
+  prototypes.item[name] = natives({
+    name = name,
+    stack_size = size,
+    fuel_value = FUEL_VALUE[name] or 0,
+    -- None of the emulated items spoil.
+    get_spoil_ticks = function()
+      return 0
+    end,
+  })
 end
 local NORMAL = prototypes.quality.normal
 local technologies = {}
@@ -835,6 +848,21 @@ for index, plan in ipairs(map.surfaces) do
     serviced[#serviced + 1] = { role = depot.role, item = depot.item, chest = chest }
   end
 end
+
+-- Prototypes are plain tables, so a method added to one can miss `native` (and be counted as the
+-- mod's Lua, its call not counted): every function in them must be a wrapper.
+local function check_wrapped(object, path, seen)
+  seen[object] = true
+  for key, value in pairs(object) do
+    local at = path .. "." .. tostring(key)
+    if type(value) == "function" then
+      assert(wrapped[value], at .. " is a fake runtime function outside native")
+    elseif type(value) == "table" and not seen[value] then
+      check_wrapped(value, at, seen)
+    end
+  end
+end
+check_wrapped(prototypes, "prototypes", {})
 
 -- Run: engine events, the mod's tick handlers, then stocking and emptying the depots.
 local warmup, measured = preset.warmup, TICKS or preset.ticks
