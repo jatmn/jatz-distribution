@@ -9,7 +9,8 @@
 -- robots and by the player, each depot must get its request back and its freighters. A cut depot a
 -- player then fails to mine by hand (a full inventory) stays marked, and its settings when the
 -- robots take it are the ones kept. With Space Age, a liquid request depot cut on a space platform
--- (the platform takes it at once) keeps its settings too.
+-- (the platform takes it at once) keeps its settings too, and the platform rebuilds it from its
+-- ghost with its request and freighters.
 -- Writes script-output/jatz-undo-check.json.
 local FREIGHTER = "jatz-quinityn-freighter"
 local DEPOT = "jatz-request-depot"
@@ -37,15 +38,22 @@ local function settings_at(position, name, surface_index)
   end
 end
 
--- A depot's freighters: in its slot, out, in its chest and asked of robots.
+-- A depot's freighters: in its slot, out, in its chest and asked for. A liquid depot has no chest:
+-- its freighters arrive in its truck chest (invisible, at its centre).
 local function freighters(depot)
   local slot, out = remote.call("jatz-distribution", "freighter_counts", depot)
   local requested = remote.call("jatz-distribution", "requested_freighters", depot)
-  return slot + out + depot.get_inventory(defines.inventory.chest).get_item_count(FREIGHTER) + requested
+  local chest = depot.get_inventory(defines.inventory.chest)
+  if not chest then
+    local truck = depot.surface.find_entities_filtered({ name = "jatz-truck-chest", position = depot.position })[1]
+    chest = truck and truck.get_inventory(defines.inventory.chest)
+  end
+  return slot + out + (chest and chest.get_item_count(FREIGHTER) or 0) + requested
 end
 
-local function depot_at(position)
-  return game.get_player(1).surface.find_entities_filtered({ name = DEPOT, position = position })[1]
+local function depot_at(position, name, surface)
+  surface = surface or game.get_player(1).surface
+  return surface.find_entities_filtered({ name = name or DEPOT, position = position })[1]
 end
 
 script.on_event(defines.events.on_tick, function(event)
@@ -144,6 +152,17 @@ script.on_event(defines.events.on_tick, function(event)
     if storage.platform_surface then
       local afloat = settings_at(AFLOAT, PLATFORM_DEPOT, storage.platform_surface) or {}
       result.platform_settings = { request = afloat.jatz_request, freighters = afloat.jatz_freighters }
+      -- Its ghost, given the tags as scripts/undo.lua gives them, for the platform to build from
+      -- its hub, which took the depot and its freighters.
+      local platform_surface = game.surfaces[storage.platform_surface]
+      result.platform_removed = depot_at(AFLOAT, PLATFORM_DEPOT, platform_surface) == nil
+      local ghost = platform_surface.create_entity({
+        name = "entity-ghost",
+        inner_name = PLATFORM_DEPOT,
+        position = AFLOAT,
+        force = player.force,
+      })
+      ghost.tags = afloat
     end
     local kept = settings_at(KEPT) or {}
     result.kept_settings = { request = kept.jatz_request, freighters = kept.jatz_freighters }
@@ -162,8 +181,12 @@ script.on_event(defines.events.on_tick, function(event)
     player.cursor_stack.set_stack({ name = DEPOT, count = 1 })
     player.build_from_cursor({ position = MINED })
   elseif result and event.tick == 1200 then
-    for name, position in pairs({ cut_rebuilt = CUT, mined_rebuilt = MINED }) do
-      local depot = depot_at(position)
+    local rebuilt = { cut_rebuilt = { CUT }, mined_rebuilt = { MINED } }
+    if storage.platform_surface then
+      rebuilt.platform_rebuilt = { AFLOAT, PLATFORM_DEPOT, game.surfaces[storage.platform_surface] }
+    end
+    for name, spot in pairs(rebuilt) do
+      local depot = depot_at(spot[1], spot[2], spot[3])
       result[name] = depot
           and { request = remote.call("jatz-distribution", "get_request", depot), freighters = freighters(depot) }
         or "not rebuilt"

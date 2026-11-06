@@ -323,8 +323,12 @@ EXPECTED_UNDO = {
     'kept_settings': {'request': {'item': 'wood', 'count': 9}, 'freighters': 1},
     'cut_rebuilt': {'request': {'item': 'wood', 'count': 8}, 'freighters': 5},
     'mined_rebuilt': {'freighters': 3}}
-# With Space Age, also a liquid request depot cut on a space platform, which takes it at once.
-EXPECTED_UNDO_PLATFORM = {'platform_settings': {'request': {'item': 'water', 'count': 1000}, 'freighters': 2}}
+# With Space Age, also a liquid request depot cut on a space platform, which takes it at once, and
+# rebuilt there by the platform from the ghost given its settings.
+EXPECTED_UNDO_PLATFORM = {
+    'platform_settings': {'request': {'item': 'water', 'count': 1000}, 'freighters': 2},
+    'platform_removed': True,
+    'platform_rebuilt': {'request': {'item': 'water', 'count': 1000}, 'freighters': 2}}
 UNDO_TICKS = 1300
 
 
