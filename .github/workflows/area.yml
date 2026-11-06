@@ -56,10 +56,21 @@ jobs:
 
       - name: Install Lua 5.2
         # The repository area's routing tests exercise Lua file selection; the mod area's tests run Lua.
+        # Ubuntu 24.04's one lua5.2 build (Lua linked in), unpacked directly: apt-get update took up to 83 s.
         if: steps.files.outputs.lua == 'true' || inputs.area == 'repository' || inputs.area == 'mod'
+        env:
+          LUA_DEB: lua5.2_5.2.4-3build2_amd64.deb
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install --no-install-recommends -y lua5.2
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://archive.ubuntu.com/ubuntu/pool/universe/l/lua5.2/${LUA_DEB}" \
+            -o "$RUNNER_TEMP/$LUA_DEB"
+          echo "de75fdb69ad75802cff02ac7c081d7953082fc34fed4091d7fffc7498a55564c  $RUNNER_TEMP/$LUA_DEB" |
+            sha256sum --check
+          dpkg-deb --extract "$RUNNER_TEMP/$LUA_DEB" "$RUNNER_TEMP/lua"
+          # The Lua tests skip themselves without Lua, so fail here if it can't run.
+          "$RUNNER_TEMP/lua/usr/bin/lua5.2" -v
+          "$RUNNER_TEMP/lua/usr/bin/luac5.2" -v
+          echo "$RUNNER_TEMP/lua/usr/bin" >> "$GITHUB_PATH"
       - name: Check Lua syntax
         if: steps.files.outputs.lua == 'true'
         run: |
