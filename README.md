@@ -19,7 +19,7 @@ Build depots where goods are made and where they're needed, connect them with ro
 
 That's it. Freighters set off for the provider that's nearest **by road**, load up and bring the goods home. A status light on the request depot tells you at a glance if anything is wrong.
 
-Want the details? The **[player guide](docs/guide.md)** covers the freighter slot and its shortcuts, fuel, buffer depots, priority, liquid depots, blueprints, and what happens when a road is cut.
+Want the details? The **[player guide](docs/guide.md)** covers the freighter slot and its shortcuts, fuel, buffer depots, priority, liquid depots, the circuit network, blueprints, and what happens when a road is cut.
 
 ## Features
 
@@ -28,6 +28,7 @@ Want the details? The **[player guide](docs/guide.md)** covers the freighter slo
 - **They need fuel, like real trucks:** a freighter low on fuel for where it's going stops at the nearest fuel depot first, fills up, then carries on. Any fuel works, item or fluid, from any mod.
 - **Items and fluids:** separate depots for dry cargo and for fluids, and fluids keep their temperature.
 - **Buffers and priority:** stage stock close to where it's needed, and rank depots from 1 to 10.
+- **Circuit network:** switch depots on and off with a circuit condition, and read what a whole road network holds with the road network monitor.
 - **Blueprint friendly:** copy, paste and blueprints keep requests, priorities and freighters, and construction robots bring the trucks.
 - **Cargo stays intact:** armor keeps its equipment, and food keeps track of its spoilage.
 - **See what's on board:** a freighter's cargo bays are light grey while empty and take the color of the item or fluid it picks up.

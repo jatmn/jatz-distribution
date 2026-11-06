@@ -31,4 +31,6 @@ return {
   truck_chest = "jatz-truck-chest",
   -- The hidden tank under a Fuel depot that holds its liquid fuel (prototypes/depots.lua).
   fuel_tank = "jatz-fuel-depot-tank",
+  -- The combinator that reads what the depots on its road network hold (prototypes/road-monitor.lua).
+  road_monitor = "jatz-road-monitor",
 }

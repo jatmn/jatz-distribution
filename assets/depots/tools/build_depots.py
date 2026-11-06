@@ -15,10 +15,20 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument('--role', default='all')
-parser.add_argument('--size', type=int, choices=[3], default=3)
+parser.add_argument('--size', type=int, choices=[1, 3], default=3)
 args = parser.parse_args(sys.argv[sys.argv.index('--')+1:])
 ROLES = ['provider','request','buffer','fuel','liquid-provider','liquid-request','liquid-buffer']
 ROLE_COLORS = {'provider':[.64,.23,.18], 'request':[.23,.42,.69], 'buffer':[.42,.52,.24], 'fuel':[.83,.58,.15]}
+# The road network monitor (prototypes/road-monitor.lua): a 1x1 combinator in the liquid
+# depots' finish, grey housing on a bronze skid, with a brown band where they have their role
+# colour (the owner, November 5, 2026). Build it alone: --role road-monitor --size 1.
+MONITOR = 'road-monitor'
+MONITOR_PALETTE = {'cab':[.36,.26,.17], 'trim':[.80,.38,.12], 'cargo':[.43,.43,.40]}
+# Where its wires meet its two terminal posts and its status lens sits, in model units (three
+# to a tile, +Y north, +Z up), before the 1x1 build scales them to a tile; the prototype's wire
+# points and activity LED are these, projected for each direction (monitor_points).
+MONITOR_POSTS = {'red':(-.46,.42,1.60), 'green':(.46,.42,1.60)}
+MONITOR_LENS = (.60,-.40,1.28)
 
 
 def finish(obj, name, mat, bevel=0):
@@ -722,6 +732,73 @@ def reference_fluid_hardware(role):
         for dx in [-.07,.07]:
             for dy in [-.07,.07]:rod('Beacon brass cage',(.52+dx,.27+dy,2.16),(.52+dx,.27+dy,2.30),.012,brass)
 
+def monitor_body():
+    """The road network monitor, at depot scale (3 units to a tile) for the 1x1 build to scale."""
+    # Bronze skid: two rails and four bolted feet, as under the liquid depots' tanks.
+    for y in (-.62,.62):
+        box('Monitor skid rail',(0,y,.08),(2.10,.20,.16),steel,.018)
+    for x in (-.92,.92):
+        for y in (-.62,.62):
+            taper('Bolted monitor foot',(x,y,.09),(.30,.30),(.24,.24),.18,steel,.05)
+            bolt((x,y,.19),radius=.04)
+    # Grey housing and lid, the liquid provider's tank shell, with a brown band around the walls,
+    # a bronze rim round the lid and a bronze strap across it, as the tank has its straps.
+    box('Monitor housing shell',(0,0,.66),(1.80,1.40,1.00),housing,.06)
+    box('Monitor identification band',(0,0,.70),(1.86,1.46,.22),rolepaint,.03)
+    box('Monitor housing lid',(0,0,1.20),(1.84,1.44,.10),housing,.03)
+    for loc,dims in [((0,-.74,1.21),(1.96,.08,.14)),((0,.74,1.21),(1.96,.08,.14)),
+                     ((-.94,0,1.21),(.08,1.40,.14)),((.94,0,1.21),(.08,1.40,.14))]:
+        box('Monitor bronze lid rim',loc,dims,steel,.012)
+    box('Monitor bronze lid strap',(0,.02,1.265),(1.90,.18,.03),steel,.008)
+    for x in (-.80,.80):
+        bolt((x,.02,1.285),radius=.03)
+    # Clasps holding the lid on, two to a long side.
+    for x in (-.58,.58):
+        for y,sign in ((-.75,-1),(.75,1)):
+            box('Monitor lid clasp',(x,y+sign*.02,1.00),(.16,.06,.34),trim,.012)
+            bolt((x,y+sign*.055,1.08),'Y',radius=.025)
+    # Front gauge window: a dark recess with a gauge face. The status lens is on the lid, where
+    # it shows whichever way the monitor faces.
+    box('Monitor gauge recess',(-.18,-.715,.92),(.86,.04,.34),black,.01)
+    box('Monitor gauge face',(-.18,-.73,.92),(.78,.02,.26),dial,.006)
+    for i in range(5):
+        box('Monitor gauge tick',(-.48+i*.15,-.742,.95),(.02,.006,.12),black,0)
+    x,y,z=MONITOR_LENS
+    cylinder('Monitor status bezel',(x,y,z-.02),.12,.06,edge)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=24,ring_count=12,radius=1,location=(x,y,z))
+    obj=bpy.context.object;obj.scale=(.08,.08,.045)
+    for face in obj.data.polygons:face.use_smooth=True
+    finish(obj,'Monitor convex status lens',violet)
+    # Two terminal posts on the north side of the lid, red then green, for the wires.
+    for colour,(x,y,top) in MONITOR_POSTS.items():
+        cylinder(f'Monitor {colour} terminal flange',(x,y,1.29),.13,.08,copper)
+        for i,z in enumerate((1.36,1.43,1.50)):
+            cylinder(f'Monitor {colour} terminal insulator disc',(x,y,z),.085-.01*i,.05,black,'Z',24)
+        cylinder(f'Monitor {colour} terminal stud',(x,y,1.55),.05,.08,brass)
+        bolt((x,y,top-.012),radius=.035)
+    # Road cue: a brass road-tile plate on the front band.
+    box('Monitor road plate',(.55,-.735,.92),(.40,.02,.20),brass,.008)
+
+
+def monitor_points(size):
+    """Screen offsets, in tiles, of the posts and lens for each direction (north, east, south, west):
+    the camera's projection (rotate, then x stays, up is y + z/sqrt(2)) and the ground shadow's
+    (x + z/2, up y + (2/3)z/sqrt(2)), as tools/render_directions.py draws them."""
+    scale=size/3
+    def place(point,direction,shadow=False):
+        x,y,z=(v*scale for v in point)
+        angle=-math.tau*direction/4
+        rx,ry=x*math.cos(angle)-y*math.sin(angle),x*math.sin(angle)+y*math.cos(angle)
+        if shadow:
+            return [round(rx+z/2,4),round(-(ry+z*2/3/math.sqrt(2)),4)]
+        return [round(rx,4),round(-(ry+z/math.sqrt(2)),4)]
+    return {
+        'wire':[{colour:place(point,d) for colour,point in MONITOR_POSTS.items()} for d in range(4)],
+        'wire_shadow':[{colour:place(point,d,True) for colour,point in MONITOR_POSTS.items()} for d in range(4)],
+        'lens':[place(MONITOR_LENS,d) for d in range(4)],
+    }
+
+
 def configure_depot_materials():
     # Local material copies only: the approved freighter master stays untouched.
     settings=[(steel,(.145,.14,.12),.72,.50,.78),(edge,(.30,.285,.25),.76,.36,.62),
@@ -1196,7 +1273,7 @@ def build(role,size):
     rust=bpy.data.materials['BASE | old oxide and seam deposits']
     rolepaint=bpy.data.materials['PAINT | cab'];trim=bpy.data.materials['PAINT | trim'];housing=bpy.data.materials['PAINT | cargo']
     key=role.removeprefix('liquid-')
-    palette={'cab':ROLE_COLORS[key], 'trim':[.80,.38,.12], 'cargo':[.43,.43,.40]}
+    palette=MONITOR_PALETTE if role==MONITOR else {'cab':ROLE_COLORS[key], 'trim':[.80,.38,.12], 'cargo':[.43,.43,.40]}
     for mat,channel in [(rolepaint,'cab'),(trim,'trim'),(housing,'cargo')]:
         color=[((v+.055)/1.055)**2.4 if v>.04045 else v/12.92 for v in palette[channel]]
         ramp=mat.node_tree.nodes['Surface pigment'].color_ramp
@@ -1204,15 +1281,20 @@ def build(role,size):
         ramp.elements[1].color=(*color,1)
         mat.diffuse_color=(*color,1)
     configure_depot_materials()
-    if role in ['fuel','liquid-provider','liquid-request','liquid-buffer']:warm_fluid_metal()
+    if role in ['fuel','liquid-provider','liquid-request','liquid-buffer',MONITOR]:warm_fluid_metal()
     dial=edge.copy();dial.name='BASE | enamel gauge face'
     dial.node_tree.nodes['Surface pigment'].color_ramp.elements[1].color=(.65,.58,.43,1)
     root=bpy.data.objects.new('Depot | rotate this assembly',None)
     scene.collection.objects.link(root)
     root['forward_axis']='+Y (Factorio north)'
     root['role']=role;root['tile_size']=size
-    foundation(role)
-    if role in ['provider','request','buffer']:
+    if role==MONITOR:
+        monitor_body()
+    else:
+        foundation(role)
+    if role==MONITOR:
+        pass
+    elif role in ['provider','request','buffer']:
         before=set(root.children)
         cargo_body(role)
         cargo_mechanics(role)
@@ -1231,7 +1313,7 @@ def build(role,size):
         # the automated transfer assembly at image right. +Y faces the opposite world axis.
         mirror=Matrix.Diagonal((-1,1,1,1))
         for obj in set(root.children)-before:obj.matrix_basis=mirror@obj.matrix_basis
-    surface_wear(role)
+    if role!=MONITOR:surface_wear(role)
     if size==1:
         for obj in root.children:
             obj.location *= 1/3
@@ -1293,7 +1375,7 @@ def build(role,size):
     scene['layer_mapping']='cab=role, trim=clamps, cargo=housing'
     scene['direction_count']=4
     scene['fidelity_pass']=18
-    scene['concept']=f'concepts/depots/images/{role}.png'
+    scene['concept']='liquid-provider palette (no concept art)' if role==MONITOR else f'concepts/depots/images/{role}.png'
     shadow=bpy.data.scenes.new('Ground shadow')
     shadow.render.engine='CYCLES';shadow.cycles.samples=1;shadow.cycles.use_denoising=False
     shadow.render.film_transparent=True;shadow.camera=camera;shadow.collection.objects.link(camera)
@@ -1303,6 +1385,7 @@ def build(role,size):
     for folder in ['masters/exr','masters/shadow-silhouettes','masters/layers','frames','sheets','previews']:
         (out/folder).mkdir(parents=True,exist_ok=True)
     metadata={'role':role,'size':size,'fidelity_pass':18,'directions':['north','east','south','west'],'palette':palette,'ortho_scale':camera.data.ortho_scale,'projection_y_scale':math.sqrt(2),'ports':ports,'game_frame_size':512,'game_scale':32*camera.data.ortho_scale/512,'source':f'source/{role}-{size}.blend'}
+    if role==MONITOR:metadata['points']=monitor_points(size)
     (out/'asset.json').write_text(json.dumps(metadata,indent=2)+'\n')
     root.rotation_euler.z=0
     bpy.context.view_layer.update()

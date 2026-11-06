@@ -31,6 +31,9 @@ def load(path):
 
 
 AREAS = {'freighter': 'assets/quinityn-freighter', 'depots': 'assets/depots'}
+# The 1x1 road network monitor, built, rendered and packaged with the depots (no geometry or
+# junction inspection: it has no loading path or pipes).
+MONITOR = 'road-monitor/1/asset.json'
 
 
 def tracked_blends(root, directory):
@@ -81,6 +84,16 @@ def check_depots(root, errors):
         if meta['ports']:
             expect(errors, junctions.get(role, {}), 'source_sha256', digest, model,
                    'run assets/depots/tools/inspect_junctions.py in Blender')
+    monitor = depots / MONITOR
+    if monitor.is_file():
+        meta = load(monitor)
+        source = depots / meta['source']
+        model, digest = source.relative_to(root), sha256(source)
+        entry = next((entry for entry in load(depots / 'validation.json').get('results', [])
+                      if entry.get('role') == meta['role'] and entry.get('size') == meta['size']), {})
+        expect(errors, load(monitor.parent / 'validation.json'), 'source_sha256', digest, model,
+               f'{meta["role"]}/{meta["size"]}/validation.json is from an older model; {RENDER_AGAIN}')
+        expect(errors, entry, 'source_sha256', digest, model, f'validation.json is from an older model; {RENDER_AGAIN}')
     connector = depots / 'source/pipe-connector.blend'
     model, digest = connector.relative_to(root), sha256(connector)
     record = load(depots / 'connectors/validation.json')
@@ -147,7 +160,9 @@ def required_icons(root, area):
     """The icons the mod needs for an area, from the entities themselves rather than icons.json."""
     if area == 'freighter':
         return {'quinityn-freighter.png'}
-    return {f'{load(path)["role"]}-depot.png' for path in (root / 'assets/depots').glob('*/3/asset.json')}
+    depots = root / 'assets/depots'
+    icons = {f'{load(path)["role"]}-depot.png' for path in depots.glob('*/3/asset.json')}
+    return icons | ({'road-monitor.png'} if (depots / MONITOR).is_file() else set())
 
 
 def png_rgba(path):

@@ -33,7 +33,7 @@ CHECK = ROOT / 'tests/factorio/jatz-distribution-check_0.1.0'
 OURS = ('jatz-distribution', 'jatz-distribution-check')
 # Dependency prefixes Factorio loads with the mod: required ('' and '~') and recommended ('+').
 LOADED_WITH = re.compile(r'^\s*(?:~|\+)?\s*([A-Za-z0-9_-]+)')
-EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pipe_connections': 20,
+EXPECTED = {'free_recipes': 10, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pipe_connections': 20,
             'cleared_zones': 28,
             # Deliveries (tests/factorio/jatz-distribution-check_0.1.0/control.lua): 30 of the
             # provider's 50 iron plates reach the request over the road; the request on an
@@ -53,7 +53,8 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             # nor their ghosts, though their loading zone can be road.
             'depot_on_road': False, 'depot_ghost_on_road': False, 'depot_zone_on_road': True,
             'on_road': {'small-electric-pole': False, 'inserter': False, 'wooden-chest': False,
-                        'transport-belt': True, 'pipe': True, 'straight-rail': True, 'jatz-quinityn-freighter': True},
+                        'transport-belt': True, 'pipe': True, 'straight-rail': True, 'jatz-quinityn-freighter': True,
+                        'jatz-road-monitor': False},
             # Nor can road be laid under any of them, a gate included while it stands open.
             'road_under': {'open_gate': 'grass-1', 'closed_gate': 'grass-1', 'pole': 'grass-1',
                            'gate_still_open': True, 'gate_closed': True},
@@ -117,6 +118,60 @@ EXPECTED = {'free_recipes': 9, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'pi
             'ambush_freighters_home': 3, 'freighters_polluted': True,
             # The request panel's status light: the game's four status indicator sprites exist.
             'status_lights': 4,
+            # Every depot takes a red wire in all four directions. A provider switched off by its
+            # circuit condition supplies nothing (its request depot finds no provider) until a
+            # combinator switches it on at tick 300; a request depot switched off sends nothing
+            # until then. The road network monitor, beside one road, shows what its provider and
+            # liquid provider hold, leaving out a switched-off provider, request depots and the
+            # other road. Only delivery depots take a condition; players can't open the monitor.
+            # The monitor opens, to its own panel (its reading); its signals stay its own.
+            'wired_depots': 28, 'circuit_refused_elsewhere': False, 'monitor_operable': True,
+            # Monitors reading request depots: before tick 300 the wall request depot holds none
+            # and still needs all 10 (its provider is switched off); afterwards it holds 10 and
+            # needs none. An unknown reading is refused; the default is providers and buffers.
+            'monitor_readings_refused': False, 'monitor_reading_default': 'supply',
+            'circuit_readings_after': {'requests': 'stone-wall=10', 'needs': ''},
+            # A combinator's settings pasted onto a monitor: the monitor shows its own reading, in its
+            # own switched-on, unmultiplied section, and the shared group keeps signal-A = 123.
+            'monitor_pasted': {'shows': 'stone-wall=10,water=1000', 'own': True,
+                               'group': {'source': 'signal-A=123', 'other': 'signal-A=123'}},
+            # Each depot condition agrees with the game's own (a lamp's) on the same wires.
+            'condition_parity': {'anything_ge_b': {'native': False, 'depot': False},
+                                 'everything_gt_b': {'native': True, 'depot': True},
+                                 'overflow': {'native': False, 'depot': False},
+                                 'wildcard_wrap': {'native': True, 'depot': True}},
+            'monitor_beside_road': True,
+            'circuit_before': {'walls': 0, 'lamps': 0, 'walls_status': 'no-provider', 'lamps_status': 'disabled',
+                               'monitor': {'walls': 0, 'water': 1000, 'lamps': 0},
+                               # The switched-off provider's hover panel says so with a red light;
+                               # the request depot, which has no condition, shows its own status.
+                               'gated_status': {'red': True, 'label': 'jatz-circuit-status.entity-off'},
+                               'readings': {'requests': '', 'needs': 'stone-wall=10'},
+                               'request_status': False,
+                               # The modes road's monitor leaves out another force's 50 copper.
+                               'merged_monitor': 'wood=2800'},
+            # Once that force merges into the player's, the monitor counts its copper, with no road
+            # or depot changing.
+            'monitor_after_merge': 'copper-plate=50,wood=2800',
+            # 200 wood taken out of the wired depot this tick: the wire still carries its 300 (3100),
+            # and the 2800 elsewhere is not more than 2900, before or after.
+            'circuit_transfer': {'before': False, 'after': False, 'wire': 3100, 'held': 100},
+            # A monitor counting a provider's 100 iron, cloned at tick 301 and wired to it: the clone
+            # puts nothing on the wire before its first update (200: the provider's own 100 and the
+            # monitor's count), so the provider's iron plate > 0 doesn't hold.
+            'monitor_clone': {'before': {'wire': 200, 'fulfilled': False, 'monitor': 'iron-plate=100'},
+                              'after': {'wire': 200, 'fulfilled': False, 'clone_shows': ''}},
+            # Switched on at tick 300, the provider shows its own status again.
+            'circuit_status_after': True,
+            'circuit_walls': 10, 'circuit_lamps': 10, 'circuit_after': {'walls': 10, 'water': 1000, 'lamps': 0},
+            # Reading the circuit network, a depot leaves out its own wood: 300 here and 2800 at the
+            # depot wired to it (or counted by the monitor) is not more than 3000, but is more than
+            # 2700. Reading its own 200 wood: more than 100, not more than 300. An unknown mode is
+            # refused.
+            'circuit_modes': {'wired_wire': 3100, 'monitored_wire': 3100, 'wired': False, 'monitored': False,
+                              'own': True, 'own_mode': 'contents', 'wired_2700': True, 'monitored_2700': True,
+                              'own_300': False},
+            'circuit_mode_refused': False,
             # Blueprints keep a request depot's request (tag) and freighters (insert plan): the
             # ghost built from one asks for 7 wood and has robots bring 3 freighters. Copy and Paste
             # settings has robots bring what the destination lacks (1 -> 3). Freighters put in by

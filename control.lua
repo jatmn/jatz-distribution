@@ -1,11 +1,28 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- Jat'z Distribution runtime: loading zones (scripts/loading-zone.lua), the road each depot lays
 -- under its loading zone (scripts/depot-road.lua), deliveries between provider and request depots
--- (scripts/logistics.lua) and the request panel (scripts/request-gui.lua).
+-- (scripts/logistics.lua), the request panel (scripts/request-gui.lua) and the road network
+-- monitor (scripts/road-monitor.lua).
 local loading_zone = require("scripts.loading-zone")
 local depot_road = require("scripts.depot-road")
 local logistics = require("scripts.logistics")
 local request_gui = require("scripts.request-gui")
+local road_monitor = require("scripts.road-monitor")
+
+-- Road laid (`added`) or removed or covered (`removed`) on a surface: deliveries re-plan, and road
+-- network monitors there work out their networks again.
+local function roads_changed(surface_index, added, removed)
+  logistics.on_roads_changed(surface_index, added, removed)
+  if added or removed then
+    road_monitor.changed(surface_index)
+  end
+end
+
+-- A depot built, turned or flipped.
+local function depot_changed(entity)
+  logistics.on_depot_changed(entity)
+  road_monitor.changed(entity.surface_index)
+end
 
 -- Lay road under a depot's loading zone (lifting the road of its old one, if turned), clear the
 -- zone's decoratives, and let deliveries know the roads changed.
@@ -13,10 +30,10 @@ local function settle(entity)
   local laid, removed = depot_road.lay(entity)
   loading_zone.clear(entity)
   if removed then
-    logistics.on_roads_changed(removed, false, true)
+    roads_changed(removed, false, true)
   end
   if laid then
-    logistics.on_roads_changed(laid, true, false)
+    roads_changed(laid, true, false)
   end
 end
 
@@ -29,7 +46,12 @@ local function on_built(event)
     logistics.add(entity)
     -- Built from a blueprint ghost: the request it was blueprinted with.
     logistics.apply_tags(entity, event.tags)
-    logistics.on_depot_changed(entity)
+    if entity.name == road_monitor.name then
+      -- With the reading it was blueprinted with.
+      road_monitor.add(entity, event.tags)
+    else
+      depot_changed(entity)
+    end
   end
 end
 
@@ -38,15 +60,15 @@ local function on_turned(event)
   local entity = event.entity
   if entity and entity.valid and loading_zone.depots[entity.name] then
     settle(entity)
-    logistics.on_depot_changed(entity)
+    depot_changed(entity)
   end
 end
 
-local filters = {}
+local filters = { { filter = "name", name = road_monitor.name } }
 for name in pairs(loading_zone.depots) do
   filters[#filters + 1] = { filter = "name", name = name }
 end
--- Every way a depot can be built: by hand, robots, other mods' scripts, revived ghosts, platforms.
+-- Every way a depot or a road network monitor can be built: by hand, robots, other mods' scripts, revived ghosts, platforms.
 for _, event in ipairs({
   defines.events.on_built_entity,
   defines.events.on_robot_built_entity,
@@ -79,8 +101,10 @@ script.on_event(defines.events.on_entity_cloned, function(event)
       settle(entity)
     end
     logistics.on_cloned(event.source, entity)
-    if entity.valid then
-      logistics.on_depot_changed(entity)
+    if entity.valid and entity.name == road_monitor.name then
+      road_monitor.add(entity, nil, event.source)
+    elseif entity.valid then
+      depot_changed(entity)
     end
   end
 end, clone_filters)
@@ -105,17 +129,22 @@ for _, event in ipairs({ defines.events.on_entity_died, defines.events.script_ra
 end
 script.on_event(defines.events.on_player_rotated_entity, on_turned)
 script.on_event(defines.events.on_player_flipped_entity, on_turned)
-script.on_event(defines.events.on_entity_settings_pasted, logistics.on_entity_settings_pasted)
+script.on_event(defines.events.on_entity_settings_pasted, function(event)
+  logistics.on_entity_settings_pasted(event)
+  road_monitor.on_settings_pasted(event)
+end)
 -- Blueprints and copy and paste of request depots keep their request and freighters.
 script.on_event(defines.events.on_player_setup_blueprint, logistics.on_player_setup_blueprint)
 
 -- A depot removed by any means takes the road it laid with it.
 script.on_event(defines.events.on_object_destroyed, function(event)
+  -- First, while deliveries still know where the depot stood.
+  road_monitor.on_object_destroyed(event)
   logistics.on_object_destroyed(event)
   if event.type == defines.target_type.entity and event.useful_id then
     local surface_index = depot_road.lift(event.useful_id)
     if surface_index then
-      logistics.on_roads_changed(surface_index, false, true)
+      roads_changed(surface_index, false, true)
     end
   end
 end)
@@ -133,7 +162,7 @@ local function on_tiles_built(event)
     end
   end
   local added = ROADS[event.tile.name] or false
-  logistics.on_roads_changed(event.surface_index, added, removed and not added)
+  roads_changed(event.surface_index, added, removed and not added)
 end
 local function on_tiles_mined(event)
   local removed = false
@@ -144,7 +173,7 @@ local function on_tiles_mined(event)
     end
   end
   if removed then
-    logistics.on_roads_changed(event.surface_index, false, true)
+    roads_changed(event.surface_index, false, true)
   end
 end
 for _, event in ipairs({
@@ -175,10 +204,18 @@ script.on_event(defines.events.script_raised_set_tiles, function(event)
       depot_road.covered(event.surface_index, tile.position)
     end
   end
-  logistics.on_roads_changed(event.surface_index, added, other)
+  roads_changed(event.surface_index, added, other)
 end)
 logistics.register()
 request_gui.register()
+-- Once a second: request depots send freighters, and road network monitors show their networks.
+-- Every tick, first: what depots whose condition reads the circuit network hold, as the wires carry
+-- it this tick (logistics.sample_circuits). The game raises on_tick before on_nth_tick.
+script.on_event(defines.events.on_tick, logistics.sample_circuits)
+script.on_nth_tick(logistics.dispatch_interval, function(event)
+  logistics.on_tick(event)
+  road_monitor.update()
+end)
 -- Freighters ctrl+ or shift+clicked from a player's inventory into a request depot fill its
 -- freighter slot (scripts/request-gui.lua).
 script.on_event(defines.events.on_player_main_inventory_changed, request_gui.on_player_main_inventory_changed)
@@ -194,9 +231,10 @@ local function setup()
     names[#names + 1] = name
   end
   for surface_index in pairs(depot_road.lay_all(names)) do
-    logistics.on_roads_changed(surface_index, true, false)
+    roads_changed(surface_index, true, false)
   end
   loading_zone.clear_all()
+  road_monitor.add_all()
 end
 script.on_init(setup)
 script.on_configuration_changed(setup)

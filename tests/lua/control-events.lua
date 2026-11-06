@@ -121,6 +121,88 @@ defines.relative_gui_type = setmetatable({}, {
 for _, name in ipairs(RELATIVE_GUI_TYPES) do
   rawset(defines.relative_gui_type, name, "relative_gui_type." .. name)
 end
+-- defines.wire_connector_id as Factorio 2.1 has it (runtime-api.json 2.1.24); others are errors.
+defines.wire_connector_id = setmetatable({}, {
+  __index = function(_, key)
+    error("FAILED: defines.wire_connector_id has no " .. tostring(key) .. " in Factorio 2.1", 2)
+  end,
+})
+for _, name in ipairs({
+  "circuit_green",
+  "circuit_red",
+  "combinator_input_green",
+  "combinator_input_red",
+  "combinator_output_green",
+  "combinator_output_red",
+  "pole_copper",
+  "power_switch_left_copper",
+  "power_switch_right_copper",
+}) do
+  rawset(defines.wire_connector_id, name, "wire_connector_id." .. name)
+end
+-- defines.control_behavior's types and storage tank modes as Factorio 2.1 has them
+-- (runtime-api.json 2.1.24); others are errors.
+local function strict(what, names)
+  local list = setmetatable({}, {
+    __index = function(_, key)
+      error("FAILED: " .. what .. " has no " .. tostring(key) .. " in Factorio 2.1", 2)
+    end,
+  })
+  for _, name in ipairs(names) do
+    rawset(list, name, what .. "." .. name)
+  end
+  return list
+end
+defines.entity_status_diode = strict("defines.entity_status_diode", { "green", "red", "yellow" })
+defines.control_behavior = {
+  type = strict("defines.control_behavior.type", {
+    "accumulator",
+    "agricultural_tower",
+    "arithmetic_combinator",
+    "artillery_turret",
+    "assembling_machine",
+    "asteroid_collector",
+    "boiler",
+    "cargo_landing_pad",
+    "constant_combinator",
+    "container",
+    "decider_combinator",
+    "display_panel",
+    "furnace",
+    "generic_on_off",
+    "heat_pipe",
+    "inserter",
+    "lab",
+    "lamp",
+    "land_mine",
+    "loader",
+    "logistic_container",
+    "mining_drill",
+    "programmable_speaker",
+    "proxy_container",
+    "pump",
+    "radar",
+    "rail_chain_signal",
+    "rail_signal",
+    "reactor",
+    "roboport",
+    "rocket_silo",
+    "selector_combinator",
+    "single_fluid_box",
+    "space_platform_hub",
+    "splitter",
+    "train_stop",
+    "transport_belt",
+    "turret",
+    "wall",
+  }),
+  single_fluid_box = {
+    exclusive_mode = strict(
+      "defines.control_behavior.single_fluid_box.exclusive_mode",
+      { "none", "send_contents", "send_segment_contents" }
+    ),
+  },
+}
 local nth = {}
 -- The filters each event was registered with.
 local filters = {}
@@ -164,10 +246,13 @@ prototypes = {
   item = {
     ["jatz-quinityn-freighter"] = { stack_size = 10, fuel_value = 0 },
     wood = { stack_size = 100, fuel_value = 2000000 },
+    ["iron-plate"] = { stack_size = 100, fuel_value = 0 },
   },
   fluid = { water = { fuel_value = 0 } },
   -- As with one of the Mining Drones mods installed (tests/lua/logistics.lua checks without).
   entity = { ["mining-depot"] = { type = "assembling-machine" } },
+  virtual_signal = { ["signal-A"] = {}, ["signal-each"] = {} },
+  quality = { normal = {}, uncommon = {} },
 }
 
 local tiles = {}
@@ -203,6 +288,30 @@ function surface.get_double_hidden_tile(position)
 end
 function surface.set_double_hidden_tile(position, name)
   cell(position[1], position[2]).double = name
+end
+-- The engine's flood fill: tiles named in `names` joined side by side to `position`'s.
+function surface.get_connected_tiles(position, names)
+  local wanted = {}
+  for _, name in ipairs(names) do
+    wanted[name] = true
+  end
+  local function road(x, y)
+    local tile = tiles[x .. "," .. y]
+    return tile and wanted[tile.name]
+  end
+  local found, seen, queue = {}, {}, { { position[1], position[2] } }
+  while #queue > 0 do
+    local x, y = table.unpack(table.remove(queue))
+    local key = x .. "," .. y
+    if not seen[key] and road(x, y) then
+      seen[key] = true
+      found[#found + 1] = { x = x, y = y }
+      for _, step in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+        queue[#queue + 1] = { x + step[1], y + step[2] }
+      end
+    end
+  end
+  return found
 end
 function surface.find_decoratives_filtered()
   return {}
@@ -281,11 +390,21 @@ local function depot(x)
     surface = surface,
     surface_index = 1,
     force = "player",
+    -- No wires, so no control behavior either.
+    get_circuit_network = function()
+      return nil
+    end,
+    get_control_behavior = function()
+      return nil
+    end,
     get_inventory = function()
       -- An empty chest of 48 stacks.
       local chest = {
         get_item_count = function()
           return 0
+        end,
+        get_contents = function()
+          return {}
         end,
       }
       for index = 1, 48 do
@@ -520,7 +639,7 @@ end
 
 -- A minimal GUI: elements with children by name, add and destroy.
 local function element(spec, parent)
-  local self = { children = {}, style = {}, parent = parent }
+  local self = { children = {}, style = {}, parent = parent, valid = true }
   for key, value in pairs(spec or {}) do
     self[key] = value
   end
@@ -533,6 +652,7 @@ local function element(spec, parent)
     return child
   end
   function self.destroy()
+    self.valid = false
     for index, child in ipairs(parent.children) do
       if child == self then
         table.remove(parent.children, index)
@@ -821,8 +941,8 @@ do -- "Request from buffer depots" survives a blueprint even with no item reques
   check("and restored on the depot built from it", logistics.get_from_buffers(built))
 end
 
-do -- The priority slider: provider depots get a panel with only it; buffer depots have it under
-  -- their request; request depots have none.
+do -- The priority slider: provider depots get a panel with it and their circuit condition; buffer
+  -- depots have it above their request; request depots have none.
   local logistics = require("scripts.logistics")
   local relative = element()
   local player = { index = 11, valid = true, gui = { relative = relative } }
@@ -837,7 +957,11 @@ do -- The priority slider: provider depots get a panel with only it; buffer depo
   local frame = relative.jatz_request_frame
   local row = frame and frame.children[1].priority_row
   check("a provider depot's window gets a panel", frame and frame.caption[1] == "jatz-gui.provider-title")
-  check("with only the priority slider", row and #frame.children[1].children == 1)
+  local children = frame.children[1].children
+  check(
+    "with the priority slider, then only its circuit condition",
+    row and children[1] == row and #children == 5 and children[5] == frame.children[1].condition_row
+  )
   local slider = row.jatz_depot_priority
   check(
     "a slider from 1 to 10 in whole steps",
@@ -1066,11 +1190,12 @@ do -- Mining Drones' mining depot: a provider depot that lays road behind it, wi
   fire("on_gui_opened", { player_index = 13, entity = mine })
   local frame = relative.jatz_request_frame
   check(
-    "whose priority panel is beside its assembling machine window",
+    "whose provider panel, priority then circuit condition, is beside its assembling machine window",
     frame
       and frame.anchor.gui == "relative_gui_type.assembling_machine_gui"
-      and frame.children[1].priority_row
-      and #frame.children[1].children == 1
+      and frame.children[1].children[1] == frame.children[1].priority_row
+      and #frame.children[1].children == 5
+      and frame.children[1].children[5] == frame.children[1].condition_row
   )
   -- Turned east it is 8 by 5, centred on a tile edge across: its loading zone is the tile (395, 0).
   mine.direction, mine.position = defines.direction.east, { x = 400, y = 0.5 }
@@ -1106,6 +1231,486 @@ do -- The Fuel depot's panel: its liquid fuel, which has no window of its own, a
   check("and the panel shows it empty", row.jatz_fuel_fluid.sprite == "")
   nth[30]()
   check("refresh leaves the panel in place", relative.jatz_request_frame == frame)
+end
+
+do -- Every delivery depot's panel ends with its enable/disable circuit condition.
+  local logistics = require("scripts.logistics")
+  local relative = element()
+  local player = { index = 14, valid = true, gui = { relative = relative }, get_main_inventory = function() end }
+  game.get_player = function()
+    return player
+  end
+  storage.request_gui = {}
+  local provider = depot(400)
+  fire("on_built_entity", { entity = provider })
+  fire("on_gui_opened", { player_index = 14, entity = provider })
+  local inner = relative.jatz_request_frame.children[1]
+  check("a provider depot's panel has the circuit condition", inner.circuit_row and inner.condition_row)
+  local light = inner.circuit_row.jatz_circuit_status
+  check("unticked, its light is grey", light.sprite == "utility/status_inactive")
+  local box = inner.circuit_row.jatz_circuit_enabled
+  box.state = true
+  fire("on_gui_checked_state_changed", { player_index = 14, element = box })
+  local row = inner.condition_row
+  row.jatz_circuit_first.elem_value = { type = "virtual", name = "signal-A" }
+  fire("on_gui_elem_changed", { player_index = 14, element = row.jatz_circuit_first })
+  row.jatz_circuit_comparator.selected_index = 2
+  fire("on_gui_selection_state_changed", { player_index = 14, element = row.jatz_circuit_comparator })
+  row.jatz_circuit_constant.text = "-7"
+  fire("on_gui_text_changed", { player_index = 14, element = row.jatz_circuit_constant, text = "-7" })
+  local circuit = logistics.get_circuit(provider)
+  check(
+    "ticking it and setting the condition stores it",
+    circuit.enabled
+      and circuit.condition.first_signal.name == "signal-A"
+      and circuit.condition.comparator == ">"
+      and circuit.condition.constant == -7
+  )
+  check("with no wire, its light stays grey", light.sprite == "utility/status_inactive")
+  row.jatz_circuit_first.elem_value = { type = "virtual", name = "signal-each" }
+  fire("on_gui_elem_changed", { player_index = 14, element = row.jatz_circuit_first })
+  check("each is refused and cleared", row.jatz_circuit_first.elem_value == nil)
+  -- Wired, the condition decides: signal-A > -7.
+  local value = 0
+  provider.get_circuit_network = function(connector)
+    return connector == defines.wire_connector_id.circuit_red
+        and {
+          get_signal = function()
+            return value
+          end,
+        }
+      or nil
+  end
+  row.jatz_circuit_first.elem_value = { type = "virtual", name = "signal-A" }
+  fire("on_gui_elem_changed", { player_index = 14, element = row.jatz_circuit_first })
+  nth[30]()
+  check("wired, and holding, its light is green", light.sprite == "utility/status_working")
+  value = -9
+  nth[30]()
+  check("not holding, red", light.sprite == "utility/status_not_working")
+  -- What the condition reads: the circuit network by default, or the depot's own contents.
+  local modes = inner.circuit_mode_row
+  check(
+    "the circuit network is chosen to start with",
+    modes.jatz_circuit_mode_network.state and not modes.jatz_circuit_mode_contents.state
+  )
+  modes.jatz_circuit_mode_contents.state = true
+  fire("on_gui_checked_state_changed", { player_index = 14, element = modes.jatz_circuit_mode_contents })
+  check("choosing its own contents stores it", logistics.get_circuit(provider).mode == "contents")
+  check("and shows only that choice", not modes.jatz_circuit_mode_network.state)
+  -- It holds no signal-A: 0 > -7.
+  check("which the light follows, wire or not", light.sprite == "utility/status_working")
+
+  local request = depot(410)
+  request.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = request })
+  fire("on_gui_opened", { player_index = 14, entity = request })
+  inner = relative.jatz_request_frame.children[1]
+  check("so does a request depot's", inner.circuit_row and inner.children[#inner.children] == inner.condition_row)
+
+  -- Copy and Paste settings, and blueprints, carry it.
+  fire("on_entity_settings_pasted", { source = provider, destination = request })
+  check(
+    "pasting copies it",
+    logistics.get_circuit(request).condition.constant == -7 and logistics.get_circuit(request).mode == "contents"
+  )
+  local saved
+  local blueprint = {
+    valid = true,
+    object_name = "LuaItemStack",
+    valid_for_read = true,
+    is_blueprint = true,
+    get_blueprint_entities = function()
+      return { { entity_number = 1, name = "jatz-provider-depot", position = { x = 0, y = 0 } } }
+    end,
+    set_blueprint_entities = function(entities)
+      saved = entities
+    end,
+  }
+  logistics.setup_blueprint(blueprint, { provider })
+  local tag = saved[1].tags and saved[1].tags.jatz_circuit
+  check(
+    "a blueprint keeps it as a tag",
+    tag and tag.enabled and tag.condition.first_signal.name == "signal-A" and tag.mode == "contents"
+  )
+  local built = depot(420)
+  fire("on_robot_built_entity", { entity = built, tags = saved[1].tags })
+  check(
+    "and a depot built from it gets it",
+    logistics.get_circuit(built).enabled and logistics.get_circuit(built).mode == "contents"
+  )
+  -- Ticked with no condition set yet: the tick is kept.
+  local ticked = depot(440)
+  fire("on_built_entity", { entity = ticked })
+  logistics.set_circuit(ticked, true, nil)
+  logistics.setup_blueprint(blueprint, { ticked })
+  local copy = depot(450)
+  fire("on_robot_built_entity", { entity = copy, tags = saved[1].tags })
+  check("a ticked checkbox without a condition is kept too", logistics.get_circuit(copy).enabled)
+  local plain = depot(430)
+  fire("on_robot_built_entity", { entity = plain, tags = { jatz_circuit = { enabled = true, condition = "x" } } })
+  check("a malformed tag is ignored", not logistics.get_circuit(plain).enabled)
+end
+
+do -- The road network monitor shows what the provider and buffer depots on its road hold.
+  local logistics = require("scripts.logistics")
+  local road_monitor = require("scripts.road-monitor")
+  check("once a second runs through control.lua", nth[60] ~= nil)
+  local function holding(entity, contents)
+    entity.get_inventory = function()
+      return {
+        get_item_count = function()
+          return 0
+        end,
+        get_contents = function()
+          return contents
+        end,
+      }
+    end
+    fire("on_built_entity", { entity = entity })
+    return entity
+  end
+  -- P1 at x = 500 and a liquid provider at 504 joined by road; a request depot at 508 too; P3 at
+  -- 520 on its own; the monitor beside P1's loading zone.
+  for x = 501, 507 do
+    cell(x, 2).name = "jatz-road"
+  end
+  local p1 = holding(depot(500), {
+    { name = "iron-plate", quality = "normal", count = 10 },
+    { name = "iron-plate", quality = "uncommon", count = 2 },
+  })
+  local liquid = depot(504)
+  liquid.name = "jatz-liquid-provider-depot"
+  liquid.get_fluid_contents = function()
+    return { water = 1500.5 }
+  end
+  fire("on_built_entity", { entity = liquid })
+  local request = depot(508)
+  request.name = "jatz-request-depot"
+  holding(request, { { name = "wood", quality = "normal", count = 5 } })
+  holding(depot(520), { { name = "iron-plate", quality = "normal", count = 99 } })
+  -- A mining depot (Mining Drones) loading from the same road: an assembling machine, with its ore
+  -- in its output inventory and no chest. Facing north, it loads from the tile behind it, (506, 2).
+  local mine = depot(506)
+  mine.name, mine.type, mine.position = "mining-depot", "assembling-machine", { x = 506.5, y = -2 }
+  mine.get_inventory = function()
+    return nil
+  end
+  function mine.get_output_inventory()
+    return {
+      get_contents = function()
+        return { { name = "iron-ore", quality = "normal", count = 4 } }
+      end,
+    }
+  end
+  fire("on_built_entity", { entity = mine })
+  -- Another force's provider on the same road: deliveries never use it, nor does the monitor.
+  local foreign = depot(496)
+  foreign.force = "enemy"
+  for x = 497, 499 do
+    cell(x, 2).name = "jatz-road"
+  end
+  holding(foreign, { { name = "copper-plate", quality = "normal", count = 7 } })
+  local sections = {}
+  local behavior = {
+    sections_count = 0,
+    get_section = function(index)
+      return sections[index]
+    end,
+    add_section = function()
+      sections[#sections + 1] = { is_manual = true, filters = {} }
+      return sections[#sections]
+    end,
+    remove_section = function(index)
+      table.remove(sections, index)
+    end,
+  }
+  setmetatable(behavior, {
+    __index = function(_, key)
+      if key == "sections_count" then
+        return #sections
+      end
+    end,
+  })
+  behavior.sections_count = nil
+  next_unit = next_unit + 1
+  local monitor = {
+    valid = true,
+    name = "jatz-road-monitor",
+    unit_number = next_unit,
+    position = { x = 500.5, y = 3.5 },
+    surface = surface,
+    surface_index = 1,
+    force = "player",
+    operable = true,
+    get_circuit_network = function()
+      return nil
+    end,
+    get_or_create_control_behavior = function()
+      return behavior
+    end,
+  }
+  fire("on_built_entity", { entity = monitor })
+  check("a monitor can be opened, to its panel", monitor.operable == true)
+  road_monitor.update()
+  local function shown()
+    local seen = {}
+    for _, section in ipairs(sections) do
+      for _, filter in ipairs(section.filters) do
+        seen[filter.value.type .. ":" .. filter.value.name .. ":" .. filter.value.quality] = filter.min
+      end
+    end
+    return seen
+  end
+  local seen = shown()
+  check(
+    "it shows a provider's items, each quality its own signal",
+    seen["item:iron-plate:normal"] == 10 and seen["item:iron-plate:uncommon"] == 2
+  )
+  check("and a liquid provider's fluid, in whole units", seen["fluid:water:normal"] == 1500)
+  check("but not a request depot's items", seen["item:wood:normal"] == nil)
+  check("nor another force's", seen["item:copper-plate:normal"] == nil)
+  check("and a mining depot's output", seen["item:iron-ore:normal"] == 4)
+  check("nor a provider on another road", #sections == 1 and #sections[1].filters == 4)
+  -- What it reads is chosen in its panel, which opening it shows instead of the combinator's own
+  -- window. A buffer depot holding 3 stone joins the road, and the request depot asks for 12 wood
+  -- (it holds 5).
+  local buffer = depot(502)
+  buffer.name = "jatz-buffer-depot"
+  holding(buffer, { { name = "stone", quality = "normal", count = 3 } })
+  request.get_inventory = function()
+    return {
+      get_item_count = function(id)
+        return (type(id) == "table" and id.name or id) == "wood" and 5 or 0
+      end,
+      get_insertable_count = function()
+        return 100
+      end,
+      get_contents = function()
+        return { { name = "wood", quality = "normal", count = 5 } }
+      end,
+    }
+  end
+  check("setup: the request depot asks for 12 wood", logistics.set_request(request, "wood", 12))
+  local screen = element()
+  local viewer = { index = 15, valid = true, gui = { relative = element(), screen = screen } }
+  game.get_player = function()
+    return viewer
+  end
+  monitor.localised_name = { "entity-name.jatz-road-monitor" }
+  fire("on_gui_opened", { player_index = 15, entity = monitor })
+  local panel = screen.jatz_monitor_frame
+  check("opening a monitor shows its panel in place of the combinator's window", panel and viewer.opened == panel)
+  check(
+    "reading what provider and buffer depots hold to start with",
+    panel.inner.jatz_monitor_reading_supply.state and not panel.inner.jatz_monitor_reading_providers.state
+  )
+  local function choose(reading)
+    local button = panel.inner["jatz_monitor_reading_" .. reading]
+    button.state = true
+    fire("on_gui_checked_state_changed", { player_index = 15, element = button })
+    road_monitor.update()
+    return shown()
+  end
+  seen = choose("supply")
+  check(
+    "provider and buffer depots: the buffer's stone too",
+    seen["item:stone:normal"] == 3 and seen["item:iron-plate:normal"] == 10 and seen["item:wood:normal"] == nil
+  )
+  seen = choose("providers")
+  check(
+    "provider depots only: no stone",
+    seen["item:stone:normal"] == nil and seen["item:iron-plate:normal"] == 10 and seen["fluid:water:normal"] == 1500
+  )
+  check("and only that choice ticked", not panel.inner.jatz_monitor_reading_supply.state)
+  seen = choose("requests")
+  check(
+    "request depots only: the 5 wood it holds, nothing else",
+    seen["item:wood:normal"] == 5 and seen["item:iron-plate:normal"] == nil and seen["item:stone:normal"] == nil
+  )
+  seen = choose("needs")
+  check(
+    "what request depots still need: 12 less the 5 held",
+    seen["item:wood:normal"] == 7 and #sections[1].filters == 1
+  )
+  check("kept on the monitor", road_monitor.get_reading(monitor) == "needs")
+  -- Blueprints, Copy and Paste settings and clones carry it.
+  local saved
+  local blueprint = {
+    valid = true,
+    object_name = "LuaItemStack",
+    valid_for_read = true,
+    is_blueprint = true,
+    get_blueprint_entities = function()
+      return { { entity_number = 1, name = "jatz-road-monitor", position = { x = 0, y = 0 } } }
+    end,
+    set_blueprint_entities = function(entities)
+      saved = entities
+    end,
+  }
+  logistics.setup_blueprint(blueprint, { monitor })
+  check("a blueprint keeps it as a tag", saved and saved[1].tags and saved[1].tags.jatz_monitor_reading == "needs")
+  local function another()
+    next_unit = next_unit + 1
+    local copy = {}
+    for key, value in pairs(monitor) do
+      copy[key] = value
+    end
+    copy.unit_number, copy.position = next_unit, { x = 900.5, y = 3.5 }
+    copy.get_or_create_control_behavior = function() end
+    return copy
+  end
+  local built = another()
+  fire("on_robot_built_entity", { entity = built, tags = saved[1].tags })
+  check("a monitor built from it reads the same", road_monitor.get_reading(built) == "needs")
+  local pasted = another()
+  fire("on_built_entity", { entity = pasted })
+  check("a new monitor reads providers and buffers", road_monitor.get_reading(pasted) == "supply")
+  fire("on_entity_settings_pasted", { source = monitor, destination = pasted })
+  check("pasting settings copies it", road_monitor.get_reading(pasted) == "needs")
+  local cloned = another()
+  fire("on_entity_cloned", { source = monitor, destination = cloned })
+  check("so does cloning", road_monitor.get_reading(cloned) == "needs")
+  -- A clone keeps the original's signals, which it never counted: a depot reading the wire would
+  -- take them for stock elsewhere. Cleared as the clone is registered, in the tick it is made,
+  -- they never reach the wire (Pullfrog's review of 99acef3).
+  local inherited = {
+    {
+      is_manual = true,
+      filters = {
+        { value = { type = "item", name = "iron-plate", quality = "normal", comparator = "=" }, min = 10 },
+      },
+    },
+  }
+  local copied = another()
+  local copied_behavior = {
+    enabled = true,
+    sections_count = 1,
+    get_section = function(index)
+      return inherited[index]
+    end,
+    add_section = function() end,
+    remove_section = function() end,
+  }
+  copied.get_or_create_control_behavior = function()
+    return copied_behavior
+  end
+  fire("on_entity_cloned", { source = monitor, destination = copied })
+  local record = storage.road_monitors[copied.unit_number]
+  check("a clone's inherited signals are cleared as it is registered", #inherited[1].filters == 0)
+  check(
+    "and what it counted starts empty, this tick",
+    record and record.counted and next(record.counted) == nil and record.counted_tick == game.tick
+  )
+  check("keeping the original's reading", road_monitor.get_reading(copied) == "needs")
+  check("the remote interface refuses another reading", not road_monitor.set_reading(monitor, "everything"))
+  fire("on_gui_closed", { player_index = 15, element = panel })
+  check("E or Esc closes the panel", screen.jatz_monitor_frame == nil)
+  -- Back to providers and buffers, without the buffer, for the rest.
+  check("setup", road_monitor.set_reading(monitor, "supply"))
+  removed(buffer)
+  -- Copy and Paste settings from a constant combinator brings its state with it (probed on 2.1.24):
+  -- its switch off, and a section switched off, multiplied by 3, and in a named group, whose filters
+  -- every member shares. The monitor must take its output back without writing that group
+  -- (Pullfrog's review of 5f5c385).
+  road_monitor.update()
+  local group = { { value = { type = "virtual", name = "signal-A", quality = "normal", comparator = "=" }, min = 123 } }
+  local state = { group = "shared", active = false, multiplier = 3, own = {} }
+  sections[1] = setmetatable({ is_manual = true }, {
+    __index = function(_, key)
+      if key == "filters" then
+        return state.group ~= "" and group or state.own
+      end
+      return state[key]
+    end,
+    __newindex = function(_, key, value)
+      if key == "filters" and state.group ~= "" then
+        group = value
+      elseif key == "filters" then
+        state.own = value
+      else
+        state[key] = value
+      end
+    end,
+  })
+  behavior.enabled = false
+  fire("on_entity_settings_pasted", {
+    source = { valid = true, name = "constant-combinator", unit_number = 99999 },
+    destination = monitor,
+  })
+  check(
+    "pasting a combinator's settings leaves its shared group alone",
+    #group == 1 and group[1].value.name == "signal-A" and group[1].min == 123
+  )
+  check("the monitor shows its own reading again at once", shown()["item:iron-plate:normal"] == 10)
+  check(
+    "in a section of its own, active, multiplied by 1, and switched on",
+    state.group == "" and state.active and state.multiplier == 1 and behavior.enabled
+  )
+  road_monitor.update()
+  check("nor does its next update write the group", #group == 1 and group[1].value.name == "signal-A")
+  -- P1 switched off by its circuit condition: left out.
+  p1.get_circuit_network = function(connector)
+    return connector == defines.wire_connector_id.circuit_green
+        and {
+          get_signal = function()
+            return 0
+          end,
+        }
+      or nil
+  end
+  logistics.set_circuit(p1, true, { first_signal = { type = "virtual", name = "signal-A" }, comparator = ">" })
+  road_monitor.update()
+  check("a depot switched off by its condition isn't counted", shown()["item:iron-plate:normal"] == nil)
+  logistics.set_circuit(p1, false, nil)
+  road_monitor.update()
+  -- P1 wired (green) to the monitor, reading the circuit network: of the 10 iron plates the monitor
+  -- shows, all are P1's own, which its condition leaves out. A tick later the wire carries them.
+  game.tick = game.tick + 1
+  local green = {
+    network_id = 7,
+    get_signal = function(id)
+      return shown()[(id.type or "item") .. ":" .. id.name .. ":" .. (id.quality or "normal")] or 0
+    end,
+  }
+  local function on_green(connector)
+    return connector == defines.wire_connector_id.circuit_green and green or nil
+  end
+  p1.get_circuit_network, monitor.get_circuit_network = on_green, on_green
+  local plate = { type = "item", name = "iron-plate" }
+  logistics.set_circuit(p1, true, { first_signal = plate, comparator = ">", constant = 5 })
+  check("setup: the condition is iron plate > 5", logistics.get_circuit(p1).condition.first_signal.name == "iron-plate")
+  check("setup: the wire carries the monitor's 10 plates", green.get_signal(plate) == 10)
+  check("a depot reading the monitor leaves out its own plates", not logistics.get_circuit(p1).fulfilled)
+  road_monitor.update()
+  game.tick = game.tick + 1
+  check("and stays off once the monitor no longer counts it", not logistics.get_circuit(p1).fulfilled)
+  logistics.set_circuit(p1, true, nil, "contents")
+  check("reading its own contents, it has its 10", logistics.get_circuit(p1).fulfilled)
+  logistics.set_circuit(p1, false, nil, "network")
+  -- The road between them is mined: the liquid provider is on another network now.
+  cell(502, 2).name = "grass-1"
+  fire(
+    "on_player_mined_tile",
+    { surface_index = 1, tiles = { { position = { x = 502, y = 2 }, old_tile = { name = "jatz-road" } } } }
+  )
+  road_monitor.update()
+  seen = shown()
+  check(
+    "cutting the road leaves out what is beyond",
+    seen["fluid:water:normal"] == nil and seen["item:iron-plate:normal"] == 10
+  )
+  -- Forces change without the road changing (game.merge_forces, a script setting the force): the
+  -- other force's provider becomes the player's, and the next update counts its copper, with
+  -- nothing marking the surface changed (Pullfrog's review of 08bed57).
+  check("setup: no road change pending", next(storage.road_monitor_dirty) == nil)
+  foreign.force = "player"
+  road_monitor.update()
+  check("a depot whose force merges into the monitor's counts at once", shown()["item:copper-plate:normal"] == 7)
+  -- Removed: forgotten.
+  monitor.valid = false
+  fire("on_object_destroyed", { type = defines.target_type.entity, useful_id = monitor.unit_number })
+  check("a removed monitor is forgotten", storage.road_monitors[monitor.unit_number] == nil)
 end
 
 print("all control event checks passed")

@@ -12,6 +12,7 @@ Everything you need to know to run Jat'z Distribution in your factory. New to th
 - [Buffer depots](#buffer-depots)
 - [Priority](#priority)
 - [Liquid depots](#liquid-depots)
+- [Circuit network](#circuit-network)
 - [Copy, paste and blueprints](#copy-paste-and-blueprints)
 - [Good to know](#good-to-know)
 
@@ -83,7 +84,7 @@ A light beside the request shows at a glance whether it can be filled. Hover it 
 | --- | --- |
 | 🟢 Green | Stocked, a freighter is on its way, or it's finding a provider (or, for a request depot, a buffer depot) by road |
 | 🟡 Yellow | Waiting on something in the way: no room in the depot, its loading zone isn't on road, no road route to a provider (or, for a request depot, a buffer depot) that has it, no freighters (or none could be sent), freighters too low on fuel while the fuel depots are empty, or a liquid depot's tank holds another fluid |
-| 🔴 Red | No provider depot with road at its loading zone has it (nor, for a request depot, any buffer depot), or its freighters need fuel and no fuel depot is connected by road |
+| 🔴 Red | No provider depot with road at its loading zone has it (nor, for a request depot, any buffer depot), its freighters need fuel and no fuel depot is connected by road, or the depot is switched off by its circuit condition |
 | ⚪ Grey | Nothing requested |
 
 ## When roads or depots change
@@ -126,12 +127,45 @@ Liquid depots work the same way for fluids.
 With [Mining Drones](https://mods.factorio.com/mod/Mining_Drones), [Mining Drones 2 Remastered](https://mods.factorio.com/mod/Mining_Drones_Remastered) or [Mining Drones Mod](https://mods.factorio.com/mod/Mining_Drones_Mod) installed, every mining depot is also an item provider depot for whatever its drones mine.
 
 - Freighters load at the tile just behind the depot, on the side away from its mining area. The depot lays road there, like our depots do, so connect your road to it.
-- Mining depots have the same priority slider as provider depots, in a panel beside their window.
+- Mining depots have the same priority slider and circuit condition as provider depots, in a panel beside their window.
+
+## Circuit network
+
+Every depot takes red and green wires. Item depots send their contents and liquid depots their fluid, as chests and storage tanks do.
+
+Provider, request and buffer depots, item and liquid, also have an **Enable/disable** circuit condition at the bottom of their panel, like a logistic chest's:
+
+- Tick **Enable/disable** and set the condition: a signal compared with another signal, or with a number. **Everything** means every signal must match, **Anything** at least one.
+- Choose what the condition reads:
+  - **Circuit network**: the red and green wires, leaving out this depot's own contents. A depot sends what it holds on its wires, and a road network monitor counts it too, so without this a depot asking for *wood > 3000* would switch on with 2,800 wood elsewhere and 300 of its own. Without a wire, the condition does nothing.
+  - **This depot's contents**: only what this depot holds, each quality its own signal and fluids in whole units. No wire needed. For example, a provider with *iron plate > 200* supplies only while it holds more than 200.
+- The depot takes part in deliveries only while the condition holds. Switched off, a request or buffer depot sends no freighters, and no freighter is sent to fetch from a provider or buffer depot. Freighters already on their way finish their trips.
+- The light beside the checkbox is green while the depot is on, red while the condition switches it off, and grey while the condition has no effect. Pointing at a switched-off depot shows "Switched off by its circuit condition" with a red light too.
+
+### Road network monitor
+
+To switch depots on what the road network holds or needs, build a **road network monitor** right beside a road, as you would a depot's loading zone, and wire it to the depots. Like every building, it can't stand on the road itself. Once a second it sends one reading of the depots on that road network, like a roboport reading its logistic network. Open it to choose the reading:
+
+- **What provider and buffer depots hold** (the default): what freighters can fetch.
+- **What provider depots hold**: buffer depots left out.
+- **What request depots hold**: item and liquid request depots, not buffer depots.
+- **What request depots still need**: each request depot's request, less what it holds and what freighters are already bringing it.
+
+More about it:
+
+- Its road network is all the road joined, side by side, to one of the four tiles beside it. A depot is on it when its loading zone is.
+- Item depots count their items (each quality as its own signal) and liquid depots their fluids.
+- Freighters on the road, and depots switched off by their circuit condition, aren't counted.
+- Its signals can't be edited: opening it shows only the choice of reading. Copy and Paste settings, blueprints and copies keep the reading.
+- Use one monitor per reading, each on its own wire, so a condition reads one thing at a time.
+
+For example, wire a backup provider to a monitor and give it the condition *iron plate < 100*: it supplies only while the other providers on the road run low.
 
 ## Copy, paste and blueprints
 
 - Copy and Paste settings, copy and paste, and blueprints carry a request depot's request and its number of freighters. The new depot asks for the freighters (as a ghost request), and construction robots, or you by hand, bring them. This works for liquid depots too.
-- Cloned depots keep their request.
+- They carry every depot's circuit condition too.
+- Cloned depots keep their request and circuit condition.
 
 ## Good to know
 

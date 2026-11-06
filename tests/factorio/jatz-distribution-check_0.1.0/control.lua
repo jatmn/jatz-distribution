@@ -26,6 +26,7 @@ local IRON_PAINT, WATER_PAINT = DRONE .. "-233", DRONE .. "-023"
 -- Stuck to the sticky pair's freighter as it reaches the provider, for this long (data.lua): it
 -- wears off a little after loading, on the way home.
 local STICKER, STICKER_TICKS = "jatz-check-sticker", 90
+local MONITOR = "jatz-road-monitor"
 -- Deliveries have this long to finish; tools/test_mod.py runs a little longer. The dry freighter
 -- sets the pace: it waits out the 10-second retry after coal arrives at tick 300, then crawls to
 -- the Fuel depot at a tenth of the drone's 0.066 tiles a tick before its round trip.
@@ -67,6 +68,7 @@ local ROW = {
   "jatz-fuel-depot",
   FREIGHTER,
   ROAD,
+  MONITOR,
 }
 
 -- Our row must be in the car and tank's tab, directly above their row, and in ROW order.
@@ -197,6 +199,20 @@ local function check_depot(surface, role, row, result)
       assert(connected, name .. ": pipe port did not connect")
       result.pipe_connections = result.pipe_connections + 1
     end
+    -- Every depot takes a red wire, facing any way.
+    local combinator = surface.create_entity({
+      name = "constant-combinator",
+      position = { position[1] + 4, position[2] },
+      force = "player",
+    })
+    local red = defines.wire_connector_id.circuit_red
+    assert(
+      entity.get_wire_connector(red, true).connect_to(combinator.get_wire_connector(red, true), false),
+      name .. ": no circuit wire"
+    )
+    assert(entity.get_circuit_network(red), name .. ": wired, but on no circuit network")
+    combinator.destroy()
+    result.wired_depots = result.wired_depots + 1
     if entity.type == "container" then
       assert(entity.insert({ name = "iron-plate", count = 10 }) == 10, name .. ": cannot store items")
     end
@@ -302,6 +318,10 @@ local function check_road_placement(surface, result)
     result.on_road[name] = can_place(name, { 66.5, 66.5 })
   end
   result.on_road["straight-rail"] = can_place("straight-rail", { 67, 67 })
+  -- The road network monitor is a building like any other: beside road, never on it (freighters
+  -- would drive through it).
+  result.on_road[MONITOR] = can_place(MONITOR, { 66.5, 66.5 })
+  result.monitor_beside_road = can_place(MONITOR, { 66.5, 67.5 })
   -- Road can't be laid under them either, a gate included while it stands open (an open gate
   -- uses its opened collision mask): an open gate, a closed one and a pole on grass, where
   -- `lay_road_under` tries road once the first is open.
@@ -687,6 +707,236 @@ local function setup_deliveries(surface, result)
   assert(remote.call("jatz-distribution", "set_request", multi.request, "iron-stick", 60), "sticks: refused")
   deliveries.multi = multi
   -- No freighters: nothing is sent, and the depot says so.
+  -- Circuit conditions and the road network monitor (loading zones at y 39). On one road: a
+  -- request depot for 10 stone walls, a provider holding 20 switched off by a combinator until
+  -- tick 300 (signal-A > 0), a liquid provider holding 1000 water, and a monitor beside the road.
+  -- On another: a request depot for 10 small lamps, switched off by a combinator until tick 300
+  -- (signal-B > 0), and a provider holding them.
+  local function combinator(x, y, target)
+    local entity = surface.create_entity({ name = "constant-combinator", position = { x, y }, force = "player" })
+    local red = defines.wire_connector_id.circuit_red
+    assert(target.get_wire_connector(red, true).connect_to(entity.get_wire_connector(red, true), false), "no wire")
+    entity.get_or_create_control_behavior().add_section()
+    return entity
+  end
+  local circuit = {
+    request = depot(surface, "request", 0.5, 37.5, 1),
+    gated = depot(surface, "provider", 10.5, 37.5),
+    water = depot(surface, "liquid-provider", 20.5, 37.5),
+    lamps = depot(surface, "request", 30.5, 37.5, 1),
+    lamp_provider = depot(surface, "provider", 40.5, 37.5),
+  }
+  lay_road(surface, 0, 39, 20, 39)
+  lay_road(surface, 30, 39, 40, 39)
+  assert(circuit.gated.insert({ name = "stone-wall", count = 20 }) == 20, "walls: cannot stock")
+  assert(circuit.water.insert_fluid({ name = "water", amount = 1000 }) == 1000, "water: cannot stock")
+  assert(circuit.lamp_provider.insert({ name = "small-lamp", count = 10 }) == 10, "lamps: cannot stock")
+  circuit.switch_a = combinator(13.5, 40.5, circuit.gated)
+  circuit.switch_b = combinator(33.5, 40.5, circuit.lamps)
+  local function signal(name)
+    return { type = "virtual", name = name }
+  end
+  assert(
+    remote.call(
+      "jatz-distribution",
+      "set_circuit",
+      circuit.gated,
+      true,
+      { first_signal = signal("signal-A"), comparator = ">", constant = 0 }
+    ),
+    "provider condition refused"
+  )
+  assert(
+    remote.call(
+      "jatz-distribution",
+      "set_circuit",
+      circuit.lamps,
+      true,
+      { first_signal = signal("signal-B"), comparator = ">", constant = 0 }
+    ),
+    "request condition refused"
+  )
+  result.circuit_refused_elsewhere = remote.call("jatz-distribution", "set_circuit", circuit.switch_a, true, {})
+  assert(remote.call("jatz-distribution", "set_request", circuit.request, "stone-wall", 10), "walls: refused")
+  assert(remote.call("jatz-distribution", "set_request", circuit.lamps, "small-lamp", 10), "lamps: refused")
+  -- The monitor, beside the first road, wired to a pole so its signals can be read.
+  circuit.monitor =
+    surface.create_entity({ name = MONITOR, position = { 5.5, 40.5 }, force = "player", raise_built = true })
+  local pole = surface.create_entity({ name = "medium-electric-pole", position = { 7.5, 41.5 }, force = "player" })
+  local red = defines.wire_connector_id.circuit_red
+  assert(
+    circuit.monitor.get_wire_connector(red, true).connect_to(pole.get_wire_connector(red, true), false),
+    "monitor: no wire"
+  )
+  result.monitor_operable = circuit.monitor.operable
+  -- Two more monitors on the same road, reading what request depots hold and what they still need.
+  circuit.readings = {}
+  for reading, x in pairs({ requests = 9.5, needs = 11.5 }) do
+    local monitor =
+      surface.create_entity({ name = MONITOR, position = { x, 40.5 }, force = "player", raise_built = true })
+    assert(remote.call("jatz-distribution", "set_monitor_reading", monitor, reading), reading .. ": refused")
+    circuit.readings[reading] = monitor
+  end
+  -- Copy and Paste settings from a constant combinator switched off, whose section is multiplied by
+  -- 3 and belongs to a named group another combinator shares (signal-A = 123), onto a monitor on
+  -- the same road: the monitor must show its own reading, and the group must stay as it is.
+  circuit.pasted =
+    surface.create_entity({ name = MONITOR, position = { 17.5, 40.5 }, force = "player", raise_built = true })
+  circuit.grouped = {}
+  for index, x in ipairs({ 17.5, 19.5 }) do
+    local grouped = surface.create_entity({ name = "constant-combinator", position = { x, 43.5 }, force = "player" })
+    local behavior = grouped.get_or_create_control_behavior()
+    local section = behavior.get_section(1) or behavior.add_section()
+    section.group = "jatz-check shared"
+    if index == 1 then
+      section.filters = {
+        { value = { type = "virtual", name = "signal-A", quality = "normal", comparator = "=" }, min = 123 },
+      }
+      section.multiplier = 3
+      behavior.enabled = false
+    end
+    circuit.grouped[index] = grouped
+  end
+  circuit.pasted.copy_settings(circuit.grouped[1])
+  result.monitor_readings_refused = remote.call("jatz-distribution", "set_monitor_reading", circuit.monitor, "all")
+  result.monitor_reading_default = remote.call("jatz-distribution", "get_monitor_reading", circuit.monitor)
+  deliveries.circuit = circuit
+  -- What a condition reads (loading zones at y 39, x 50 to 62). On one road, three providers:
+  -- "wired" holding 300 wood, wired red to "remote" holding 2800; and "monitored" holding 300,
+  -- wired green to a road network monitor beside the road. Both read the circuit network for
+  -- wood > 3000, which must not hold: their own wood is on their wire (a depot sends its contents,
+  -- and the monitor counts the depots switched on), and is left out. Off the road, "own" holding
+  -- 200 wood reads its own contents, with no wire.
+  local modes = {
+    wired = depot(surface, "provider", 50.5, 37.5),
+    remote = depot(surface, "provider", 56.5, 37.5),
+    monitored = depot(surface, "provider", 62.5, 37.5),
+    own = depot(surface, "provider", 55.5, 33.5),
+  }
+  lay_road(surface, 50, 39, 62, 39)
+  for name, count in pairs({ wired = 300, remote = 2800, monitored = 300, own = 200 }) do
+    assert(modes[name].insert({ name = "wood", count = count }) == count, name .. ": cannot stock wood")
+  end
+  modes.monitor =
+    surface.create_entity({ name = MONITOR, position = { 59.5, 40.5 }, force = "player", raise_built = true })
+  local green = defines.wire_connector_id.circuit_green
+  assert(modes.wired.get_wire_connector(red, true).connect_to(modes.remote.get_wire_connector(red, true), false))
+  assert(
+    modes.monitored.get_wire_connector(green, true).connect_to(modes.monitor.get_wire_connector(green, true), false)
+  )
+  local wood = { type = "item", name = "wood" }
+  for _, name in ipairs({ "wired", "monitored" }) do
+    assert(
+      remote.call(
+        "jatz-distribution",
+        "set_circuit",
+        modes[name],
+        true,
+        { first_signal = wood, comparator = ">", constant = 3000 },
+        "network"
+      ),
+      name .. ": condition refused"
+    )
+  end
+  assert(
+    remote.call(
+      "jatz-distribution",
+      "set_circuit",
+      modes.own,
+      true,
+      { first_signal = wood, comparator = ">", constant = 100 },
+      "contents"
+    ),
+    "own: condition refused"
+  )
+  result.circuit_mode_refused = remote.call("jatz-distribution", "set_circuit", modes.own, true, nil, "both")
+  deliveries.modes = modes
+  -- Another force's provider holding 50 copper plates on the same road: left out, until its force
+  -- merges into the player's at tick 299, with no road or depot changing (Pullfrog's review of
+  -- 08bed57).
+  -- A provider holding 100 iron plates and a monitor beside its road, wired red (x -62 to -54, y
+  -- 34 to 39). At tick 301, after the monitor counted it at 300, the provider reads the network
+  -- for iron plate > 0, and the monitor is cloned, the clone wired to it too. Before any update,
+  -- the clone must put nothing on the wire: the provider's own 100 and the monitor's count of it
+  -- are all there is (Pullfrog's review of 99acef3).
+  deliveries.cloning = { provider = depot(surface, "provider", -60.5, 35.5) }
+  lay_road(surface, -61, 37, -55, 37)
+  assert(deliveries.cloning.provider.insert({ name = "iron-plate", count = 100 }) == 100, "cloning: cannot stock")
+  deliveries.cloning.monitor =
+    surface.create_entity({ name = MONITOR, position = { -57.5, 38.5 }, force = "player", raise_built = true })
+  assert(
+    deliveries.cloning.provider
+      .get_wire_connector(defines.wire_connector_id.circuit_red, true)
+      .connect_to(deliveries.cloning.monitor.get_wire_connector(defines.wire_connector_id.circuit_red, true), false),
+    "cloning: no wire"
+  )
+  local other = game.forces["jatz-check-other"] or game.create_force("jatz-check-other")
+  modes.foreign = surface.create_entity({
+    name = "jatz-provider-depot",
+    position = { 53.5, 37.5 },
+    force = other,
+    raise_built = true,
+  })
+  assert(modes.foreign.insert({ name = "copper-plate", count = 50 }) == 50, "foreign: cannot stock copper")
+  -- Conditions the game's own entities evaluate (x -30 to -15, y 34 to 41): for each case a red and
+  -- a green constant combinator, wired to a powered lamp and to a provider depot, both given the
+  -- same condition. A wildcard compared with a signal leaves that signal out, and red and green add
+  -- up as signed 32-bit values (Pullfrog's review of bef0020).
+  local virtual = function(name)
+    return { type = "virtual", name = name }
+  end
+  local MAX = 2147483647
+  local cases = {
+    anything_ge_b = { green = { ["signal-B"] = 1 }, first = "signal-anything", comparator = "≥", second = "signal-B" },
+    everything_gt_b = {
+      green = { ["signal-B"] = 1 },
+      first = "signal-everything",
+      comparator = ">",
+      second = "signal-B",
+    },
+    overflow = { red = { ["signal-A"] = MAX }, green = { ["signal-A"] = 1 }, first = "signal-A", comparator = ">" },
+    wildcard_wrap = {
+      red = { ["signal-A"] = MAX },
+      green = { ["signal-A"] = MAX },
+      first = "signal-anything",
+      comparator = "<",
+    },
+  }
+  surface.create_entity({ name = "substation", position = { -24, 32 }, force = "player" })
+  surface.create_entity({ name = "electric-energy-interface", position = { -27, 31 }, force = "player" })
+  deliveries.parity = {}
+  local x = -30
+  for _, name in ipairs({ "anything_ge_b", "everything_gt_b", "overflow", "wildcard_wrap" }) do
+    local case = cases[name]
+    local lamp = surface.create_entity({ name = "small-lamp", position = { x + 0.5, 36.5 }, force = "player" })
+    local target = depot(surface, "provider", x + 1.5, 39.5)
+    for offset, colour in ipairs({ "red", "green" }) do
+      local wire = defines.wire_connector_id["circuit_" .. colour]
+      local source =
+        surface.create_entity({ name = "constant-combinator", position = { x + offset - 0.5, 34.5 }, force = "player" })
+      local filters = {}
+      for signal_name, count in pairs(case[colour] or {}) do
+        filters[#filters + 1] =
+          { value = { type = "virtual", name = signal_name, quality = "normal", comparator = "=" }, min = count }
+      end
+      local behavior = source.get_or_create_control_behavior();
+      (behavior.get_section(1) or behavior.add_section()).filters = filters
+      assert(source.get_wire_connector(wire, true).connect_to(lamp.get_wire_connector(wire, true), false))
+      assert(lamp.get_wire_connector(wire, true).connect_to(target.get_wire_connector(wire, true), false))
+    end
+    local condition = {
+      first_signal = virtual(case.first),
+      comparator = case.comparator,
+      second_signal = case.second and virtual(case.second) or nil,
+      constant = 0,
+    }
+    local behavior = lamp.get_or_create_control_behavior()
+    behavior.circuit_enable_disable = true
+    behavior.circuit_condition = condition
+    assert(remote.call("jatz-distribution", "set_circuit", target, true, condition, "network"), name)
+    deliveries.parity[name] = { lamp = lamp, depot = target }
+    x = x + 4
+  end
   deliveries.no_trucks = depot(surface, "request", -20.5, 28.5, 0)
   assert(remote.call("jatz-distribution", "set_request", deliveries.no_trucks, "wood", 5), "wood: refused")
   -- Freighters put in a request depot's chest move into its slot.
@@ -1026,6 +1276,36 @@ local function status(entity)
   return remote.call("jatz-distribution", "get_status", entity)
 end
 
+-- What a road network monitor puts on its red wire: stone walls, water and small lamps.
+-- What each of the reading monitors shows, by reading: "name=count" for each of its signals (from
+-- its sections), sorted and comma-separated ("" for none).
+local function readings_shown(monitors)
+  local shown = {}
+  for reading, monitor in pairs(monitors) do
+    local signals = {}
+    local behavior = monitor.get_control_behavior()
+    for index = 1, behavior and behavior.sections_count or 0 do
+      for _, filter in pairs(behavior.get_section(index).filters) do
+        if filter.value then
+          signals[#signals + 1] = filter.value.name .. "=" .. filter.min
+        end
+      end
+    end
+    table.sort(signals)
+    shown[reading] = table.concat(signals, ",")
+  end
+  return shown
+end
+
+local function monitor_reading(monitor)
+  local network = monitor.get_circuit_network(defines.wire_connector_id.circuit_red)
+  return {
+    walls = network.get_signal({ type = "item", name = "stone-wall", quality = "normal" }),
+    water = network.get_signal({ type = "fluid", name = "water" }),
+    lamps = network.get_signal({ type = "item", name = "small-lamp", quality = "normal" }),
+  }
+end
+
 -- Interfere with trips as they happen: destroy one freighter, change one request, cut one road.
 local function interfere(surface)
   if game.tick == 65 then
@@ -1044,6 +1324,69 @@ local function interfere(surface)
     roads.shared_b.destroy()
   end
   local deliveries = storage.deliveries
+  local circuit = deliveries.circuit
+  local cloning = deliveries.cloning
+  if game.tick == 301 then
+    local red = defines.wire_connector_id.circuit_red
+    local iron = { type = "item", name = "iron-plate" }
+    assert(
+      remote.call(
+        "jatz-distribution",
+        "set_circuit",
+        cloning.provider,
+        true,
+        { first_signal = iron, comparator = ">", constant = 0 },
+        "network"
+      ),
+      "cloning: condition refused"
+    )
+    cloning.before = {
+      wire = cloning.provider.get_circuit_network(red).get_signal(iron),
+      fulfilled = remote.call("jatz-distribution", "get_circuit", cloning.provider).fulfilled,
+      monitor = readings_shown({ shown = cloning.monitor }).shown,
+    }
+    cloning.clone = cloning.monitor.clone({ position = { -55.5, 38.5 } })
+    assert(
+      cloning.clone.get_wire_connector(red, true).connect_to(cloning.provider.get_wire_connector(red, true), false),
+      "cloning: no wire to the clone"
+    )
+    cloning.clone_shows = readings_shown({ shown = cloning.clone }).shown
+  elseif game.tick == 302 then
+    local red = defines.wire_connector_id.circuit_red
+    local iron = { type = "item", name = "iron-plate" }
+    cloning.after = {
+      wire = cloning.provider.get_circuit_network(red).get_signal(iron),
+      fulfilled = remote.call("jatz-distribution", "get_circuit", cloning.provider).fulfilled,
+      clone_shows = cloning.clone_shows,
+    }
+  end
+  if game.tick == 299 then
+    -- Before the combinators switch them on: nothing moved, and the monitor left out the
+    -- switched-off provider and the other road.
+    circuit.before = {
+      walls = count(circuit.request, "stone-wall"),
+      lamps = count(circuit.lamps, "small-lamp"),
+      walls_status = status(circuit.request),
+      lamps_status = status(circuit.lamps),
+      monitor = monitor_reading(circuit.monitor),
+      readings = readings_shown(circuit.readings),
+      -- The hover panel of the provider switched off, and of the request depot on its road.
+      gated_status = circuit.gated.custom_status and {
+        red = circuit.gated.custom_status.diode == defines.entity_status_diode.red,
+        label = circuit.gated.custom_status.label[1],
+      },
+      request_status = circuit.request.custom_status ~= nil,
+      -- The modes road's monitor, before the other force merges into the player's.
+      merged_monitor = readings_shown({ shown = deliveries.modes.monitor }).shown,
+    }
+    game.merge_forces("jatz-check-other", "player")
+    for _, switch in ipairs({ circuit.switch_a, circuit.switch_b }) do
+      switch.get_control_behavior().get_section(1).set_slot(1, {
+        value = { type = "virtual", name = switch == circuit.switch_a and "signal-A" or "signal-B", quality = "normal" },
+        min = 1,
+      })
+    end
+  end
   -- The connected pair's freighter stops at each loading zone before its cargo moves.
   local stops = deliveries.stops
   local function standing_at(x, y)
@@ -1301,6 +1644,8 @@ local function deliveries_finished(surface, tick, result)
     and count(deliveries.buffering.filling, "copper-cable") == 15
     and count(deliveries.prioritised.request, "stone") == 10
     and (not deliveries.mining or count(deliveries.mining.request, "iron-ore") == 30)
+    and count(deliveries.circuit.request, "stone-wall") == 10
+    and count(deliveries.circuit.lamps, "small-lamp") == 10
     and deliveries.liquid.request.get_fluid_count("water") == 1200
     and deliveries.steam.request.get_fluid_count("steam") == 300
     and deliveries.fallback.request.get_fluid_count("crude-oil") == 300
@@ -1496,6 +1841,77 @@ local function deliveries_finished(surface, tick, result)
   result.buffer_taken_from = 30 - count(buffering.stocked, "copper-cable")
   result.buffer_filled = count(buffering.filling, "copper-cable")
   result.buffer_provider_left = count(buffering.provider, "copper-cable")
+  local circuit = deliveries.circuit
+  result.circuit_before = circuit.before
+  result.circuit_walls = count(circuit.request, "stone-wall")
+  result.circuit_lamps = count(circuit.lamps, "small-lamp")
+  result.circuit_after = monitor_reading(circuit.monitor)
+  result.circuit_status_after = circuit.gated.custom_status == nil
+  result.circuit_readings_after = readings_shown(circuit.readings)
+  -- The pasted monitor took its output back; the shared group kept its signal.
+  local pasted = circuit.pasted.get_control_behavior()
+  local first = pasted.get_section(1)
+  result.monitor_pasted = {
+    shows = readings_shown({ pasted = circuit.pasted }).pasted,
+    own = pasted.enabled
+      and pasted.sections_count == 1
+      and first.group == ""
+      and first.active
+      and first.multiplier == 1,
+    group = readings_shown({ source = circuit.grouped[1], other = circuit.grouped[2] }),
+  }
+  -- Each depot condition against a lamp's, the game's own, on the same wires.
+  result.condition_parity = {}
+  for name, case in pairs(deliveries.parity) do
+    result.condition_parity[name] = {
+      native = not case.lamp.get_control_behavior().disabled,
+      depot = remote.call("jatz-distribution", "get_circuit", case.depot).fulfilled,
+    }
+  end
+  -- What each condition reads, long after the monitor first counted: the circuit network without
+  -- the depot's own wood, or its own wood.
+  local modes = deliveries.modes
+  local function holds(name, constant)
+    if constant then
+      local condition = { first_signal = { type = "item", name = "wood" }, comparator = ">", constant = constant }
+      remote.call("jatz-distribution", "set_circuit", modes[name], true, condition)
+    end
+    return remote.call("jatz-distribution", "get_circuit", modes[name]).fulfilled
+  end
+  result.circuit_modes = {
+    -- What the wires carry: 300 + 2800 on the red one; on the green one, the monitor's 2800 (the
+    -- remote provider: the other two are switched off) and the monitored depot's own 300.
+    wired_wire = modes.wired
+      .get_circuit_network(defines.wire_connector_id.circuit_red)
+      .get_signal({ type = "item", name = "wood" }),
+    monitored_wire = modes.monitored
+      .get_circuit_network(defines.wire_connector_id.circuit_green)
+      .get_signal({ type = "item", name = "wood" }),
+    wired = holds("wired"),
+    monitored = holds("monitored"),
+    own = holds("own"),
+    own_mode = remote.call("jatz-distribution", "get_circuit", modes.own).mode,
+    wired_2700 = holds("wired", 2700),
+    monitored_2700 = holds("monitored", 2700),
+    own_300 = holds("own", 300),
+  }
+  -- Wood taken out of a depot reading the circuit network this tick, after the mod sampled it (its
+  -- on_tick runs first): the wire still carries its 300, so 300 is what it takes back out
+  -- (Pullfrog's review of 08bed57). 2800 elsewhere is not more than 2900, before or after.
+  local before_transfer = holds("wired", 2900)
+  modes.wired.remove_item({ name = "wood", count = 200 })
+  result.circuit_transfer = {
+    before = before_transfer,
+    after = holds("wired"),
+    wire = modes.wired
+      .get_circuit_network(defines.wire_connector_id.circuit_red)
+      .get_signal({ type = "item", name = "wood" }),
+    held = modes.wired.get_item_count("wood"),
+  }
+  -- A cloned monitor put none of the original's count on the wire before its first update.
+  result.monitor_clone = { before = deliveries.cloning.before, after = deliveries.cloning.after }
+  -- The other force's provider, merged into the player's at tick 299, now counts.
+  result.monitor_after_merge = readings_shown({ shown = modes.monitor }).shown
   local prioritised = deliveries.prioritised
   result.priority_from_far = 20 - count(prioritised.far, "stone")
   result.priority_from_near = 20 - count(prioritised.near, "stone")
@@ -1584,6 +2000,7 @@ script.on_init(function()
     localised_names = {},
     cleared_zones = 0,
     tank_sizes = {},
+    wired_depots = 0,
   }
   for row, role in ipairs(ROLES) do
     check_depot(surface, role, row - 1, result)
@@ -1598,6 +2015,7 @@ script.on_init(function()
   local box = prototypes.entity[FREIGHTER].collision_box
   result.freighter_box = { box.right_bottom.x - box.left_top.x, box.right_bottom.y - box.left_top.y }
   check_road(result)
+  check_recipe(MONITOR, result)
   check_road_placement(surface, result)
   -- The request panel's status light uses the game's own status indicators.
   result.status_lights = 0

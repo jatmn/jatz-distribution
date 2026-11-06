@@ -48,6 +48,9 @@ FREIGHTER_DIRECTION = 24  # south-east: 64 directions, clockwise from north
 DEPOT_DIRECTION = 2  # south: sheets are ordered north, east, south, west
 THUMBNAIL_SIZE = 144  # Factorio's mod thumbnail size
 ROLES = ('provider', 'request', 'buffer', 'fuel', 'liquid-provider', 'liquid-request', 'liquid-buffer')
+# The 1x1 road network monitor, built in the depots' finish, as players place it: facing north,
+# its gauge window toward them.
+MONITOR, MONITOR_DIRECTION = 'road-monitor', 0
 
 
 def frame_box(direction, columns):
@@ -67,6 +70,8 @@ def sources(root=REPO, areas=('freighter', 'depots')):
         for role in ROLES:
             yield (depots / 'icons', f'{role}-depot.png', depots / role / '3/sheets/preview.png',
                    frame_box(DEPOT_DIRECTION, 4))
+        yield (depots / 'icons', f'{MONITOR}.png', depots / MONITOR / '1/sheets/preview.png',
+               frame_box(MONITOR_DIRECTION, 4))
 
 
 def thumbnail_source(root=REPO):

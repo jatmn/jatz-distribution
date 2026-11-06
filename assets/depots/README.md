@@ -27,6 +27,8 @@ Seven 3×3 depot buildings: Provider, Request, Buffer, Fuel, Liquid Provider, Li
 
 Roles are `provider`, `request`, `buffer`, `fuel`, `liquid-provider`, `liquid-request` and `liquid-buffer`.
 
+The 1×1 **road network monitor** (`road-monitor/1/`, `source/road-monitor-1.blend`) is built, rendered and packaged with the same tools, in the liquid depots' finish: grey housing like their tank shells, bronze skid, lid rim and strap, and a brown band (`MONITOR_PALETTE` in `build_depots.py`), with two terminal posts for its wires and a status lens on its lid. The builder records in its `asset.json` where the wires meet the posts, their shadows and the lens for each direction (`points`); `prototypes/road-monitor-points.lua` copies them, and `tools/test_mod_setup.py` checks the copy. The mod draws its `preview` and `shadow` sheets. Its icon, `icons/road-monitor.png`, shows it facing north, as it is placed. It has no loading path or pipes, so the geometry and junction inspectors skip it.
+
 ## Paint layers
 
 The packaging pipeline is shared with the freighter, so the files keep the freighter's mask names:
@@ -105,10 +107,21 @@ blender -b --python-exit-code 1 --python $T/build_depots.py -- --size 3   # only
 blender -b --python-exit-code 1 --python $T/inspect_depots.py
 blender -b --python-exit-code 1 --python $T/inspect_junctions.py
 python3 $T/render_depots.py            # add --role <role> for one depot
-python3 $T/package_depots.py
+python3 $T/package_depots.py           # add --role <role> to package one, keeping the others' records
 python3 $T/create_preview.py
 .venv/bin/python tools/make_icons.py   # the icons are made from the packaged sprites
 ```
+
+The road network monitor alone:
+
+```sh
+blender -b --python-exit-code 1 --python $T/build_depots.py -- --role road-monitor --size 1
+python3 $T/render_depots.py --role road-monitor
+(cd $T && ../../../.venv/bin/python package_depots.py --role road-monitor)
+.venv/bin/python tools/make_icons.py
+```
+
+Then copy the new `points` from `road-monitor/1/asset.json` into `prototypes/road-monitor-points.lua`.
 
 After changing the pipe connector:
 

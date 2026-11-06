@@ -3,6 +3,7 @@
 """Unit tests without Factorio: test_mod.py's expansion resolution and locale parsing, the English
 names, the icon size the prototypes declare, the depots' orientation and loading zones, the
 dispatcher's provider searches, the depots' own road and the freighters' cargo paint (tests/lua/)."""
+import json
 from pathlib import Path
 import re
 import shutil
@@ -122,6 +123,30 @@ class OrientationTests(unittest.TestCase):
             self.assertTrue(roles[role].startswith('half-turn'), role)
         for role in ('liquid-provider', 'liquid-request', 'liquid-buffer'):
             self.assertTrue(roles[role].startswith('as-drawn'), role)
+
+
+class RoadMonitorArtTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('lua5.2'), 'the Mod CI job installs Lua 5.2')
+    def test_wire_points_and_lens_follow_the_model(self):
+        # build_depots.py works the points out from the model; the prototype's copy must match.
+        lua = ('package.path = "./?.lua;" .. package.path '
+               'local p = require("prototypes.road-monitor-points") '
+               'for d = 1, 4 do for _, kind in ipairs({ "wire", "wire_shadow" }) do '
+               'for _, colour in ipairs({ "red", "green" }) do local v = p[kind][d][colour] '
+               'print(kind, d, colour, v[1], v[2]) end end '
+               'print("lens", d, "-", p.lens[d][1], p.lens[d][2]) end')
+        result = subprocess.run(['lua5.2', '-e', lua], cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        points = json.loads((ROOT / 'assets/depots/road-monitor/1/asset.json').read_text())['points']
+        expected = []
+        for d in range(4):
+            for kind in ('wire', 'wire_shadow'):
+                for colour in ('red', 'green'):
+                    expected.append((kind, d + 1, colour, *points[kind][d][colour]))
+            expected.append(('lens', d + 1, '-', *points['lens'][d]))
+        actual = [(kind, int(d), colour, float(x), float(y))
+                  for kind, d, colour, x, y in (line.split('\t') for line in result.stdout.splitlines())]
+        self.assertEqual(actual, expected)
 
 
 class LogisticsSearchTests(unittest.TestCase):

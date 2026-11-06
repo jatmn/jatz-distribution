@@ -135,6 +135,29 @@ class CheckerTests(unittest.TestCase):
         self.assertTrue(any('render and package it again' in error for error in errors), errors)
         self.assertEqual(self.errors('freighter'), [])
 
+    def test_road_monitor_follows_its_model_and_has_an_icon(self):
+        # The 1x1 road network monitor, built and packaged with the depots, without inspections.
+        depots = self.root / 'assets/depots'
+        model = write(depots / 'source/road-monitor-1.blend', BLEND_HEADER + b'monitor model')
+        record(depots / 'road-monitor/1/asset.json', {'role': 'road-monitor', 'size': 1,
+                                                      'source': 'source/road-monitor-1.blend', 'ports': []})
+        record(depots / 'road-monitor/1/validation.json', {'source_sha256': model})
+        results = json.loads((depots / 'validation.json').read_text())['results']
+        record(depots / 'validation.json', {'results': results + [
+            {'role': 'road-monitor', 'size': 1, 'source_sha256': model}]})
+        self.assertOneError(self.errors('depots'), 'road-monitor.png', 'required by the mod')
+        icons = json.loads((depots / 'icons/icons.json').read_text())
+        make_icon(self.root, 'assets/depots', 'road-monitor.png', 'assets/depots/road-monitor/1/sheets/preview.png')
+        icons.update(json.loads((depots / 'icons/icons.json').read_text()))
+        record(depots / 'icons/icons.json', icons)
+        self.assertEqual(self.errors(), [])
+        write(depots / 'source/road-monitor-1.blend', BLEND_HEADER + b'edited monitor model')
+        errors = self.errors('depots')
+        # Its own packaging record and the combined one.
+        self.assertEqual(len(errors), 2, errors)
+        self.assertTrue(all('road-monitor-1.blend' in error and 'render and package it again' in error
+                            for error in errors), errors)
+
     def test_connector_and_renderer_changes(self):
         write(self.root / 'assets/depots/tools/render_connector.py', 'print("changed")\n')
         self.assertOneError(self.errors('depots'), 'render_connector.py', 'renderer_sha256')

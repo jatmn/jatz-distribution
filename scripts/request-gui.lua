@@ -16,7 +16,15 @@
 -- items can't be moved by hand, a click with an empty cursor cancels those requests, and a
 -- right-click has robots take the slot's freighters away (again: cancel that). Pipette (Q) over
 -- the slot picks up a freighter, or its ghost, as over any inventory slot.
+--
+-- Every panel ends with the depot's circuit condition, like a logistic chest's: "Enable/disable",
+-- what the condition reads (the circuit network without the depot's own contents, or its own
+-- contents) and the condition (a signal compared with another signal or a constant), with a light
+-- saying whether the depot is enabled now.
 local logistics = require("scripts.logistics")
+local depot_circuit = require("scripts.depot-circuit")
+-- The road network monitor's panel gets the GUI events first (scripts/road-monitor-gui.lua).
+local monitor_gui = require("scripts.road-monitor-gui")
 
 local request_gui = {}
 
@@ -32,6 +40,15 @@ local PRIORITY_VALUE = "jatz_depot_priority_value"
 local FUEL_FLUID = "jatz_fuel_fluid"
 local FUEL_AMOUNT = "jatz_fuel_amount"
 local FLUSH = "jatz_fuel_flush"
+local CIRCUIT_ENABLED = "jatz_circuit_enabled"
+local CIRCUIT_STATUS = "jatz_circuit_status"
+local CIRCUIT_FIRST = "jatz_circuit_first"
+local CIRCUIT_COMPARATOR = "jatz_circuit_comparator"
+local CIRCUIT_SECOND = "jatz_circuit_second"
+local CIRCUIT_CONSTANT = "jatz_circuit_constant"
+-- One radio button per mode: "jatz_circuit_mode_network" and "jatz_circuit_mode_contents".
+local CIRCUIT_MODE = "jatz_circuit_mode_"
+local COMPARATORS = depot_circuit.comparators
 -- The depots with a request, freighters and status: request and buffer depots, item and liquid.
 local REQUESTING = logistics.requesting
 -- Liquid depots: storage tanks, whose window is a storage tank window, requesting fluids.
@@ -70,8 +87,12 @@ end
 --   freighter couldn't be sent);
 -- * red: no depot it fetches from has the item (no provider, nor any buffer for a request depot),
 --   or its freighters need fuel and no Fuel depot is connected by road;
+--   or its circuit condition switched it off;
 -- * grey: nothing requested.
 local LIGHTS = {
+  -- Switched off by its circuit condition, as the game shows an entity disabled by the circuit
+  -- network.
+  disabled = "utility/status_not_working",
   satisfied = "utility/status_working",
   delivering = "utility/status_working",
   searching = "utility/status_working",
@@ -231,6 +252,125 @@ local function add_fuel(inner, entity)
   show_fuel(inner, entity)
 end
 
+-- The light beside "Enable/disable": green while the condition holds, red while it disables the
+-- depot, grey while it has no effect (not ticked, or reading the circuit network with no wire).
+local function show_circuit_status(inner, entity)
+  local row = inner.circuit_row
+  local circuit = row and logistics.get_circuit(entity)
+  if not circuit then
+    return
+  end
+  local state = not circuit.enabled and "off"
+    or not (circuit.connected or circuit.mode == depot_circuit.contents) and "not-connected"
+    or circuit.fulfilled and "enabled"
+    or "disabled"
+  local light = row[CIRCUIT_STATUS]
+  light.sprite = state == "enabled" and "utility/status_working"
+    or state == "disabled" and "utility/status_not_working"
+    or "utility/status_inactive"
+  light.tooltip = { "jatz-circuit-status." .. state }
+end
+
+-- Show the depot's condition in its editor, as stored (anything unusable was dropped).
+local function show_condition(inner, entity)
+  local row = inner.condition_row
+  local circuit = row and logistics.get_circuit(entity)
+  if not circuit then
+    return
+  end
+  local condition = circuit.condition
+  row[CIRCUIT_FIRST].elem_value = condition.first_signal
+  row[CIRCUIT_SECOND].elem_value = condition.second_signal
+  for index, comparator in ipairs(COMPARATORS) do
+    if comparator == condition.comparator then
+      row[CIRCUIT_COMPARATOR].selected_index = index
+    end
+  end
+  row[CIRCUIT_CONSTANT].text = tostring(condition.constant or 0)
+  -- The constant counts only without a second signal, as in the game's own condition editor.
+  row[CIRCUIT_CONSTANT].enabled = condition.second_signal == nil
+  inner.circuit_row[CIRCUIT_ENABLED].state = circuit.enabled
+  for _, mode in ipairs(depot_circuit.modes) do
+    inner.circuit_mode_row[CIRCUIT_MODE .. mode].state = circuit.mode == mode
+  end
+  show_circuit_status(inner, entity)
+end
+
+-- The enable/disable circuit condition of every delivery depot.
+local function add_circuit(inner, entity)
+  inner.add({ type = "line", direction = "horizontal" })
+  local row = inner.add({ type = "flow", name = "circuit_row", direction = "horizontal" })
+  row.style.vertical_align = "center"
+  row.add({
+    type = "checkbox",
+    name = CIRCUIT_ENABLED,
+    state = false,
+    caption = { "jatz-gui.circuit-enabled" },
+    tooltip = { "jatz-gui.circuit-enabled-tooltip" },
+  })
+  row.add({ type = "sprite", name = CIRCUIT_STATUS, style = "status_image" })
+  local modes = inner.add({ type = "flow", name = "circuit_mode_row", direction = "horizontal" })
+  for _, mode in ipairs(depot_circuit.modes) do
+    modes.add({
+      type = "radiobutton",
+      name = CIRCUIT_MODE .. mode,
+      state = mode == depot_circuit.network,
+      caption = { "jatz-gui.circuit-mode-" .. mode },
+      tooltip = { "jatz-gui.circuit-mode-" .. mode .. "-tooltip" },
+    })
+  end
+  local condition = inner.add({ type = "flow", name = "condition_row", direction = "horizontal" })
+  condition.style.vertical_align = "center"
+  condition.add({
+    type = "choose-elem-button",
+    name = CIRCUIT_FIRST,
+    elem_type = "signal",
+    tooltip = { "jatz-gui.circuit-first-tooltip" },
+  })
+  local comparators = condition.add({
+    type = "drop-down",
+    name = CIRCUIT_COMPARATOR,
+    items = COMPARATORS,
+    selected_index = 1,
+    tooltip = { "jatz-gui.circuit-comparator-tooltip" },
+  })
+  comparators.style.width = 56
+  condition.add({
+    type = "choose-elem-button",
+    name = CIRCUIT_SECOND,
+    elem_type = "signal",
+    tooltip = { "jatz-gui.circuit-second-tooltip" },
+  })
+  local constant = condition.add({
+    type = "textfield",
+    name = CIRCUIT_CONSTANT,
+    text = "0",
+    numeric = true,
+    allow_decimal = false,
+    allow_negative = true,
+    lose_focus_on_confirm = true,
+    tooltip = { "jatz-gui.circuit-constant-tooltip" },
+  })
+  constant.style.width = 80
+  show_condition(inner, entity)
+end
+
+-- Store what the condition editor shows, then show it as stored.
+local function apply_condition(inner, entity)
+  local row = inner.condition_row
+  local circuit = row and logistics.get_circuit(entity)
+  if not circuit then
+    return
+  end
+  logistics.set_circuit(entity, circuit.enabled, {
+    first_signal = row[CIRCUIT_FIRST].elem_value,
+    comparator = COMPARATORS[row[CIRCUIT_COMPARATOR].selected_index],
+    second_signal = row[CIRCUIT_SECOND].elem_value,
+    constant = tonumber(row[CIRCUIT_CONSTANT].text) or 0,
+  })
+  show_condition(inner, entity)
+end
+
 local function open(player, entity)
   local old = frame_of(player)
   if old then
@@ -262,6 +402,7 @@ local function open(player, entity)
     add_priority(inner, entity)
   end
   if not REQUESTING[entity.name] then
+    add_circuit(inner, entity)
     return
   end
   local request = logistics.get_request(entity) or {}
@@ -314,6 +455,7 @@ local function open(player, entity)
   show_freighters(inner, entity)
   inner.add({ type = "label", name = "freighter_fuel" })
   show_freighter_fuel(inner, entity)
+  add_circuit(inner, entity)
 end
 
 -- The depot whose panel a player has open: any, or (`requesting`) only a request or buffer depot.
@@ -341,6 +483,9 @@ local function count_pockets(player)
 end
 
 local function on_gui_opened(event)
+  if monitor_gui.on_gui_opened(event) then
+    return
+  end
   local entity = event.entity
   if entity and entity.valid and (ROLES[entity.name] == "provider" or ROLES[entity.name] == "fuel") then
     open(game.get_player(event.player_index), entity)
@@ -355,6 +500,9 @@ local function on_gui_opened(event)
 end
 
 local function on_gui_closed(event)
+  if monitor_gui.on_gui_closed(event) then
+    return
+  end
   if event.entity and storage.request_gui then
     storage.request_gui[event.player_index] = nil
   end
@@ -364,7 +512,15 @@ local function on_gui_closed(event)
 end
 
 local function on_gui_elem_changed(event)
-  if event.element.name ~= ITEM then
+  local name = event.element.name
+  if name == CIRCUIT_FIRST or name == CIRCUIT_SECOND then
+    local entity = opened_depot(game.get_player(event.player_index))
+    if entity then
+      apply_condition(event.element.parent.parent, entity)
+    end
+    return
+  end
+  if name ~= ITEM then
     return
   end
   local player = game.get_player(event.player_index)
@@ -385,6 +541,22 @@ local function on_gui_elem_changed(event)
 end
 
 local function on_gui_text_changed(event)
+  if event.element.name == CIRCUIT_CONSTANT then
+    local entity = opened_depot(game.get_player(event.player_index))
+    local row = event.element.parent
+    if entity then
+      -- Not written back while typing ("-" alone is on its way to a number).
+      local circuit = logistics.get_circuit(entity)
+      logistics.set_circuit(entity, circuit.enabled, {
+        first_signal = row[CIRCUIT_FIRST].elem_value,
+        comparator = COMPARATORS[row[CIRCUIT_COMPARATOR].selected_index],
+        second_signal = row[CIRCUIT_SECOND].elem_value,
+        constant = tonumber(event.text) or 0,
+      })
+      show_circuit_status(row.parent, entity)
+    end
+    return
+  end
   if event.element.name ~= COUNT then
     return
   end
@@ -514,6 +686,27 @@ end
 request_gui.on_player_cursor_stack_changed = request_gui.on_player_main_inventory_changed
 
 local function on_gui_checked_state_changed(event)
+  if monitor_gui.on_gui_checked_state_changed(event) then
+    return
+  end
+  local mode = event.element.name:match("^" .. CIRCUIT_MODE .. "(%a+)$")
+  if mode then
+    local entity = opened_depot(game.get_player(event.player_index))
+    local circuit = entity and logistics.get_circuit(entity)
+    if circuit then
+      logistics.set_circuit(entity, circuit.enabled, nil, mode)
+      show_condition(event.element.parent.parent, entity)
+    end
+    return
+  end
+  if event.element.name == CIRCUIT_ENABLED then
+    local entity = opened_depot(game.get_player(event.player_index))
+    if entity then
+      logistics.set_circuit(entity, event.element.state, nil)
+      show_circuit_status(event.element.parent.parent, entity)
+    end
+    return
+  end
   if event.element.name ~= FROM_BUFFERS then
     return
   end
@@ -534,7 +727,17 @@ local function on_gui_value_changed(event)
   end
 end
 
--- Keep the status line and priority current while the window is open.
+local function on_gui_selection_state_changed(event)
+  if event.element.name ~= CIRCUIT_COMPARATOR then
+    return
+  end
+  local entity = opened_depot(game.get_player(event.player_index))
+  if entity then
+    apply_condition(event.element.parent.parent, entity)
+  end
+end
+
+-- Keep the status line, priority and circuit light current while the window is open.
 local function refresh()
   if not storage.request_gui then
     return
@@ -554,6 +757,7 @@ local function refresh()
       elseif
         not (inner.priority_row or ROLES[entity.name] == "request")
         or (requesting and not (inner.request_row and inner.request_row[STATUS] and inner.freighter_fuel))
+        or not inner.circuit_mode_row
       then
         -- A panel opened before an update that changed its layout: build it again.
         open(player, entity)
@@ -565,6 +769,7 @@ local function refresh()
         show_freighter_fuel(inner, entity)
       end
       show_priority(inner, entity)
+      show_circuit_status(inner, entity)
     else
       storage.request_gui[index] = nil
     end
@@ -579,6 +784,7 @@ function request_gui.register()
   script.on_event(defines.events.on_gui_click, on_gui_click)
   script.on_event(defines.events.on_gui_checked_state_changed, on_gui_checked_state_changed)
   script.on_event(defines.events.on_gui_value_changed, on_gui_value_changed)
+  script.on_event(defines.events.on_gui_selection_state_changed, on_gui_selection_state_changed)
   script.on_event(defines.events.on_gui_hover, on_gui_hover)
   script.on_event(defines.events.on_gui_leave, on_gui_leave)
   script.on_event("jatz-pipette", on_pipette)

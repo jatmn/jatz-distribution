@@ -89,5 +89,18 @@
     "sha256": "13d7b12b602112eb564fff8f39fa0c48abab1a9023ab3bc5ad4a105f6fba4489",
     "icon_size": 64,
     "mipmaps": 4
+  },
+  "road-monitor.png": {
+    "source": "assets/depots/road-monitor/1/sheets/preview.png",
+    "source_frame": [
+      0,
+      0,
+      512,
+      512
+    ],
+    "source_sha256": "f76c8f7d37b71002cf813de6ef1f19d0734c1706857b97cc5d5593dfda266ca3",
+    "sha256": "9979a9192d94745dd36df7ee2b3c104a8fe474b5d681428328ba338c47dabdb5",
+    "icon_size": 64,
+    "mipmaps": 4
   }
 }
