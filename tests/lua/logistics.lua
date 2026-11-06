@@ -2833,6 +2833,76 @@ do -- Depots fetching the same item decide together, remembered roads or not: wi
   )
 end
 
+do -- A large group of depots, each comparing many providers, all sends again from remembered roads
+  -- (Pullfrog's review of 5832360: the remembered answers were rationed one by one, a search's
+  -- next one queued behind every other search's, so each of 300 searches got 6 of its 7 answers
+  -- before its 10-second timeout restarted it, and no depot sent anything again).
+  local logistics = reset()
+  local depots = {}
+  for index = 0, 299 do
+    local request = entity("jatz-request-depot", (index % 20) * 4 + 0.5, math.floor(index / 20) * 4 + 0.5)
+    logistics.add(request)
+    assert(logistics.set_request(request, "a", 100000))
+    assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+    depots[#depots + 1] = request
+  end
+  for index = 0, 6 do
+    local provider = entity("jatz-provider-depot", index * 12 + 0.5, -20.5, { a = 1000000000 })
+    logistics.add(provider)
+  end
+  -- Every road is a long detour, so no provider is ruled out by its straight line: all 7 are asked
+  -- about. The pathfinder answers each question the tick after it is asked.
+  local answered = 0
+  local function answer_all()
+    while answered < #requests do
+      answered = answered + 1
+      local asked = requests[answered]
+      logistics.on_script_path_request_finished({
+        id = answered,
+        path = { { position = { x = asked.start.x, y = asked.start.y + 500 } }, { position = asked.goal } },
+      })
+    end
+  end
+  local tick = 0
+  local function run(ticks, each)
+    for _ = 1, ticks do
+      tick = tick + 1
+      game.tick = tick
+      if each then
+        each()
+      end
+      logistics.on_tick_share(tick)
+    end
+  end
+  local function sending()
+    local count = 0
+    for _, request in ipairs(depots) do
+      if has_trip(request) then
+        count = count + 1
+      end
+    end
+    return count
+  end
+  run(120, answer_all)
+  check("setup: asked about all 7 providers, every depot sends a freighter", #requests == 2100 and sending() == 300)
+  for _, trip in pairs(storage.trips) do
+    arrive(logistics, trip)
+    arrive(logistics, trip)
+  end
+  check("setup: all home, requests still open", next(storage.trips) == nil)
+  local asked = #requests
+  -- The group's check comes within a second, and its searches are answered within the next.
+  run(120)
+  check("from remembered roads, within two seconds every depot sends again", sending() == 300)
+  check("asking nothing", #requests == asked)
+  for _, trip in pairs(storage.trips) do
+    arrive(logistics, trip)
+    arrive(logistics, trip)
+  end
+  run(1200)
+  check("and again, across the search timeout", sending() == 300 and #requests == asked)
+end
+
 -- A freighter's checks stay less than a second apart through a change of schedule while it is
 -- out: a configuration change (add_all, from on_configuration_changed), or the first schedule in
 -- a save from before phases. Two freighters set off, so the one left out is on phase 1; `disrupt`

@@ -1392,6 +1392,9 @@ local drone_shape
 -- (storage.road_versions[surface index], counted up by each change): it would be about old road.
 -- Whether a tick's depot checks are under way (they are when a depot's search asks first).
 local checking_depots = false
+-- The search answer_remembered is giving its remembered answers to, and the next of them, taken at
+-- once (ask_route) rather than queued: Lua only, set and used within one call.
+local answering, chained, chained_length = nil, false, nil
 
 local function road_key(from, to)
   return from.x .. " " .. from.y .. " " .. to.x .. " " .. to.y
@@ -1427,6 +1430,10 @@ local function ask_route(search, surface, force)
     local known = storage.road_lengths and storage.road_lengths[surface_index]
     local length = known and known.lengths[key]
     if length ~= nil and game.tick - known.ticks[key] < ROAD_MEMORY_TICKS then
+      if answering == search then
+        chained, chained_length = true, length or nil
+        return
+      end
       storage.road_answers = storage.road_answers or {}
       local answers = storage.road_answers
       answers[#answers + 1] =
@@ -2560,27 +2567,49 @@ function logistics.on_script_path_request_finished(event)
   route_answered(search, length)
 end
 
--- Remembered answers given in a tick, at most: a group of depots checked together asks together,
--- and each answer that ends a search sends a freighter off (a new unit, its inventories and its
--- command), so the pathfinder's answers, which come over the next few ticks, are copied.
+-- Searches given their remembered answers in a tick, at least: a group of depots checked together
+-- asks together, and each search that ends sends a freighter off (a new unit, its inventories and
+-- its command), so they are spread over the next ticks, as the pathfinder's answers come. With
+-- more waiting, as many as clear them all, evenly, within DISPATCH_INTERVAL of the oldest's
+-- question: each depot sends at most one freighter a second anyway, and a search kept waiting
+-- longer than SEARCH_TIMEOUT would be dropped and start again (Pullfrog's review of 5832360: limiting answers rather than searches,
+-- a large group's searches each took one answer in turn and none finished before its timeout).
 local REMEMBERED_PER_TICK = 3
 
--- Give the remembered road lengths that are due (ask_route), in the order asked, REMEMBERED_PER_TICK
--- of them; the rest wait for the next tick, as do questions they lead to.
+-- Give a search its remembered answer, and then each next one it has (ask_route) at once, until
+-- it ends or asks the pathfinder.
+local function give_remembered(search, length)
+  answering = search
+  repeat
+    chained = false
+    route_answered(search, length)
+    length = chained_length
+  until not chained
+  answering, chained_length = nil, nil
+end
+
+-- Give the searches whose remembered answers are due (ask_route) those answers, in the order
+-- asked, up to the tick's share; the rest wait for the next tick. A search made stale meanwhile (its
+-- owner holds another token, or is gone) is dropped and takes no one's turn.
 local function answer_remembered()
   local answers = storage.road_answers
   if not answers or #answers == 0 then
     return
   end
-  -- Questions asked while answering go after those already waiting.
+  -- Questions asked while answering (other searches') go after those already waiting.
   storage.road_answers = {}
+  local left = math.max(1, DISPATCH_INTERVAL - (game.tick - answers[1].tick))
+  local share = math.max(REMEMBERED_PER_TICK, math.ceil(#answers / left))
   local waiting, given = {}, 0
   for _, answer in ipairs(answers) do
-    if answer.tick <= game.tick and given < REMEMBERED_PER_TICK then
-      given = given + 1
-      route_answered(answer.search, answer.length)
-    else
-      waiting[#waiting + 1] = answer
+    -- A stale one is dropped.
+    if owner_of(answer.search) then
+      if answer.tick <= game.tick and given < share then
+        given = given + 1
+        give_remembered(answer.search, answer.length)
+      else
+        waiting[#waiting + 1] = answer
+      end
     end
   end
   for _, answer in ipairs(storage.road_answers) do
