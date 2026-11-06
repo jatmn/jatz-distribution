@@ -16,6 +16,7 @@ python3 tools/test_mod.py --factorio /path/to/factorio/bin/x64/factorio
 --mod adds another mod's zip to both runs. With one of the Mining Drones mods
 (Mining_Drones, Mining_Drones_Remastered or Mining_Drones_Mod), a request depot must
 also fetch iron ore from a mining depot's output, at the road it lays behind the depot.
+With Milestones, Milestones must load our preset addon.
 """
 import argparse
 import json
@@ -248,10 +249,14 @@ EXPECTED = {'free_recipes': 10, 'ghosts': 28, 'placed': 28, 'rotations': 112, 'p
             # with one tank; the original keeps its own.
             'fuel_clone_alone': 'water 1234, 10 coal, 1 tank(s)',
             'fuel_clone_with_tank': 'water 1234, 10 coal, 1 tank(s)',
-            'fuel_clone_source': 'water 1234, 10 coal, 1 tank(s)'}
+            'fuel_clone_source': 'water 1234, 10 coal, 1 tank(s)',
+            # Our Milestones preset addon names only real items.
+            'milestones': ['jatz-quinityn-freighter x1', 'jatz-quinityn-freighter x100', 'jatz-road x1000']}
 # With a Mining Drones mod: the mining depot's road, and 30 of its 40 iron ore delivered.
 MINING_DRONES = {'Mining_Drones', 'Mining_Drones_Remastered', 'Mining_Drones_Mod'}
 EXPECTED_MINING = {'zone': 'jatz-depot-road', 'delivered': 30, 'left': 10}
+# With Milestones: its log line when a new game loads our preset addon (control.lua).
+MILESTONES_LOADED = re.compile(r'Preset addons loaded: \{[^}]*"Jat\'z Distribution"')
 # Long enough for the check mod's deliveries (it fails itself at tick 2500).
 TICKS = 2600
 
@@ -266,7 +271,7 @@ def main():
     parser.add_argument('--factorio', required=True, type=Path)
     parser.add_argument('--data-dir', type=Path)
     parser.add_argument('--mod', action='append', default=[], type=Path,
-                        help="another mod's zip to load too, such as one of the Mining Drones mods (repeatable)")
+                        help="another mod's zip to load too, such as one of the Mining Drones mods or Milestones (repeatable)")
     args = parser.parse_args()
     binary = args.factorio.expanduser().resolve()
     data = args.data_dir.resolve() if args.data_dir else binary.parents[2] / 'data'
@@ -378,6 +383,8 @@ def check(binary, data, bundled, enabled_mods, label, extra=None):
         wrong['menu_tab'] = report.get('menu_tab')
     if MINING_DRONES & set(extra) and report.get('mining') != EXPECTED_MINING:
         wrong['mining'] = report.get('mining')
+    if 'Milestones' in extra and not MILESTONES_LOADED.search((workspace / 'create.log').read_text()):
+        wrong['milestones_addon'] = 'not loaded by Milestones'
     if wrong or report.get('driven_tiles', 0) <= 1 or loaded != expected_mods or untranslated:
         problems = wrong or {'loaded': loaded, 'expected': expected_mods, 'untranslated': untranslated,
                              'driven_tiles': report.get('driven_tiles')}
@@ -389,7 +396,8 @@ def check(binary, data, bundled, enabled_mods, label, extra=None):
           f'freighter drove {report["driven_tiles"]:.1f} tiles, {report["delivered"]} iron plates delivered by road '
           f'(a {report["detour"]:.0f}-tile detour, {report["road_samples"]} on-road samples), menu row {report["menu_row_order"]!r} directly above '
           f'the car row {report["car_row_order"]!r} in {report["menu_tab"]}. Mods loaded: {", ".join(loaded)}'
-          + (f'. Mining depot: {report["mining"]["delivered"]} iron ore delivered' if 'mining' in report else ''))
+          + (f'. Mining depot: {report["mining"]["delivered"]} iron ore delivered' if 'mining' in report else '')
+          + ('. Milestones loaded our preset addon' if 'Milestones' in extra else ''))
     return True
 
 

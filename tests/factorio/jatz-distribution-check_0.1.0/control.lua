@@ -1272,6 +1272,20 @@ local function setup_mining(surface)
   storage.deliveries.mining = { mine = mine, request = request, zone = surface.get_tile(4, -62).name }
 end
 
+-- Our Milestones preset addon (control.lua) must name only real items, as "name xquantity":
+-- Milestones drops unknown names without a word. tools/test_mod.py --mod with Milestones checks
+-- that Milestones loads the addon (it tracks only forces with players, so nothing is reached here).
+local function check_milestones(result)
+  result.milestones = {}
+  local addons = remote.call("jatz-distribution-milestones", "milestones_preset_addons")
+  for _, milestone in ipairs(addons["Jat'z Distribution"].milestones) do
+    if milestone.type == "item" then
+      local known = prototypes.item[milestone.name] and "" or "unknown "
+      result.milestones[#result.milestones + 1] = known .. milestone.name .. " x" .. milestone.quantity
+    end
+  end
+end
+
 local function status(entity)
   return remote.call("jatz-distribution", "get_status", entity)
 end
@@ -2032,6 +2046,7 @@ script.on_init(function()
   check_menu_placement(result)
   setup_deliveries(surface, result)
   setup_mining(surface)
+  check_milestones(result)
   local start = { 0.5, 30.5 }
   assert(surface.can_place_entity({ name = FREIGHTER, position = start, force = "player" }), "freighter: cannot place")
   local freighter = surface.create_entity({ name = FREIGHTER, position = start, force = "player" })
