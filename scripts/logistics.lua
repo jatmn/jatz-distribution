@@ -201,6 +201,9 @@ local POLLUTION_PER_SECOND = 0.005
 -- freighter; the ground a look searches is all the freighter crossed since the last.)
 local IMPACT_INTERVAL = 20
 local IMPACT_DAMAGE = 200
+-- How far either side of its centre a freighter hits, in tiles: 0.8 tiles across, the width its
+-- collision box had before it was narrowed so it turns corners freely (prototypes/freighter-drone.lua).
+local IMPACT_REACH = 0.4
 local IMPACT_COOLDOWN = 60
 -- What a freighter runs over: enemy units only, never players (characters), buildings or other
 -- freighters.
@@ -2753,7 +2756,7 @@ local impact_filter = { area = { { 0, 0 }, { 0, 0 } }, type = IMPACT_TYPES }
 local function run_over(trips, from, to, fresh)
   -- By force index: the force, and its enemies. By surface index: its count_entities_filtered.
   local forces, surfaces = {}, {}
-  local reach = prototypes.entity[DRONE].collision_box.right_bottom.x
+  local reach = IMPACT_REACH
   local area = impact_filter.area
   for index = from, to do
     local trip = trips[index]

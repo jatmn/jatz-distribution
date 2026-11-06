@@ -799,7 +799,7 @@ do -- Running enemies over: damage can set off other mods' handlers, which may r
   answer(logistics, 1, "route")
   local drone = trips_from(request)[1].drone
   local box = prototypes.entity["jatz-freighter-drone"].collision_box
-  box.left_top, box.right_bottom = { x = -0.4, y = -0.4 }, { x = 0.4, y = 0.4 }
+  box.left_top, box.right_bottom = { x = -0.2, y = -0.2 }, { x = 0.2, y = 0.2 }
   local player, enemy_force = { name = "player" }, { name = "enemy" }
   function player.is_enemy(other)
     return other == enemy_force
