@@ -253,6 +253,49 @@ local function init_storage()
   storage.searches = storage.searches or {}
 end
 
+-- Depots by where they stand and what they do: storage.depot_index[surface index][role] =
+-- { [unit_number] = true }, so finding the providers or Fuel depots for a depot looks only at
+-- those on its surface rather than at every depot. Depots never change surface or role. Kept up to
+-- date as depots are added and removed, and built afresh when missing (a save from before it, or
+-- after add_all). Not by force: a script can change an entity's force without an event (and
+-- merging forces moves them), so the force is checked as the depots are looked at.
+local NO_DEPOTS = {}
+local function index_depot(id, depot, added)
+  local index = storage.depot_index
+  if not index then
+    return
+  end
+  -- (One from an old save whose entity is gone and whose surface is unknown can't serve anyone.)
+  local surface_index = depot.surface_index or (depot.entity.valid and depot.entity.surface_index)
+  if not surface_index then
+    return
+  end
+  local roles = index[surface_index]
+  if added then
+    roles = roles or {}
+    index[surface_index] = roles
+    local ids = roles[depot.role] or {}
+    roles[depot.role] = ids
+    ids[id] = true
+  elseif roles and roles[depot.role] then
+    roles[depot.role][id] = nil
+  end
+end
+
+-- The unit_numbers of the depots with `role` on a surface (a table to read, not to change).
+local function depots_at(surface_index, role)
+  local index = storage.depot_index
+  if not index then
+    index = {}
+    storage.depot_index = index
+    for id, depot in pairs(storage.depots) do
+      index_depot(id, depot, true)
+    end
+  end
+  local roles = index[surface_index]
+  return roles and roles[role] or NO_DEPOTS
+end
+
 -- Drop a request depot's current search; the next dispatch, within a second, starts a fresh one.
 local function cancel_search(depot)
   depot.search_token = nil
@@ -526,7 +569,7 @@ function logistics.add(entity)
     fuel_tank(entity)
     return
   end
-  storage.depots[entity.unit_number] = {
+  depot = {
     entity = entity,
     role = role,
     -- Where it stands, for handing back freighters once the entity is gone.
@@ -544,6 +587,8 @@ function logistics.add(entity)
     -- Liquid depots deal in fluids, with liquid depots only.
     fluid = LIQUID[entity.name] or nil,
   }
+  storage.depots[entity.unit_number] = depot
+  index_depot(entity.unit_number, depot, true)
   script.register_on_object_destroyed(entity)
   if LIQUID[entity.name] and REQUESTING[role] then
     truck_chest(entity)
@@ -763,15 +808,64 @@ local function bringing(trip)
   return 0
 end
 
--- What a request depot's freighters, except trip `except`, are bringing.
+-- What a request depot's freighters are bringing, filed by `promise` as their state, promise or
+-- cargo changes: storage.coming[request depot unit_number][item][trip key] = amount (only
+-- amounts above 0), and each trip records the amount it has filed (`trip.coming`; a trip's depot
+-- and item never change). So a depot's need is read without looking at each of its trips and
+-- their cargo.
+local file_promises
+local function file_coming(trip, ended)
+  local amount = not ended and bringing(trip) or 0
+  if (trip.coming or 0) == amount then
+    return
+  end
+  local coming = storage.coming
+  local items = coming[trip.request]
+  if amount ~= 0 then
+    if not items then
+      items = {}
+      coming[trip.request] = items
+    end
+    local trips = items[trip.item]
+    if not trips then
+      trips = {}
+      items[trip.item] = trips
+    end
+    trips[trip.key] = amount
+    trip.coming = amount
+    return
+  end
+  local trips = items and items[trip.item]
+  if trips then
+    trips[trip.key] = nil
+    if next(trips) == nil then
+      items[trip.item] = nil
+      if next(items) == nil then
+        coming[trip.request] = nil
+      end
+    end
+  end
+  trip.coming = nil
+end
+
+-- What a request depot's freighters, except trip `except` (by id), are bringing of the item it
+-- requests. Trips for an item the depot no longer asks for bring nothing it needs.
 local function committed(depot, except)
-  local total = 0
+  if not storage.coming then
+    file_promises()
+  end
   local item = depot.request and depot.request.item
-  for id in pairs(trips_of(depot)) do
-    local trip = storage.trips[id]
-    -- Trips for an item the depot no longer asks for bring nothing it needs.
-    if trip and id ~= except and trip.item == item then
-      total = total + bringing(trip)
+  local items = item and storage.coming[depot.entity.unit_number]
+  local trips = items and items[item]
+  if not trips then
+    return 0
+  end
+  local skipped = except and storage.trips[except]
+  skipped = skipped and skipped.key
+  local total = 0
+  for key, amount in pairs(trips) do
+    if key ~= skipped then
+      total = total + amount
     end
   end
   return total
@@ -783,13 +877,15 @@ end
 -- `promise` files it again whenever its provider, state or promise changes, so a provider's
 -- unpromised stock is read without looking at every trip in the game. A trip's key is the
 -- unit_number of the freighter it set off with (`trip.key`), which stays the same when it is
--- repainted. With `ended`, the trip is over and its promise goes.
-local file_promises
+-- repainted. With `ended`, the trip is over and its promise goes. What it is bringing its request
+-- depot is filed again too (`file_coming`), so call it whenever that may have changed: its state,
+-- promise or cargo.
 local function promise(trip, ended)
-  if not (storage.promised and trip.key) then
+  if not (storage.promised and storage.coming and trip.key) then
     -- A save from before promises were filed: file every trip's (this one's too, if still out).
     return file_promises()
   end
+  file_coming(trip, ended)
   local filed = trip.promise
   local amount = not ended and trip.state == TO_PROVIDER and trip.planned or 0
   if filed and filed.provider == trip.provider and filed.amount == amount then
@@ -820,14 +916,15 @@ local function promise(trip, ended)
   end
 end
 
--- File every trip's promise afresh: on first use in a save from before promises were filed, and
--- after trips were checked against the game as loaded (add_all).
+-- File every trip's promise, and what it is bringing, afresh: on first use in a save from before
+-- they were filed, and after trips were checked against the game as loaded (add_all).
 function file_promises()
-  storage.promised = {}
+  storage.promised, storage.coming = {}, {}
   for id, trip in pairs(storage.trips) do
     trip.key = trip.key or id
-    trip.promise = nil
-    promise(trip)
+    trip.promise, trip.coming = nil, nil
+    -- (Its cargo is read: one from the first version carried a plain count.)
+    promise(upgrade(trip))
   end
 end
 
@@ -1158,30 +1255,31 @@ end
 -- While a tick's depots are checked (`suppliers_cache` is set: checking them changes no provider's
 -- stock or promises), depots asking for the same share one look at every depot.
 local suppliers_cache
+local SUPPLYING = { "provider", "buffer" }
 local function suppliers(surface_index, force_index, fluid, item)
   local key = suppliers_cache and table.concat({ surface_index, force_index, fluid and "fluid" or "item", item }, " ")
   if key and suppliers_cache[key] then
     return suppliers_cache[key]
   end
   local found = {}
-  -- What is known without asking the game comes first (depots never change surface), so a depot
-  -- on another surface, or of another kind, costs next to nothing.
-  for unit_number, provider in pairs(storage.depots) do
-    local candidate = provider.entity
-    if
-      (provider.role == "provider" or provider.role == "buffer")
-      -- Items from item depots, fluids from liquid depots.
-      and provider.fluid == fluid
-      and (provider.surface_index or surface_index) == surface_index
-      and candidate.valid
-      and (provider.surface_index or candidate.surface_index) == surface_index
-      and candidate.force_index == force_index
-      and available(provider, item) > 0
-      and enabled(provider)
-    then
-      local position, on_road = loading_tile(candidate)
-      if on_road then
-        found[#found + 1] = { id = unit_number, depot = provider, position = position }
+  local depots = storage.depots
+  for _, role in ipairs(SUPPLYING) do
+    for unit_number in pairs(depots_at(surface_index, role)) do
+      local provider = depots[unit_number]
+      local candidate = provider and provider.entity
+      if
+        provider
+        -- Items from item depots, fluids from liquid depots.
+        and provider.fluid == fluid
+        and candidate.valid
+        and candidate.force_index == force_index
+        and available(provider, item) > 0
+        and enabled(provider)
+      then
+        local position, on_road = loading_tile(candidate)
+        if on_road then
+          found[#found + 1] = { id = unit_number, depot = provider, position = position }
+        end
       end
     end
   end
@@ -1522,14 +1620,14 @@ local function fuel_candidates(depot, from, empty)
   local entity = depot.entity
   local found = {}
   local surface_index, force_index = entity.surface_index, entity.force_index
-  for unit_number, fuel in pairs(storage.depots) do
-    local candidate = fuel.entity
+  local depots = storage.depots
+  for unit_number in pairs(depots_at(surface_index, "fuel")) do
+    local fuel = depots[unit_number]
+    local candidate = fuel and fuel.entity
     if
-      fuel.role == "fuel"
-      and (fuel.surface_index or surface_index) == surface_index
+      fuel
       and (depot.cooldowns[unit_number] or 0) <= game.tick
       and candidate.valid
-      and (fuel.surface_index or candidate.surface_index) == surface_index
       and candidate.force_index == force_index
     then
       local stocked = has_fuel(fuel)
@@ -1832,6 +1930,7 @@ local function check_depot(id, depot)
       depot.tank.destroy()
     end
     storage.depots[id] = nil
+    index_depot(id, depot, false)
     return
   end
   if depot.circuit_enabled or depot.shown_off then
@@ -2158,13 +2257,13 @@ local function arrived_at_provider(id, trip, depot)
     end
   end
   trip.planned = nil
+  trip.state = TO_REQUEST
   promise(trip)
   if not (depot and depot.entity.valid) then
     return end_trip(id, trip)
   end
   -- Home, loaded or (if there was nothing to load) empty, to unload and park, painted for its load:
   -- as far by road as it came (when it came from home), and never less than the straight line.
-  trip.state = TO_REQUEST
   repaint(id, trip)
   show_cargo(trip)
   -- Painting moves the trip to its new freighter's unit_number.
@@ -2200,6 +2299,7 @@ local function arrived_at_request(id, trip, depot)
     local provider = depot_entity(trip.provider)
     if trip.fluid.amount > 0 and provider then
       trip.state = RETURNING
+      promise(trip)
       return drive(trip, (loading_tile(provider)))
     end
     return end_trip(id, trip)
@@ -2233,6 +2333,7 @@ local function route_failed(id, trip, depot)
   local provider = depot_entity(trip.provider)
   if trip.state == TO_REQUEST and provider and not cargo_empty(trip) then
     trip.state = RETURNING
+    promise(trip)
     return drive(trip, (loading_tile(provider)))
   end
   spill(trip)
@@ -2417,6 +2518,7 @@ local function depot_removed(id)
       if trip.state == TO_REQUEST and depot_entity(trip.provider) then
         -- One standing there to unload leaves at once too.
         trip.state, trip.loading = RETURNING, nil
+        promise(trip)
         replan(trip)
       elseif trip.state == TO_PROVIDER or cargo_empty(trip) then
         end_trip(trip_id, trip)
@@ -2425,6 +2527,7 @@ local function depot_removed(id)
       -- Bringing cargo back to a provider that is gone: try the request depot again.
       if depot_entity(trip.request) then
         trip.state, trip.loading = TO_REQUEST, nil
+        promise(trip)
         replan(trip)
       else
         spill(trip)
@@ -2709,6 +2812,7 @@ function logistics.on_object_destroyed(event)
       depot.tank.destroy()
     end
     storage.depots[id] = nil
+    index_depot(id, depot, false)
     depot_removed(id)
   elseif storage.trips[id] then
     lose(id, upgrade(storage.trips[id]))
@@ -3033,8 +3137,9 @@ function logistics.add_all()
     depot.surface_index = depot.surface_index or (depot.entity.valid and depot.entity.surface_index)
   end
   file_promises()
-  -- Mods changed: roads, freighters and research may have too.
+  -- Mods changed: roads, freighters and research may have too. The depot index is built afresh.
   storage.road_lengths, storage.road_answers, storage.research_levels = nil, nil, nil
+  storage.depot_index = nil
 end
 
 -- A request depot's freighters: how many are in its slot, how many are out on trips, and the most

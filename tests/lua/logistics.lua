@@ -421,7 +421,50 @@ local function forget_roads()
   storage.road_lengths = nil
 end
 
+-- What each trip is bringing its request depot, as filed for `need` (storage.coming), must match
+-- the trips themselves: what it promised on its way out, its cargo on its way back, nothing
+-- otherwise. Checked with every check below, so a change to a trip that isn't filed shows up.
+local function coming_filed()
+  if not (storage and storage.coming and storage.trips) then
+    return true
+  end
+  local expected = {}
+  for _, trip in pairs(storage.trips) do
+    local amount = 0
+    if trip.state == "to-provider" then
+      amount = trip.planned or 0
+    elseif trip.state == "to-request" then
+      if trip.fluid then
+        amount = trip.fluid.amount
+      elseif type(trip.cargo) == "table" and trip.cargo.valid then
+        amount = trip.cargo.get_item_count(trip.item)
+      end
+    end
+    if amount ~= 0 then
+      local key = trip.request .. " " .. trip.item .. " " .. trip.key
+      expected[key] = amount
+    end
+  end
+  for request, items in pairs(storage.coming) do
+    for item, trips in pairs(items) do
+      for key, amount in pairs(trips) do
+        local id = request .. " " .. item .. " " .. key
+        if expected[id] ~= amount then
+          return false, id .. " filed " .. amount .. ", trip has " .. tostring(expected[id])
+        end
+        expected[id] = nil
+      end
+    end
+  end
+  local missing = next(expected)
+  return missing == nil, missing and (missing .. " not filed")
+end
+
 local function check(name, condition)
+  local filed, problem = coming_filed()
+  if not filed then
+    error("FAILED: " .. name .. ": what freighters bring is filed wrong: " .. problem, 2)
+  end
   if not condition then
     error("FAILED: " .. name, 2)
   end
@@ -678,6 +721,29 @@ do -- "On its way" means a freighter is bringing the item: not one driving home 
   game.tick = 120
   logistics.on_tick()
   check("nor is one taking its cargo back", logistics.get_status(request) ~= "delivering")
+  local depot = storage.depots[request.unit_number]
+  local missing = logistics.missing(depot)
+  -- Its provider gone, it brings its cargo home after all, and the depot counts it again.
+  local provider = storage.depots[other.provider].entity
+  provider.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = provider.unit_number })
+  check("setup: with its provider gone, it takes its cargo home", other.state == "to-request")
+  check("which the depot counts as coming again", logistics.missing(depot) == missing - 10)
+end
+
+do -- A save from before what freighters bring was filed, with a freighter from the first version
+  -- carrying its cargo as a plain count: it is filed on first use, cargo upgraded to stacks.
+  local logistics = reset()
+  local request = supplied(logistics, 5)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  trip.state, trip.planned, trip.cargo = "to-request", nil, 10
+  trip.key, trip.promise, trip.coming = nil, nil, nil
+  storage.promised, storage.coming = nil, nil
+  local depot = storage.depots[request.unit_number]
+  check("the old freighter's 10 count as coming", logistics.missing(depot) == 100 - 10)
+  check("as stacks now", type(trip.cargo) == "table" and trip.cargo.get_item_count("a") == 10)
 end
 
 do -- No freighters: nothing is sent, and the panel says why.
