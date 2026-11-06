@@ -66,11 +66,10 @@ class EmulatorCountsOnlyTheModTests(unittest.TestCase):
 
     def test_work_inside_a_mod_handler_is_counted_exactly(self):
         before = self.emulate()
-        inject(self.mod / 'scripts/logistics.lua', 'function logistics.on_tick()\n', LOOP)
+        inject(self.mod / 'scripts/logistics.lua', 'function logistics.on_tick_share(tick)\n', LOOP)
         after = self.emulate()
-        # logistics.on_tick runs once a second: count its calls in the measured ticks.
-        first, last = before['warmup'] + 1, before['warmup'] + before['ticks']
-        calls = sum(1 for tick in range(first, last + 1) if tick % 60 == 0)
+        # logistics.on_tick_share runs every tick (control.lua's on_tick).
+        calls = before['ticks']
         self.assertGreater(calls, 0)
         self.assertEqual(round((after['instructions_per_tick'] - before['instructions_per_tick']) * before['ticks']),
                          LOOP_INSTRUCTIONS * calls)
