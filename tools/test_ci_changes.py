@@ -12,6 +12,7 @@ import textwrap
 import unittest
 
 from ci_changes import classify
+from release_metadata import PENDING, SEPARATOR, finalize, package_metadata
 
 ROUTER = Path(__file__).with_name('ci_changes.py').resolve()
 REPO = ROUTER.parents[1]
@@ -254,6 +255,58 @@ class RoutingTests(unittest.TestCase):
                                 cwd=repo.root, capture_output=True, text=True)
         self.assertNotEqual(failed.returncode, 0)
         self.assertEqual(failed.stdout, '')
+
+
+class ReleaseNotesHoldTests(unittest.TestCase):
+    hold_step = workflow_block('ci.yml', 'Hold the package check for the release notes')
+
+    def test_only_release_pleases_unfinalized_commit_skips_the_package_check(self):
+        history = SEPARATOR + 'Version: 0.1.0\nDate: 2026-11-04\n  Info:\n    - First release.\n'
+        release = {'info.json': '{"name": "jatz-distribution", "version": "0.1.1"}\n', '.github/version.txt': '0.1.1\n',
+                   '.github/release-please-manifest.json': '{".": "0.1.1"}\n', 'docs/CHANGELOG.md': '# Changelog\n'}
+        # With pending player notes, and without any: the finalizer then adds "No player-facing changes."
+        for notes in (PENDING + '  Bugfixes:\n    - Keep delivered cargo.\n', ''):
+            for scenario, changes, finalized, expected in (
+                ('Release Please bumped the version', release, False, True),
+                ('notes finalized', release, True, False),
+                ('code changed too', {**release, 'control.lua': 'return false\n'}, False, False),
+                ('version not raised', {'docs/CHANGELOG.md': '# Changelog\n'}, False, False),
+                ('info.json changed, same version', {'info.json': '{"name": "jatz-distribution", "version": "0.1.0",'
+                                                     ' "title": "Changed"}\n'}, False, False),
+                ('no change', {}, False, False),
+            ):
+                with self.subTest(notes=bool(notes), scenario=scenario):
+                    repo = Repo(self)
+                    repo.write('info.json', '{"name": "jatz-distribution", "version": "0.1.0"}\n')
+                    repo.write('.github/version.txt', '0.1.0\n')
+                    repo.write('.github/release-please-manifest.json', '{".": "0.1.0"}\n')
+                    repo.write('changelog.txt', notes + history)
+                    repo.write('control.lua')
+                    base = repo.commit('base')
+                    for name, text in changes.items():
+                        repo.write(name, text)
+                    if finalized:
+                        # What the Release workflow's finalizing commit writes.
+                        finalize(repo.root, '2026-11-06')
+                        self.assertTrue((repo.root / 'changelog.txt').read_text().startswith(
+                            SEPARATOR + 'Version: 0.1.1\n'))
+                    repo.commit('release')
+                    result, outputs = repo.run_step(self.hold_step, BASE=base)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(outputs, {f'release_pending={str(expected).lower()}'})
+                    self.assertEqual('Skipping the installable package check' in result.stdout, expected)
+                    if not finalized and expected:
+                        # The package check really can't pass on the held commit.
+                        with self.assertRaisesRegex(ValueError, 'top version'):
+                            package_metadata(repo.root)
+
+    def test_package_job_waits_only_on_the_hold(self):
+        workflow = (WORKFLOWS / 'ci.yml').read_text()
+        hold = workflow.split('      - name: Hold the package check for the release notes\n')[1].split('        run: |')[0]
+        self.assertIn("github.head_ref == 'release-please--branches--main'", hold)
+        self.assertIn('github.event.pull_request.head.repo.full_name == github.repository', hold)
+        package = workflow.split('\n  package:\n')[1].split('\n    runs-on:')[0]
+        self.assertIn("needs.changes.outputs.release_pending != 'true' && (", package)
 
 
 class SelectionTests(unittest.TestCase):
