@@ -2562,8 +2562,10 @@ do -- In the game the once-a-second checks are spread over the second (on_tick_s
   game.tick = 60
   logistics.on_tick_share(60)
   -- The freighter whose turn comes last loads (and so is repainted, a new entity) before then.
-  local list = storage.passes.trips
-  local repainted = list[#list]
+  local repainted
+  for phase = #storage.trip_phases, 1, -1 do
+    repainted = repainted or storage.trip_phases[phase][1]
+  end
   local before = repainted.drone
   -- Real stacks to load from (the fake chest above only counts).
   local stock = script_inventory(2)
@@ -2609,6 +2611,86 @@ do -- In the game the once-a-second checks are spread over the second (on_tick_s
     looked[#looked + 1] = seen
   end
   check("each freighter looks once in 10 ticks, a share of them each tick", looked[1] < out and looked[10] == out)
+end
+
+do -- Fuel is burned by the straight-line distance between a freighter's checks, so each must come
+  -- every second exactly, starting within a second of setting off: then each 1 s stop to load or
+  -- unload has a check, and a short round trip isn't measured as one leg there and back (which
+  -- cancels out). Pullfrog's review of 46df83d: with checks a second apart only on average, a
+  -- freighter going one tile and back parked with a full tank.
+  local logistics = reset()
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  local provider = entity("jatz-provider-depot", 5.5, 0.5, { a = 20 })
+  logistics.add(request)
+  logistics.add(provider)
+  assert(logistics.set_request(request, "a", 10))
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+  local stock = script_inventory(1)
+  stock[1].name, stock[1].count, stock[1].valid_for_read = "a", 20, true
+  stock[1].quality = { name = "normal" }
+  provider.get_inventory = function()
+    return stock
+  end
+  local chest = script_inventory(4)
+  chest.get_insertable_count = request.chest.get_insertable_count
+  request.get_inventory = function()
+    return chest
+  end
+  -- Every tick through the spread checks, as control.lua's on_tick does, with the freighter
+  -- arriving and standing where the events say.
+  local trip, home, there
+  local events = {}
+  local function at(tick, run)
+    events[tick] = run
+  end
+  for tick = 0, 400 do
+    game.tick = tick
+    if events[tick] then
+      events[tick]()
+    end
+    logistics.on_tick_share(tick)
+    if not trip and #requests == 1 then
+      -- The path comes back the tick after the depot asked.
+      answer(logistics, 1, "route")
+      trip = trips_from(request)[1]
+      home = { x = trip.drone.position.x, y = trip.drone.position.y }
+      there = requests[1].goal
+      -- Out in 5 ticks, a second loading, back in 5 ticks, a second unloading.
+      at(tick + 5, function()
+        trip.drone.position = { x = there.x, y = there.y }
+        logistics.on_ai_command_completed({
+          unit_number = trip.drone.unit_number,
+          result = defines.behavior_result.success,
+        })
+      end)
+      at(tick + 65, function()
+        logistics.on_ai_command_completed({
+          unit_number = trip.drone.unit_number,
+          result = defines.behavior_result.success,
+        })
+      end)
+      at(tick + 70, function()
+        trip.drone.position = { x = home.x, y = home.y }
+        logistics.on_ai_command_completed({
+          unit_number = trip.drone.unit_number,
+          result = defines.behavior_result.success,
+        })
+      end)
+      at(tick + 130, function()
+        logistics.on_ai_command_completed({
+          unit_number = trip.drone.unit_number,
+          result = defines.behavior_result.success,
+        })
+      end)
+    end
+  end
+  local leg = math.sqrt((there.x - home.x) ^ 2 + (there.y - home.y) ^ 2)
+  local parked = storage.depots[request.unit_number].fuel or {}
+  check("a short round trip delivers", chest.get_item_count() == 10 and next(storage.trips) == nil)
+  check(
+    "and burns both legs, there and back",
+    leg > 0 and #parked == 1 and math.abs(parked[1] - (20000000 - 2 * leg * 10000)) < 1e-6
+  )
 end
 
 print("all logistics checks passed")

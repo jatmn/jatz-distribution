@@ -1116,6 +1116,49 @@ local function candidates(depot, from)
   return found, waiting
 end
 
+-- Every trip out has its own tick of the second, its phase: storage.trip_phases[phase + 1] lists
+-- the trips with that phase. Its once-a-second check (`check_trip`) comes at that tick, exactly
+-- DISPATCH_INTERVAL ticks apart and within one of setting off, and it looks for enemies to run
+-- over at that tick and every IMPACT_INTERVAL ticks after (`on_impact_share`). Exactly, because
+-- fuel is burned by the straight-line distance since the last check: as every stop to load,
+-- unload or fill up lasts LOADING_TICKS, no shorter than DISPATCH_INTERVAL, every stop has a check
+-- in it, so two legs (out to a provider and back) are never measured as one (they would cancel).
+-- A trip in a list is still out while storage.trips[trip.id] is that trip (`repaint` moves `id`
+-- with it); the others are dropped when their phase comes round. Kept in storage, so every
+-- player's game agrees.
+local function trip_phases()
+  local phases = storage.trip_phases
+  if not phases then
+    -- First use in a save, or after add_all: the trips out share the phases in turn.
+    phases = {}
+    for phase = 1, DISPATCH_INTERVAL do
+      phases[phase] = {}
+    end
+    local count = 0
+    for id, trip in pairs(storage.trips) do
+      trip.id = id
+      local list = phases[count % DISPATCH_INTERVAL + 1]
+      list[#list + 1] = trip
+      count = count + 1
+    end
+    storage.trip_phases = phases
+  end
+  return phases
+end
+
+-- Give a trip setting off the phase with the fewest trips, so the checks stay evenly spread.
+local function schedule_trip(id, trip)
+  trip.id = id
+  local phases = trip_phases()
+  local fewest = 1
+  for phase = 2, DISPATCH_INTERVAL do
+    if #phases[phase] < #phases[fewest] then
+      fewest = phase
+    end
+  end
+  phases[fewest][#phases[fewest] + 1] = trip
+end
+
 local function drive(trip, destination)
   trip.destination = destination
   trip.loading = nil
@@ -1180,6 +1223,7 @@ local function start_trip(depot, provider, from, planned, length)
   storage.trips[drone.unit_number] = trip
   trip.key = drone.unit_number
   promise(trip)
+  schedule_trip(drone.unit_number, trip)
   script.register_on_object_destroyed(drone)
   trips_of(depot)[drone.unit_number] = true
   depot.next_send = game.tick + SEND_SPACING
@@ -1623,32 +1667,6 @@ function logistics.on_tick()
   suppliers_cache = nil
 end
 
--- The share of the trips whose turn it is at `tick`, so that one pass over all of them is spread
--- evenly over `interval` ticks: a list of trips, and the first and last index to handle now. The
--- list is taken at the start of each pass and kept in storage (as `name`), so every player's game
--- agrees; trips that set off during a pass wait for the next one. A trip on the list is still out
--- while storage.trips[trip.id] is that trip (`repaint` moves `id` with it).
-local function trips_due(name, interval, tick)
-  local phase = tick % interval
-  storage.passes = storage.passes or {}
-  local list = storage.passes[name]
-  if phase == 0 or not list then
-    -- The same table again, so the work spread to save time doesn't make garbage for Lua instead.
-    list = list or {}
-    local count = 0
-    for id, trip in pairs(storage.trips) do
-      trip.id = id
-      count = count + 1
-      list[count] = trip
-    end
-    for index = #list, count + 1, -1 do
-      list[index] = nil
-    end
-    storage.passes[name] = list
-  end
-  return list, math.floor(#list * phase / interval) + 1, math.floor(#list * (phase + 1) / interval)
-end
-
 -- The tick of the second (0 to DISPATCH_INTERVAL - 1) at which a depot is checked; `index` is its
 -- place in this pass. Requesting depots that fetch the same thing from the same depots (same
 -- surface, the same item or fluid) are checked in the same tick, as every depot was before the
@@ -1696,19 +1714,25 @@ local function depots_due(tick)
 end
 
 -- Once a second for every trip and depot, spread over the second, so a game with hundreds of
--- depots and thousands of freighters does this work evenly rather than all in one tick: a
--- sixtieth of the trips each tick, and the depots by check_phase.
+-- depots and thousands of freighters does this work evenly rather than all in one tick: the trips
+-- by their phase (trip_phases), and the depots by check_phase.
 function logistics.on_tick_share(tick)
   if not storage.depots then
     return
   end
-  local trips, first, last = trips_due("trips", DISPATCH_INTERVAL, tick)
-  local pending = {}
-  for index = first, last do
-    local trip = trips[index]
+  -- The trips whose phase this is; those no longer out leave the list.
+  local list = trip_phases()[tick % DISPATCH_INTERVAL + 1]
+  local pending, kept = {}, 0
+  for index = 1, #list do
+    local trip = list[index]
+    list[index] = nil
     local id = trip.id
-    if storage.trips[id] == trip and check_trip(id, trip) then
-      pending[#pending + 1] = id
+    if storage.trips[id] == trip then
+      kept = kept + 1
+      list[kept] = trip
+      if check_trip(id, trip) then
+        pending[#pending + 1] = id
+      end
     end
   end
   repaint_now(pending)
@@ -2538,9 +2562,9 @@ function logistics.on_impact_tick()
   run_over(trips, 1, #trips, fresh)
 end
 
--- Every freighter looked at every IMPACT_INTERVAL ticks, a share of them each tick, so thousands of
--- freighters don't all search the ground in the same tick. Whether there are units at all is asked
--- at the start of each round.
+-- Every freighter looked at every IMPACT_INTERVAL ticks, at the ticks of its phase (trip_phases),
+-- so thousands of freighters don't all search the ground in the same tick. Whether there are units
+-- at all is asked at the start of each round.
 function logistics.on_impact_share(tick)
   if not storage.trips then
     return
@@ -2553,8 +2577,11 @@ function logistics.on_impact_share(tick)
   if not storage.impact_open then
     return
   end
-  local trips, first, last = trips_due("impact", IMPACT_INTERVAL, tick)
-  run_over(trips, first, last, storage.impact_fresh)
+  local phases = trip_phases()
+  for phase = tick % IMPACT_INTERVAL, DISPATCH_INTERVAL - 1, IMPACT_INTERVAL do
+    local list = phases[phase + 1]
+    run_over(list, 1, #list, storage.impact_fresh)
+  end
 end
 
 -- Copy one depot's settings onto another (Copy and Paste settings, and clones): any delivery
@@ -2719,6 +2746,8 @@ function logistics.add_all()
     depot.surface_index = depot.surface_index or (depot.entity.valid and depot.entity.surface_index)
   end
   file_promises()
+  -- The trips kept get their phases afresh.
+  storage.trip_phases = nil
 end
 
 -- A request depot's freighters: how many are in its slot, how many are out on trips, and the most
