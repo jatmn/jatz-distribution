@@ -59,3 +59,11 @@ jobs:
             exit 0
           fi
           python3 tools/publish_mod.py --tag "$TAG"
+      - name: Bring the Mod Portal page in line with portal/ when connected
+        env:
+          FACTORIO_API_KEY: ${{ secrets.FACTORIO_API_KEY }}
+        run: |
+          if [ -z "$FACTORIO_API_KEY" ]; then
+            exit 0
+          fi
+          python3 tools/portal_page.py --tag "$TAG"

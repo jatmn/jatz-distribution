@@ -8,6 +8,7 @@ Jat'z Distribution is an in-development Factorio 2.1 mod. The artwork is finishe
 - `assets/quinityn-freighter/README.md`, `assets/depots/README.md` and `assets/roads/README.md`: what each asset folder holds, how to use the sprites in Factorio, and how to edit and re-render the models. Read the relevant one before changing artwork or tools.
 - `docs/testing.md`: how to test in Factorio. Record outcomes in `docs/test-results.md`.
 - `concepts/`: approved concept art. Preserve it unchanged.
+- `portal/`: the Mod Portal page (summary, description and gallery), synced by each release (`tools/portal_page.py`, `portal/README.md`). Keep its recipes, research and numbers in step with the mod.
 
 ## Mod source
 
@@ -51,7 +52,7 @@ Jat'z Distribution is an in-development Factorio 2.1 mod. The artwork is finishe
 - Factorio test runners (`tools/test_factorio.py`, `tools/test_depot_art.py`) build their workspaces under `.local/`. Never touch the user's normal Factorio mods, settings or saves. Unit tests that need scratch files use Python's `tempfile`, which cleans up after itself.
 - Headless runs, HTML previews and contact sheets don't prove visual quality. Visual changes need a graphical-client check.
 - Keep machine paths, Factorio binaries, logs, saves and Python environments out of commits.
-- Screenshots go in the pull request, not the repository. Only images used by the README belong in `docs/images/`.
+- Screenshots go in the pull request, not the repository. Only images used by the README belong in `docs/images/`, and only the Mod Portal page's in `portal/gallery/` and `portal/images/`.
 
 ## Continuous integration
 

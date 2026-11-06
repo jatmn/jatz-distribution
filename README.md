@@ -111,6 +111,7 @@ The road artwork in `assets/roads/yuoki-railways/` keeps its own CC BY-NC-SA 4.0
 | [`tests/factorio/`](tests/factorio/) | Test mods that check the mod and the artwork in Factorio |
 | [`tools/`](tools/) | Mod packager, test runners and CI tools |
 | [`docs/`](docs/) | [Player guide](docs/guide.md), [testing guide](docs/testing.md), [test results](docs/test-results.md), [UPS benchmark](docs/benchmark.md) and README images |
+| [`portal/`](portal/README.md) | The Mod Portal page: summary, description and screenshots, synced by each release |
 
 Each asset folder's README explains its files, how to use the sprites in Factorio, and how to edit and re-render the models. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and read [AGENTS.md](AGENTS.md) before changing anything; it holds the project rules for human and AI contributors. Report vulnerabilities privately using [SECURITY.md](SECURITY.md).
 

@@ -234,6 +234,8 @@ jobs:
       - name: Build the complete installable ZIP and verify its contents
         run: |
           python3 tools/test_releases.py
+          python3 tools/test_portal_page.py
+          python3 tools/portal_page.py --check
           python3 tools/package_mod.py
           python3 tools/validate_package.py
 
