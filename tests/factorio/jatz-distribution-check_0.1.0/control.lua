@@ -139,7 +139,7 @@ local FUEL_TANK = "jatz-fuel-depot-tank"
 local function check_research(result)
   local force = game.forces.player
   result.research_unlocks = {}
-  for _, name in ipairs({ research.system, research.liquid, research.monitor }) do
+  for _, name in ipairs(research.unlocks) do
     local technology = prototypes.technology[name]
     local unlocks = { prerequisites = {}, recipes = {}, locked = 0, unlocked = 0 }
     for prerequisite in pairs(technology.prerequisites) do

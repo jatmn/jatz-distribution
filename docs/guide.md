@@ -19,7 +19,7 @@ Everything you need to know to run Jat'z Distribution in your factory. New to th
 
 ## Research
 
-Research **Freight system** (after Engine, with red and green science) to unlock the provider, request, buffer and fuel depots, the freighter and road. **Liquid freight** expands it with the liquid depots: research it after Freight system and Fluid handling. **Road network monitor**, after Freight system and Circuit network, unlocks the [road network monitor](#road-network-monitor).
+Research **Freight system** (after Engine, with red and green science) to unlock the provider, request, buffer and fuel depots, the freighter and road. **Liquid freight** expands it with the liquid depots: research it after Freight system and Fluid handling. **Road network monitor**, after Freight system and Circuit network, unlocks the [road network monitor](#road-network-monitor). In a game started before research came to the mod, these three are already researched, so nothing you could build is taken away.
 
 Upgrades make freighters better:
 

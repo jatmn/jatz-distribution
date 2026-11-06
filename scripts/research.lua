@@ -9,6 +9,8 @@ research.system = "jatz-freight-system"
 research.liquid = "jatz-liquid-freight"
 -- Unlocks the road network monitor, after the circuit network.
 research.monitor = "jatz-road-network-monitor"
+-- Every technology that unlocks recipes.
+research.unlocks = { research.system, research.liquid, research.monitor }
 -- Upgrades are named <name>-<level>.
 research.speed = "jatz-freighter-speed"
 research.item_capacity = "jatz-freighter-item-capacity"
@@ -51,6 +53,28 @@ end
 
 function research.extra_fluid(force)
   return research.fluid_per_level * research.levels(force, research.fluid_capacity)
+end
+
+-- A new game, or a save the mod is added to, gets its recipes by research.
+function research.init()
+  storage.recipes_by_research = true
+end
+
+-- A save from before research had every recipe from the start. When the technology unlocks
+-- change, Factorio resets every force's technology effects on load (2.1's changelog: "Reset
+-- technology effects is automatically run when technology unlocks change"), so all those recipes
+-- start locked again, with nothing researched. Once, then, for such a save: every force gets the
+-- unlocking research, so it keeps its recipes, and future effect resets keep them too.
+function research.on_configuration_changed()
+  if storage.recipes_by_research then
+    return
+  end
+  for _, force in pairs(game.forces) do
+    for _, name in ipairs(research.unlocks) do
+      force.technologies[name].researched = true
+    end
+  end
+  storage.recipes_by_research = true
 end
 
 -- Whether a finished or reversed research changes freighter speed.
