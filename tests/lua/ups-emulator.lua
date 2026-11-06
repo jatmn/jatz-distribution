@@ -204,6 +204,24 @@ prototypes = {
   -- No cargo colours: every load takes the unknown paint, a swap all the same.
   mod_data = {},
 }
+-- The base game's units, for the "type" filter the mod asks for the units freighters run over.
+local UNITS = {}
+for _, size in ipairs({ "small", "medium", "big", "behemoth" }) do
+  UNITS[size .. "-biter"], UNITS[size .. "-spitter"] = "unit", "unit"
+end
+prototypes.get_entity_filtered = native(function(filters)
+  assert(#filters == 1 and filters[1].filter == "type", "emulator: only the type filter is faked")
+  local types = type(filters[1].type) == "table" and filters[1].type or { filters[1].type }
+  local found = {}
+  for name, kind in pairs(UNITS) do
+    for _, wanted in ipairs(types) do
+      if kind == wanted then
+        found[name] = { name = name, type = kind }
+      end
+    end
+  end
+  return found
+end)
 for name, size in pairs(STACK_SIZE) do
   prototypes.item[name] = { name = name, stack_size = size, fuel_value = FUEL_VALUE[name] or 0 }
 end
@@ -331,6 +349,11 @@ local function new_inventory(size)
   function inv.is_empty()
     return inv.get_item_count() == 0
   end
+  -- An ItemFilter of any quality (every item here is normal quality).
+  function inv.get_item_count_filtered(filter)
+    assert(type(filter) == "table" and filter.name and not filter.quality, "emulator: an item filter of any quality")
+    return inv.get_item_count(filter.name)
+  end
   function inv.get_insertable_count(id)
     local name, room = item_name(id), 0
     for index = 1, #inv do
@@ -419,6 +442,11 @@ function force.is_enemy(other)
   return other.name == "enemy"
 end
 for _, other in pairs(forces) do
+  -- LuaForce::get_entity_count: nobody has any units here (no enemies on the map).
+  function other.get_entity_count(name)
+    assert(UNITS[name], "emulator: not a unit prototype " .. tostring(name))
+    return 0
+  end
   if other ~= force then
     function other.is_enemy(them)
       return them.name == "player"
@@ -515,6 +543,10 @@ local function new_surface(index, plan)
   function surface.find_entities_filtered()
     return {}
   end
+  -- No enemy units anywhere on the map.
+  function surface.count_entities_filtered()
+    return 0
+  end
   function surface.find_decoratives_filtered()
     return {}
   end
@@ -545,6 +577,7 @@ local function new_surface(index, plan)
       surface = surface,
       surface_index = surface.index,
       force = parameters.force,
+      force_index = parameters.force.index,
     }
     function tank.get_fluid()
       return nil
@@ -604,6 +637,7 @@ local function new_surface(index, plan)
       surface = surface,
       surface_index = surface.index,
       force = parameters.force or force,
+      force_index = (parameters.force or force).index,
       version = 0,
     }
     -- Drive the rest of `points` from here at the current speed; arrival is scheduled for when
@@ -739,6 +773,7 @@ local function new_depot(surface, name, x, y, direction)
     surface = surface,
     surface_index = surface.index,
     force = force,
+    force_index = force.index,
   }
   function entity.get_inventory()
     return chest

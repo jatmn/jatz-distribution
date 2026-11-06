@@ -209,14 +209,18 @@ script.on_event(defines.events.script_raised_set_tiles, function(event)
 end)
 logistics.register()
 request_gui.register()
--- Once a second: request depots send freighters, and road network monitors show their networks.
 -- Every tick, first: what depots whose condition reads the circuit network hold, as the wires carry
--- it this tick (logistics.sample_circuits). The game raises on_tick before on_nth_tick.
-script.on_event(defines.events.on_tick, logistics.sample_circuits)
-script.on_nth_tick(logistics.dispatch_interval, function(event)
-  logistics.on_tick(event)
-  road_monitor.update()
+-- it this tick (logistics.sample_circuits). Then the share of the once-a-second work whose turn it
+-- is (request depots sending freighters, freighters burning fuel: logistics.on_tick_share), and of
+-- the freighters looking for enemies to run over every 10 ticks (logistics.on_impact_share), so
+-- none of it lands all on the same tick. Once a second: road network monitors show their
+-- networks. The game raises on_tick before on_nth_tick.
+script.on_event(defines.events.on_tick, function(event)
+  logistics.sample_circuits()
+  logistics.on_tick_share(event.tick)
+  logistics.on_impact_share(event.tick)
 end)
+script.on_nth_tick(logistics.dispatch_interval, road_monitor.update)
 -- Freighters ctrl+ or shift+clicked from a player's inventory into a request depot fill its
 -- freighter slot (scripts/request-gui.lua).
 script.on_event(defines.events.on_player_main_inventory_changed, request_gui.on_player_main_inventory_changed)

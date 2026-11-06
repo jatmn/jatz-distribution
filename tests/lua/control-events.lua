@@ -328,7 +328,11 @@ end
 -- Entities scripts create: here, liquid depots' truck chests (ten empty stacks).
 surface.created = {}
 function surface.create_entity(spec)
-  local stacks = {}
+  local stacks = {
+    get_item_count_filtered = function()
+      return 0
+    end,
+  }
   for index = 1, 10 do
     stacks[index] = { valid_for_read = false }
   end
@@ -373,6 +377,11 @@ local function script_inventory()
     get_item_count = function()
       return slot.count
     end,
+    -- An ItemFilter of any quality, as the freighter counts ask.
+    get_item_count_filtered = function(filter)
+      assert(type(filter) == "table" and filter.name and not filter.quality, "an item filter of any quality")
+      return slot.name == filter.name and slot.count or 0
+    end,
     is_empty = function()
       return slot.count == 0
     end,
@@ -396,6 +405,7 @@ local function depot(x)
     surface = surface,
     surface_index = 1,
     force = "player",
+    force_index = 1,
     -- No wires, so no control behavior either.
     get_circuit_network = function()
       return nil
@@ -407,6 +417,9 @@ local function depot(x)
       -- An empty chest of 48 stacks.
       local chest = {
         get_item_count = function()
+          return 0
+        end,
+        get_item_count_filtered = function()
           return 0
         end,
         get_contents = function()

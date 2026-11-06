@@ -66,6 +66,22 @@ prototypes = {
   },
   quality = { normal = {} },
 }
+-- Entity prototypes by type, as far as prototypes.get_entity_filtered's "type" filter is asked.
+local ENTITY_TYPES =
+  { ["small-biter"] = "unit", ["jatz-freighter-drone"] = "unit", ["jatz-request-depot"] = "container" }
+function prototypes.get_entity_filtered(filters)
+  assert(#filters == 1 and filters[1].filter == "type", "only the type filter is faked")
+  local types = type(filters[1].type) == "table" and filters[1].type or { filters[1].type }
+  local found = {}
+  for name, kind in pairs(ENTITY_TYPES) do
+    for _, wanted in ipairs(types) do
+      if kind == wanted then
+        found[name] = { name = name, type = kind }
+      end
+    end
+  end
+  return found
+end
 prototypes.item.cell =
   { name = "cell", stack_size = 50, fuel_value = 30000000, burnt_result = prototypes.item["used-cell"] }
 script = { register_on_object_destroyed = function() end }
@@ -77,6 +93,11 @@ local function inventory(contents)
   end
   function self.get_insertable_count()
     return 1000
+  end
+  -- An ItemFilter table: without a quality, items of any quality match (all are normal here).
+  function self.get_item_count_filtered(filter)
+    assert(type(filter) == "table" and filter.name and not filter.quality, "an item filter of any quality")
+    return self.contents[filter.name] or 0
   end
   function self.get_contents()
     local list = {}
@@ -167,6 +188,16 @@ local function script_inventory(size)
     end
     return total
   end
+  function self.get_item_count_filtered(filter)
+    assert(type(filter) == "table" and filter.name and not filter.quality, "an item filter of any quality")
+    local total = 0
+    for index = 1, size do
+      if self[index].name == filter.name then
+        total = total + self[index].count
+      end
+    end
+    return total
+  end
   function self.insert(from)
     for index = 1, size do
       local slot = self[index]
@@ -195,6 +226,7 @@ local function entity(name, x, y, contents)
     surface = surface,
     surface_index = 1,
     force = "player",
+    force_index = 1,
     get_inventory = function()
       return chest
     end,
@@ -748,6 +780,18 @@ do -- Running enemies over: damage can set off other mods' handlers, which may r
     return other == enemy_force
   end
   game.forces = { player = player, enemy = enemy_force }
+  -- LuaForce::get_entity_count, as the game keeps it: no enemy units anywhere yet, and the
+  -- player's freighter, which is a unit too.
+  local units = {}
+  for _, force in pairs(game.forces) do
+    function force.get_entity_count(name)
+      assert(ENTITY_TYPES[name], "no entity prototype " .. name)
+      if name == "jatz-freighter-drone" then
+        return force == player and 1 or 0
+      end
+      return force == enemy_force and units[name] or 0
+    end
+  end
   drone.force = player
   -- A LuaEntity: reading anything but `valid` from one that is gone is an error, as in the game.
   local function enemy(x)
@@ -779,17 +823,54 @@ do -- Running enemies over: damage can set off other mods' handlers, which may r
   first_fields.on_damage = function()
     second_fields.valid = false
   end
+  -- What a search finds: the filter as it was when called (the mod may fill in the same table again
+  -- for the next one).
   local found, listed = {}, { first, second, third }
+  local function copy(filter)
+    local area = filter.area
+    return {
+      area = { { area[1][1], area[1][2] }, { area[2][1], area[2][2] } },
+      type = filter.type,
+      force = filter.force,
+    }
+  end
   function surface.find_entities_filtered(filter)
     if filter.type then
-      found[#found + 1] = filter
+      found[#found + 1] = copy(filter)
       return listed
     end
     return {}
   end
+  -- Each search is counted first: a search with nothing to find needn't list it.
+  local counted = {}
+  function surface.count_entities_filtered(filter)
+    assert(filter.type and filter.area and not filter.limit, "a count of enemy units in an area")
+    counted[#counted + 1] = copy(filter)
+    local count = 0
+    for _, listed_enemy in ipairs(listed) do
+      count = count + (listed_enemy.valid and 1 or 0)
+    end
+    return count
+  end
   local start = drone.position
+  units["small-biter"] = 3
   logistics.on_impact_tick()
-  check("a freighter that hasn't moved since the last look hits nothing", #found == 0)
+  units["small-biter"] = 0
+  drone.position = { x = 3.5, y = start.y }
+  logistics.on_impact_tick()
+  check("with no units in the game, nothing is searched for", #found == 0)
+  units["small-biter"] = 3
+  drone.position = { x = 4, y = start.y }
+  logistics.on_impact_tick()
+  check("the first look once units turn up only notes where freighters are", #found == 0)
+  logistics.on_impact_tick()
+  check("a freighter that hasn't moved since the last look hits nothing", #found == 0 and #counted == 0)
+  local enemies_here = listed
+  listed = {}
+  drone.position = { x = 4.5, y = start.y }
+  logistics.on_impact_tick()
+  check("ground without enemy units is only counted, not listed", #counted == 1 and #found == 0)
+  listed = enemies_here
   drone.position = { x = 5, y = start.y }
   local ok, err = pcall(logistics.on_impact_tick)
   check("an enemy removed by another's damage is skipped, not read", ok or print(err))
@@ -799,8 +880,8 @@ do -- Running enemies over: damage can set off other mods' handlers, which may r
       and second_fields.hits == 0
       and third_fields.hits == 1
       and found[1].force[1] == enemy_force
-      and found[1].area[1][1] == math.min(start.x, 5) - 0.4
-      and found[1].area[2][1] == math.max(start.x, 5) + 0.4
+      and found[1].area[1][1] == 4.5 - 0.4
+      and found[1].area[2][1] == 5 + 0.4
   )
   -- Within the second: the two hit aren't hit again. A fresh one's death removes the freighter,
   -- and nothing after it is hit.
@@ -2421,6 +2502,293 @@ do -- The infinite speed level counts every level researched; fluid capacity gro
   arrive(logistics, trip)
   check("all of it pumped out", trip.fluid.amount == 600)
   prototypes.technology = {}
+end
+
+do -- In the game the once-a-second checks are spread over the second (on_tick_share, from
+  -- control.lua's on_tick), so hundreds of depots don't all search in one tick: every request
+  -- depot and every freighter is checked once a second, and depots fetching the same item on the
+  -- same surface are checked in the same tick, their own, so they see the same stock unpromised.
+  -- Freighters look for enemies to run over every 10 ticks, a tenth of them each tick.
+  local logistics = reset()
+  local provider = entity("jatz-provider-depot", 10.5, 0.5, { a = 500, b = 500 })
+  logistics.add(provider)
+  local items, depots = { "a", "a", "a", "b" }, {}
+  for index, item in ipairs(items) do
+    local request = entity("jatz-request-depot", 0.5 + 3 * index, 20.5)
+    logistics.add(request)
+    assert(logistics.set_request(request, item, 10))
+    assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 2)) == 2)
+    depots[request.unit_number] = item
+  end
+  -- The tick each depot searched in, by its unit number.
+  local searched, count = {}, {}
+  for tick = 0, 59 do
+    game.tick = tick
+    local before = #requests
+    logistics.on_tick_share(tick)
+    for id = before + 1, #requests do
+      local depot = storage.searches[id].request
+      searched[depot], count[depot] = tick, (count[depot] or 0) + 1
+    end
+  end
+  local same, once, ticks = true, true, {}
+  local first_a
+  for unit, item in pairs(depots) do
+    once = once and count[unit] == 1
+    ticks[searched[unit] or -1] = true
+    if item == "a" then
+      first_a = first_a or searched[unit]
+      same = same and searched[unit] == first_a
+    end
+  end
+  local b_tick
+  for unit, item in pairs(depots) do
+    if item == "b" then
+      b_tick = searched[unit]
+    end
+  end
+  check("in a second, every request depot searches once", once)
+  check("depots fetching the same item on a surface search in the same tick", same)
+  check("and those fetching another in another tick", b_tick ~= first_a and b_tick ~= nil)
+  check("not all in the first tick of the second", not ticks[0])
+  for id = 1, #requests do
+    answer(logistics, id, "route")
+  end
+  local out = 0
+  for _ in pairs(storage.trips) do
+    out = out + 1
+  end
+  surface.polluted = 0
+  game.tick = 60
+  logistics.on_tick_share(60)
+  -- The freighter whose turn comes last loads (and so is repainted, a new entity) before then.
+  local repainted
+  for phase = #storage.trip_phases, 1, -1 do
+    repainted = repainted or storage.trip_phases[phase][1]
+  end
+  local before = repainted.drone
+  -- Real stacks to load from (the fake chest above only counts).
+  local stock = script_inventory(2)
+  stock[1].name, stock[1].count, stock[1].valid_for_read = repainted.item, 50, true
+  stock[1].quality = { name = "normal" }
+  provider.get_inventory = function()
+    return stock
+  end
+  arrive(logistics, repainted)
+  for tick = 61, 119 do
+    game.tick = tick
+    logistics.on_tick_share(tick)
+  end
+  check("every freighter out is checked once a second", out == 4 and surface.polluted == out * 0.005)
+  check("one repainted during the second too", repainted.drone ~= before and storage.trips[repainted.id] == repainted)
+  -- Enemy units somewhere: the freighters look, a share of them each tick.
+  local player, enemy_force = { name = "player" }, { name = "enemy" }
+  function player.is_enemy(other)
+    return other == enemy_force
+  end
+  function enemy_force.is_enemy(other)
+    return other == player
+  end
+  for _, force in ipairs({ player, enemy_force }) do
+    function force.get_entity_count(name)
+      return (force == enemy_force and name == "small-biter" or force == player and name == "jatz-freighter-drone")
+          and 1
+        or 0
+    end
+  end
+  game.forces = { player = player, enemy = enemy_force }
+  for _, trip in pairs(storage.trips) do
+    trip.drone.force = player
+  end
+  local looked = {}
+  for tick = 120, 129 do
+    game.tick = tick
+    logistics.on_impact_share(tick)
+    local seen = 0
+    for _, trip in pairs(storage.trips) do
+      seen = seen + (trip.last_position and 1 or 0)
+    end
+    looked[#looked + 1] = seen
+  end
+  check("each freighter looks once in 10 ticks, a share of them each tick", looked[1] < out and looked[10] == out)
+end
+
+do -- Fuel is burned by the straight-line distance between a freighter's checks, so each must come
+  -- every second exactly, starting within a second of setting off: then each 1 s stop to load or
+  -- unload has a check, and a short round trip isn't measured as one leg there and back (which
+  -- cancels out). Pullfrog's review of 46df83d: with checks a second apart only on average, a
+  -- freighter going one tile and back parked with a full tank.
+  local logistics = reset()
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  local provider = entity("jatz-provider-depot", 5.5, 0.5, { a = 20 })
+  logistics.add(request)
+  logistics.add(provider)
+  assert(logistics.set_request(request, "a", 10))
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+  local stock = script_inventory(1)
+  stock[1].name, stock[1].count, stock[1].valid_for_read = "a", 20, true
+  stock[1].quality = { name = "normal" }
+  provider.get_inventory = function()
+    return stock
+  end
+  local chest = script_inventory(4)
+  chest.get_insertable_count = request.chest.get_insertable_count
+  request.get_inventory = function()
+    return chest
+  end
+  -- Every tick through the spread checks, as control.lua's on_tick does, with the freighter
+  -- arriving and standing where the events say.
+  local trip, home, there
+  local events = {}
+  local function at(tick, run)
+    events[tick] = run
+  end
+  for tick = 0, 400 do
+    game.tick = tick
+    if events[tick] then
+      events[tick]()
+    end
+    logistics.on_tick_share(tick)
+    if not trip and #requests == 1 then
+      -- The path comes back the tick after the depot asked.
+      answer(logistics, 1, "route")
+      trip = trips_from(request)[1]
+      home = { x = trip.drone.position.x, y = trip.drone.position.y }
+      there = requests[1].goal
+      -- Out in 5 ticks, a second loading, back in 5 ticks, a second unloading.
+      at(tick + 5, function()
+        trip.drone.position = { x = there.x, y = there.y }
+        logistics.on_ai_command_completed({
+          unit_number = trip.drone.unit_number,
+          result = defines.behavior_result.success,
+        })
+      end)
+      at(tick + 65, function()
+        logistics.on_ai_command_completed({
+          unit_number = trip.drone.unit_number,
+          result = defines.behavior_result.success,
+        })
+      end)
+      at(tick + 70, function()
+        trip.drone.position = { x = home.x, y = home.y }
+        logistics.on_ai_command_completed({
+          unit_number = trip.drone.unit_number,
+          result = defines.behavior_result.success,
+        })
+      end)
+      at(tick + 130, function()
+        logistics.on_ai_command_completed({
+          unit_number = trip.drone.unit_number,
+          result = defines.behavior_result.success,
+        })
+      end)
+    end
+  end
+  local leg = math.sqrt((there.x - home.x) ^ 2 + (there.y - home.y) ^ 2)
+  local parked = storage.depots[request.unit_number].fuel or {}
+  check("a short round trip delivers", chest.get_item_count() == 10 and next(storage.trips) == nil)
+  check(
+    "and burns both legs, there and back",
+    leg > 0 and #parked == 1 and math.abs(parked[1] - (20000000 - 2 * leg * 10000)) < 1e-6
+  )
+end
+
+-- A freighter's checks stay less than a second apart through a change of schedule while it is
+-- out: a configuration change (add_all, from on_configuration_changed), or the first schedule in
+-- a save from before phases. Two freighters set off, so the one left out is on phase 1; `disrupt`
+-- runs while it loads, just before a check whose tick a new phase could move away. Returns the
+-- energy it parks with and its one leg's length (Pullfrog's review of 0125590).
+local function round_trip_through(disrupt)
+  local logistics = reset()
+  local provider = entity("jatz-provider-depot", 5.5, 0.5, { a = 40 })
+  local stock = script_inventory(1)
+  stock[1].name, stock[1].count, stock[1].valid_for_read = "a", 40, true
+  stock[1].quality = { name = "normal" }
+  provider.get_inventory = function()
+    return stock
+  end
+  logistics.add(provider)
+  local depots, chests = {}, {}
+  for index = 1, 2 do
+    local request = entity("jatz-request-depot", 0.5, 0.5 + (index - 1) * 0.001)
+    logistics.add(request)
+    assert(logistics.set_request(request, "a", 10))
+    assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+    chests[index] = script_inventory(4)
+    chests[index].get_insertable_count = request.chest.get_insertable_count
+    local chest = chests[index]
+    request.get_inventory = function()
+      return chest
+    end
+    depots[index] = request
+  end
+  local trip, home, there, events = nil, nil, nil, {}
+  for tick = 0, 600 do
+    game.tick = tick
+    if events[tick] then
+      events[tick]()
+    end
+    logistics.on_tick_share(tick)
+    if events[-tick] then
+      events[-tick]()
+    end
+    if not trip and #requests == 2 then
+      answer(logistics, 1, "route")
+      answer(logistics, 2, "route")
+      -- The first freighter is lost at once; the second, on phase 1, makes the round trip.
+      local gone = trips_from(depots[1])[1]
+      gone.drone.valid = false
+      logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = gone.drone.unit_number })
+      trip = trips_from(depots[2])[1]
+      home = { x = trip.drone.position.x, y = trip.drone.position.y }
+      there = requests[2].goal
+      -- Its first check, at home, is at the next tick of phase 1.
+      local c1 = tick + 1
+      while c1 % 60 ~= 1 do
+        c1 = c1 + 1
+      end
+      local function complete()
+        logistics.on_ai_command_completed({
+          unit_number = trip.drone.unit_number,
+          result = defines.behavior_result.success,
+        })
+      end
+      events[c1 + 4] = function()
+        trip.drone.position = { x = there.x, y = there.y }
+        complete()
+      end
+      -- While it loads, after the checks of the tick before its own (phase 0).
+      events[-(c1 + 59)] = function()
+        disrupt(logistics)
+      end
+      events[c1 + 64] = complete
+      events[c1 + 69] = function()
+        trip.drone.position = { x = home.x, y = home.y }
+        complete()
+      end
+      events[c1 + 129] = complete
+    end
+  end
+  assert(next(storage.trips) == nil and chests[2].get_item_count() == 10, "the round trip finished")
+  local parked = storage.depots[depots[2].unit_number].fuel or {}
+  return parked[1], math.sqrt((there.x - home.x) ^ 2 + (there.y - home.y) ^ 2)
+end
+
+do
+  local energy, leg = round_trip_through(function(logistics)
+    logistics.add_all()
+  end)
+  check(
+    "a configuration change while a freighter loads keeps its checks: both legs burn",
+    leg > 0 and energy and math.abs(energy - (20000000 - 2 * leg * 10000)) < 1e-6
+  )
+  energy, leg = round_trip_through(function()
+    storage.trip_phases = nil
+  end)
+  check(
+    "so does the first schedule of a save from before phases",
+    leg > 0 and energy and math.abs(energy - (20000000 - 2 * leg * 10000)) < 1e-6
+  )
 end
 
 print("all logistics checks passed")
