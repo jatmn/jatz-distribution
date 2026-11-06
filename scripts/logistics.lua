@@ -472,10 +472,18 @@ function logistics.add(entity)
   fuel_tank(entity)
 end
 
+-- The freighter item's stack size, read from its prototype once (prototypes don't change while
+-- the game runs; reading one makes a new object every time).
+local freighter_stack
+local function freighter_stack_size()
+  freighter_stack = freighter_stack or prototypes.item[FREIGHTER].stack_size
+  return freighter_stack
+end
+
 -- A request depot's freighter slot: room for FREIGHTER_CAPACITY freighters, as real items, in as
 -- many stacks as that takes. Slots from saves when it held one stack are made bigger.
 local function trucks_of(depot)
-  local stacks = math.ceil(FREIGHTER_CAPACITY / prototypes.item[FREIGHTER].stack_size)
+  local stacks = math.ceil(FREIGHTER_CAPACITY / freighter_stack_size())
   if not (depot.trucks and depot.trucks.valid) then
     depot.trucks = game.create_inventory(stacks)
   elseif #depot.trucks < stacks then
@@ -554,21 +562,26 @@ end
 -- once dry. Nothing while fuel is turned off.
 -- Written only when what it shows changes (`trip.fuel_shown`, which names the freighter too, since
 -- a repainted one is a new entity with no status yet).
-local function show_fuel(trip)
+-- `per_tile` and `capacity` are fuel_per_tile() and fuel_capacity(), given when the caller has read
+-- them already (reading a setting makes a table each time).
+local FUEL_STATUS = { label = { "jatz-gui.freighter-fuel", {}, {} } }
+local function show_fuel(trip, per_tile, capacity)
   local drone = trip.drone
   if not drone.valid then
     return
   end
   local unit = drone.unit_number
   local shown = trip.fuel_shown
-  if fuel_per_tile() <= 0 then
+  if (per_tile or fuel_per_tile()) <= 0 then
     if not (shown and shown.unit == unit and shown.off) then
       drone.custom_status = nil
-      trip.fuel_shown = { unit = unit, off = true }
+      shown = shown or {}
+      trip.fuel_shown = shown
+      shown.unit, shown.off, shown.diode = unit, true, nil
     end
     return
   end
-  local capacity = fuel_capacity()
+  capacity = capacity or fuel_capacity()
   local energy = trip.energy or capacity
   local diode = energy <= 0 and "red" or energy < capacity * LOW_FUEL and "yellow" or "green"
   local held_key, held = energy_text(energy)
@@ -584,11 +597,16 @@ local function show_fuel(trip)
   then
     return
   end
-  trip.fuel_shown = { unit = unit, diode = diode, held_key = held_key, held = held, full_key = full_key, full = full }
-  drone.custom_status = {
-    diode = defines.entity_status_diode[diode],
-    label = { "jatz-gui.freighter-fuel", { held_key, held }, { full_key, full } },
-  }
+  -- The same tables again, filled in: what is shown changes every second or two for every freighter
+  -- driving, and the game copies a status when it is written.
+  shown = shown or {}
+  trip.fuel_shown = shown
+  shown.unit, shown.diode, shown.off = unit, diode, nil
+  shown.held_key, shown.held, shown.full_key, shown.full = held_key, held, full_key, full
+  local label = FUEL_STATUS.label
+  FUEL_STATUS.diode = defines.entity_status_diode[diode]
+  label[2][1], label[2][2], label[3][1], label[3][2] = held_key, held, full_key, full
+  drone.custom_status = FUEL_STATUS
 end
 
 local function repaint(id, trip)
@@ -669,14 +687,6 @@ local function committed(depot, except)
   return total
 end
 
--- How much of an item (normal quality: a name alone means that), or fluid, a depot holds.
-local function stock(entity, item, fluid)
-  if fluid then
-    return entity.get_fluid_count(item)
-  end
-  return inventory(entity).get_item_count(item)
-end
-
 -- What freighters on their way to a provider have promised to load there:
 -- storage.promised[provider unit_number][item][trip key] = amount, for every trip driving out
 -- (TO_PROVIDER) with a promise. Each trip records where its promise is filed (`trip.promise`), and
@@ -733,7 +743,18 @@ end
 
 -- How much of `item` a provider has that no freighter on its way there has promised to load.
 local function available(provider, item)
-  local count = stock(provider.entity, item, provider.fluid)
+  local count
+  if provider.fluid then
+    count = provider.entity.get_fluid_count(item)
+  else
+    -- Its item inventory, kept (reading it from the entity makes a new object every time).
+    local held = provider.stock_inventory
+    if not (held and held.valid) then
+      held = inventory(provider.entity)
+      provider.stock_inventory = held
+    end
+    count = held.get_item_count(item)
+  end
   if not storage.promised then
     file_promises()
   end
@@ -1571,16 +1592,17 @@ local function dispatch(depot)
 end
 
 -- Burn the fuel a freighter used driving since last time: what the tiles it covered take.
-function burn(trip)
+-- (`per_tile`: fuel_per_tile(), if the caller has read it already.)
+function burn(trip, per_tile)
   local drone = trip.drone
   if not drone.valid then
     return
   end
   local position = drone.position
   local last = trip.at or position
-  trip.at = position
+  trip.at, trip.at_tick = position, game.tick
   upgrade(trip)
-  local per_tile = fuel_per_tile()
+  per_tile = per_tile or fuel_per_tile()
   local dx, dy = position.x - last.x, position.y - last.y
   trip.energy = math.max(0, trip.energy - math.sqrt(dx * dx + dy * dy) * per_tile)
   if trip.dry and per_tile <= 0 then
@@ -1595,16 +1617,26 @@ end
 -- one whose tank just ran dry crawls on, to a Fuel depot if it can find one. Returns whether it
 -- drives in the wrong paint (something was stuck to it when it loaded) and can be painted now:
 -- painting changes trip ids, so the caller does it after its loop (`repaint_now`).
-local function check_trip(id, trip)
-  burn(trip)
-  show_fuel(trip)
-  if trip.drone.valid then
+-- `per_tile` and `capacity`: the fuel settings, read once for every trip checked in the tick;
+-- `polluters`: each surface's pollute by surface index, bound once a tick (a method read off an
+-- object is a new function every time).
+local function check_trip(id, trip, per_tile, capacity, polluters)
+  burn(trip, per_tile)
+  show_fuel(trip, per_tile, capacity)
+  local drone = trip.drone
+  if drone.valid then
+    local surface_index = drone.surface_index
+    local pollute = polluters[surface_index]
+    if not pollute then
+      pollute = drone.surface.pollute
+      polluters[surface_index] = pollute
+    end
     -- Where burn just found it.
-    trip.drone.surface.pollute(trip.at, POLLUTION_PER_SECOND * DISPATCH_INTERVAL / 60, DRONE)
+    pollute(trip.at, POLLUTION_PER_SECOND * DISPATCH_INTERVAL / 60, DRONE)
   end
   if trip.searching and game.tick - trip.searching >= SEARCH_TIMEOUT then
     search_again(id, trip)
-  elseif trip.drone.valid and trip.energy <= 0 and not trip.dry and fuel_per_tile() > 0 then
+  elseif trip.drone.valid and trip.energy <= 0 and not trip.dry and per_tile > 0 then
     trip.dry = true
     trip.drone.speed = freighter_speed(trip.drone.force) * DRY_SPEED
     if not (trip.refuel or trip.searching or trip.loading) then
@@ -1658,8 +1690,9 @@ end
 -- Every trip's and every depot's check at once.
 function logistics.on_tick()
   local pending = {}
+  local per_tile, capacity, polluters = fuel_per_tile(), fuel_capacity(), {}
   for id, trip in pairs(storage.trips) do
-    if check_trip(id, trip) then
+    if check_trip(id, trip, per_tile, capacity, polluters) then
       pending[#pending + 1] = id
     end
   end
@@ -1727,6 +1760,10 @@ function logistics.on_tick_share(tick)
   -- The trips whose phase this is; those no longer out leave the list.
   local list = trip_phases()[tick % DISPATCH_INTERVAL + 1]
   local pending, kept = {}, 0
+  local per_tile, capacity, polluters
+  if #list > 0 then
+    per_tile, capacity, polluters = fuel_per_tile(), fuel_capacity(), {}
+  end
   for index = 1, #list do
     local trip = list[index]
     list[index] = nil
@@ -1734,7 +1771,7 @@ function logistics.on_tick_share(tick)
     if storage.trips[id] == trip then
       kept = kept + 1
       list[kept] = trip
-      if check_trip(id, trip) then
+      if check_trip(id, trip, per_tile, capacity, polluters) then
         pending[#pending + 1] = id
       end
     end
@@ -1757,6 +1794,10 @@ end
 -- `any_quality`, items of every quality move (freighters do), not only normal quality (cargo).
 function load(from, to, item, limit, leave, any_quality)
   local moved = 0
+  -- Of one quality, a `to` stack that couldn't take all of one stack (full, or holding something
+  -- else) can't take any of the next either: later stacks start after it. Stacks of any quality
+  -- can still top up an earlier stack of their own quality, so they look at every one.
+  local first = 1
   for index = 1, #from do
     local stack = from[index]
     if moved >= limit then
@@ -1764,7 +1805,7 @@ function load(from, to, item, limit, leave, any_quality)
     end
     if stack.valid_for_read and stack.name == item and (any_quality or stack.quality.name == QUALITY) then
       local kept = leave and leave[index] or 0
-      for slot = 1, #to do
+      for slot = any_quality and 1 or first, #to do
         local into = to[slot]
         local movable = (stack.valid_for_read and stack.count or 0) - kept
         if moved >= limit or movable <= 0 then
@@ -1774,6 +1815,9 @@ function load(from, to, item, limit, leave, any_quality)
           local before = stack.count
           into.transfer_stack(stack, math.min(movable, limit - moved))
           moved = moved + before - (stack.valid_for_read and stack.count or 0)
+        end
+        if (stack.valid_for_read and stack.count or 0) - kept > 0 and moved < limit then
+          first = slot + 1
         end
       end
     end
@@ -2477,7 +2521,7 @@ local impact_filter = { area = { { 0, 0 }, { 0, 0 } }, type = IMPACT_TYPES }
 -- look runs over the enemy units in the ground it crossed. The ground is counted first, so a
 -- freighter with none in its way (nearly always) makes no list of what it found.
 local function run_over(trips, from, to, fresh)
-  -- By force index: the force, and its enemies. By surface index: the surface.
+  -- By force index: the force, and its enemies. By surface index: its count_entities_filtered.
   local forces, surfaces = {}, {}
   local reach = prototypes.entity[DRONE].collision_box.right_bottom.x
   local area = impact_filter.area
@@ -2485,7 +2529,9 @@ local function run_over(trips, from, to, fresh)
     local trip = trips[index]
     local drone = storage.trips[trip.id] == trip and trip.drone
     if drone and drone.valid then
-      local here, last = drone.position, not fresh and trip.last_position
+      -- Where its once-a-second check found it, if that was this tick (a read makes a new table).
+      local here = trip.at_tick == game.tick and trip.at or drone.position
+      local last = not fresh and trip.last_position
       trip.last_position = here
       -- Enemies hit in the last second, by unit_number, aren't hit again yet.
       local hits = trip.hits
@@ -2509,15 +2555,19 @@ local function run_over(trips, from, to, fresh)
         forces[force_index] = side
       end
       if last and (here.x ~= last.x or here.y ~= last.y) and #side.enemies > 0 then
+        -- The surface's count, bound once (a method read off an object is a new function each time).
         local surface_index = drone.surface_index
-        local surface = surfaces[surface_index] or drone.surface
-        surfaces[surface_index] = surface
+        local count = surfaces[surface_index]
+        if not count then
+          count = drone.surface.count_entities_filtered
+          surfaces[surface_index] = count
+        end
         area[1][1], area[1][2] = math.min(here.x, last.x) - reach, math.min(here.y, last.y) - reach
         area[2][1], area[2][2] = math.max(here.x, last.x) + reach, math.max(here.y, last.y) + reach
         impact_filter.force = side.enemies
-        if surface.count_entities_filtered(impact_filter) > 0 then
+        if count(impact_filter) > 0 then
           local force = side.force
-          for _, enemy in pairs(surface.find_entities_filtered(impact_filter)) do
+          for _, enemy in pairs(drone.surface.find_entities_filtered(impact_filter)) do
             -- Damage sets off other mods' handlers there and then, and they can remove the
             -- freighter or an enemy further down this list: check both are still there before
             -- reading either.
@@ -2848,7 +2898,7 @@ end
 -- Positions for `amount` freighters, a stack at a time, in the given chest stacks (0-based); the
 -- amount that fits, and the positions.
 local function spread(amount, stacks)
-  local stack_size = prototypes.item[FREIGHTER].stack_size
+  local stack_size = freighter_stack_size()
   local positions, placed = {}, 0
   for _, stack in ipairs(stacks) do
     if placed >= amount then

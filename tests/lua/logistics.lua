@@ -854,24 +854,31 @@ do -- Running enemies over: damage can set off other mods' handlers, which may r
   end
   local start = drone.position
   units["small-biter"] = 3
+  -- Each look in a tick of its own, as in the game, where freighters move between ticks.
+  game.tick = game.tick + 1
   logistics.on_impact_tick()
   units["small-biter"] = 0
   drone.position = { x = 3.5, y = start.y }
+  game.tick = game.tick + 1
   logistics.on_impact_tick()
   check("with no units in the game, nothing is searched for", #found == 0)
   units["small-biter"] = 3
   drone.position = { x = 4, y = start.y }
+  game.tick = game.tick + 1
   logistics.on_impact_tick()
   check("the first look once units turn up only notes where freighters are", #found == 0)
+  game.tick = game.tick + 1
   logistics.on_impact_tick()
   check("a freighter that hasn't moved since the last look hits nothing", #found == 0 and #counted == 0)
   local enemies_here = listed
   listed = {}
   drone.position = { x = 4.5, y = start.y }
+  game.tick = game.tick + 1
   logistics.on_impact_tick()
   check("ground without enemy units is only counted, not listed", #counted == 1 and #found == 0)
   listed = enemies_here
   drone.position = { x = 5, y = start.y }
+  game.tick = game.tick + 1
   local ok, err = pcall(logistics.on_impact_tick)
   check("an enemy removed by another's damage is skipped, not read", ok or print(err))
   check(
