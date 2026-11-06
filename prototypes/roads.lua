@@ -91,13 +91,16 @@ data:extend({
     },
   },
   {
-    -- Free while the mod is in development, unlocked by research (prototypes/technologies.lua);
-    -- each craft makes ten tiles.
+    -- Slag: stone and iron ore, half of each a tile, ten tiles a craft; unlocked by research
+    -- (prototypes/technologies.lua).
     type = "recipe",
     name = name,
     enabled = false,
-    energy_required = 0.5,
-    ingredients = {},
+    energy_required = 1,
+    ingredients = {
+      { type = "item", name = "stone", amount = 5 },
+      { type = "item", name = "iron-ore", amount = 5 },
+    },
     results = { { type = "item", name = name, amount = 10 } },
   },
 })

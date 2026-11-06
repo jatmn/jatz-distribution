@@ -1,6 +1,8 @@
 ---------------------------------------------------------------------------------------------------
 Version: Unreleased
   Features:
+    - Recipes: depots, the freighter, road and the road network monitor are no longer free. Item depots take a steel chest and the belt they show, liquid depots a storage tank (and pumps to fetch fluid), and the fuel depot a steel chest, a belt and an engine unit. The freighter takes 2 engine units and its full tank's fuel, 5 coal. Road is slag: 5 stone and 5 iron ore make 10 tiles.
+    - With Space Age, freighters can also be made with 10 carbon in place of the coal, for planets without coal.
     - Research, as in Transport Drones: "Freight system" (after Engine) unlocks the provider, request, buffer and fuel depots, the freighter and road, which are locked until then. "Liquid freight" (after Freight system and Fluid handling) unlocks the liquid depots, and "Road network monitor" (after Freight system and Circuit network) the road network monitor. Games started before this get those three researched, so they keep their recipes. "Freighter speed" makes delivering freighters 20% faster per level, four levels and then infinite research. "Freighter item capacity" adds a stack to each load per level, and "Freighter fluid capacity" (after Liquid freight) 50 fluid, five levels each.
     - Startup settings for the tank size of liquid provider depots and of liquid buffer depots, each 25,000 by default.
     - A delivering freighter's cargo bays show its load: light grey while empty, then the color of the item or fluid it picked up (water blue, copper orange, sulfur yellow...) on the way back. Cargo with no clear color keeps the usual slate blue.

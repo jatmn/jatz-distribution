@@ -87,7 +87,16 @@ Before #49, every request depot's once-a-second dispatch ran in the same tick, a
 
 ## Pull requests
 
-Every pull request that changes the mod includes the before and after table from `tools/benchmark_ups.py --compare origin/main`, run on the contributor's machine (`.github/pull_request_template.md`). Because both columns come from the same machine, the percentage change in Mean update, and the p99 and Max, are what reviewers judge; the baseline above shows where those numbers sit against Transport Drones on the stress map. A change that adds work per depot, freighter or trip should also be tried on `--preset stress`.
+A pull request that can change what the game does each tick includes the before and after table from `tools/benchmark_ups.py --compare origin/main`, run on the contributor's machine (`.github/pull_request_template.md`). That means changes to:
+
+- `control.lua` or `scripts/`;
+- `data-final-fixes.lua`, or prototypes the game simulates: entities, units, tiles and collision layers (the freighter, the depots, roads, the off-road layer);
+- what runtime settings do, or their defaults;
+- the benchmark or the emulator themselves.
+
+Changes that can't touch a tick's work don't need it, and the section says "Not applicable" with the reason (the owner's call, November 6, 2026). These include recipes, technology costs and unlocks, item order and stack sizes, locale, icons and artwork, documentation, and tooling outside the benchmark.
+
+Because both columns come from the same machine, the percentage change in Mean update, and the p99 and Max, are what reviewers judge; the baseline above shows where those numbers sit against Transport Drones on the stress map. A change that adds work per depot, freighter or trip should also be tried on `--preset stress`.
 
 ## CI: the UPS benchmark check
 

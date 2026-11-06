@@ -1,11 +1,13 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
--- Checks that every Jat'z Distribution item is free to craft once researched and can be placed,
+-- Checks what every Jat'z Distribution recipe takes once researched, that each item can be placed,
 -- that research unlocks the recipes and makes freighters faster and bigger, that every
 -- depot works in all four directions with its pipe ports, that the freighter can be driven, and
 -- that freighters deliver from provider to request depots driving only on road.
 -- Writes script-output/jatz-distribution-check.json; tools/test_mod.py runs it headless.
 
 local FREIGHTER = "jatz-quinityn-freighter"
+-- With Space Age, its second recipe, fuelled with carbon.
+local FREIGHTER_CARBON = "jatz-quinityn-freighter-carbon"
 -- The mod's own research levels (scripts/research.lua), checked against the game's technologies.
 local research = require("__jatz-distribution__/scripts/research")
 local ROLES = { "provider", "request", "buffer", "fuel", "liquid-provider", "liquid-request", "liquid-buffer" }
@@ -107,6 +109,19 @@ local function locale_key(localised)
   return type(localised) == "table" and localised[1] or localised
 end
 
+-- What a recipe takes, once researched: { time = seconds, ingredients = { [name] = amount },
+-- made = amount }, for tools/test_mod.py to compare with its list. It must make one `product`.
+local function record_recipe(name, product, result)
+  local recipe = game.forces.player.recipes[name]
+  assert(recipe and recipe.enabled, name .. ": recipe must be available once researched")
+  assert(#recipe.products == 1 and recipe.products[1].name == product, name .. ": recipe must make " .. product)
+  local ingredients = {}
+  for _, ingredient in ipairs(recipe.ingredients) do
+    ingredients[ingredient.name] = ingredient.amount
+  end
+  result.recipes[name] = { time = recipe.energy, ingredients = ingredients, made = recipe.products[1].amount }
+end
+
 -- unplaceable: the item must not place its entity, which stays defined but hidden (the freighter
 -- without the jatz-freighter-drivable setting).
 local function check_recipe(name, result, unplaceable)
@@ -123,11 +138,7 @@ local function check_recipe(name, result, unplaceable)
     item = locale_key(item.localised_name),
     recipe = locale_key(prototypes.recipe[name].localised_name),
   }
-  local recipe = game.forces.player.recipes[name]
-  assert(recipe and recipe.enabled, name .. ": recipe must be available once researched")
-  assert(#recipe.ingredients == 0, name .. ": recipe must be free")
-  assert(#recipe.products == 1 and recipe.products[1].name == name, name .. ": recipe must make the item")
-  result.free_recipes = result.free_recipes + 1
+  record_recipe(name, name, result)
 end
 
 -- The Fuel depot is a container; its port is on the hidden tank under it, which holds its liquid fuel.
@@ -355,12 +366,9 @@ local function check_road(result)
     item = locale_key(item.localised_name),
     recipe = locale_key(prototypes.recipe[ROAD].localised_name),
   }
-  local recipe = game.forces.player.recipes[ROAD]
-  assert(recipe and recipe.enabled and #recipe.ingredients == 0, "road: recipe must be free once researched")
-  assert(recipe.products[1].name == ROAD, "road: recipe must make road")
+  record_recipe(ROAD, ROAD, result)
   assert(not prototypes.tile[ROAD].collision_mask.layers.jatz_off_road, "road: must not be off-road")
   assert(prototypes.tile.concrete.collision_mask.layers.jatz_off_road, "concrete: must be off-road")
-  result.free_recipes = result.free_recipes + 1
 end
 
 -- Road is built like any floor tile: from a ghost, on ordinary ground but not on water.
@@ -2124,7 +2132,7 @@ script.on_init(function()
   local result = {
     engine = script.active_mods.base,
     mod = script.active_mods["jatz-distribution"],
-    free_recipes = 0,
+    recipes = {},
     ghosts = 0,
     placed = 0,
     rotations = 0,
@@ -2149,6 +2157,12 @@ script.on_init(function()
   result.freighter_box = { box.right_bottom.x - box.left_top.x, box.right_bottom.y - box.left_top.y }
   check_road(result)
   check_recipe(MONITOR, result)
+  -- With Space Age, the freighter fuelled with carbon.
+  if prototypes.recipe[FREIGHTER_CARBON] then
+    record_recipe(FREIGHTER_CARBON, FREIGHTER, result)
+    result.localised_names[FREIGHTER_CARBON] =
+      { recipe = locale_key(prototypes.recipe[FREIGHTER_CARBON].localised_name) }
+  end
   check_road_placement(surface, result)
   -- The request panel's status light uses the game's own status indicators.
   result.status_lights = 0

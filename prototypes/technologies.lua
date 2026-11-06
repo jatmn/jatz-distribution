@@ -33,6 +33,10 @@ local SYSTEM_RECIPES = {
   "jatz-quinityn-freighter",
   constants.road,
 }
+-- With Space Age, the freighter fuelled with carbon (prototypes/freighter.lua).
+if data.raw.recipe[constants.freighter_carbon_recipe] then
+  table.insert(SYSTEM_RECIPES, 6, constants.freighter_carbon_recipe)
+end
 local LIQUID_RECIPES = {
   "jatz-liquid-provider-depot",
   "jatz-liquid-request-depot",

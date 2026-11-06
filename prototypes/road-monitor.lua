@@ -88,12 +88,17 @@ data:extend({
     stack_size = 50,
   },
   {
-    -- Free while the mod is in development; unlocked by research (prototypes/technologies.lua).
+    -- A constant combinator that reads the road network; unlocked by research, after the circuit
+    -- network (prototypes/technologies.lua).
     type = "recipe",
     name = name,
     enabled = false,
-    energy_required = 0.5,
-    ingredients = {},
+    energy_required = 5,
+    ingredients = {
+      { type = "item", name = "constant-combinator", amount = 1 },
+      { type = "item", name = "electronic-circuit", amount = 5 },
+      { type = "item", name = "copper-cable", amount = 5 },
+    },
     results = { { type = "item", name = name, amount = 1 } },
   },
 })

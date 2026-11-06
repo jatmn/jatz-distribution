@@ -21,6 +21,8 @@ return {
   technology_icon_size = 256,
   -- The 1x1 loading zone marking (assets/depots/tools/make_loading_zone.py): 64 px at scale 0.5.
   loading_zone = "__jatz-distribution__/assets/depots/loading-zone/loading-zone.png",
+  -- With Space Age, the freighter's second recipe, fuelled with carbon (prototypes/freighter.lua).
+  freighter_carbon_recipe = "jatz-quinityn-freighter-carbon",
   -- The road tile, its item and recipe; Yuoki slag path art (assets/roads/README.md).
   road = "jatz-road",
   -- The road a depot lays under its loading zone sign (prototypes/roads.lua, scripts/depot-road.lua).
