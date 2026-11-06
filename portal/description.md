@@ -10,9 +10,9 @@ Build depots where goods are made and where they're needed, lay road between the
 - **Scale** to hundreds of depots and thousands of freighters, with the work spread evenly over every second.
 - **Run over** the biters in your way. Freighters don't stop for anything.
 
-[![Freighters driving a winding road between provider and request depots, loading and unloading iron ore](images/freighters-on-the-road.gif)](images/freighters-on-the-road.gif)
+[![Jat'z Distribution in game: setting a request depot's request and freighters, freighters driving the road to the provider depots and back, and the depot panels](images/jatz-distribution-in-game.gif)](images/jatz-distribution-in-game.gif)
 
-*Freighters following the road between provider and request depots, standing a second at each loading zone.*
+*87 seconds in game, uncut: a request depot sends its freighters along the road to the provider depots, they load and bring the goods home, and the depots' panels show what's going on. Click for full size. It's a large animation, so give it a moment to load.*
 
 **[Player guide](../docs/guide.md)** · **[Report a bug](https://github.com/jatmn/jatz-distribution/issues)** · **[Source code](https://github.com/jatmn/jatz-distribution)**
 

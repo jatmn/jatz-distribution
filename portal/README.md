@@ -30,7 +30,7 @@ Make it again whenever the freighter's art changes. The other pictures come from
 
 | Picture | Made from |
 | --- | --- |
-| `freighters-on-the-road.gif` | 14 seconds of a gameplay recording, cropped to the road, 800 px wide at 15 fps (`ffmpeg ... palettegen=max_colors=128:stats_mode=diff`, then `paletteuse` with `diff_mode=rectangle`) |
+| `jatz-distribution-in-game.gif` | The whole 87-second gameplay recording, uncropped, scaled from 3440 to 1600 px wide at 10 fps so panel text stays readable (`ffmpeg -vf "fps=10,scale=1600:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=160:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle"`). About 26 MB |
 | `depots-on-road.jpg`, `fuel-depot-flush.jpg` | `gallery/01-depots-on-road.png` and `gallery/09-fuel-depot-flush.png`, 1000 px wide, JPEG quality 88 to 90 |
 | `recipes-*.jpg` | Factoriopedia screenshots of each recipe, cropped to the right-hand panel and set side by side (`montage -tile x1`), JPEG quality 92 |
 | `milestones.png` | The chat message Milestones prints when it loads our milestones |
