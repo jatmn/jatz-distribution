@@ -212,7 +212,7 @@ request_gui.register()
 -- Every tick, first: what depots whose condition reads the circuit network hold, as the wires carry
 -- it this tick (logistics.sample_circuits). Then the share of the once-a-second work whose turn it
 -- is (request depots sending freighters, freighters burning fuel: logistics.on_tick_share), and of
--- the freighters looking for enemies to run over every 10 ticks (logistics.on_impact_share), so
+-- the freighters looking for enemies to run over every 20 ticks (logistics.on_impact_share), so
 -- none of it lands all on the same tick. Once a second: road network monitors show their
 -- networks. The game raises on_tick before on_nth_tick.
 script.on_event(defines.events.on_tick, function(event)

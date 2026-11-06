@@ -152,23 +152,33 @@ local function sprites_on(drone)
   return table.concat(sprites, " ")
 end
 
--- An item stack and a script inventory, as far as the dispatcher uses them.
+-- An item stack and a script inventory, as far as the dispatcher uses them. As in the game, a
+-- stack holds at most its item's stack size, and stacks merge only when their item data match
+-- (`health` stands for it here: health, tags, durability...).
 local function stack(name, count)
   local self = { name = name, count = count or 0, valid_for_read = (count or 0) > 0 }
   function self.clear()
-    self.name, self.count, self.valid_for_read = nil, 0, false
+    self.name, self.count, self.valid_for_read, self.health = nil, 0, false, nil
   end
   function self.transfer_stack(from, amount)
     amount = math.min(amount or from.count, from.count)
-    if self.valid_for_read and self.name ~= from.name then
+    if self.valid_for_read and (self.name ~= from.name or self.health ~= from.health) then
       return false
     end
-    self.name, self.count, self.valid_for_read = from.name, self.count + amount, true
-    from.count = from.count - amount
+    local item = prototypes.item[from.name]
+    local moved = math.min(amount, (item and item.stack_size or math.huge) - self.count)
+    if moved <= 0 then
+      return false
+    end
+    if not self.valid_for_read then
+      self.health, self.quality = from.health, from.quality
+    end
+    self.name, self.count, self.valid_for_read = from.name, self.count + moved, true
+    from.count = from.count - moved
     if from.count == 0 then
       from.clear()
     end
-    return true
+    return moved == amount
   end
   return self
 end
@@ -214,6 +224,9 @@ local function script_inventory(size)
   return self
 end
 
+-- The player force, as entities' `force` (a LuaForce, with its index; research is kept by it).
+local PLAYER = { name = "player", index = 1 }
+
 local function entity(name, x, y, contents)
   next_unit = next_unit + 1
   local chest = inventory(contents)
@@ -225,7 +238,7 @@ local function entity(name, x, y, contents)
     direction = defines.direction.north,
     surface = surface,
     surface_index = 1,
-    force = "player",
+    force = PLAYER,
     force_index = 1,
     get_inventory = function()
       return chest
@@ -327,7 +340,7 @@ local function reset()
         drone.commands[#drone.commands + 1] = command
       end,
     }
-    drone.force = parameters.force or "player"
+    drone.force = parameters.force or PLAYER
     drone.health = 500
     function drone.destroy()
       drone.valid = false
@@ -368,8 +381,12 @@ local function reset()
   return logistics
 end
 
--- Answer path request `id`: "route" (straight to the goal), "none" or "busy".
+-- Answer path request `id`: "route" (straight to the goal), "none" or "busy". A question never asked
+-- (the depot remembered that road's length, and has had its answer) has nothing to answer.
 local function answer(logistics, id, result)
+  if not requests[id] then
+    return
+  end
   logistics.on_script_path_request_finished({
     id = id,
     try_again_later = result == "busy",
@@ -396,6 +413,12 @@ end
 
 local function has_trip(depot)
   return next(storage.depots[depot.unit_number].trips) ~= nil
+end
+
+-- The depot asks the pathfinder again rather than use the road length it remembers: for checks
+-- that answer each question by hand (`answer`) and aren't about remembered roads.
+local function forget_roads()
+  storage.road_lengths = nil
 end
 
 local function check(name, condition)
@@ -643,6 +666,7 @@ do -- "On its way" means a freighter is bringing the item: not one driving home 
   arrive(logistics, trip) -- nothing to load
   check("an empty freighter shows no cargo icon", sprites_on(trip.drone) == "")
   game.tick = 60
+  forget_roads()
   logistics.on_tick()
   check("a freighter driving home empty isn't 'on its way'", logistics.get_status(request) ~= "delivering")
   -- A loaded freighter whose way to the depot is cut takes its cargo back to the provider.
@@ -722,6 +746,7 @@ do -- A freighter lost while every stack of its depot's chest is taken: robots c
   check("but the depot remembers it had 2", storage.depots[request.unit_number].freighter_target == 2)
   chest[2].name, chest[2].count, chest[2].valid_for_read = nil, 0, false
   game.tick = 60
+  forget_roads()
   logistics.on_tick()
   local proxy = surface.created[#surface.created]
   check(
@@ -854,24 +879,31 @@ do -- Running enemies over: damage can set off other mods' handlers, which may r
   end
   local start = drone.position
   units["small-biter"] = 3
+  -- Each look in a tick of its own, as in the game, where freighters move between ticks.
+  game.tick = game.tick + 1
   logistics.on_impact_tick()
   units["small-biter"] = 0
   drone.position = { x = 3.5, y = start.y }
+  game.tick = game.tick + 1
   logistics.on_impact_tick()
   check("with no units in the game, nothing is searched for", #found == 0)
   units["small-biter"] = 3
   drone.position = { x = 4, y = start.y }
+  game.tick = game.tick + 1
   logistics.on_impact_tick()
   check("the first look once units turn up only notes where freighters are", #found == 0)
+  game.tick = game.tick + 1
   logistics.on_impact_tick()
   check("a freighter that hasn't moved since the last look hits nothing", #found == 0 and #counted == 0)
   local enemies_here = listed
   listed = {}
   drone.position = { x = 4.5, y = start.y }
+  game.tick = game.tick + 1
   logistics.on_impact_tick()
   check("ground without enemy units is only counted, not listed", #counted == 1 and #found == 0)
   listed = enemies_here
   drone.position = { x = 5, y = start.y }
+  game.tick = game.tick + 1
   local ok, err = pcall(logistics.on_impact_tick)
   check("an enemy removed by another's damage is skipped, not read", ok or print(err))
   check(
@@ -1437,9 +1469,11 @@ do -- A liquid request depot mined: its freighters go to the miner, its truck ch
   check("and its truck chest is removed", chest.valid == false)
 end
 
--- Give a depot a chest of real stacks (the fake chests only count), holding `count` of `name`.
-local function stocked(depot, name, count)
-  local chest = script_inventory(4)
+-- Give a depot a chest of real stacks (the fake chests only count), holding `count` of `name`, of
+-- `size` stacks (4 unless given).
+local function stocked(depot, name, count, size)
+  size = size or 4
+  local chest = script_inventory(size)
   if count then
     chest[1] = stack(name, count)
     chest[1].quality = { name = "normal" }
@@ -1447,7 +1481,7 @@ local function stocked(depot, name, count)
   function chest.get_item_count(id)
     local wanted = type(id) == "table" and id.name or id
     local total = 0
-    for index = 1, 4 do
+    for index = 1, size do
       if chest[index].valid_for_read and chest[index].name == wanted then
         total = total + chest[index].count
       end
@@ -1461,6 +1495,32 @@ local function stocked(depot, name, count)
     return chest
   end
   return chest
+end
+
+do -- Loading fills every cargo stack it can, though stacks of one item differ in their data: a
+  -- damaged stack doesn't merge into a stack at full health, and a later one at full health does.
+  local logistics = reset()
+  local request, provider = setup(logistics)
+  local stock = stocked(provider, nil, nil, 20)
+  stocked(request)
+  for index = 1, 20 do
+    stock[index] = stack("a", 25)
+    stock[index].quality = { name = "normal" }
+    stock[index].health = index % 2 == 1 and 1 or 0.5
+  end
+  assert(logistics.set_request(request, "a", 500))
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  check("setup: a freighter to fetch ten stacks' worth", trip.planned == 500 and #trip.cargo == 10)
+  arrive(logistics, trip)
+  local loaded, mixed = 0, false
+  for index = 1, #trip.cargo do
+    loaded = loaded + trip.cargo[index].count
+    mixed = mixed or (trip.cargo[index].valid_for_read and trip.cargo[index].count ~= 50)
+  end
+  check("all 500 load, in ten full stacks, each of one health", loaded == 500 and not mixed)
+  check("and leave the provider", stock.get_item_count("a") == 0)
 end
 
 do -- The cargo paint: grey out, the load's color from the provider home, the same trip throughout.
@@ -1799,6 +1859,7 @@ do -- Nothing to fill up with: a fluid that doesn't burn, a chest of things that
   check("the panel reads the tank", contents.capacity == 25000 and contents.burnable == false)
   fuel.chest.insert({ name = "coal", count = 5 })
   game.tick = 120
+  forget_roads()
   logistics.on_tick()
   check("once the Fuel depot has fuel, it looks again at once, not after the wait", #requests == 3)
   answer(logistics, 3, "route")
@@ -1833,6 +1894,7 @@ do -- No Fuel depot at all: red, until one is built; then a freighter sets off t
   local fuel = fuel_depot(logistics, -10.5, 0.5, { { "coal", 20 } })
   logistics.on_depot_changed(fuel)
   game.tick = 120
+  forget_roads()
   logistics.on_tick()
   check("a Fuel depot built: it looks again at once", #requests == 2)
   answer(logistics, 2, "route")
@@ -2486,6 +2548,12 @@ do -- Research: bigger loads and faster freighters, on the road too.
   force.technologies[SPEED .. "-3"].researched = false
   logistics.on_research_changed({ research = force.technologies[SPEED .. "-3"] })
   check("and so does undoing it", near(trip.drone.speed, 0.2 * 1.4))
+  -- Research is kept per force (storage.research_levels), read again after each research event,
+  -- and forgotten when forces are reset, made or merged.
+  local kept = storage.research_levels[force.index]
+  check("research is kept per force", kept and kept.stacks == 4 and near(kept.speed, 1.4))
+  logistics.on_forces_changed()
+  check("and forgotten when forces change", storage.research_levels == nil)
 end
 
 do -- The infinite speed level counts every level researched; fluid capacity grows by 50 a level,
@@ -2508,7 +2576,7 @@ do -- In the game the once-a-second checks are spread over the second (on_tick_s
   -- control.lua's on_tick), so hundreds of depots don't all search in one tick: every request
   -- depot and every freighter is checked once a second, and depots fetching the same item on the
   -- same surface are checked in the same tick, their own, so they see the same stock unpromised.
-  -- Freighters look for enemies to run over every 10 ticks, a tenth of them each tick.
+  -- Freighters look for enemies to run over every 20 ticks, a twentieth of them each tick.
   local logistics = reset()
   local provider = entity("jatz-provider-depot", 10.5, 0.5, { a = 500, b = 500 })
   logistics.add(provider)
@@ -2601,7 +2669,7 @@ do -- In the game the once-a-second checks are spread over the second (on_tick_s
     trip.drone.force = player
   end
   local looked = {}
-  for tick = 120, 129 do
+  for tick = 120, 139 do
     game.tick = tick
     logistics.on_impact_share(tick)
     local seen = 0
@@ -2610,7 +2678,7 @@ do -- In the game the once-a-second checks are spread over the second (on_tick_s
     end
     looked[#looked + 1] = seen
   end
-  check("each freighter looks once in 10 ticks, a share of them each tick", looked[1] < out and looked[10] == out)
+  check("each freighter looks once in 20 ticks, a share of them each tick", looked[1] < out and looked[20] == out)
 end
 
 do -- Fuel is burned by the straight-line distance between a freighter's checks, so each must come
@@ -2691,6 +2759,148 @@ do -- Fuel is burned by the straight-line distance between a freighter's checks,
     "and burns both legs, there and back",
     leg > 0 and #parked == 1 and math.abs(parked[1] - (20000000 - 2 * leg * 10000)) < 1e-6
   )
+end
+
+do -- A depot remembers road lengths, so it doesn't ask the pathfinder the same question every time
+  -- it sends a freighter (each answer brings the whole route, a table per tile).
+  local logistics = reset()
+  local request, nearer = supplied(logistics, 5)
+  nearer.chest.contents.a = 10000
+  assert(logistics.set_request(request, "a", 10000))
+  function request.chest.get_insertable_count()
+    return 10000
+  end
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  check("setup: a freighter to the near provider", #trips_from(request) == 1)
+  game.tick = 60
+  logistics.on_tick()
+  check("the next one goes without asking again", #requests == 1 and #trips_from(request) == 2)
+  check("to the same provider", trips_from(request)[2].provider == nearer.unit_number)
+  logistics.on_roads_changed(1, true, false)
+  game.tick = 120
+  logistics.on_tick()
+  check("road laid or removed: it asks again", #requests == 2 and requests[2].goal.x == 10.5)
+  answer(logistics, 2, "route")
+  game.tick = 180 + 5 * 60 * 60
+  logistics.on_tick()
+  check("and after five minutes, in case a mod changed road without telling", #requests == 3)
+end
+
+do -- No road remembered: the provider goes on cooldown again without asking.
+  local logistics = reset()
+  local request = supplied(logistics, 5)
+  logistics.on_tick()
+  answer(logistics, 1, "none")
+  answer(logistics, 2, "none")
+  local depot = storage.depots[request.unit_number]
+  check("setup: no road to either provider", next(depot.trips) == nil and #requests == 2)
+  game.tick = 60 * 11
+  logistics.on_tick()
+  check("after the cooldown, no road again, unasked", #requests == 2 and (depot.cooldowns[2] or 0) > game.tick)
+end
+
+do -- Depots fetching the same item decide together, remembered roads or not: with near stock for one
+  -- freighter, both pick the near provider, and the one that finds it promised away waits rather
+  -- than driving to the far one. (Remembered answers come after the tick's depot checks, as the
+  -- pathfinder's own do, so no promise changes while they look.)
+  local logistics = reset()
+  local first, nearer = supplied(logistics, 5)
+  local second = entity("jatz-request-depot", 0.5, 4.5)
+  logistics.add(second)
+  assert(logistics.set_request(second, "a", 100))
+  assert(logistics.put_freighters(second, stack("jatz-quinityn-freighter", 5)) == 5)
+  nearer.chest.contents.a = 1000
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  answer(logistics, 2, "route")
+  for _, request in ipairs({ first, second }) do
+    local trip = trips_from(request)[1]
+    arrive(logistics, trip)
+    arrive(logistics, trip)
+  end
+  check("setup: both depots know their road to the near provider", next(storage.trips) == nil and #requests == 2)
+  nearer.chest.contents.a = 100
+  game.tick = 60
+  logistics.on_tick()
+  local trips = {}
+  for _, trip in pairs(storage.trips) do
+    trips[#trips + 1] = trip
+  end
+  check(
+    "one freighter goes for the near stock, and nothing for the far provider",
+    #trips == 1 and trips[1].provider == nearer.unit_number and #requests == 2
+  )
+end
+
+do -- A large group of depots, each comparing many providers, all sends again from remembered roads
+  -- (Pullfrog's review of 5832360: the remembered answers were rationed one by one, a search's
+  -- next one queued behind every other search's, so each of 300 searches got 6 of its 7 answers
+  -- before its 10-second timeout restarted it, and no depot sent anything again).
+  local logistics = reset()
+  local depots = {}
+  for index = 0, 299 do
+    local request = entity("jatz-request-depot", (index % 20) * 4 + 0.5, math.floor(index / 20) * 4 + 0.5)
+    logistics.add(request)
+    assert(logistics.set_request(request, "a", 100000))
+    assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+    depots[#depots + 1] = request
+  end
+  for index = 0, 6 do
+    local provider = entity("jatz-provider-depot", index * 12 + 0.5, -20.5, { a = 1000000000 })
+    logistics.add(provider)
+  end
+  -- Every road is a long detour, so no provider is ruled out by its straight line: all 7 are asked
+  -- about. The pathfinder answers each question the tick after it is asked.
+  local answered = 0
+  local function answer_all()
+    while answered < #requests do
+      answered = answered + 1
+      local asked = requests[answered]
+      logistics.on_script_path_request_finished({
+        id = answered,
+        path = { { position = { x = asked.start.x, y = asked.start.y + 500 } }, { position = asked.goal } },
+      })
+    end
+  end
+  local tick = 0
+  local function run(ticks, each)
+    for _ = 1, ticks do
+      tick = tick + 1
+      game.tick = tick
+      if each then
+        each()
+      end
+      logistics.on_tick_share(tick)
+    end
+  end
+  local function sending()
+    local count = 0
+    for _, request in ipairs(depots) do
+      if has_trip(request) then
+        count = count + 1
+      end
+    end
+    return count
+  end
+  run(120, answer_all)
+  check("setup: asked about all 7 providers, every depot sends a freighter", #requests == 2100 and sending() == 300)
+  for _, trip in pairs(storage.trips) do
+    arrive(logistics, trip)
+    arrive(logistics, trip)
+  end
+  check("setup: all home, requests still open", next(storage.trips) == nil)
+  local asked = #requests
+  -- The group's check comes within a second, and its searches are answered within the next.
+  run(120)
+  check("from remembered roads, within two seconds every depot sends again", sending() == 300)
+  check("asking nothing", #requests == asked)
+  for _, trip in pairs(storage.trips) do
+    arrive(logistics, trip)
+    arrive(logistics, trip)
+  end
+  run(1200)
+  check("and again, across the search timeout", sending() == 300 and #requests == asked)
 end
 
 -- A freighter's checks stay less than a second apart through a change of schedule while it is

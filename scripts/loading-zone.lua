@@ -50,7 +50,9 @@ end
 function loading_zone.tile_centre(entity)
   local shifts = entity.name == loading_zone.mining_depot and MINING_SHIFT or orientation.loading_zone_shift
   local shift = shifts[DIRECTION_NAMES[entity.direction]]
-  return entity.position.x + shift[1], entity.position.y + shift[2]
+  -- Read once: every read of a position makes a new table.
+  local position = entity.position
+  return position.x + shift[1], position.y + shift[2]
 end
 
 -- Remove every decorative whose footprint overlaps the depot's loading zone tile.
