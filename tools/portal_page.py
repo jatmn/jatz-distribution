@@ -149,8 +149,16 @@ def sync(tag, token, dry_run=False, root=REPO):
             raise ValueError('The mod is not on the portal yet: publish the release before syncing its page')
         print('Not on the portal yet: the first sync after publishing sets the summary, description and gallery')
         return
-    if any(version_parts(release['version']) > version_parts(tag[1:]) for release in mod.get('releases', [])):
+    # The page's links are pinned to the tag, so only the release the portal serves may set the page:
+    # never an older tag, and never one not uploaded yet (its tag may not exist); a dry run may preview it.
+    version = version_parts(tag[1:])
+    published = [version_parts(release['version']) for release in mod.get('releases', [])]
+    if any(other > version for other in published):
         raise ValueError('The portal has a newer release; an older tag never replaces its page')
+    if version not in published:
+        if not dry_run:
+            raise ValueError(f'{tag} is not on the portal yet: publish it before syncing its page')
+        print(f'{tag} is not on the portal yet; after it is published, a sync would change:')
     details = {field: page[field] for field in ('summary', 'description') if not same_text(mod.get(field), page[field])}
     images = [(path, hashlib.sha1(path.read_bytes()).hexdigest()) for path in page['gallery']]
     current = [image.get('id') for image in mod.get('images', [])]

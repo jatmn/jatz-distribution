@@ -140,6 +140,11 @@ class PortalPage(unittest.TestCase):
             self.sync(self.listing(summary='Old'), token=None)
         with self.assertRaisesRegex(ValueError, 'newer release'):
             self.sync(self.listing(summary='Old', releases=[{'version': '0.1.2'}, {'version': '0.1.3'}]))
+        # A tag not uploaded yet never sets the live page (its links point at that tag), but can be previewed.
+        unpublished = self.listing(summary='Old', releases=[{'version': '0.1.1'}])
+        with self.assertRaisesRegex(ValueError, 'v0.1.2 is not on the portal yet'):
+            self.sync(unpublished)
+        self.assertEqual(self.sync(unpublished, token=None, dry_run=True), [])
         with self.assertRaisesRegex(ValueError, 'stable tag'):
             portal_page.sync('main', 'fixture-key', root=self.root)
 

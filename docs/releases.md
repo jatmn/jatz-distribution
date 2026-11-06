@@ -45,7 +45,7 @@ The uploader validates the same ZIP used by GitHub, uses the API key only for in
 
 ## The Mod Portal page
 
-The portal page lives in [`portal/`](../portal/README.md): the short summary, the Markdown description and the screenshot gallery. After the package upload, the publish workflow runs `tools/portal_page.py --tag <tag>` on the same tag, which changes only what differs from the live page, and sends nothing when the page is unchanged. Relative links in the description become GitHub URLs pinned to the tag. It refuses a tag older than the portal's newest release, and a missing key skips it like the upload. Preview a sync without a key, before merging the release PR:
+The portal page lives in [`portal/`](../portal/README.md): the short summary, the Markdown description and the screenshot gallery. After the package upload, the publish workflow runs `tools/portal_page.py --tag <tag>` on the same tag, which changes only what differs from the live page, and sends nothing when the page is unchanged. Relative links in the description become GitHub URLs pinned to the tag. It only syncs the release the portal serves: it refuses a tag older than the portal's newest release, and one not uploaded yet, since the page would link to it. A dry run can still preview an unpublished tag, and a missing key skips the sync like the upload. Preview a sync without a key, before merging the release PR:
 
 ```sh
 cd tools && python3 portal_page.py --tag vX.Y.Z --dry-run

@@ -63,6 +63,6 @@ python3 portal_page.py --tag v0.1.1 --dry-run        # what a sync would change 
 
 The **Publish stable mod** workflow (`.github/workflows/publish.yml`) uploads a release's package, then runs `python3 tools/portal_page.py --tag <tag>` from that same tag. It compares the live page with this folder and changes only what differs: the summary and description through the [Mod details API](https://wiki.factorio.com/Mod_details_API), and the gallery through the [Mod images API](https://wiki.factorio.com/Mod_images_API). An unchanged page sends nothing.
 
-So changes here reach the portal with the next release. Retrying a release (**Actions → Release** with an existing tag) syncs the page as it was in that tag. The sync refuses to replace the page from a tag older than the portal's newest release.
+So changes here reach the portal with the next release. Retrying a release (**Actions → Release** with an existing tag) syncs the page as it was in that tag. The sync only sets the page from the release the portal serves: it refuses a tag older than the portal's newest release, and one not uploaded yet, since the page links to that tag. `--dry-run` still previews an unpublished tag.
 
 It needs `FACTORIO_API_KEY` to have the **ModPortal: Edit Mods** permission as well as the upload permissions; see [docs/releases.md](../docs/releases.md). Without the key, it is skipped like the upload.
