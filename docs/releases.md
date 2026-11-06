@@ -33,7 +33,7 @@ python3 tools/test_releases.py
 
 The packager includes runtime code, game sprites, Factorio notes and all licence notices. It excludes tools, tests, documentation, Blender sources and previews. ZIP timestamps and modes are fixed and `SHA256SUMS` records the archive digest. Pending notes produce a numeric next-patch development snapshot without changing source version files; a stable publish rejects pending notes and requires its tag to match all version records.
 
-CI builds and validates the complete package when mod, repository tooling or artwork changes. Packaging tests exercise small fixture assets; the CI package job validates the actual committed game sprites. Neither is a substitute for the Factorio gameplay checks required for gameplay changes.
+CI builds and validates the complete package when mod, repository tooling or artwork changes. On the release PR, Release Please's own commit raises the version records before the Release workflow finalizes `changelog.txt`, so CI skips the package check for that commit alone, with a notice, and runs it on the finalizing commit that follows. Packaging tests exercise small fixture assets; the CI package job validates the actual committed game sprites. Neither is a substitute for the Factorio gameplay checks required for gameplay changes.
 
 ## Optional Factorio Mod Portal publishing
 

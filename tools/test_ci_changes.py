@@ -256,6 +256,48 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(failed.stdout, '')
 
 
+class ReleaseNotesHoldTests(unittest.TestCase):
+    hold_step = workflow_block('ci.yml', 'Hold the package check for the release notes')
+
+    def test_only_release_pleases_unfinalized_commit_skips_the_package_check(self):
+        separator = '-' * 99 + '\n'
+        history = separator + 'Version: 0.1.0\nDate: 2026-11-04\n  Info:\n    - First release.\n'
+        pending = separator + 'Version: Unreleased\n  Bugfixes:\n    - Keep delivered cargo.\n' + history
+        finalized = separator + 'Version: 0.1.1\nDate: 2026-11-06\n  Bugfixes:\n    - Keep delivered cargo.\n' + history
+        release = {'info.json': '{"version": "0.1.1"}\n', '.github/version.txt': '0.1.1\n',
+                   '.github/release-please-manifest.json': '{".": "0.1.1"}\n', 'docs/CHANGELOG.md': '# Changelog\n'}
+        for scenario, changes, expected in (
+            ('Release Please bumped the version', release, True),
+            ('notes finalized', {**release, 'changelog.txt': finalized}, False),
+            ('code changed too', {**release, 'control.lua': 'return false\n'}, False),
+            ('version not raised', {'docs/CHANGELOG.md': '# Changelog\n'}, False),
+            ('no change', {}, False),
+        ):
+            with self.subTest(scenario=scenario):
+                repo = Repo(self)
+                repo.write('info.json', '{"version": "0.1.0"}\n')
+                repo.write('.github/version.txt', '0.1.0\n')
+                repo.write('.github/release-please-manifest.json', '{".": "0.1.0"}\n')
+                repo.write('changelog.txt', pending)
+                repo.write('control.lua')
+                base = repo.commit('base')
+                for name, text in changes.items():
+                    repo.write(name, text)
+                repo.commit('release')
+                result, outputs = repo.run_step(self.hold_step, BASE=base)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(outputs, {f'release_pending={str(expected).lower()}'})
+                self.assertEqual('Skipping the installable package check' in result.stdout, expected)
+
+    def test_package_job_waits_only_on_the_hold(self):
+        workflow = (WORKFLOWS / 'ci.yml').read_text()
+        hold = workflow.split('      - name: Hold the package check for the release notes\n')[1].split('        run: |')[0]
+        self.assertIn("github.head_ref == 'release-please--branches--main'", hold)
+        self.assertIn('github.event.pull_request.head.repo.full_name == github.repository', hold)
+        package = workflow.split('\n  package:\n')[1].split('\n    runs-on:')[0]
+        self.assertIn("needs.changes.outputs.release_pending != 'true' && (", package)
+
+
 class SelectionTests(unittest.TestCase):
     def test_pull_requests_lint_changed_lua_and_pushes_lint_all(self):
         repo = Repo(self)
