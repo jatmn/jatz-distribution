@@ -85,9 +85,10 @@ jobs:
             grep -qx "$check=\(true\|false\)" "$RUNNER_TEMP/ci-routes" || echo "$check=true" >> "$RUNNER_TEMP/ci-routes"
           done
           cat "$RUNNER_TEMP/ci-routes" >> "$GITHUB_OUTPUT"
-      # Release Please's own commit raises the version records while changelog.txt still says
-      # "Version: Unreleased", so the package check can only fail on it. The Release workflow
-      # finalizes the notes seconds later in a commit of its own, which gets the full CI run.
+      # Release Please's own commit raises the version records before changelog.txt has a section
+      # for the new version (from pending notes, or "No player-facing changes." without them), so
+      # the package check can only fail on it. The Release workflow finalizes changelog.txt
+      # seconds later in a commit of its own, which gets the full CI run.
       - name: Hold the package check for the release notes
         id: release
         if: >-
@@ -98,7 +99,7 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           pending=true
-          # Only the release metadata may differ from the base, and the version must be raised.
+          # Only the release metadata may differ from the base.
           changed="$(git diff --name-only --no-renames "$BASE" HEAD)"
           while IFS= read -r path; do
             case "$path" in
@@ -106,10 +107,14 @@ jobs:
               *) pending=false ;;
             esac
           done <<< "$changed"
-          grep -qx 'info.json' <<< "$changed" || pending=false
-          # The player notes are still waiting for their version.
+          # The version must be raised. Anything unreadable runs the package check, which reports it.
+          read_version() { python3 -c 'import json, sys; print(json.load(sys.stdin)["version"])'; }
+          version="$(read_version < info.json)" || pending=false
+          base_version="$(git show "$BASE:info.json" | read_version)" || pending=false
+          [ "$version" != "$base_version" ] || pending=false
+          # Finalized, changelog.txt starts with the new version's section (tools/release_metadata.py).
           separator="$(printf '%099d' 0 | tr 0 -)"
-          [ "$(head -n 2 changelog.txt)" = "$separator"$'\n''Version: Unreleased' ] || pending=false
+          [ "$(head -n 2 changelog.txt)" != "$separator"$'\n'"Version: $version" ] || pending=false
           if [ "$pending" = true ]; then
             echo '::notice::Skipping the installable package check: the Release workflow has yet to finalize changelog.txt for this version. Its finalizing commit gets the full CI run.'
           fi
