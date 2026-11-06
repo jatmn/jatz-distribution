@@ -12,7 +12,7 @@ Build depots where goods are made and where they're needed, lay road between the
 
 [![Jat'z Distribution in game: setting a request depot's request and freighters, freighters driving the road to the provider depots and back, and the depot panels](images/jatz-distribution-in-game.gif)](images/jatz-distribution-in-game.gif)
 
-*87 seconds in game, uncut: a request depot sends its freighters along the road to the provider depots, they load and bring the goods home, and the depots' panels show what's going on. Click for full size. It's a large animation, so give it a moment to load.*
+*87 seconds in game, uncut: a request depot sends its freighters along the road to the provider depots, they load and bring the goods home, and the depots' panels show what's going on. Watch which provider they pick: distance is measured along the road, not in a straight line. The provider on the left looks closer, but its road winds a long way round, so the freighters head for the one the road reaches sooner. Click for full size. It's a large animation, so give it a moment to load.*
 
 **[Player guide](../docs/guide.md)** · **[Report a bug](https://github.com/jatmn/jatz-distribution/issues)** · **[Source code](https://github.com/jatmn/jatz-distribution)**
 
