@@ -6,7 +6,8 @@ Builds the mod zip with tools/package_mod.py, installs it in an isolated workspa
 under .local/mod-check/ with the check mod from tests/factorio/, creates a save
 (placing every depot in four directions with pipes, a fuelled, driven freighter
 and road-connected provider and request depots) and runs it until the deliveries
-are done. Runs once with the base game only and,
+are done. Then runs the check mod's undo scenario, which has a player (the undo stack is a
+player's). Runs once with the base game only and,
 when the installation includes Space Age and everything it needs, once more with
 Space Age. Also checks that every item, recipe and entity name the game shows has
 an English translation. Works with the free headless server.
@@ -309,6 +310,17 @@ EXPECTED_MINING = {'zone': 'jatz-depot-road', 'delivered': 30, 'left': 10}
 MILESTONES_LOADED = re.compile(r'Preset addons loaded: \{[^}]*"Jat\'z Distribution"')
 # Long enough for the check mod's deliveries (it fails itself at tick 2500).
 TICKS = 2600
+# The undo scenario (tests/factorio/jatz-distribution-check_0.1.0/scenarios/undo), run with a player:
+# a cut depot changed before robots took it, and one mined by hand with freighters in its chest,
+# keep their settings as they went on the player's undo actions, and the ghosts given them are
+# rebuilt (by robots, and by the player) with their request and freighters.
+EXPECTED_UNDO = {
+    'cut_removed': True,
+    'cut_settings': {'request': {'item': 'wood', 'count': 8}, 'freighters': 5},
+    'mined_settings': {'freighters': 3},
+    'cut_rebuilt': {'request': {'item': 'wood', 'count': 8}, 'freighters': 5},
+    'mined_rebuilt': {'freighters': 3}}
+UNDO_TICKS = 1300
 
 
 def run(command, log, timeout=300):
@@ -436,6 +448,12 @@ def check(binary, data, bundled, enabled_mods, label, extra=None):
     report['loaded_mods'] = loaded
     expected = expected_for(enabled_mods)
     wrong = {key: report.get(key) for key, value in expected.items() if report.get(key) != value}
+    undo_path = write / 'script-output/jatz-undo-check.json'
+    undone = run(command + ['--test-scenario', f'{CHECK.name.rsplit("_", 1)[0]}/undo', '--test-ticks', str(UNDO_TICKS)],
+                 workspace / 'undo.log') == 0
+    undo = json.loads(undo_path.read_text()) if undone and undo_path.exists() else None
+    if undo != EXPECTED_UNDO:
+        wrong['undo'] = undo
     expected_mods = sorted(enabled_mods | set(OURS) | set(extra) | {'core'})
     translations = locale_keys()
     untranslated = sorted({key for names in report.get('localised_names', {}).values()

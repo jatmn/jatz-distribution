@@ -118,20 +118,26 @@ end
 -- A request depot mined by a player, robot or platform hands its freighters (in its slot and out
 -- on trips) to the miner; the mining buffer goes to their inventory.
 for _, event in ipairs({
+  defines.events.on_player_mined_entity,
   defines.events.on_robot_mined_entity,
   defines.events.on_space_platform_mined_entity,
 }) do
   script.on_event(event, logistics.on_depot_mined, requesting_filters)
 end
--- A depot or road network monitor a player removes (mined by hand, or marked for deconstruction,
--- as cutting does) keeps its settings on the undo action first (scripts/undo.lua), freighters
--- still counted, so undoing it brings them back.
-script.on_event(defines.events.on_player_mined_entity, function(event)
-  undo.removed(event.entity, event.player_index)
-  logistics.on_depot_mined(event)
-end, filters)
+-- A depot or road network monitor a player removes keeps its settings on the removal's undo action
+-- (scripts/undo.lua), read just before it goes, freighters in its chest still counted: marked for
+-- deconstruction (as cutting does) by a player, then taken by robots; or mined by hand.
 script.on_event(defines.events.on_marked_for_deconstruction, function(event)
-  undo.removed(event.entity, event.player_index)
+  undo.marked(event.entity, event.player_index)
+end, filters)
+script.on_event(defines.events.on_cancelled_deconstruction, function(event)
+  undo.forget(event.entity.unit_number)
+end, filters)
+script.on_event(defines.events.on_robot_pre_mined, function(event)
+  undo.robot_removing(event.entity)
+end, filters)
+script.on_event(defines.events.on_pre_player_mined_item, function(event)
+  undo.player_removing(event.entity, event.player_index)
 end, filters)
 script.on_event(defines.events.on_undo_applied, undo.on_undo_applied)
 -- One about to be destroyed (died, or removed by a script that says so) leaves all its freighters,
@@ -154,6 +160,8 @@ script.on_event(defines.events.on_object_destroyed, function(event)
   road_monitor.on_object_destroyed(event)
   logistics.on_object_destroyed(event)
   if event.type == defines.target_type.entity and event.useful_id then
+    -- Gone some other way while marked for deconstruction (destroyed, say): no robot removal.
+    undo.forget(event.useful_id)
     local surface_index = depot_road.lift(event.useful_id)
     if surface_index then
       roads_changed(surface_index, false, true)

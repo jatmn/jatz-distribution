@@ -1,0 +1,117 @@
+-- SPDX-License-Identifier: LGPL-3.0-only
+-- Undo of a depot's removal, against the real engine with a player (the undo stack is a player's):
+-- tools/test_mod.py runs it with `--test-scenario jatz-distribution-check/undo`. A request depot
+-- cut (marked for deconstruction by the player), changed before robots take it (a bigger request,
+-- freighters put in its chest), must have its settings as it went on the player's undo action; one
+-- mined by hand, with freighters in its chest, must have all of them. Factorio has no script call
+-- for undo itself, so the ghost an undo brings back is made here with the action's tags as
+-- scripts/undo.lua puts them on it (tests/lua/control-events.lua covers that step): rebuilt by
+-- robots and by the player, each depot must get its request back and its freighters.
+-- Writes script-output/jatz-undo-check.json.
+local FREIGHTER = "jatz-quinityn-freighter"
+local DEPOT = "jatz-request-depot"
+local CUT, MINED = { x = 6.5, y = 0.5 }, { x = 6.5, y = -6.5 }
+
+local function settings_at(position)
+  local stack = game.get_player(1).undo_redo_stack
+  for item = 1, stack.get_undo_item_count() do
+    for action_index, action in ipairs(stack.get_undo_item(item)) do
+      local target = action.target
+      if
+        action.type == "removed-entity"
+        and target.name == DEPOT
+        and target.position.x == position.x
+        and target.position.y == position.y
+      then
+        return stack.get_undo_tag(item, action_index, "jatz_settings")
+      end
+    end
+  end
+end
+
+-- A depot's freighters: in its slot, out, in its chest and asked of robots.
+local function freighters(depot)
+  local slot, out = remote.call("jatz-distribution", "freighter_counts", depot)
+  local requested = remote.call("jatz-distribution", "requested_freighters", depot)
+  return slot + out + depot.get_inventory(defines.inventory.chest).get_item_count(FREIGHTER) + requested
+end
+
+local function depot_at(position)
+  return game.get_player(1).surface.find_entities_filtered({ name = DEPOT, position = position })[1]
+end
+
+script.on_event(defines.events.on_tick, function(event)
+  local player = game.get_player(1)
+  if not player then
+    return
+  end
+  local surface = player.surface
+  local result = storage.result
+  if event.tick == 1 then
+    surface.request_to_generate_chunks({ 0, 0 }, 2)
+    surface.force_generate_chunk_requests()
+    local tiles = {}
+    for x = -20, 20 do
+      for y = -20, 20 do
+        tiles[#tiles + 1] = { name = "concrete", position = { x, y } }
+      end
+    end
+    surface.set_tiles(tiles)
+    for _, entity in pairs(surface.find_entities({ { -20, -20 }, { 20, 20 } })) do
+      if entity.type ~= "character" then
+        entity.destroy()
+      end
+    end
+    player.teleport({ 0, 0 })
+    -- Construction robots and a storage chest, with 5 freighters for the rebuilt depots.
+    local port = surface.create_entity({ name = "roboport", position = { -8, 0 }, force = player.force })
+    port.get_inventory(defines.inventory.roboport_robot).insert({ name = "construction-robot", count = 20 })
+    surface.create_entity({ name = "electric-energy-interface", position = { -12, 0 }, force = player.force })
+    surface.create_entity({ name = "medium-electric-pole", position = { -10.5, 2.5 }, force = player.force })
+    storage.store = surface.create_entity({ name = "storage-chest", position = { -8.5, 4.5 }, force = player.force })
+    storage.store.insert({ name = FREIGHTER, count = 5 })
+    storage.result = {}
+    -- Cut: 3 freighters, asking for 5 wood; marked by the player, as a cut does.
+    local cut = surface.create_entity({ name = DEPOT, position = CUT, force = player.force, raise_built = true })
+    assert(remote.call("jatz-distribution", "set_request", cut, "wood", 5))
+    assert(remote.call("jatz-distribution", "add_freighters", cut, 3) == 3)
+    assert(cut.order_deconstruction(player.force, player, 0))
+    -- Changed before the robots come: a bigger request, and 2 more freighters in its chest.
+    assert(remote.call("jatz-distribution", "set_request", cut, "wood", 8))
+    cut.get_inventory(defines.inventory.chest).insert({ name = FREIGHTER, count = 2 })
+    -- Mined by hand: 1 freighter in its slot, 2 in its chest.
+    local mined = surface.create_entity({ name = DEPOT, position = MINED, force = player.force, raise_built = true })
+    assert(remote.call("jatz-distribution", "add_freighters", mined, 1) == 1)
+    mined.get_inventory(defines.inventory.chest).insert({ name = FREIGHTER, count = 2 })
+    assert(player.mine_entity(mined, true), "the player could not mine the depot")
+  elseif result and event.tick == 600 then
+    result.cut_removed = depot_at(CUT) == nil
+    local cut = settings_at(CUT) or {}
+    result.cut_settings = { request = cut.jatz_request, freighters = cut.jatz_freighters }
+    local mined = settings_at(MINED) or {}
+    result.mined_settings = { request = mined.jatz_request, freighters = mined.jatz_freighters }
+    -- The ghosts the undos bring back, given the tags as scripts/undo.lua gives them: the cut one
+    -- for robots to build, the mined one for the player to build by hand.
+    for _, spot in ipairs({ { CUT, cut }, { MINED, mined } }) do
+      local ghost = surface.create_entity({
+        name = "entity-ghost",
+        inner_name = DEPOT,
+        position = spot[1],
+        force = player.force,
+      })
+      ghost.tags = spot[2]
+    end
+    player.get_main_inventory().insert({ name = DEPOT, count = 1 })
+    player.cursor_stack.set_stack({ name = DEPOT, count = 1 })
+    player.build_from_cursor({ position = MINED })
+  elseif result and event.tick == 1200 then
+    for name, position in pairs({ cut_rebuilt = CUT, mined_rebuilt = MINED }) do
+      local depot = depot_at(position)
+      result[name] = depot
+          and { request = remote.call("jatz-distribution", "get_request", depot), freighters = freighters(depot) }
+        or "not rebuilt"
+    end
+    helpers.write_file("jatz-undo-check.json", helpers.table_to_json(result))
+    script.finish_test(true)
+  end
+end)
