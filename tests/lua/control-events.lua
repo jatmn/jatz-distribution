@@ -1075,6 +1075,22 @@ do -- The priority slider: provider depots get a panel with it and their circuit
   check("a request depot's panel has no priority", inner.request_row and not inner.priority_row)
   nth[30]()
   check("and isn't rebuilt for lacking one", relative.jatz_request_frame.children[1] == inner)
+  local full_loads = inner.jatz_request_full_loads
+  check("it has the full-loads-only checkbox, unticked", full_loads and full_loads.state == false)
+  logistics.set_full_loads(request, true)
+  nth[30]()
+  check(
+    "which follows the setting changed elsewhere (another player, a paste, a mod)",
+    relative.jatz_request_frame.children[1] == inner and full_loads.state == true
+  )
+  -- A panel left open across the update that added the checkbox: rebuilt with it.
+  full_loads.destroy()
+  nth[30]()
+  inner = relative.jatz_request_frame.children[1]
+  check(
+    "a panel from before the checkbox is rebuilt with it, ticked as the depot is",
+    inner.jatz_request_full_loads and inner.jatz_request_full_loads.state == true
+  )
 end
 
 do -- Priority in blueprints: kept for provider and buffer depots, and restored when built.

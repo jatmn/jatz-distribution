@@ -754,7 +754,8 @@ local function on_gui_selection_state_changed(event)
   end
 end
 
--- Keep the status line, priority and circuit light current while the window is open.
+-- Keep the status line, the "Full loads only" checkbox, priority and circuit light current while
+-- the window is open: other players, Copy and Paste settings and mods change them too.
 local function refresh()
   if not storage.request_gui then
     return
@@ -773,7 +774,7 @@ local function refresh()
         show_fuel(inner, entity)
       elseif
         not (inner.priority_row or ROLES[entity.name] == "request")
-        or (requesting and not (inner.request_row and inner.request_row[STATUS] and inner.freighter_fuel))
+        or (requesting and not (inner.request_row and inner.request_row[STATUS] and inner.freighter_fuel and inner[FULL_LOADS]))
         or not inner.circuit_mode_row
       then
         -- A panel opened before an update that changed its layout: build it again.
@@ -784,6 +785,7 @@ local function refresh()
         show_status(inner.request_row[STATUS], entity)
         show_freighters(inner, entity)
         show_freighter_fuel(inner, entity)
+        inner[FULL_LOADS].state = logistics.get_full_loads(entity)
       end
       show_priority(inner, entity)
       show_circuit_status(inner, entity)
