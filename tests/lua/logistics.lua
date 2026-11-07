@@ -407,7 +407,10 @@ local function reset()
     surfaces = { surface },
     create_inventory = script_inventory,
   }
+  -- Fresh modules, with no cache from an earlier check (scripts/impact.lua keeps the names of what
+  -- freighters run over).
   package.loaded["scripts.logistics"] = nil
+  package.loaded["scripts.impact"] = nil
   local logistics = require("scripts.logistics")
   logistics.init()
   return logistics
