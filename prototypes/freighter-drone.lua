@@ -34,6 +34,9 @@ local function drone(name, cargo)
     -- explodes and leaves the car's wreck, which the game removes after 15 minutes.
     dying_explosion = data.raw.car.car.dying_explosion,
     corpse = data.raw.car.car.corpse,
+    -- Headlights at night, the car's two light cones, as the drivable freighter has (it keeps the
+    -- car's `light`). Transport Drones' trucks (Factorio 1.1) lit the road ahead the same way.
+    light = data.raw.car.car.light,
     -- A target enemies go for, as they do the player's other vehicles and units (a unit's
     -- default, said here because deliveries rely on it).
     is_military_target = true,
