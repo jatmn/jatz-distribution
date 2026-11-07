@@ -12,13 +12,14 @@
 -- (the platform takes it at once) keeps its settings too, and the platform rebuilds it from its
 -- ghost with its request and freighters. A depot mined by hand and a bare replacement at its spot
 -- marked for deconstruction in the same tick each keep their own settings on their own action, and
--- so do two depots mined by hand at one spot in a tick with the undo history at its limit.
+-- so do two depots mined by hand at one spot in a tick with the undo history at its limit, and in
+-- adjacent ticks.
 -- Writes script-output/jatz-undo-check.json.
 local FREIGHTER = "jatz-quinityn-freighter"
 local DEPOT = "jatz-request-depot"
 local CUT, MINED, KEPT = { x = 6.5, y = 0.5 }, { x = 6.5, y = -6.5 }, { x = 14.5, y = 0.5 }
 local PLATFORM_DEPOT, AFLOAT = "jatz-liquid-request-depot", { x = 8.5, y = 0.5 }
-local SWAPPED, AT_LIMIT = { x = -2.5, y = -6.5 }, { x = -2.5, y = 6.5 }
+local SWAPPED, AT_LIMIT, NEXT_TICK = { x = -2.5, y = -6.5 }, { x = -2.5, y = 6.5 }, { x = 2.5, y = -12.5 }
 
 -- The freighters kept on every undo action for the removal of a request depot at `position`,
 -- newest first (0 for none).
@@ -177,8 +178,18 @@ script.on_event(defines.events.on_tick, function(event)
     local replacement =
       surface.create_entity({ name = DEPOT, position = SWAPPED, force = player.force, raise_built = true })
     assert(replacement.order_deconstruction(player.force, player, 0))
+    -- A depot with 2 freighters mined by hand here, and a bare one at its spot mined the next tick.
+    local first =
+      surface.create_entity({ name = DEPOT, position = NEXT_TICK, force = player.force, raise_built = true })
+    assert(remote.call("jatz-distribution", "add_freighters", first, 2) == 2)
+    assert(player.mine_entity(first, true), "the player could not mine the depot")
+  elseif result and event.tick == 2 then
+    local second =
+      surface.create_entity({ name = DEPOT, position = NEXT_TICK, force = player.force, raise_built = true })
+    assert(player.mine_entity(second, true), "the player could not mine the depot")
   elseif result and event.tick == 600 then
     result.swapped_kept = freighters_kept_at(SWAPPED)
+    result.next_tick_kept = freighters_kept_at(NEXT_TICK)
     result.cut_removed = depot_at(CUT) == nil
     local cut = settings_at(CUT) or {}
     result.cut_settings = { request = cut.jatz_request, freighters = cut.jatz_freighters }

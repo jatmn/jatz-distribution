@@ -2070,12 +2070,11 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
   game.tick = 2000
   hand_mine(mined)
   check("mining still hands its freighters over", not slot.valid_for_read)
+  check("its settings wait for its undo item, made just after the mining", #storage.undo_pending[20] == 1)
   new_item({ removal("jatz-request-depot", 630.5, 0.5) })
   fire("on_tick", { tick = 2000 })
-  check("its undo action is tagged from the next tick", items[1][1].tags == nil)
-  fire("on_tick", { tick = 2001 })
   check(
-    "then with every freighter it had, the 2 in its chest too",
+    "which the next tagging finds, that same tick too, with every freighter it had, the 2 in its chest too",
     items[1][1].tags and items[1][1].tags.jatz_settings.jatz_freighters == 3
   )
   check("and nothing is left waiting", storage.undo_pending == nil)
@@ -2335,6 +2334,27 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
   local taken = kept_at(750.5)
   check("robots taking a marked depot at the limit find its action by its mark", taken[1] == 0 and taken[2] == 3)
   check("reading no undo item", reads == reads_before)
+
+  -- A depot with 2 freighters mined by hand at one tick, a bare one at its spot the next, before
+  -- that tick's tagging: each keeps its own, not swapped.
+  local earlier = depot(760)
+  earlier.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = earlier })
+  freighters_in(earlier, 2)
+  game.tick = 9300
+  hand_mine(earlier)
+  new_item({ removal("jatz-request-depot", 760.5, 0.5) })
+  local later = depot(760)
+  later.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = later })
+  freighters_in(later, 0)
+  game.tick = 9301
+  hand_mine(later)
+  new_item({ removal("jatz-request-depot", 760.5, 0.5) })
+  fire("on_tick", { tick = 9301 })
+  fire("on_tick", { tick = 9302 })
+  local adjacent = kept_at(760.5)
+  check("two hand minings at one spot in adjacent ticks each keep their own", adjacent[1] == 0 and adjacent[2] == 2)
 
   for name, handler in pairs(deliveries) do
     logistics[name] = handler

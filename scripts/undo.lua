@@ -16,7 +16,7 @@
 -- marked it at once (again, if an attempt left it standing: it stays marked until it is gone or
 -- cancelled). Mining by hand makes its undo item only after on_player_mined_entity, so the
 -- settings read before it are held until that event says it was removed (a failed attempt, a full
--- inventory say, leaves nothing waiting), tagged from the next tick, and an undo before then takes
+-- inventory say, leaves nothing waiting), tagged at the next on_tick, and an undo before then takes
 -- the settings still waiting. An undo action is known only by what it holds, never by its place in
 -- the history (items are pushed on top, and at the history's limit, 100 items, each new one drops
 -- the oldest), so every action tagged here is marked as its entity's removal (MARK) and no other
@@ -103,7 +103,7 @@ local function tag(stack, entries)
   return missing
 end
 
--- Settings waiting for a player's undo action, looked for from the next tick.
+-- Settings waiting for a player's undo action, tagged at control.lua's next on_tick.
 local function wait(player_index, entries)
   if #entries == 0 then
     return
@@ -271,26 +271,28 @@ function undo.player_removed(entity, player_index)
   end
 end
 
--- Locate the marked removals, then tag the undo actions of the removals noted before this tick
--- (control.lua's on_tick, only while there are some: storage.undo_pending or undo_locating).
--- Locating first marks the actions of entities marked for deconstruction as theirs, so a removal
--- by hand at the same spot never takes one.
+-- Locate the marked removals, then tag the undo actions of every removal waiting (control.lua's
+-- on_tick, only while there are some: storage.undo_pending or undo_locating). Locating first marks
+-- the actions of entities marked for deconstruction as theirs, so a removal by hand at the same spot
+-- never takes one. Every removal waiting is matched at once, this tick's too: one waits only from
+-- on_player_mined_entity, just after which its undo item is pushed (probed on 2.1.24), so its action
+-- is there by now, and leaving it out would let an older removal at its spot take its (newer)
+-- action, newest to newest.
 function undo.tag_pending(tick)
   if storage.undo_locating then
     locate(tick)
   end
   for player_index, pending in pairs(storage.undo_pending or {}) do
-    -- Noted this tick: from the next. Older than GIVE_UP_TICKS: given up, never tagged late.
-    local due, waiting = {}, {}
+    -- Older than GIVE_UP_TICKS: given up, never tagged late.
+    local due = {}
     for _, entry in ipairs(pending) do
-      if entry.tick >= tick then
-        waiting[#waiting + 1] = entry
-      elseif tick - entry.tick < GIVE_UP_TICKS then
+      if tick - entry.tick < GIVE_UP_TICKS then
         due[#due + 1] = entry
       end
     end
     local stack = undo_stack(player_index)
-    -- Not found yet: looked for again next tick, until given up.
+    -- Not found: looked for again next tick, until given up.
+    local waiting = {}
     for _, entry in ipairs(stack and tag(stack, due) or due) do
       waiting[#waiting + 1] = entry
     end
