@@ -4,7 +4,8 @@
 -- (prototypes/off-road.lua), so every path it finds stays on roads. It collides with no
 -- buildings, players or other freighters. It has no burner: scripts/logistics.lua keeps its fuel,
 -- burns it by the tile and refuels it at Fuel depots. Enemies can attack and destroy it; it never
--- fights back. Destroyed, it explodes and leaves a wreck, as the drivable freighter does.
+-- fights back, and construction robots repair it. Destroyed, it explodes and leaves a wreck, as
+-- the drivable freighter does.
 -- scripts/logistics.lua creates one per delivery and removes it when the delivery is done, and
 -- makes it run over enemy units it drives through and pollute a little while out.
 --
@@ -27,7 +28,7 @@ local function drone(name, cargo)
     icon = constants.freighter_icon,
     icon_size = constants.icon_size,
     hidden = true,
-    flags = { "placeable-player", "placeable-off-grid", "not-repairable", "not-blueprintable", "not-deconstructable" },
+    flags = { "placeable-player", "placeable-off-grid", "not-blueprintable", "not-deconstructable" },
     max_health = 500,
     -- Dies like the drivable freighter, a copy of the base car (prototypes/freighter.lua): it
     -- explodes and leaves the car's wreck, which the game removes after 15 minutes.

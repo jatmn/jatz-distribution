@@ -617,7 +617,9 @@ local function setup_deliveries(surface, result)
   local chest = deliveries.full.request.get_inventory(defines.inventory.chest)
   chest.insert({ name = "stone", count = #chest * 50 })
   assert(chest.get_insertable_count("copper-plate") == 0, "full: request depot still has room")
-  -- A freighter destroyed on its way: the request sends another and is filled.
+  -- A freighter killed by a script on its way out (die(), as from the console: its health still
+  -- shows as it fails its command): it is lost, its depot asks robots for a replacement, and the
+  -- request sends another and is filled.
   deliveries.destroyed = pair(20, 2, 12, "steel-plate", 30, 30)
   -- The request changes to another item while the freighter is on its way out: it must not load
   -- the old item.
@@ -1059,6 +1061,13 @@ local function setup_deliveries(surface, result)
   -- destroyed on the road (deliveries.destroyed and deliveries.ambush, both within reach).
   -- 3 more for the unloaded request depot below.
   deliveries.store.insert({ name = FREIGHTER, count = 12 })
+  -- Repair packs, and a damaged freighter standing on a road tile within the robots' reach: robots
+  -- repair freighters as they do the player's other entities.
+  deliveries.store.insert({ name = "repair-pack", count = 10 })
+  lay_road(surface, 14, 36, 14, 36)
+  assert(surface.count_entities_filtered({ area = { { 13, 35 }, { 16, 38 } } }) == 0, "patient: spot taken")
+  deliveries.patient = surface.create_entity({ name = DRONE, position = { 14.5, 36.5 }, force = "player" })
+  deliveries.patient.health = 100
   -- A request depot emptied by an inserter, as players unload them onto belts: the freighters
   -- robots bring it still reach its slot, none taken out by the inserter.
   deliveries.unloaded = depot(surface, "request", 38.5, 28.5, 0)
@@ -1691,9 +1700,20 @@ local function interfere(surface)
   if not destroyed.done and status(destroyed.request) == "delivering" then
     local drones = surface.find_entities_filtered({ name = DRONES, position = { 32.5, 4.5 }, radius = 3 })
     if #drones == 1 then
-      drones[1].destroy()
-      destroyed.done = true
+      drones[1].die()
+      destroyed.done = game.tick
     end
+  end
+  -- Before robots can bring it: whether its depot asked for a replacement.
+  if destroyed.done and not destroyed.requested and game.tick >= destroyed.done + 5 then
+    destroyed.requested = remote.call("jatz-distribution", "requested_freighters", destroyed.request)
+  end
+  -- The damaged freighter, once repaired (or given up on before the deadline), leaves, so every
+  -- freighter is home at the end.
+  local patient = deliveries.patient
+  if patient.valid and (patient.health >= patient.max_health or game.tick >= DELIVERY_DEADLINE - 100) then
+    deliveries.repaired = patient.health >= patient.max_health
+    patient.destroy()
   end
   local ambush = deliveries.ambush
   if not ambush.drone then
@@ -1955,8 +1975,10 @@ local function deliveries_finished(surface, tick, result)
   result.full_status = status(full.request)
   result.full_provider_left = count(full.provider, full.item)
   result.redelivered_after_destroy = count(destroyed.request, destroyed.item)
-  -- Robots replaced the destroyed freighter: its depot has its 3 again.
+  -- Robots replaced the destroyed freighter: its depot asked for one, and has its 3 again.
+  result.destroyed_replacement_requested = destroyed.requested
   result.destroyed_restocked = remote.call("jatz-distribution", "freighter_counts", destroyed.request)
+  result.freighter_repaired = deliveries.repaired
   -- Enemies: the biter on the road was run over by the freighter (impact damage), which delivered
   -- anyway; the player beside it was unhurt. Biters destroyed the ambushed freighter; its depot
   -- asked for a replacement at once, its other freighters filled the request, and robots brought
