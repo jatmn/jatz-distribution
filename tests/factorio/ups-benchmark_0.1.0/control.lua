@@ -49,9 +49,13 @@ adapters["jatz-distribution"] = {
   end,
   refuel = function() end,
   -- A provider keeping a minimum (layout.lua): switched on only while its own contents hold more
-  -- than that share of a full chest. Returns whether it has the condition (versions without
-  -- conditions on a depot's own contents, benchmarked with --compare, don't).
+  -- than that share of a full chest. Returns whether it has the condition: versions from before
+  -- circuit conditions (#34, which brought `set_circuit` and the contents mode together),
+  -- benchmarked with --compare, have no `set_circuit`, and calling it would stop the map's build.
   provider = function(entity, depot)
+    if not remote.interfaces["jatz-distribution"].set_circuit then
+      return false
+    end
     local count = math.floor(prototypes.item[depot.item].stack_size * CHEST_SLOTS * depot.minimum)
     return remote.call("jatz-distribution", "set_circuit", entity, true, {
       first_signal = { type = "item", name = depot.item },
