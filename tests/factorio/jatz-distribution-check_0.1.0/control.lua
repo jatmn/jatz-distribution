@@ -707,6 +707,23 @@ local function setup_deliveries(surface, result)
   result.request_has_no_priority = remote.call("jatz-distribution", "set_priority", prioritised.request, 9)
   assert(remote.call("jatz-distribution", "set_request", prioritised.request, "stone", 10), "stone: refused")
   deliveries.prioritised = prioritised
+  -- Full loads only, on one road (loading zones at y -5): a request depot set to it asks for 30
+  -- iron chests, less than a freighter load, so a full load is all 30; a provider 10 tiles away
+  -- holds 10 and one 24 tiles away 40. The freighter passes the nearer one by and fetches all 30
+  -- from the farther one in one trip.
+  local full_loads = {
+    request = depot(surface, "request", 20.5, -6.5, 1),
+    near = depot(surface, "provider", 30.5, -6.5),
+    far = depot(surface, "provider", 44.5, -6.5),
+  }
+  lay_road(surface, 20, -5, 44, -5)
+  assert(full_loads.near.insert({ name = "iron-chest", count = 10 }) == 10, "chests: cannot stock")
+  assert(full_loads.far.insert({ name = "iron-chest", count = 40 }) == 40, "chests: cannot stock")
+  result.full_loads_default = remote.call("jatz-distribution", "get_full_loads", full_loads.request)
+  assert(remote.call("jatz-distribution", "set_full_loads", full_loads.request, true), "full loads: refused")
+  result.provider_has_no_full_loads = remote.call("jatz-distribution", "set_full_loads", full_loads.near, true)
+  assert(remote.call("jatz-distribution", "set_request", full_loads.request, "iron-chest", 30), "chests: refused")
+  deliveries.full_loads = full_loads
   -- Liquid depots, on one road (loading zones at y -35): a liquid request depot with 3 freighters
   -- asks for 1200 water from a liquid provider holding 2000, 500 a freighter.
   local liquid = {
@@ -1841,6 +1858,7 @@ local function deliveries_finished(surface, tick, result)
     and count(deliveries.buffering.request, "copper-cable") == 20
     and count(deliveries.buffering.filling, "copper-cable") == 15
     and count(deliveries.prioritised.request, "stone") == 10
+    and count(deliveries.full_loads.request, "iron-chest") == 30
     and (not deliveries.mining or count(deliveries.mining.request, "iron-ore") == 30)
     and count(deliveries.circuit.request, "stone-wall") == 10
     and count(deliveries.circuit.lamps, "small-lamp") == 10
@@ -2123,6 +2141,10 @@ local function deliveries_finished(surface, tick, result)
   local prioritised = deliveries.prioritised
   result.priority_from_far = 20 - count(prioritised.far, "stone")
   result.priority_from_near = 20 - count(prioritised.near, "stone")
+  local full_loads = deliveries.full_loads
+  result.full_loads_received = count(full_loads.request, "iron-chest")
+  result.full_loads_from_near = 10 - count(full_loads.near, "iron-chest")
+  result.full_loads_from_far = 40 - count(full_loads.far, "iron-chest")
   local liquid = deliveries.liquid
   result.water_delivered = liquid.request.get_fluid_count("water")
   result.water_provider_left = liquid.provider.get_fluid_count("water")

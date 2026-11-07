@@ -49,6 +49,10 @@ You can tell what a freighter carries by its cargo bays. They are light grey whi
 
 If one freighter isn't enough, or one provider doesn't have it all, the depot sends more, one a second, each to the next provider that still has some.
 
+### Full loads only
+
+Tick **Full loads only** on a request or buffer depot (item or liquid) to keep freighters from driving out for a handful of items. A freighter then sets off only when it can come back full: a depot it fetches from has a whole load to give (ten stacks of the item, or 500 of a fluid, more with capacity research), and the requesting depot has room for one. Providers holding less are passed by, even when they're nearer, and smaller amounts wait until a full load is ready. A request smaller than one load counts as a full load, so it's fetched whole once the depot has room for all of it. It's off by default.
+
 ## The freighter slot
 
 A request depot holds up to **100 freighters** in its freighter slot.
@@ -96,7 +100,7 @@ A light beside the request shows at a glance whether it can be filled. Hover it 
 | Light | Meaning |
 | --- | --- |
 | 🟢 Green | Stocked, a freighter is on its way, or it's finding a provider (or, for a request depot, a buffer depot) by road |
-| 🟡 Yellow | Waiting on something in the way: no room in the depot, its loading zone isn't on road, no road route to a provider (or, for a request depot, a buffer depot) that has it, no freighters (or none could be sent), freighters too low on fuel while the fuel depots are empty, or a liquid depot's tank holds another fluid |
+| 🟡 Yellow | Waiting on something in the way: no room in the depot, waiting for a full load (with **Full loads only** ticked), its loading zone isn't on road, no road route to a provider (or, for a request depot, a buffer depot) that has it, no freighters (or none could be sent), freighters too low on fuel while the fuel depots are empty, or a liquid depot's tank holds another fluid |
 | 🔴 Red | No provider depot with road at its loading zone has it (nor, for a request depot, any buffer depot), its freighters need fuel and no fuel depot is connected by road, or the depot is switched off by its circuit condition |
 | ⚪ Grey | Nothing requested |
 
@@ -180,7 +184,7 @@ With [Milestones](https://mods.factorio.com/mod/Milestones) installed, its list 
 
 ## Copy, paste and blueprints
 
-- Copy and Paste settings, copy and paste, and blueprints carry a request depot's request and its number of freighters. The new depot asks for the freighters (as a ghost request), and construction robots, or you by hand, bring them. This works for liquid depots too.
+- Copy and Paste settings, copy and paste, and blueprints carry a request depot's request, its **Request from buffer depots** and **Full loads only** settings, and its number of freighters. The new depot asks for the freighters (as a ghost request), and construction robots, or you by hand, bring them. This works for liquid depots too.
 - They carry every depot's circuit condition too.
 - Cloned depots keep their request and circuit condition.
 

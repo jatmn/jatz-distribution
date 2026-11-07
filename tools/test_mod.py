@@ -274,6 +274,11 @@ EXPECTED = {'recipes': RECIPES,
             # at priority 2; providers start at 5; request depots have no priority.
             'priority_from_far': 10, 'priority_from_near': 0, 'priority_default': 5,
             'request_has_no_priority': False,
+            # Full loads only: a request depot set to it, asking for 30 (less than a load), takes
+            # all 30 from a provider 24 tiles away holding 40, passing by one 10 tiles away holding
+            # only 10; off by default; provider depots have no such setting.
+            'full_loads_default': False, 'provider_has_no_full_loads': False,
+            'full_loads_received': 30, 'full_loads_from_near': 0, 'full_loads_from_far': 30,
             # Liquid depots: 1200 water in 500 loads from a liquid provider holding 2000; a liquid
             # request depot set to request from buffers takes 300 steam from a liquid buffer, at its
             # 500 degrees, not from a nearer provider; only liquid request depots get a truck chest;

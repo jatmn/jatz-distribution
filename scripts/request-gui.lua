@@ -1,7 +1,8 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- The request panel: attached to the right of a request depot's inventory window, it chooses
 -- the item to keep in stock and how many, holds the depot's freighters, and shows what the depot is
--- doing as a status light (hover it for the status in words). Buffer depots have the same panel,
+-- doing as a status light (hover it for the status in words), with a "Full loads only" checkbox
+-- (and "Request from buffer depots" for request depots). Buffer depots have the same panel,
 -- with a priority slider at the top; provider depots have a panel with only that slider. Liquid
 -- depots have the same panels, for a fluid, beside their storage tank window (a pipe window in
 -- Factorio 2.1). The Fuel depot's panel shows the liquid fuel in its hidden tank, which has no
@@ -35,6 +36,7 @@ local STATUS = "jatz_request_status"
 local SLOT = "jatz_request_freighters"
 local SLOT_LABEL = "jatz_request_freighters_label"
 local FROM_BUFFERS = "jatz_request_from_buffers"
+local FULL_LOADS = "jatz_request_full_loads"
 local PRIORITY = "jatz_depot_priority"
 local PRIORITY_VALUE = "jatz_depot_priority_value"
 local FUEL_FLUID = "jatz_fuel_fluid"
@@ -84,7 +86,7 @@ end
 -- * green: stocked, or on its way (a freighter out, or finding the depot to fetch from by road);
 -- * yellow: the item is there, but something is in the way (no road route right now, no
 --   freighters, loading zone not on road, the depot full or its tank holding another fluid, a
---   freighter couldn't be sent);
+--   freighter couldn't be sent, waiting for a full load);
 -- * red: no depot it fetches from has the item (no provider, nor any buffer for a request depot),
 --   or its freighters need fuel and no Fuel depot is connected by road;
 --   or its circuit condition switched it off;
@@ -103,6 +105,7 @@ local LIGHTS = {
   ["no-freighter"] = "utility/status_yellow",
   ["other-fluid"] = "utility/status_yellow",
   ["no-fuel"] = "utility/status_yellow",
+  ["full-load"] = "utility/status_yellow",
   ["no-provider"] = "utility/status_not_working",
   ["no-fuel-depot"] = "utility/status_not_working",
   none = "utility/status_inactive",
@@ -438,6 +441,15 @@ local function open(player, entity)
       tooltip = { "jatz-gui.request-from-buffers-tooltip" },
     })
   end
+  inner.add({
+    type = "checkbox",
+    name = FULL_LOADS,
+    state = logistics.get_full_loads(entity),
+    caption = { "jatz-gui.request-full-loads" },
+    tooltip = {
+      LIQUID[entity.name] and "jatz-gui.request-full-loads-fluid-tooltip" or "jatz-gui.request-full-loads-tooltip",
+    },
+  })
   local freighters = inner.add({ type = "flow", name = "freighter_row", direction = "horizontal" })
   freighters.style.vertical_align = "center"
   freighters.add({
@@ -702,6 +714,13 @@ local function on_gui_checked_state_changed(event)
     if entity then
       logistics.set_circuit(entity, event.element.state, nil)
       show_circuit_status(event.element.parent.parent, entity)
+    end
+    return
+  end
+  if event.element.name == FULL_LOADS then
+    local entity = opened_depot(game.get_player(event.player_index))
+    if entity then
+      logistics.set_full_loads(entity, event.element.state)
     end
     return
   end

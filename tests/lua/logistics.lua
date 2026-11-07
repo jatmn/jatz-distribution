@@ -1482,6 +1482,98 @@ do -- Changing "request from buffer depots" restarts searches under way, freight
   check("and started afresh at the next check", #requests == 3)
 end
 
+-- Full loads only: a depot set to it sends a freighter only to a depot with a whole load (ten
+-- stacks of "a", 500, here) unpromised, and only while it has room for one; a request smaller
+-- than a load counts as one.
+do -- Off by default, and set only on request and buffer depots.
+  local logistics = reset()
+  local request, provider, buffer = buffered(logistics, false)
+  check("a new request depot sends any amount", logistics.get_full_loads(request) == false)
+  check("a buffer depot can be set to full loads", logistics.set_full_loads(buffer, true))
+  check("a provider depot can't", logistics.set_full_loads(provider, true) == false)
+end
+
+do -- A request smaller than a load: providers holding less than all of it aren't asked about.
+  local logistics = reset()
+  local request, near, far = supplied(logistics, 5)
+  assert(logistics.set_full_loads(request, true))
+  logistics.on_tick()
+  check("no provider has all 100: nothing is asked or sent", #requests == 0 and #trips_from(request) == 0)
+  check("and the depot says it waits for a full load", logistics.get_status(request) == "full-load")
+  far.chest.contents.a = 120
+  game.tick = 60
+  logistics.on_tick()
+  check("the provider that has it is asked about, not the nearer one", #requests == 1 and requests[1].goal.x == 40.5)
+  answer(logistics, 1, "route")
+  local trips = trips_from(request)
+  check("and the freighter goes there for the whole request", #trips == 1 and trips[1].provider == far.unit_number)
+  check("promising all 100", trips[1].planned == 100)
+  check("unless set, the nearer provider's 30 would have been fetched", near.chest.contents.a == 30)
+end
+
+do -- A request larger than a load: it waits for room for a full one, then fetches a full one.
+  local logistics = reset()
+  local request = entity("jatz-request-depot", 0.5, 0.5, { a = 700 })
+  local provider = entity("jatz-provider-depot", 10.5, 0.5, { a = 2000 })
+  logistics.add(request)
+  logistics.add(provider)
+  assert(logistics.set_request(request, "a", 1000))
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 2)) == 2)
+  assert(logistics.set_full_loads(request, true))
+  logistics.on_tick()
+  check("300 short of 1000 is less than a load: nothing is sent", #requests == 0)
+  check("waiting for a full load", logistics.get_status(request) == "full-load")
+  request.chest.contents.a = 400
+  game.tick = 60
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  check("600 short: a freighter goes for a full load", trip and trip.planned == 500)
+  game.tick = 120
+  logistics.on_tick()
+  check("and none for the 100 left", #requests == 1 and #trips_from(request) == 1)
+  assert(logistics.set_full_loads(request, false))
+  game.tick = 180
+  logistics.on_tick()
+  answer(logistics, 2, "route")
+  check(
+    "turned off, a freighter goes for the 100 left",
+    #trips_from(request) == 2 and trips_from(request)[2].planned == 100
+  )
+end
+
+do -- A provider emptied below a load during the search: no freighter goes there.
+  local logistics = reset()
+  local request, _, far = supplied(logistics, 5)
+  far.chest.contents.a = 120
+  assert(logistics.set_full_loads(request, true))
+  logistics.on_tick()
+  far.chest.contents.a = 60
+  answer(logistics, 1, "route")
+  check("the search finds it short and sends nothing", #trips_from(request) == 0)
+end
+
+do -- A buffer depot set to full loads fetches full loads from providers too.
+  local logistics = reset()
+  local filling = entity("jatz-buffer-depot", 0.5, 0.5)
+  local small = entity("jatz-provider-depot", 10.5, 0.5, { a = 40 })
+  local large = entity("jatz-provider-depot", 40.5, 0.5, { a = 900 })
+  for _, depot in ipairs({ filling, small, large }) do
+    logistics.add(depot)
+  end
+  assert(logistics.set_request(filling, "a", 2000))
+  assert(logistics.put_freighters(filling, stack("jatz-quinityn-freighter", 2)) == 2)
+  assert(logistics.set_full_loads(filling, true))
+  logistics.on_tick()
+  check("the provider with 40 isn't asked about", #requests == 1 and requests[1].goal.x == 40.5)
+  answer(logistics, 1, "route")
+  local trip = trips_from(filling)[1]
+  check(
+    "a full load of 500 is fetched from the other",
+    trip and trip.provider == large.unit_number and trip.planned == 500
+  )
+end
+
 -- Priority: within each kind of depot, the highest priority it can reach by road first, however
 -- near a lower one is; buffer depots all still come before providers for a request depot that
 -- requests from them, and after them for one that doesn't.
@@ -1645,6 +1737,22 @@ do -- Requests: fluids for liquid depots, items for item depots.
     "liquid providers have a priority too",
     logistics.set_priority(provider, 7) and logistics.get_priority(provider) == 7
   )
+end
+
+do -- Full loads of fluid: 500, the freighter's fluid capacity.
+  local logistics = reset()
+  local request, provider = liquids(logistics)
+  provider.held.amount = 300
+  assert(logistics.set_full_loads(request, true))
+  logistics.on_tick()
+  check("a liquid provider with 300 isn't asked about", #requests == 0)
+  check("the liquid depot waits for a full load", logistics.get_status(request) == "full-load")
+  provider.held.amount = 600
+  game.tick = 60
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  check("with 600, a freighter goes for 500", trip and trip.planned == 500)
 end
 
 do -- A fluid delivery: 500 per freighter, at the provider's temperature.

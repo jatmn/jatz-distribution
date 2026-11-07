@@ -239,6 +239,8 @@ logistics.status = {
   no_fuel_depot = "no-fuel-depot",
   -- Its circuit condition doesn't hold.
   disabled = "disabled",
+  -- Set to send full loads only: it lacks room for one, or no depot it fetches from has one.
+  full_load = "full-load",
 }
 
 -- Trip states: driving out to the provider, bringing cargo to the request depot, or taking cargo
@@ -1102,6 +1104,26 @@ function logistics.set_from_buffers(entity, from_buffers)
   return true
 end
 
+-- Whether a request or buffer depot sends only freighters that can load a full load (see
+-- full_load), rather than one for whatever little a provider has or the depot has room for.
+function logistics.get_full_loads(entity)
+  local depot = request_depot(entity)
+  return depot and depot.full_loads == true or false
+end
+
+-- Returns false, changing nothing, for anything but a request or buffer depot.
+function logistics.set_full_loads(entity, full_loads)
+  local depot = request_depot(entity)
+  if not depot then
+    return false
+  end
+  depot.full_loads = full_loads == true
+  depot.cooldowns = {}
+  depot.retry_at = 0
+  restart_depot_searches(depot)
+  return true
+end
+
 -- The depots with a priority: provider and buffer depots, which freighters fetch from.
 local function supplying_depot(entity)
   local depot = entity and entity.valid and entity.unit_number and storage.depots[entity.unit_number]
@@ -1385,16 +1407,33 @@ local function suppliers(surface_index, force_index, fluid, item)
   return found
 end
 
+-- For a depot set to send full loads only, the least a freighter of it may set off to load: a full
+-- load (its cargo stacks of the item, or its fluid capacity, both with research), or the whole
+-- request if that is less (so a request smaller than a load still comes, in one trip). nil for
+-- other depots, which send a freighter for any amount. (On the module table, as `missing` is: this
+-- file's main chunk is at Lua's limit of 200 locals.)
+function logistics.full_load(depot)
+  local request = depot.request
+  if not depot.full_loads or not request or request.count <= 0 then
+    return nil
+  end
+  local force = depot.entity.force
+  local capacity = depot.fluid and fluid_capacity(force) or cargo_stacks(force) * stack_size_of(request.item)
+  return math.min(capacity, request.count)
+end
+
 -- Every depot that could serve a requesting depot: provider depots, and for a request depot,
 -- buffer depots too (a buffer depot itself fetches only from providers). A request depot set to
 -- request from buffer depots ranks buffers first, however near a provider is; one not set to ranks
 -- them last, so it falls back to a buffer only for what no provider can supply. All on the same
 -- surface and force, with road at its loading zone, holding the item and not on cooldown for this
 -- request. Within each kind, the highest priority first; within each priority, nearest first in a
--- straight line from `from`. Also says whether one was skipped for cooldown.
+-- straight line from `from`. Also says whether one was skipped for cooldown, and whether one was
+-- skipped for holding less than a full load (for a depot sending full loads only).
 local function candidates(depot, from)
   local entity = depot.entity
-  local found, waiting = {}, false
+  local found, waiting, short = {}, false, false
+  local full = logistics.full_load(depot)
   local buffers = depot.role == "request"
   -- The kind of depot asked about first.
   local first = buffers and depot.from_buffers and "buffer" or "provider"
@@ -1402,7 +1441,9 @@ local function candidates(depot, from)
   for _, supplier in ipairs(suppliers(entity.surface_index, entity.force_index, depot.fluid, depot.request.item)) do
     local provider = supplier.depot
     if provider.role == "provider" or (buffers and supplier.id ~= own) then
-      if (depot.cooldowns[supplier.id] or 0) > game.tick then
+      if full and available(provider, depot.request.item) < full then
+        short = true
+      elseif (depot.cooldowns[supplier.id] or 0) > game.tick then
         waiting = true
       else
         local position = supplier.position
@@ -1427,7 +1468,7 @@ local function candidates(depot, from)
     end
     return a.distance < b.distance or (a.distance == b.distance and a.id < b.id)
   end)
-  return found, waiting
+  return found, waiting, short
 end
 
 -- Every trip out has its own tick of the second, its phase: storage.trip_phases[phase + 1] lists
@@ -1673,9 +1714,9 @@ end
 -- already out (its provider was removed) and starts where it stands. Returns false, with whether
 -- a provider was skipped for cooldown, if there is nothing to look for.
 local function search_providers(depot, from, trip)
-  local found, waiting = candidates(depot, from)
+  local found, waiting, short = candidates(depot, from)
   if #found == 0 then
-    return false, waiting
+    return false, waiting, short
   end
   local search = {
     token = new_token(),
@@ -1922,6 +1963,12 @@ local function dispatch(depot)
       or (other_fluid and logistics.status.other_fluid or logistics.status.full)
     return
   end
+  local full = logistics.full_load(depot)
+  if full and room < full then
+    -- Sending full loads only, and a full load wouldn't fit: it waits until one does.
+    depot.status = out and logistics.status.delivering or logistics.status.full_load
+    return
+  end
   local from, on_road = loading_tile(depot.entity)
   if not on_road then
     depot.status = logistics.status.no_road
@@ -1950,13 +1997,15 @@ local function dispatch(depot)
   if depot.searching and game.tick - depot.searching < SEARCH_TIMEOUT then
     return
   end
-  local started, waiting = search_providers(depot, from)
+  local started, waiting, short = search_providers(depot, from)
   if started then
     depot.status = out and logistics.status.delivering or logistics.status.searching
   else
     cancel_search(depot)
     depot.status = out and logistics.status.delivering
-      or (waiting and logistics.status.unreachable or logistics.status.no_provider)
+      or (waiting and logistics.status.unreachable)
+      or (short and logistics.status.full_load)
+      or logistics.status.no_provider
   end
 end
 
@@ -2709,11 +2758,14 @@ local function finish_search(depot, search, owner)
     return
   end
   local provider = search.best and storage.depots[search.best]
+  -- Sending full loads only: the provider must still have one, and the depot room for one.
+  local full = logistics.full_load(depot)
   local still = depot.request
     and depot.request.item == search.item
     and provider
     and provider.entity.valid
     and available(provider, search.item) > 0
+    and (not full or available(provider, search.item) >= full)
     and enabled(provider)
   if search.trip then
     if still then
@@ -2742,7 +2794,7 @@ local function finish_search(depot, search, owner)
   end
   local from, on_road = loading_tile(depot.entity)
   local _, room = need(depot)
-  if not still or not on_road or room <= 0 then
+  if not still or not on_road or room <= 0 or (full and room < full) then
     -- Something changed while searching; the next dispatch looks again.
     return
   end
@@ -3143,6 +3195,7 @@ local function copy_request(source, destination)
     local request = logistics.get_request(source)
     logistics.set_request(destination, request and request.item, request and request.count)
     logistics.set_from_buffers(destination, logistics.get_from_buffers(source))
+    logistics.set_full_loads(destination, logistics.get_full_loads(source))
   end
   if supplying_depot(source) and supplying_depot(destination) then
     logistics.set_priority(destination, logistics.get_priority(source))
@@ -3751,6 +3804,7 @@ local function plan_settings(planned, entity)
     planned.tags[REQUEST_TAG] = depot.request and { item = depot.request.item, count = depot.request.count } or nil
     -- Its own tag, so it's kept even with no item requested.
     planned.tags[FROM_BUFFERS_TAG] = depot.from_buffers or nil
+    planned.tags["jatz_full_loads"] = depot.full_loads or nil
     local freighters = freighter_total(entity)
     planned.tags[FREIGHTERS_TAG] = freighters > 0 and freighters or nil
     planned.tags[CIRCUIT_TAG] = circuit_tag(depot)
@@ -3880,6 +3934,9 @@ function logistics.apply_tags(entity, tags)
   end
   if type(tags[FROM_BUFFERS_TAG]) == "boolean" then
     logistics.set_from_buffers(entity, tags[FROM_BUFFERS_TAG])
+  end
+  if type(tags["jatz_full_loads"]) == "boolean" then
+    logistics.set_full_loads(entity, tags["jatz_full_loads"])
   end
   local freighters = tags[FREIGHTERS_TAG]
   if type(freighters) == "number" and freighters >= 0 then
@@ -4238,6 +4295,9 @@ function logistics.register()
     get_status = logistics.get_status,
     set_from_buffers = logistics.set_from_buffers,
     get_from_buffers = logistics.get_from_buffers,
+    -- A request or buffer depot sending only freighters that can load a full load.
+    set_full_loads = logistics.set_full_loads,
+    get_full_loads = logistics.get_full_loads,
     -- A provider or buffer depot's priority, 1 to 10.
     set_priority = logistics.set_priority,
     get_priority = logistics.get_priority,
