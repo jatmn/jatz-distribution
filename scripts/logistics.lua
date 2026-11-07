@@ -1409,7 +1409,8 @@ end
 
 -- How many of the requested item a request depot still wants, and how many of those it has room
 -- for, counting what its freighters (except trip `except`) are already bringing. Requests above
--- what the depot can hold are filled as far as it can hold.
+-- what the depot can hold are filled as far as it can hold. Fourth, when it wants nothing more: by
+-- how much what it holds and what is coming exceed its request (logistics.release_excess).
 local function need(depot, except)
   local request = depot.request
   if not request or request.count <= 0 or not exists(depot.fluid, request.item) then
@@ -1420,7 +1421,7 @@ local function need(depot, except)
     local coming = committed(depot, except)
     local wanted = request.count - tank.get_fluid_count(request.item) - coming
     if wanted <= 0 then
-      return 0, 0
+      return 0, 0, nil, -wanted
     end
     local held = 0
     for name, amount in pairs(tank.get_fluid_contents()) do
@@ -1437,7 +1438,7 @@ local function need(depot, except)
   local coming = committed(depot, except)
   local wanted = request.count - chest.get_item_count(id) - coming
   if wanted <= 0 then
-    return 0, 0
+    return 0, 0, nil, -wanted
   end
   return wanted, math.max(0, math.min(wanted, chest.get_insertable_count(id) - coming))
 end
@@ -1689,6 +1690,8 @@ local function start_trip(depot, provider, from, planned, length)
   storage.trips[drone.unit_number] = trip
   trip.key = drone.unit_number
   trip.queued = logistics.queue_place()
+  -- The request it was sent for (logistics.release_excess leaves it alone once that is lowered).
+  trip.request_count = depot.request.count
   promise(trip)
   schedule_trip(drone.unit_number, trip)
   script.register_on_object_destroyed(drone)
@@ -2224,9 +2227,68 @@ local function absorb_freighters(depot)
   depot.chest_seen = count_freighters(own or chest)
 end
 
+-- A requesting depot that holds and has coming more than it asks for (filled meanwhile some other
+-- way: by hand, an inserter, another depot's freighter) lets `excess` go from its freighters' promises
+-- at providers, the last sent first, so those providers can give that stock to other depots at once
+-- rather than when the freighters get there to load nothing. A freighter left with nothing to fetch
+-- goes home empty (home_empty; one still at home parks). Freighters standing at a provider to load,
+-- or bringing cargo home, aren't changed, nor are those sent for a larger request than it now has
+-- (`trip.request_count`; trips from before have none): a lower request isn't stock got elsewhere,
+-- and the request panel sets the amount as it is typed, so typing 200 passes through 2 and 20 on
+-- the way, which cut freighters on the road for good (review of this change). (A field, not a local:
+-- this file has as many locals as Lua allows. The owner's decision, November 7, 2026, from
+-- Sourcery's review of 2559152.)
+function logistics.release_excess(depot, excess)
+  local outbound = {}
+  for id in pairs(trips_of(depot)) do
+    local trip = storage.trips[id]
+    if
+      trip
+      and trip.state == TO_PROVIDER
+      and not trip.loading
+      and trip.drone.valid
+      and (trip.planned or 0) > 0
+      and trip.item == depot.request.item
+      and (trip.request_count or math.huge) <= depot.request.count
+    then
+      trip.id = id
+      outbound[#outbound + 1] = trip
+    end
+  end
+  -- The last promised first: those sent earlier keep their loads.
+  table.sort(outbound, function(a, b)
+    local first, second = a.queued or 0, b.queued or 0
+    return first > second or (first == second and a.key > b.key)
+  end)
+  for _, trip in ipairs(outbound) do
+    if excess <= 0 then
+      break
+    end
+    local cut = math.min(excess, trip.planned)
+    excess = excess - cut
+    trip.planned = trip.planned - cut
+    if trip.planned > 0 then
+      promise(trip)
+    else
+      -- Nothing left to fetch: any search or Fuel depot it was heading for is dropped (set_off
+      -- decides again for the way home).
+      trip.search_token, trip.searching, trip.fuel_search, trip.refuel = nil, nil, nil, nil
+      logistics.home_empty(trip.id, trip, depot)
+    end
+  end
+  -- The providers have more unpromised now: depots checked after this one this tick look afresh.
+  if #outbound > 0 and suppliers_cache then
+    suppliers_cache = {}
+  end
+end
+
 local function dispatch(depot)
   absorb_freighters(depot)
   logistics.trim_freighter_requests(depot.entity)
+  local wanted, room, other_fluid, excess = need(depot)
+  if excess and excess > 0 then
+    logistics.release_excess(depot, excess)
+  end
   if not enabled(depot) then
     -- Disabled by its circuit condition: no search, no freighter. One under way is dropped.
     cancel_search(depot)
@@ -2236,7 +2298,6 @@ local function dispatch(depot)
   -- "On its way" only while a freighter is bringing some of the requested item: not one taking
   -- cargo back to its provider, nor one driving home empty.
   local out = committed(depot) > 0
-  local wanted, room, other_fluid = need(depot)
   if wanted <= 0 then
     depot.status = out and logistics.status.delivering
       or (depot.request and logistics.status.satisfied or logistics.status.none)

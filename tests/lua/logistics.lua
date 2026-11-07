@@ -3647,6 +3647,91 @@ do -- A promise made smaller in a provider's check changes what other depots che
   check("the depot checked after it finds it on", storage.depots[after.unit_number].searching ~= nil)
 end
 
+do -- A depot filled some other way lets its freighters' promises go at once, rather than when they
+  -- get there to load nothing (the owner's decision, from Sourcery's review of 2559152).
+  local logistics = reset()
+  local request, provider = setup(logistics)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  check("setup: 10 promised at the provider", storage.promised[provider.unit_number].a[trip.key] == 10)
+  request.chest.contents.a = 10
+  game.tick = 60
+  local asked = #requests
+  logistics.on_tick()
+  check("filled by hand, its promise goes", storage.promised[provider.unit_number] == nil)
+  check("and its freighter, with nothing to fetch, goes home", trip.state == "to-request" and #requests == asked)
+end
+
+do -- Filled in part: the last freighter sent gives up what isn't needed first.
+  local logistics = reset()
+  local request, near, far = supplied(logistics, 5)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  game.tick = 60
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  local trips = trips_from(request)
+  check(
+    "setup: 30 promised at the near provider, then 70 at the far one",
+    trips[1].planned == 30 and trips[2].planned == 70
+  )
+  request.chest.contents.a = 80
+  game.tick = 120
+  logistics.on_tick()
+  check("80 put in by hand: the later freighter goes home", trips[2].state == "to-request" and not trips[2].planned)
+  check("and its promise at the far provider goes", storage.promised[far.unit_number] == nil)
+  check("the earlier one keeps the 20 still needed", trips[1].planned == 20 and trips[1].provider == near.unit_number)
+  check("what freighters bring adds up to the request", logistics.missing(storage.depots[request.unit_number]) == 0)
+end
+
+do -- Lowering a request leaves the freighters already sent alone, as before: the request panel sets
+  -- the amount as it is typed, so typing 100 passes through 1 and 10 (review of this change).
+  local logistics = reset()
+  local request = supplied(logistics, 5)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  game.tick = 60
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  local trips = trips_from(request)
+  assert(logistics.set_request(request, "a", 1))
+  game.tick = 120
+  logistics.on_tick()
+  assert(logistics.set_request(request, "a", 100))
+  check(
+    "a request passing through 1 cuts no freighter on the road",
+    trips[1].planned == 30 and trips[2].planned == 70 and trips[2].state == "to-provider"
+  )
+end
+
+do -- One standing at its provider to load is left to load what its depot needs then; one still at
+  -- home, waiting to hear where to fill up, parks.
+  local logistics = reset()
+  local request = setup(logistics)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = defines.behavior_result.success })
+  check("setup: standing at the provider to load", trip.loading)
+  request.chest.contents.a = 10
+  game.tick = 60
+  logistics.on_tick()
+  check("filled by hand, the one standing there to load is left alone", trip.loading and trip.planned == 10)
+  logistics = reset()
+  request = setup(logistics)
+  fuel_depot(logistics, 5.5, 30.5, { { "coal", 20 } })
+  logistics.set_freighter_fuel(request, 0.05 * MJ)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  trip = trip_of(request)
+  check("setup: short of fuel, it waits at home", trip.departing and trip.fuel_search)
+  request.chest.contents.a = 10
+  game.tick = 60
+  logistics.on_tick()
+  check("filled by hand, it parks", not has_trip(request) and logistics.freighter_counts(request) == 5)
+end
+
 do -- A freighter arriving at an emptied provider when its depot needs nothing more goes home.
   local logistics = reset()
   local request, near = setup(logistics)
