@@ -1477,12 +1477,21 @@ local function schedule_trip(id, trip)
   phases[fewest][#phases[fewest] + 1] = trip
 end
 
+-- Give a freighter a new command, counting its commands (`trip.command_id`): a failed command is
+-- acted on the tick after (failed_commands), and only if no newer command has replaced it by then.
+-- Every command a freighter gets goes through here. (A field, not a local: this file has as many
+-- locals as Lua allows.)
+function logistics.command(trip, command)
+  trip.command_id = (trip.command_id or 0) + 1
+  trip.drone.commandable.set_command(command)
+end
+
 local function drive(trip, destination)
   trip.destination = destination
   trip.loading = nil
   -- On the road now: no longer standing at home deciding whether it can go.
   trip.departing = nil
-  trip.drone.commandable.set_command({
+  logistics.command(trip, {
     type = defines.command.go_to_location,
     destination = destination,
     radius = ARRIVAL_RADIUS,
@@ -1697,7 +1706,7 @@ local function reroute(id, trip)
     and request.item == trip.item
     and search_providers(depot, trip.drone.position, id)
   then
-    trip.drone.commandable.set_command({ type = defines.command.stop, distraction = defines.distraction.none })
+    logistics.command(trip, { type = defines.command.stop, distraction = defines.distraction.none })
   elseif trip.drone.valid and depot and depot.entity.valid then
     -- No provider for it any more: home empty, to park.
     trip.planned = nil
@@ -1775,7 +1784,7 @@ local function seek_fuel(id, trip)
     fuel = true,
   }
   trip.search_token, trip.searching, trip.fuel_search = search.token, game.tick, true
-  trip.drone.commandable.set_command({ type = defines.command.stop, distraction = defines.distraction.none })
+  logistics.command(trip, { type = defines.command.stop, distraction = defines.distraction.none })
   ask_route(search, depot.entity.surface, depot.entity.force)
   return true
 end
@@ -2477,15 +2486,16 @@ function logistics.on_ai_command_completed(event)
     -- One killed by a script (LuaEntity::die: the console, the editor, another mod) fails its
     -- command as it dies with its health still showing, so a failure is acted on next tick
     -- (failed_commands), when such a freighter is gone: taken home as a failed route, it went back
-    -- into the slot and its depot asked robots for no replacement.
+    -- into the slot and its depot asked robots for no replacement. Which command failed is noted:
+    -- one given meanwhile (its request depot removed, say) replaces it.
     local failed = storage.failed_trips or {}
     trip.id = id
-    failed[#failed + 1] = trip
+    failed[#failed + 1] = { trip = trip, command_id = trip.command_id }
     storage.failed_trips = failed
   elseif trip.refuel and not trip.loading then
     -- At the Fuel depot: it stands there LOADING_TICKS to fill up too.
     trip.loading = true
-    trip.drone.commandable.set_command({
+    logistics.command(trip, {
       type = defines.command.stop,
       distraction = defines.distraction.none,
       ticks_to_wait = LOADING_TICKS,
@@ -2496,7 +2506,7 @@ function logistics.on_ai_command_completed(event)
     -- Arrived to load or unload: stand there LOADING_TICKS first. The stop command's completion
     -- comes back here, and the freighter loads or unloads then. One coming home empty just parks.
     trip.loading = true
-    trip.drone.commandable.set_command({
+    logistics.command(trip, {
       type = defines.command.stop,
       distraction = defines.distraction.none,
       ticks_to_wait = LOADING_TICKS,
@@ -2511,21 +2521,26 @@ function logistics.on_ai_command_completed(event)
 end
 
 -- The commands freighters failed (on_ai_command_completed), the tick after, from control.lua's
--- on_tick: a freighter gone by now died as it failed and is lost; any other lost its way. (A
--- field, not a local: this file has as many locals as Lua allows.)
+-- on_tick: a freighter gone by now died as it failed and is lost; any other lost its way, unless
+-- it has had a newer command since (the failure is then the old command's, and over), or waits
+-- for a reroute search. (A field, not a local: this file has as many locals as Lua allows.)
 function logistics.failed_commands()
   local failed = storage.failed_trips
   storage.failed_trips = nil
-  for _, trip in ipairs(failed or {}) do
-    -- Still out (`repaint` moves `id` with it), and not waiting for a reroute search.
+  for _, failure in ipairs(failed or {}) do
+    -- Still out (`repaint` moves `id` with it): one that ended meanwhile (on_object_destroyed found
+    -- it gone, say) needs nothing more.
+    local trip = failure.trip
     local id = trip.id
     if storage.trips[id] == trip then
       if not trip.drone.valid then
         lose(id, trip)
-      elseif not trip.searching and trip.refuel then
-        fuel_route_failed(id, trip, storage.depots[trip.request])
-      elseif not trip.searching then
-        route_failed(id, trip, storage.depots[trip.request])
+      elseif trip.command_id == failure.command_id and not trip.searching then
+        if trip.refuel then
+          fuel_route_failed(id, trip, storage.depots[trip.request])
+        else
+          route_failed(id, trip, storage.depots[trip.request])
+        end
       end
     end
   end

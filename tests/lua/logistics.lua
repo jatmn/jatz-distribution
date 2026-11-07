@@ -1284,6 +1284,63 @@ do -- A freighter killed by a script (LuaEntity::die, from the console, the edit
   check("which on_object_destroyed doesn't lose twice", logistics.freighter_counts(request) == 1)
 end
 
+do -- A failed command is acted on the tick after only if it is still the freighter's latest: a
+  -- newer one given meanwhile replaces it. A loaded freighter whose way home fails, its request
+  -- depot then removed in the same tick, takes its cargo back to the provider, and the old failure
+  -- neither ends that nor spills the cargo (Pullfrog's review of 66d57e9).
+  local logistics = reset()
+  local request, near = supplied(logistics, 5)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  check("setup: bound for the near provider", trip.provider == near.unit_number)
+  trip.state = "to-request"
+  trip.cargo[1].name, trip.cargo[1].count, trip.cargo[1].valid_for_read = "a", 10, true
+  local fail = defines.behavior_result.fail
+  logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = fail })
+  request.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = request.unit_number })
+  check("setup: its depot gone, it takes its cargo back", trip.state == "returning")
+  logistics.failed_commands()
+  check("the old failure doesn't end its way back", storage.trips[trip.id] == trip and trip.state == "returning")
+  -- (The depot's own freighters are left where it stood, as for any depot destroyed.)
+  local cargo_spilled = 0
+  for _, item in ipairs(surface.spilled) do
+    cargo_spilled = cargo_spilled + (item.name == "a" and item.count or 0)
+  end
+  check("nor spill its cargo", cargo_spilled == 0 and trip.cargo[1].count == 10)
+  local drive = trip.drone.commands[#trip.drone.commands]
+  check(
+    "it drives on to the provider",
+    drive.type == defines.command.go_to_location and drive.destination.x == near.position.x
+  )
+end
+
+do -- The same for any newer command: re-planned (its depot turned, say) before the next tick, a
+  -- freighter keeps its new route; the old failure neither sends it back nor puts its provider on
+  -- cooldown. A failure that is still the latest is acted on as before.
+  local logistics = reset()
+  local request = supplied(logistics, 5)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  -- Loaded by hand, so what it brings is filed again only once it is sent back (checked last).
+  trip.state = "to-request"
+  trip.cargo[1].name, trip.cargo[1].count, trip.cargo[1].valid_for_read = "a", 10, true
+  local fail = defines.behavior_result.fail
+  logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = fail })
+  logistics.on_depot_changed(request)
+  logistics.failed_commands()
+  local depot = storage.depots[request.unit_number]
+  local kept_way, kept_off_cooldown = trip.state == "to-request", next(depot.cooldowns) == nil
+  logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = fail })
+  logistics.failed_commands()
+  check("re-planned meanwhile, it kept its way home", kept_way)
+  check("and its provider wasn't put on cooldown", kept_off_cooldown)
+  check("its latest command failing still sends it back", trip.state == "returning")
+  check("and puts its provider on cooldown", next(depot.cooldowns) ~= nil)
+end
+
 do -- The slot holds 100 freighters, counting freighters out.
   local logistics = reset()
   local request = supplied(logistics, 98)
