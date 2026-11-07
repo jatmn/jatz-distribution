@@ -3731,13 +3731,23 @@ function logistics.setup_blueprint(blueprint, mapping)
     return 0
   end
   local changed = 0
+  -- Request depots' requests by blueprint entry, for parametrisation (scripts/depot-settings.lua).
+  local requests = {}
   for _, planned in pairs(entities) do
-    if plan_settings(planned, mapping[planned.entity_number]) then
+    local entity = mapping[planned.entity_number]
+    if plan_settings(planned, entity) then
       changed = changed + 1
+      local depot = request_depot(entity)
+      if depot then
+        requests[planned] = { request = depot.request, fluid = depot.fluid }
+      end
     end
   end
   if changed > 0 then
-    blueprint.set_blueprint_entities(entities)
+    -- (logistics.plan_request_settings is scripts/depot-settings.lua's, set when it loads.)
+    blueprint.set_blueprint_entities(
+      logistics.plan_request_settings and logistics.plan_request_settings(entities, requests) or entities
+    )
   end
   return changed
 end
@@ -3804,7 +3814,9 @@ function logistics.apply_tags(entity, tags)
   if not depot then
     return
   end
-  local request = tags[REQUEST_TAG]
+  -- Built at once with the blueprint's request settings still beside it (as in the editor): their
+  -- request, which parametrisation may have changed, comes before the tag's.
+  local request = logistics.take_request_settings and logistics.take_request_settings(entity) or tags[REQUEST_TAG]
   if type(request) == "table" and type(request.item) == "string" and type(request.count) == "number" then
     logistics.set_request(entity, request.item, request.count)
   end
@@ -4129,6 +4141,11 @@ end
 logistics.remote_extra = {}
 -- Set by scripts/road-monitor.lua: the blueprint tag (name and value) of a road network monitor.
 logistics.monitor_tag = nil
+-- Set by scripts/depot-settings.lua: a blueprint's entries with request depots' requests added as
+-- request settings, for parametrisation (plan), and the request of the settings beside a depot
+-- built at once, removing them (take).
+logistics.plan_request_settings = nil
+logistics.take_request_settings = nil
 
 -- Speed research finished (or undone): the force's freighters on the road drive at the new speed.
 function logistics.on_research_changed(event)

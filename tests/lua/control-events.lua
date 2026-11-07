@@ -785,6 +785,117 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
     "a depot built from a blueprint ghost has its request",
     request and request.item == "wood" and request.count == 7
   )
+
+  -- Blueprint parametrisation: the request also goes in as request settings, a constant
+  -- combinator at the depot's centre whose first slot the game can turn into parameters.
+  local settings
+  for _, entry in pairs(saved) do
+    if entry.name == "jatz-depot-settings" then
+      settings = entry
+    end
+  end
+  local slot = settings and settings.control_behavior.sections.sections[1].filters[1]
+  check(
+    "a blueprint holds the request as request settings at the depot",
+    slot
+      and slot.type == "item"
+      and slot.name == "wood"
+      and slot.count == 7
+      and settings.position.x == planned.position.x
+      and settings.position.y == planned.position.y
+      and settings.entity_number == 2
+  )
+  -- Set up again, the blueprint keeps one, with the request as it is now.
+  assert(logistics.set_request(source, "wood", 9))
+  blueprint.get_blueprint_entities = function()
+    return saved
+  end
+  logistics.setup_blueprint(blueprint, { [1] = source })
+  local count, again = 0, nil
+  for _, entry in pairs(saved) do
+    if entry.name == "jatz-depot-settings" then
+      count = count + 1
+      again = entry.control_behavior.sections.sections[1].filters[1].count
+    end
+  end
+  check("setting it up again replaces them", #saved == 2 and count == 1 and again == 9)
+
+  -- The settings' ghost, parametrised to 50 iron plates, hands the request to the depot's ghost
+  -- placed with it, and goes.
+  prototypes.item["iron-plate"] = { name = "iron-plate" }
+  local function placed_settings(x, item, count_)
+    local entity = {
+      valid = true,
+      name = "entity-ghost",
+      type = "entity-ghost",
+      ghost_name = "jatz-depot-settings",
+      position = { x = x, y = 0.5 },
+      surface = surface,
+      get_control_behavior = function()
+        return {
+          sections_count = 1,
+          get_section = function()
+            return { filters = { { value = { type = "item", name = item, quality = "normal" }, min = count_ } } }
+          end,
+        }
+      end,
+    }
+    function entity.destroy()
+      entity.valid = false
+    end
+    return entity
+  end
+  local ghost = {
+    valid = true,
+    name = "entity-ghost",
+    type = "entity-ghost",
+    ghost_name = "jatz-request-depot",
+    position = { x = 120.5, y = 0.5 },
+    tags = { jatz_request = { item = "wood", count = 9 }, jatz_freighters = 3 },
+  }
+  local ghost_settings = placed_settings(120.5, "iron-plate", 50)
+  local search = surface.find_entities_filtered
+  surface.find_entities_filtered = function(filter)
+    if filter.position and filter.position.x == 120.5 then
+      return { ghost }
+    end
+    return {}
+  end
+  fire("on_built_entity", { entity = ghost_settings, player_index = 3 })
+  surface.find_entities_filtered = search
+  check(
+    "parametrised request settings hand their request to the depot's ghost",
+    ghost.tags.jatz_request.item == "iron-plate"
+      and ghost.tags.jatz_request.count == 50
+      and ghost.tags.jatz_freighters == 3
+  )
+  check("and go", not ghost_settings.valid)
+  local from_ghost = depot(120)
+  from_ghost.name = "jatz-request-depot"
+  fire("on_robot_built_entity", { entity = from_ghost, tags = ghost.tags })
+  request = logistics.get_request(from_ghost)
+  check("the depot built from it requests that", request and request.item == "iron-plate" and request.count == 50)
+
+  -- Built at once (as in the editor), the depot takes the request from its settings beside it
+  -- rather than its tags, whichever event comes first.
+  local at_once = depot(130)
+  at_once.name = "jatz-request-depot"
+  local real_settings = placed_settings(130.5, "iron-plate", 40)
+  real_settings.name, real_settings.type, real_settings.ghost_name = "jatz-depot-settings", "constant-combinator", nil
+  surface.find_entities_filtered = function(filter)
+    if filter.position and filter.position.x == 130.5 and filter.name == "jatz-depot-settings" then
+      return real_settings.valid and { real_settings } or {}
+    end
+    return {}
+  end
+  fire("on_built_entity", { entity = at_once, tags = { jatz_request = { item = "wood", count = 9 } } })
+  surface.find_entities_filtered = search
+  request = logistics.get_request(at_once)
+  check(
+    "a depot built at once takes its settings' request",
+    request and request.item == "iron-plate" and request.count == 40
+  )
+  check("and they go", not real_settings.valid)
 end
 
 do -- Freighters moved out of the player's inventory into a request depot (ctrl+ or shift+click in
@@ -1251,6 +1362,11 @@ do -- Liquid depots: the same panels, beside the storage tank window, choosing a
   logistics.setup_blueprint(blueprint, { request })
   local tags = saved[1].tags
   check("a liquid request depot's blueprint keeps its request", tags and tags.jatz_request.item == "water")
+  local settings = saved[2] and saved[2].control_behavior.sections.sections[1].filters[1]
+  check(
+    "and its request settings, as a fluid",
+    saved[2].name == "jatz-depot-settings" and settings.type == "fluid" and settings.name == "water"
+  )
   check("and how many freighters", tags.jatz_freighters == 4)
   check("without an insert plan", saved[1].items == nil)
   local asked

@@ -186,6 +186,7 @@ With [Milestones](https://mods.factorio.com/mod/Milestones) installed, its list 
 
 - Copy and Paste settings, copy and paste, and blueprints carry a request depot's request, its **Request from buffer depots** and **Full loads only** settings, and its number of freighters. The new depot asks for the freighters (as a ghost request), and construction robots, or you by hand, bring them. This works for liquid depots too.
 - They carry every depot's circuit condition too.
+- Blueprint parametrisation works on request and buffer depots' requests: a blueprint of a depot with a request offers its item or fluid and its amount as parameters, and the depots built from it request what you fill in. The blueprint lists one "Depot request settings" per such depot; it is how the game sees the request, and never stays in the world. Pasting a blueprint over a depot already built sets its request too.
 - Cloned depots keep their request and circuit condition.
 
 ## Good to know

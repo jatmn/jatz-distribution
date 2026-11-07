@@ -1133,12 +1133,56 @@ local function setup_deliveries(surface, result)
   result.blueprint_freighters = planned.items and planned.items[1].items.in_inventory[1].count
   local revived
   for _, ghost in pairs(blueprint.build_blueprint({ surface = surface, force = "player", position = { -56.5, -66.5 } })) do
-    local _, entity = ghost.revive({ raise_revive = true })
-    revived = entity or revived
+    -- (The depot built takes its request settings' ghost with it.)
+    if ghost.valid then
+      local _, entity = ghost.revive({ raise_revive = true })
+      revived = entity or revived
+    end
   end
   local copied = revived and remote.call("jatz-distribution", "get_request", revived)
   result.built_request = copied and (copied.item .. " x" .. copied.count) or "none"
   result.built_freighters_requested = revived and remote.call("jatz-distribution", "requested_freighters", revived)
+  -- Blueprint parametrisation: the blueprint also holds the request as request settings, which
+  -- the game can parametrise. Changed as parametrising it to 11 iron plates would, and pasted (the
+  -- settings' ghost hands the request to the depot's ghost and goes), robots build a depot asking
+  -- for 11 iron plates.
+  local settings
+  for _, entry in pairs(blueprint.get_blueprint_entities()) do
+    if entry.name == "jatz-depot-settings" then
+      settings = entry
+    end
+  end
+  local slot = settings and settings.control_behavior.sections.sections[1].filters[1]
+  result.blueprint_settings = slot and (slot.name .. " x" .. slot.count) or "none"
+  if slot then
+    local entities = blueprint.get_blueprint_entities()
+    for _, entry in pairs(entities) do
+      if entry.name == "jatz-depot-settings" then
+        entry.control_behavior.sections.sections[1].filters[1].name = "iron-plate"
+        entry.control_behavior.sections.sections[1].filters[1].count = 11
+      end
+    end
+    blueprint.set_blueprint_entities(entities)
+    local parametrised
+    for _, ghost in
+      pairs(blueprint.build_blueprint({
+        surface = surface,
+        force = "player",
+        position = { -46.5, -66.5 },
+        raise_built = true,
+      }))
+    do
+      if ghost.valid then
+        local _, entity = ghost.revive({ raise_revive = true })
+        parametrised = entity or parametrised
+      end
+    end
+    local asked = parametrised and remote.call("jatz-distribution", "get_request", parametrised)
+    result.parametrised_request = asked and (asked.item .. " x" .. asked.count) or "none"
+    remote.call("jatz-distribution", "set_request", parametrised, nil)
+  end
+  result.settings_left = #surface.find_entities_filtered({ name = "jatz-depot-settings" })
+    + #surface.find_entities_filtered({ ghost_name = "jatz-depot-settings" })
   -- Then filled by hand: the ghost's request for them goes away.
   remote.call("jatz-distribution", "add_freighters", revived, 3)
   deliveries.built = revived
@@ -1182,9 +1226,14 @@ local function setup_deliveries(surface, result)
     blueprint.create_blueprint({ surface = surface, force = "player", area = { { -8, -48 }, { -5, -45 } } })
   remote.call("jatz-distribution", "setup_blueprint", blueprint, five_mapping)
   for _, ghost in pairs(blueprint.build_blueprint({ surface = surface, force = "player", position = { -66.5, -36.5 } })) do
-    ghost.tags = nil
-    local _, built = ghost.revive({ raise_revive = true })
-    deliveries.untagged = built or deliveries.untagged
+    if ghost.valid and ghost.ghost_name ~= "jatz-depot-settings" then
+      ghost.tags = nil
+      local _, built = ghost.revive({ raise_revive = true })
+      deliveries.untagged = built or deliveries.untagged
+    elseif ghost.valid then
+      -- (A player's paste removes it at once.)
+      ghost.destroy()
+    end
   end
   -- /jatz-freighters describes it (real request proxies, plans and counts).
   local described = remote.call("jatz-distribution", "describe_freighters", deliveries.untagged)

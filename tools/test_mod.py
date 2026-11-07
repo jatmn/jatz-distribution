@@ -238,6 +238,10 @@ EXPECTED = {'recipes': RECIPES,
             # settings has robots bring what the destination lacks (1 -> 3). Freighters put in by
             # hand count towards what was requested: requests beyond it go (6 asked, 7 put in ->
             # 0; 5 asked, 5 put in -> 0; 5 asked, 2 put in -> 3; the blueprint's 3, put in -> 0).
+            # Parametrisation: the blueprint also holds the request as request settings (7 wood);
+            # changed to 11 iron plates as parametrising would and pasted, the depot built asks
+            # for 11 iron plates, and no settings stay in the world.
+            'blueprint_settings': 'wood x7', 'parametrised_request': 'iron-plate x11', 'settings_left': 0,
             'blueprinted': 1, 'blueprint_tag': 'wood', 'blueprint_freighters': 3, 'built_request': 'wood x7',
             'built_freighters_requested': 3, 'matched': 2, 'trimmed_requests': 0, 'filled_by_hand_requests': 0,
             'partly_filled_requests': 3, 'built_filled_requests': 0,

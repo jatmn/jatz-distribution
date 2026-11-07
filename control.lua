@@ -6,6 +6,7 @@
 local loading_zone = require("scripts.loading-zone")
 local depot_road = require("scripts.depot-road")
 local logistics = require("scripts.logistics")
+local depot_settings = require("scripts.depot-settings")
 local request_gui = require("scripts.request-gui")
 local research = require("scripts.research")
 local road_monitor = require("scripts.road-monitor")
@@ -41,7 +42,16 @@ end
 
 local function on_built(event)
   local entity = event.entity or event.destination
-  if entity and entity.valid then
+  local settings = depot_settings.name
+  if
+    entity
+    and entity.valid
+    and (entity.name == settings or (entity.type == "entity-ghost" and entity.ghost_name == settings))
+  then
+    -- A blueprint's depot request settings: the request, which parametrisation may have changed,
+    -- goes to the depot.
+    depot_settings.built(entity)
+  elseif entity and entity.valid then
     if loading_zone.depots[entity.name] then
       settle(entity)
     end
@@ -70,6 +80,14 @@ local filters = { { filter = "name", name = road_monitor.name } }
 for name in pairs(loading_zone.depots) do
   filters[#filters + 1] = { filter = "name", name = name }
 end
+-- And a blueprint's depot request settings, or their ghost (scripts/depot-settings.lua).
+local built_filters = {
+  { filter = "name", name = depot_settings.name },
+  { filter = "ghost_name", name = depot_settings.name },
+}
+for _, filter in ipairs(filters) do
+  built_filters[#built_filters + 1] = filter
+end
 -- Every way a depot or a road network monitor can be built: by hand, robots, other mods' scripts, revived ghosts, platforms.
 for _, event in ipairs({
   defines.events.on_built_entity,
@@ -78,7 +96,7 @@ for _, event in ipairs({
   defines.events.script_raised_revive,
   defines.events.on_space_platform_built_entity,
 }) do
-  script.on_event(event, on_built, filters)
+  script.on_event(event, on_built, built_filters)
 end
 -- Freighters and request and buffer depots' truck chests cloned along with an area are removed: they belong to
 -- the original's trips and depots, and a cloned depot makes its own. A Fuel depot's tank cloned with
