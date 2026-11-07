@@ -2474,11 +2474,14 @@ function logistics.on_ai_command_completed(event)
   end
   local depot = storage.depots[trip.request]
   if event.result ~= defines.behavior_result.success then
-    if trip.refuel then
-      fuel_route_failed(id, trip, depot)
-    else
-      route_failed(id, trip, depot)
-    end
+    -- One killed by a script (LuaEntity::die: the console, the editor, another mod) fails its
+    -- command as it dies with its health still showing, so a failure is acted on next tick
+    -- (failed_commands), when such a freighter is gone: taken home as a failed route, it went back
+    -- into the slot and its depot asked robots for no replacement.
+    local failed = storage.failed_trips or {}
+    trip.id = id
+    failed[#failed + 1] = trip
+    storage.failed_trips = failed
   elseif trip.refuel and not trip.loading then
     -- At the Fuel depot: it stands there LOADING_TICKS to fill up too.
     trip.loading = true
@@ -2504,6 +2507,27 @@ function logistics.on_ai_command_completed(event)
     arrived_at_request(id, trip, depot)
   else
     returned_to_provider(id, trip)
+  end
+end
+
+-- The commands freighters failed (on_ai_command_completed), the tick after, from control.lua's
+-- on_tick: a freighter gone by now died as it failed and is lost; any other lost its way. (A
+-- field, not a local: this file has as many locals as Lua allows.)
+function logistics.failed_commands()
+  local failed = storage.failed_trips
+  storage.failed_trips = nil
+  for _, trip in ipairs(failed or {}) do
+    -- Still out (`repaint` moves `id` with it), and not waiting for a reroute search.
+    local id = trip.id
+    if storage.trips[id] == trip then
+      if not trip.drone.valid then
+        lose(id, trip)
+      elseif not trip.searching and trip.refuel then
+        fuel_route_failed(id, trip, storage.depots[trip.request])
+      elseif not trip.searching then
+        route_failed(id, trip, storage.depots[trip.request])
+      end
+    end
   end
 end
 
