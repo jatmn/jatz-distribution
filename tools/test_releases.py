@@ -157,6 +157,15 @@ class Releases(unittest.TestCase):
                 publish_mod.publish(self.output, self.tag, 'fixture-key', root=self.root)
             request.assert_not_called()
 
+    def test_portal_listing_reads_past_the_cdn_cache(self):
+        # The portal's CDN serves /api/mods/<name> from cache for 15 minutes: each read needs a URL it hasn't cached.
+        with patch.object(publish_mod, 'request_json', return_value={'releases': []}) as request:
+            publish_mod.listing('jatz-distribution')
+            publish_mod.listing('jatz-distribution')
+        first, second = (call.args[0] for call in request.call_args_list)
+        self.assertTrue(first.startswith(publish_mod.PORTAL + '/api/mods/jatz-distribution?'))
+        self.assertNotEqual(first, second)
+
     def test_existing_portal_upload_and_failed_publication_are_checked(self):
         archive, _ = build(self.output, self.root)
         with patch.object(publish_mod, 'listing', side_effect=[{'releases': []}, self.portal_release(archive)]), patch.object(

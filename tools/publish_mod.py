@@ -43,8 +43,10 @@ def request_json(url, fields=None, archive=None, token=None, field='file', conte
 
 
 def listing(name):
+    # The portal's CDN caches this reply for 15 minutes, so the read before uploading would hide the new release from
+    # verification. A query string the cache has never seen always reaches the portal.
     try:
-        return request_json(PORTAL + '/api/mods/' + urllib.parse.quote(name, safe=''))
+        return request_json(PORTAL + '/api/mods/' + urllib.parse.quote(name, safe='') + '?fresh=' + uuid.uuid4().hex)
     except urllib.error.HTTPError as error:
         if error.code == 404:
             return None
