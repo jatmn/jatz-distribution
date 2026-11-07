@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.2](https://github.com/jatmn/jatz-distribution/compare/v0.1.1...v0.1.2) (2026-11-07)
+
+
+### Features
+
+* let mods declare their items' freighter colors ([#60](https://github.com/jatmn/jatz-distribution/issues/60)) ([77acb6f](https://github.com/jatmn/jatz-distribution/commit/77acb6f87ebe6f9a320e7582113792e976328a0f))
+
+
+### Bug Fixes
+
+* bring back a depot's settings and freighters when its removal is undone ([#59](https://github.com/jatmn/jatz-distribution/issues/59)) ([bf65413](https://github.com/jatmn/jatz-distribution/commit/bf6541343dbd4f5b9f1d095a23caadf2be478f5f))
+* don't crash when a freighter too low on fuel stays home ([#57](https://github.com/jatmn/jatz-distribution/issues/57)) ([eb118d1](https://github.com/jatmn/jatz-distribution/commit/eb118d1ccbc8f35316eb80218f1fc5e29968e88c))
+
 ## [0.1.1](https://github.com/jatmn/jatz-distribution/compare/v0.1.0...v0.1.1) (2026-11-06)
 
 
