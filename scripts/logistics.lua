@@ -1401,6 +1401,12 @@ end
 -- capacity, which arrived_at_provider reads as it loads. nil for other depots, which send a
 -- freighter for any amount. (On the module table, as `missing` is, to spare this file's main
 -- chunk a local: Lua allows 200, and it is close; see issue #69.)
+--
+-- Intentional: the threshold is the whole request, not what is still missing. A depot whose
+-- request is smaller than one load, with some of it already in stock, has less room than the
+-- request and so waits until it is empty enough to take all of it in one trip, rather than send
+-- freighters to top it up a few at a time, which is the small trip this setting exists to stop.
+-- Players who want topping up leave the setting off.
 function logistics.full_load(depot, trip)
   local request = depot.request
   if not depot.full_loads or not request or request.count <= 0 then
