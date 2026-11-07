@@ -3476,6 +3476,53 @@ do -- A provider's check walks its promises once: hundreds of freighters coming 
   check("four times the promises cost well under sixteen times as much", large < small * 8)
 end
 
+-- A freighter heading for the near provider, a far one holding the item too; its request depot is
+-- then filled some other way (by hand, say), so it needs nothing more.
+local function filled_meanwhile(logistics)
+  local request, near = setup(logistics)
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 20 })
+  logistics.add(far)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  request.chest.contents.a = 10
+  return trip, near, far
+end
+
+do -- Not sent on to another provider when its depot needs nothing more (Copilot's review of
+  -- 86332ce): it would drive farther only to load nothing.
+  local logistics = reset()
+  local trip, near = filled_meanwhile(logistics)
+  near.chest.contents.a = 0
+  game.tick = 60
+  local asked = #requests
+  logistics.on_tick()
+  check("its provider emptied, it goes home rather than on", trip.state == "to-request" and #requests == asked)
+  logistics = reset()
+  trip, near = filled_meanwhile(logistics)
+  asked = #requests
+  near.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = near.unit_number })
+  check("its provider removed, it goes home rather than on", trip.state == "to-request" and #requests == asked)
+end
+
+do -- Filled while it looks for another provider: the answer sends it home, not there.
+  local logistics = reset()
+  local request, near = setup(logistics)
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 20 })
+  logistics.add(far)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  near.chest.contents.a = 0
+  game.tick = 60
+  logistics.on_tick()
+  check("setup: it looks for another provider", trip.searching ~= nil and requests[#requests].goal.x == 40.5)
+  request.chest.contents.a = 10
+  answer(logistics, #requests, "route")
+  check("filled meanwhile, it goes home", trip.state == "to-request" and trip.provider ~= far.unit_number)
+end
+
 do -- A freighter arriving at an emptied provider when its depot needs nothing more goes home.
   local logistics = reset()
   local request, near = setup(logistics)

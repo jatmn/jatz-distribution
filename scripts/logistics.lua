@@ -1850,7 +1850,9 @@ function logistics.home_empty(id, trip, depot)
 end
 
 -- Find a new provider, nearest by road from where it stands, for a freighter whose provider is
--- gone or no longer suitable. It waits while the search runs, and goes home if there is none.
+-- gone or no longer suitable. It waits while the search runs, and goes home if there is none, or if
+-- its depot no longer has room for what it would bring (filled meanwhile, by hand or otherwise):
+-- sent on, it would drive farther only to load nothing (Copilot's review of 86332ce).
 local function reroute(id, trip)
   local depot = storage.depots[trip.request]
   local request = depot and depot.entity.valid and depot.request
@@ -1863,6 +1865,7 @@ local function reroute(id, trip)
     trip.drone.valid
     and request
     and request.item == trip.item
+    and select(2, need(depot, id)) > 0
     and (not full or select(2, need(depot, id)) >= full)
     and search_providers(depot, trip.drone.position, id)
   then
@@ -3027,9 +3030,10 @@ local function finish_search(depot, search, owner)
     and (not full or available(provider, search.item) >= full)
     and enabled(provider, true)
   if search.trip then
-    -- Room for this freighter's load, besides what the depot's other freighters are bringing.
-    local room = full and select(2, need(depot, search.trip))
-    if still and (not full or room >= full) then
+    -- Room for this freighter's load, besides what the depot's other freighters are bringing. Its
+    -- depot filled during the search: reroute sends it home.
+    local room = select(2, need(depot, search.trip))
+    if still and room > 0 and (not full or room >= full) then
       owner.search_token, owner.searching = nil, nil
       -- Promise only what the new provider has unpromised (`available` doesn't count this trip's
       -- promise: it gave up on its old provider, logistics.give_up, which unfiled it, or that one
