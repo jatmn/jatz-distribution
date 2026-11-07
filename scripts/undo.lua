@@ -17,15 +17,19 @@
 -- cancelled). Mining by hand makes its undo item only after on_player_mined_entity, so the
 -- settings read before it are held until that event says it was removed (a failed attempt, a full
 -- inventory say, leaves nothing waiting), tagged from the next tick, and an undo before then takes
--- the settings still waiting.
+-- the settings still waiting. An undo action is known only by what it holds, never by its place in
+-- the history (items are pushed on top, and at the history's limit, 100 items, each new one drops
+-- the oldest), so every action tagged here is marked as its entity's removal (MARK) and no other
+-- removal takes it.
 local logistics = require("scripts.logistics")
 
 local undo = {}
 
 -- The undo action tag holding an entity's settings tags.
 local TAG = "jatz_settings"
--- The undo action tag marking which entity a marked removal is for (its unit number), so robots
--- and platforms taking it find its action without reading undo items again.
+-- The undo action tag marking whose removal an action is (its entity's unit number): set on every
+-- action tagged here, so no other removal takes it, and found again by robots and platforms taking
+-- a marked entity without reading undo items.
 local MARK = "jatz_removal_of"
 -- Settings waiting for their undo action are given up after this long (a removal that made none).
 local GIVE_UP_TICKS = 60
@@ -51,21 +55,26 @@ local function by_key(entries)
   return found
 end
 
--- The removal (of `list`, a spot's newest first) that may take this undo action: the newest, unless
--- the action is marked as another entity's removal (its marking located it, MARK), which only that
--- entity's may take, so a removal never takes a later one's at the same spot. Taken off the list.
-local function owner(list, action)
+-- Whether this undo action may be `entry`'s: every action tagged here is marked with whose removal
+-- it is (MARK, a unit number, never reused), and only that entity's may take it again. So a removal
+-- never takes another's, at the same spot or earlier in the history, whatever was pushed or dropped.
+local function may_take(action, entry)
   local mark = action.tags and action.tags[MARK]
-  for index, entry in ipairs(list or {}) do
-    if not mark or entry.unit_number == mark then
-      return table.remove(list, index)
-    end
-  end
+  return mark == nil or mark == entry.unit_number
+end
+
+-- Put `entry`'s settings on this action, marked as its own (the action table too, so the rest of
+-- the pass sees it taken).
+local function put(stack, item, action_index, action, entry)
+  stack.set_undo_tag(item, action_index, TAG, entry.tags)
+  stack.set_undo_tag(item, action_index, MARK, entry.unit_number)
+  action.tags = action.tags or {}
+  action.tags[MARK] = entry.unit_number
 end
 
 -- Tag the undo actions of these removals (`entries`, in the order they happened) on a player's
--- stack: each its own removal action, the newest removal the newest action, so several at the same
--- spot don't take each other's. Returns the entries whose action wasn't found.
+-- stack: each its own removal action, the newest removal the newest action it may take, so several
+-- at the same spot don't take each other's. Returns the entries whose action wasn't found.
 local function tag(stack, entries)
   local wanted = by_key(entries)
   local left = #entries
@@ -75,10 +84,13 @@ local function tag(stack, entries)
     end
     for action_index, action in ipairs(stack.get_undo_item(item)) do
       local target = action.type == "removed-entity" and action.surface_index and action.target
-      local entry = target and owner(wanted[key(action.surface_index, target.name, target.position)], action)
-      if entry then
-        stack.set_undo_tag(item, action_index, TAG, entry.tags)
-        entry.tagged, left = true, left - 1
+      local list = target and wanted[key(action.surface_index, target.name, target.position)]
+      for index, entry in ipairs(list or {}) do
+        if may_take(action, entry) then
+          put(stack, item, action_index, action, table.remove(list, index))
+          entry.tagged, left = true, left - 1
+          break
+        end
       end
     end
   end
@@ -117,8 +129,8 @@ local function note(entity)
 end
 
 -- A player marked a depot or monitor for deconstruction (or cut it): who, for when robots or the
--- platform take it, and its undo action to find (control.lua's on_tick, from the next tick: the
--- action is made just after this event).
+-- platform take it, and its undo action to find (control.lua's on_tick: the action is made just
+-- after this event, probed on 2.1.24, so by then it is there).
 function undo.marked(entity, player_index)
   if player_index and entity.valid and entity.unit_number then
     storage.undo_marked = storage.undo_marked or {}
@@ -131,47 +143,57 @@ function undo.marked(entity, player_index)
   end
 end
 
--- Find the undo actions of the removals marked before this tick, a player's all in one look
--- through their undo items (a cut of many depots is one item: read once, not once per depot), and
--- mark each with its entity, remembering where it is counted from the bottom of the stack, which
--- new undo items pushed on top don't change.
+-- Find the undo actions of the removals marked so far, a player's all in one look through their
+-- undo items (a cut of many depots is one item: read once, not once per depot), and mark each as
+-- its entity's, remembering its index within its item (which never changes; the item's place in
+-- the history does, as items are pushed on top and the oldest dropped at the history's limit).
 local function locate(tick)
-  local wanted, later = {}, nil
+  local wanted = {}
   for unit_number, marked in pairs(storage.undo_marked or {}) do
-    if not marked.bottom and not marked.unlocated and marked.tick >= tick then
-      later = true
-    elseif not marked.bottom and not marked.unlocated then
+    if not marked.action and not marked.unlocated then
       local by_player = wanted[marked.player_index] or {}
       wanted[marked.player_index] = by_player
       local list = by_player[marked.key] or {}
       by_player[marked.key] = list
       list[#list + 1] = unit_number
-      -- Looked for once: if not found now, a removal looks for it itself.
-      marked.unlocated = true
     end
   end
-  -- Marked this tick: located on the next.
-  storage.undo_locating = later
+  storage.undo_locating = nil
   for player_index, spots in pairs(wanted) do
     local stack = undo_stack(player_index)
-    local count = stack and stack.get_undo_item_count() or 0
     local left = 0
     for _, list in pairs(spots) do
       left = left + #list
     end
-    for item = 1, count do
+    for item = 1, stack and stack.get_undo_item_count() or 0 do
       if left == 0 then
         break
       end
       for action_index, action in ipairs(stack.get_undo_item(item)) do
         local target = action.type == "removed-entity" and action.surface_index and action.target
         local list = target and spots[key(action.surface_index, target.name, target.position)]
-        local unit_number = list and table.remove(list, 1)
-        if unit_number then
-          stack.set_undo_tag(item, action_index, MARK, unit_number)
-          local marked = storage.undo_marked[unit_number]
-          marked.bottom, marked.action, marked.unlocated = count - item + 1, action_index, nil
-          left = left - 1
+        for index, unit_number in ipairs(list or {}) do
+          if may_take(action, { unit_number = unit_number }) then
+            table.remove(list, index)
+            stack.set_undo_tag(item, action_index, MARK, unit_number)
+            action.tags = action.tags or {}
+            action.tags[MARK] = unit_number
+            storage.undo_marked[unit_number].action = action_index
+            left = left - 1
+            break
+          end
+        end
+      end
+    end
+    -- Not found: marked later this tick (by a script after this), looked for again next tick;
+    -- otherwise a removal looks for it itself.
+    for _, list in pairs(spots) do
+      for _, unit_number in ipairs(list) do
+        local marked = storage.undo_marked[unit_number]
+        if marked.tick >= tick then
+          storage.undo_locating = true
+        else
+          marked.unlocated = true
         end
       end
     end
@@ -193,9 +215,10 @@ end
 
 -- Robots or a space platform are about to take a depot or monitor a player marked: its settings
 -- go on that player's undo action for it now (again, newest, if an earlier attempt left it
--- standing). Straight to the action located for it, checked by its mark; only if the stack moved
--- under it (undone, or trimmed at its oldest), or it is taken before it was located (a platform
--- takes it within the tick), are the player's undo items read to find it.
+-- standing). Its action is the one marked as its own, at the index it was located at, in whichever
+-- item of the history it is now: found by reading that one tag of each item, never the items
+-- themselves. Only if it wasn't located (a platform takes it within the tick) are the player's undo
+-- items read to find it.
 function undo.removing_marked(entity)
   local marked = storage.undo_marked and entity.valid and storage.undo_marked[entity.unit_number]
   local stack = marked and undo_stack(marked.player_index)
@@ -203,16 +226,14 @@ function undo.removing_marked(entity)
     return
   end
   local entry = note(entity)
-  if marked.bottom then
-    local item = stack.get_undo_item_count() - marked.bottom + 1
-    -- The item there may now have fewer actions: reading past them is an error, not a nil.
-    local ok, mark = false, nil
-    if item >= 1 then
-      ok, mark = pcall(stack.get_undo_tag, item, marked.action, MARK)
-    end
-    if ok and mark == entity.unit_number then
-      stack.set_undo_tag(item, marked.action, TAG, entry.tags)
-      return
+  if marked.action then
+    for item = 1, stack.get_undo_item_count() do
+      -- An item may have fewer actions: reading past them is an error, not a nil (probed).
+      local ok, mark = pcall(stack.get_undo_tag, item, marked.action, MARK)
+      if ok and mark == entity.unit_number then
+        stack.set_undo_tag(item, marked.action, TAG, entry.tags)
+        return
+      end
     end
   end
   -- Not found: no undo action of it is left to keep the settings on.
@@ -246,45 +267,14 @@ function undo.player_removed(entity, player_index)
     storage.undo_mining = nil
   end
   if entity.valid and mining.unit_number == entity.unit_number then
-    -- Its undo item is the next one pushed on this player's stack (probed on 2.1.24: just after
-    -- this event), so it is this far from the bottom whatever comes on top before it is tagged (a
-    -- replacement at the same spot marked meanwhile, say).
-    local stack = undo_stack(player_index)
-    mining.entry.bottom = stack and stack.get_undo_item_count() + 1
     wait(player_index, { mining.entry })
   end
 end
 
--- Tag each removal that knows its undo item (`entry.bottom`) on that item, if its action is there.
--- Returns the rest, for `tag` to look for.
-local function tag_own_items(stack, entries)
-  local rest = {}
-  local count = stack.get_undo_item_count()
-  for _, entry in ipairs(entries) do
-    local item = entry.bottom and count - entry.bottom + 1
-    if item and item >= 1 and item <= count then
-      for action_index, action in ipairs(stack.get_undo_item(item)) do
-        local target = action.type == "removed-entity" and action.surface_index and action.target
-        if
-          not entry.tagged
-          and target
-          and key(action.surface_index, target.name, target.position) == entry.key
-          and owner({ entry }, action)
-        then
-          stack.set_undo_tag(item, action_index, TAG, entry.tags)
-          entry.tagged = true
-        end
-      end
-    end
-    if not entry.tagged then
-      rest[#rest + 1] = entry
-    end
-  end
-  return rest
-end
-
--- Tag the undo actions of the removals noted before this tick, and locate those marked before it
+-- Locate the marked removals, then tag the undo actions of the removals noted before this tick
 -- (control.lua's on_tick, only while there are some: storage.undo_pending or undo_locating).
+-- Locating first marks the actions of entities marked for deconstruction as theirs, so a removal
+-- by hand at the same spot never takes one.
 function undo.tag_pending(tick)
   if storage.undo_locating then
     locate(tick)
@@ -301,7 +291,7 @@ function undo.tag_pending(tick)
     end
     local stack = undo_stack(player_index)
     -- Not found yet: looked for again next tick, until given up.
-    for _, entry in ipairs(stack and tag(stack, tag_own_items(stack, due)) or due) do
+    for _, entry in ipairs(stack and tag(stack, due) or due) do
       waiting[#waiting + 1] = entry
     end
     storage.undo_pending[player_index] = #waiting > 0 and waiting or nil

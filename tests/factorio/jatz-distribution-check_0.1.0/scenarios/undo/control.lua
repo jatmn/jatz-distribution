@@ -11,13 +11,14 @@
 -- robots take it are the ones kept. With Space Age, a liquid request depot cut on a space platform
 -- (the platform takes it at once) keeps its settings too, and the platform rebuilds it from its
 -- ghost with its request and freighters. A depot mined by hand and a bare replacement at its spot
--- marked for deconstruction in the same tick each keep their own settings on their own action.
+-- marked for deconstruction in the same tick each keep their own settings on their own action, and
+-- so do two depots mined by hand at one spot in a tick with the undo history at its limit.
 -- Writes script-output/jatz-undo-check.json.
 local FREIGHTER = "jatz-quinityn-freighter"
 local DEPOT = "jatz-request-depot"
 local CUT, MINED, KEPT = { x = 6.5, y = 0.5 }, { x = 6.5, y = -6.5 }, { x = 14.5, y = 0.5 }
 local PLATFORM_DEPOT, AFLOAT = "jatz-liquid-request-depot", { x = 8.5, y = 0.5 }
-local SWAPPED = { x = -2.5, y = -6.5 }
+local SWAPPED, AT_LIMIT = { x = -2.5, y = -6.5 }, { x = -2.5, y = 6.5 }
 
 -- The freighters kept on every undo action for the removal of a request depot at `position`,
 -- newest first (0 for none).
@@ -214,7 +215,26 @@ script.on_event(defines.events.on_tick, function(event)
     player.get_main_inventory().insert({ name = DEPOT, count = 1 })
     player.cursor_stack.set_stack({ name = DEPOT, count = 1 })
     player.build_from_cursor({ position = MINED })
+    -- The undo history at its limit (100 items: one more drops the oldest), from 99: chests mined.
+    local stack = player.undo_redo_stack
+    local x = -12
+    while stack.get_undo_item_count() < 99 do
+      local chest = surface.create_entity({ name = "wooden-chest", position = { x + 0.5, 12.5 }, force = player.force })
+      assert(player.mine_entity(chest, true), "the player could not mine a chest")
+      x = x + 1
+    end
+    -- Then in one tick, a depot with 2 freighters mined by hand, and a bare one at its spot too:
+    -- each keeps its own, though the history drops its oldest under them.
+    for _, count in ipairs({ 2, 0 }) do
+      local depot =
+        surface.create_entity({ name = DEPOT, position = AT_LIMIT, force = player.force, raise_built = true })
+      if count > 0 then
+        assert(remote.call("jatz-distribution", "add_freighters", depot, count) == count)
+      end
+      assert(player.mine_entity(depot, true), "the player could not mine the depot")
+    end
   elseif result and event.tick == 1200 then
+    result.limit_kept = freighters_kept_at(AT_LIMIT)
     local rebuilt = { cut_rebuilt = { CUT }, mined_rebuilt = { MINED } }
     if storage.platform_surface then
       rebuilt.platform_rebuilt = { AFLOAT, PLATFORM_DEPOT, game.surfaces[storage.platform_surface] }

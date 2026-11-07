@@ -1851,8 +1851,12 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
       entry.tags[name] = tag
     end,
   }
+  -- Factorio keeps the 100 latest undo items: one more pushes the oldest out.
   local function new_item(actions)
     table.insert(items, 1, actions)
+    if #items > 100 then
+      table.remove(items)
+    end
   end
   local function removal(name, x, y)
     return { type = "removed-entity", surface_index = 1, target = { name = name, position = { x = x, y = y } } }
@@ -1970,9 +1974,9 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
     removal("jatz-request-depot", 604.5, 0.5),
   })
   fire("on_tick", { tick = 1000 })
-  check("its undo action is looked for from the next tick", reads == 0)
+  check("its undo action, made just after the marking, is looked for that tick", reads == 1)
+  check("the cut's undo item read once for all three depots", storage.undo_locating == nil)
   fire("on_tick", { tick = 1001 })
-  check("then the cut's undo item is read once for all three depots", reads == 1)
   check(
     "nothing is saved at marking: its settings may change before it goes",
     items[1][2].tags and items[1][2].tags.jatz_settings == nil and items[1][2].tags.jatz_removal_of ~= nil
@@ -2261,6 +2265,76 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
   })
   check("undoing what isn't ours, or ours with nothing to keep, searches for no ghost", searches == 0)
   surface.find_entities_filtered = search
+
+  -- At the history's limit (100 items), where pushing one drops the oldest, so places in the
+  -- history move under every removal.
+  local function fill_history()
+    while #items < 100 do
+      new_item({ removal("wooden-chest", 50.5, 50.5) })
+    end
+  end
+  local function kept_at(x)
+    local found = {}
+    for _, actions in ipairs(items) do
+      for _, action in ipairs(actions) do
+        if action.target.name == "jatz-request-depot" and action.target.position.x == x then
+          local saved = action.tags and action.tags.jatz_settings
+          found[#found + 1] = saved and (saved.jatz_freighters or 0) or "untagged"
+        end
+      end
+    end
+    return found
+  end
+  -- Two hand minings at one spot in a tick, the first from 99 items (Pullfrog's repro).
+  fill_history()
+  table.remove(items)
+  local first_mined = depot(740)
+  first_mined.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = first_mined })
+  freighters_in(first_mined, 2)
+  game.tick = 9000
+  hand_mine(first_mined)
+  new_item({ removal("jatz-request-depot", 740.5, 0.5) })
+  local bare_mined = depot(740)
+  bare_mined.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = bare_mined })
+  freighters_in(bare_mined, 0)
+  hand_mine(bare_mined)
+  new_item({ removal("jatz-request-depot", 740.5, 0.5) })
+  fire("on_tick", { tick = 9001 })
+  local both = kept_at(740.5)
+  check("at the history's limit, two hand minings at one spot each keep their own", both[1] == 0 and both[2] == 2)
+  -- A hand mining, then a replacement at its spot marked in the tagging's tick, at the limit.
+  local at_limit = depot(750)
+  at_limit.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = at_limit })
+  freighters_in(at_limit, 3)
+  game.tick = 9100
+  hand_mine(at_limit)
+  new_item({ removal("jatz-request-depot", 750.5, 0.5) })
+  local marked_later = depot(750)
+  marked_later.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = marked_later })
+  freighters_in(marked_later, 0)
+  game.tick = 9101
+  fire("on_marked_for_deconstruction", { entity = marked_later, player_index = 20 })
+  new_item({ removal("jatz-request-depot", 750.5, 0.5) })
+  fire("on_tick", { tick = 9101 })
+  local mined_and_marked = kept_at(750.5)
+  check(
+    "and a replacement marked at a mined depot's spot before its tagging leaves it its own",
+    mined_and_marked[1] == "untagged" and mined_and_marked[2] == 3
+  )
+  -- Robots take the replacement after more items pushed the oldest out: its action is found by
+  -- its mark, reading no undo item.
+  for _ = 1, 5 do
+    new_item({ removal("wooden-chest", 50.5, 50.5) })
+  end
+  local reads_before = reads
+  robot_takes(marked_later)
+  local taken = kept_at(750.5)
+  check("robots taking a marked depot at the limit find its action by its mark", taken[1] == 0 and taken[2] == 3)
+  check("reading no undo item", reads == reads_before)
 
   for name, handler in pairs(deliveries) do
     logistics[name] = handler

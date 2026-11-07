@@ -315,7 +315,8 @@ TICKS = 2600
 # keep their settings as they went on the player's undo actions, and the ghosts given them are
 # rebuilt (by robots, and by the player) with their request and freighters; a cut depot a player
 # fails to mine by hand stays marked, and keeps the request it has when robots take it; a depot
-# mined by hand and a bare replacement marked at its spot in the same tick each keep their own.
+# mined by hand and a bare replacement marked at its spot in the same tick each keep their own, and
+# two mined by hand at one spot in a tick at the undo history's limit (100 items) too.
 EXPECTED_UNDO = {
     'cut_removed': True,
     'cut_settings': {'request': {'item': 'wood', 'count': 8}, 'freighters': 5},
@@ -324,6 +325,8 @@ EXPECTED_UNDO = {
     'kept_settings': {'request': {'item': 'wood', 'count': 9}, 'freighters': 1},
     # Newest first: the bare replacement marked at the spot, then the depot mined there by hand.
     'swapped_kept': [0, 2],
+    # Newest first: two depots mined by hand at one spot in a tick, the undo history at its limit.
+    'limit_kept': [0, 2],
     'cut_rebuilt': {'request': {'item': 'wood', 'count': 8}, 'freighters': 5},
     'mined_rebuilt': {'freighters': 3}}
 # With Space Age, also a liquid request depot cut on a space platform, which takes it at once, and
