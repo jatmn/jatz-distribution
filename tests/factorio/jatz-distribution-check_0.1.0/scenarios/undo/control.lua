@@ -10,12 +10,36 @@
 -- player then fails to mine by hand (a full inventory) stays marked, and its settings when the
 -- robots take it are the ones kept. With Space Age, a liquid request depot cut on a space platform
 -- (the platform takes it at once) keeps its settings too, and the platform rebuilds it from its
--- ghost with its request and freighters.
+-- ghost with its request and freighters. A depot mined by hand and a bare replacement at its spot
+-- marked for deconstruction in the same tick each keep their own settings on their own action.
 -- Writes script-output/jatz-undo-check.json.
 local FREIGHTER = "jatz-quinityn-freighter"
 local DEPOT = "jatz-request-depot"
 local CUT, MINED, KEPT = { x = 6.5, y = 0.5 }, { x = 6.5, y = -6.5 }, { x = 14.5, y = 0.5 }
 local PLATFORM_DEPOT, AFLOAT = "jatz-liquid-request-depot", { x = 8.5, y = 0.5 }
+local SWAPPED = { x = -2.5, y = -6.5 }
+
+-- The freighters kept on every undo action for the removal of a request depot at `position`,
+-- newest first (0 for none).
+local function freighters_kept_at(position)
+  local stack = game.get_player(1).undo_redo_stack
+  local kept = {}
+  for item = 1, stack.get_undo_item_count() do
+    for action_index, action in ipairs(stack.get_undo_item(item)) do
+      local target = action.target
+      if
+        action.type == "removed-entity"
+        and target.name == DEPOT
+        and target.position.x == position.x
+        and target.position.y == position.y
+      then
+        local settings = stack.get_undo_tag(item, action_index, "jatz_settings") or {}
+        kept[#kept + 1] = settings.jatz_freighters or 0
+      end
+    end
+  end
+  return kept
+end
 
 -- The settings on the player's undo action for the removal of `name` (a request depot unless
 -- given) at `position` on the surface `surface_index` (the player's unless given).
@@ -143,7 +167,17 @@ script.on_event(defines.events.on_tick, function(event)
     assert(remote.call("jatz-distribution", "add_freighters", mined, 1) == 1)
     mined.get_inventory(defines.inventory.chest).insert({ name = FREIGHTER, count = 2 })
     assert(player.mine_entity(mined, true), "the player could not mine the depot")
+    -- Mined by hand with 2 freighters, then a bare replacement at the same spot marked for
+    -- deconstruction in the same tick, before the mining's action is tagged: each keeps its own.
+    local swapped =
+      surface.create_entity({ name = DEPOT, position = SWAPPED, force = player.force, raise_built = true })
+    assert(remote.call("jatz-distribution", "add_freighters", swapped, 2) == 2)
+    assert(player.mine_entity(swapped, true), "the player could not mine the depot")
+    local replacement =
+      surface.create_entity({ name = DEPOT, position = SWAPPED, force = player.force, raise_built = true })
+    assert(replacement.order_deconstruction(player.force, player, 0))
   elseif result and event.tick == 600 then
+    result.swapped_kept = freighters_kept_at(SWAPPED)
     result.cut_removed = depot_at(CUT) == nil
     local cut = settings_at(CUT) or {}
     result.cut_settings = { request = cut.jatz_request, freighters = cut.jatz_freighters }

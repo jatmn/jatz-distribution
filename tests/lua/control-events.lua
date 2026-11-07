@@ -2193,6 +2193,75 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
   robot_takes(shifted)
   check("a stack that moved under it still gets its settings", items[2][1].tags.jatz_settings.jatz_freighters == 3)
 
+  -- Mined by hand, then a bare replacement at the same spot marked for deconstruction before the
+  -- mining's action is tagged: each removal keeps its own action. In the mining's tick (located
+  -- before the tagging, marked as the replacement's), and in the tagging's tick (not yet located).
+  for round, marked_tick in ipairs({ 8000, 8101 }) do
+    local x = 710 + round * 2
+    local mined_first = depot(x)
+    mined_first.name = "jatz-request-depot"
+    fire("on_built_entity", { entity = mined_first })
+    freighters_in(mined_first, 4)
+    assert(logistics.set_request(mined_first, "wood", 6))
+    local start = marked_tick == 8000 and 8000 or 8100
+    game.tick = start
+    hand_mine(mined_first)
+    new_item({ removal("jatz-request-depot", x + 0.5, 0.5) })
+    local mining_item = #items
+    local replacement = depot(x)
+    replacement.name = "jatz-request-depot"
+    fire("on_built_entity", { entity = replacement })
+    freighters_in(replacement, 0)
+    game.tick = marked_tick
+    fire("on_marked_for_deconstruction", { entity = replacement, player_index = 20 })
+    new_item({ removal("jatz-request-depot", x + 0.5, 0.5) })
+    fire("on_tick", { tick = start + 1 })
+    local mining_action = items[#items - mining_item + 1][1]
+    check(
+      "the mined depot's own action keeps its settings, the replacement marked "
+        .. (round == 1 and "in its tick" or "while it is tagged"),
+      ((mining_action.tags or {}).jatz_settings or {}).jatz_freighters == 4
+    )
+    check("and the replacement's action doesn't take them", not (items[1][1].tags and items[1][1].tags.jatz_settings))
+    -- Cancelled before robots came: its action undone brings no ghost back, and leaves alone what
+    -- is still waiting for others.
+    fire("on_cancelled_deconstruction", { entity = replacement, player_index = 20 })
+  end
+  -- A removal still waiting for its action, and the deconstruction of a replacement at its spot
+  -- undone before then: no ghost comes back, so the waiting settings stay for their own action.
+  local waiting_depot = depot(720)
+  waiting_depot.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = waiting_depot })
+  freighters_in(waiting_depot, 2)
+  game.tick = 8200
+  hand_mine(waiting_depot)
+  fire("on_undo_applied", { player_index = 20, actions = { removal("jatz-request-depot", 720.5, 0.5) } })
+  check("an undo bringing no ghost back leaves the waiting settings", #storage.undo_pending[20] == 1)
+  new_item({ removal("jatz-request-depot", 720.5, 0.5) })
+  fire("on_tick", { tick = 8201 })
+  check("for their own action", items[1][1].tags.jatz_settings.jatz_freighters == 2)
+  -- Undoing what isn't ours, or ours with nothing to keep, searches for no ghost.
+  local searches = 0
+  local search = surface.find_entities_filtered
+  surface.find_entities_filtered = function(filter)
+    searches = searches + 1
+    return search(filter)
+  end
+  fire("on_undo_applied", {
+    player_index = 20,
+    actions = {
+      removal("wooden-chest", 1.5, 1.5),
+      {
+        type = "removed-entity",
+        surface_index = 1,
+        target = { name = "jatz-request-depot", position = { x = 730.5, y = 0.5 } },
+        tags = { jatz_settings = {} },
+      },
+    },
+  })
+  check("undoing what isn't ours, or ours with nothing to keep, searches for no ghost", searches == 0)
+  surface.find_entities_filtered = search
+
   for name, handler in pairs(deliveries) do
     logistics[name] = handler
   end

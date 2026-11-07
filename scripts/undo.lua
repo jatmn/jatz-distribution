@@ -51,6 +51,18 @@ local function by_key(entries)
   return found
 end
 
+-- The removal (of `list`, a spot's newest first) that may take this undo action: the newest, unless
+-- the action is marked as another entity's removal (its marking located it, MARK), which only that
+-- entity's may take, so a removal never takes a later one's at the same spot. Taken off the list.
+local function owner(list, action)
+  local mark = action.tags and action.tags[MARK]
+  for index, entry in ipairs(list or {}) do
+    if not mark or entry.unit_number == mark then
+      return table.remove(list, index)
+    end
+  end
+end
+
 -- Tag the undo actions of these removals (`entries`, in the order they happened) on a player's
 -- stack: each its own removal action, the newest removal the newest action, so several at the same
 -- spot don't take each other's. Returns the entries whose action wasn't found.
@@ -63,8 +75,7 @@ local function tag(stack, entries)
     end
     for action_index, action in ipairs(stack.get_undo_item(item)) do
       local target = action.type == "removed-entity" and action.surface_index and action.target
-      local list = target and wanted[key(action.surface_index, target.name, target.position)]
-      local entry = list and table.remove(list, 1)
+      local entry = target and owner(wanted[key(action.surface_index, target.name, target.position)], action)
       if entry then
         stack.set_undo_tag(item, action_index, TAG, entry.tags)
         entry.tagged, left = true, left - 1
@@ -98,6 +109,7 @@ end
 -- spot in order).
 local function note(entity)
   return {
+    unit_number = entity.unit_number,
     key = key(entity.surface_index, entity.name, entity.position),
     tags = logistics.settings_tags(entity) or {},
     tick = game.tick,
@@ -234,8 +246,41 @@ function undo.player_removed(entity, player_index)
     storage.undo_mining = nil
   end
   if entity.valid and mining.unit_number == entity.unit_number then
+    -- Its undo item is the next one pushed on this player's stack (probed on 2.1.24: just after
+    -- this event), so it is this far from the bottom whatever comes on top before it is tagged (a
+    -- replacement at the same spot marked meanwhile, say).
+    local stack = undo_stack(player_index)
+    mining.entry.bottom = stack and stack.get_undo_item_count() + 1
     wait(player_index, { mining.entry })
   end
+end
+
+-- Tag each removal that knows its undo item (`entry.bottom`) on that item, if its action is there.
+-- Returns the rest, for `tag` to look for.
+local function tag_own_items(stack, entries)
+  local rest = {}
+  local count = stack.get_undo_item_count()
+  for _, entry in ipairs(entries) do
+    local item = entry.bottom and count - entry.bottom + 1
+    if item and item >= 1 and item <= count then
+      for action_index, action in ipairs(stack.get_undo_item(item)) do
+        local target = action.type == "removed-entity" and action.surface_index and action.target
+        if
+          not entry.tagged
+          and target
+          and key(action.surface_index, target.name, target.position) == entry.key
+          and owner({ entry }, action)
+        then
+          stack.set_undo_tag(item, action_index, TAG, entry.tags)
+          entry.tagged = true
+        end
+      end
+    end
+    if not entry.tagged then
+      rest[#rest + 1] = entry
+    end
+  end
+  return rest
 end
 
 -- Tag the undo actions of the removals noted before this tick, and locate those marked before it
@@ -256,7 +301,7 @@ function undo.tag_pending(tick)
     end
     local stack = undo_stack(player_index)
     -- Not found yet: looked for again next tick, until given up.
-    for _, entry in ipairs(stack and tag(stack, due) or due) do
+    for _, entry in ipairs(stack and tag(stack, tag_own_items(stack, due)) or due) do
       waiting[#waiting + 1] = entry
     end
     storage.undo_pending[player_index] = #waiting > 0 and waiting or nil
@@ -266,36 +311,46 @@ function undo.tag_pending(tick)
   end
 end
 
--- Settings still waiting for a player's undo action at `key`: the newest, taken off the list.
-local function take_pending(player_index, wanted)
+-- Settings still waiting for a player's undo action at `key`: the index of the newest in their list,
+-- or nil.
+local function pending_at(player_index, wanted)
   local pending = storage.undo_pending and storage.undo_pending[player_index]
   for index = #(pending or {}), 1, -1 do
     if pending[index].key == wanted then
-      return table.remove(pending, index).tags
+      return index
     end
   end
 end
 
 -- A player undid something: removals of ours come back as ghosts, which get the settings their
--- undo action kept (or, undone before it was tagged, the settings waiting for it). One whose
+-- undo action kept (or, undone before it was tagged and a ghost came back, the settings waiting for
+-- it: a cancelled deconstruction brings none back, and leaves those for their own action). One whose
 -- removal hadn't happened yet (deconstruction cancelled) still has them, and no ghost.
 function undo.on_undo_applied(event)
   for _, action in pairs(event.actions or {}) do
     local target = action.type == "removed-entity" and action.surface_index and action.target
-    local spot = target and key(action.surface_index, target.name, target.position)
-    local settings = spot and (action.tags and action.tags[TAG] or take_pending(event.player_index, spot))
-    -- Nothing to keep (a monitor or depot as every new one is): nothing to put on its ghost.
-    local surface = settings and next(settings) ~= nil and game.surfaces[action.surface_index]
-    if surface then
-      for _, ghost in pairs(surface.find_entities_filtered({ ghost_name = target.name, position = target.position })) do
-        if ghost.position.x == target.position.x and ghost.position.y == target.position.y then
-          local tags = ghost.tags or {}
-          for name, value in pairs(settings) do
-            tags[name] = value
-          end
-          ghost.tags = tags
-        end
+    local kept = target and action.tags and action.tags[TAG]
+    local waiting = target
+      and not kept
+      and pending_at(event.player_index, key(action.surface_index, target.name, target.position))
+    -- Only ours with something to keep (not a monitor or depot as every new one is, nor anything
+    -- else undone) is looked for.
+    local surface = (kept and next(kept) ~= nil or waiting) and game.surfaces[action.surface_index]
+    local ghost
+    for _, found in
+      pairs(surface and surface.find_entities_filtered({ ghost_name = target.name, position = target.position }) or {})
+    do
+      if found.position.x == target.position.x and found.position.y == target.position.y then
+        ghost = found
       end
+    end
+    local settings = ghost and (kept or table.remove(storage.undo_pending[event.player_index], waiting).tags)
+    if settings and next(settings) ~= nil then
+      local tags = ghost.tags or {}
+      for name, value in pairs(settings) do
+        tags[name] = value
+      end
+      ghost.tags = tags
     end
   end
 end
