@@ -53,9 +53,19 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
         run: |
           branch=release-please--branches--main
-          head="$(gh pr list --base main --head "$branch" --state open --json headRefOid,isCrossRepository --jq '[.[] | select(.isCrossRepository == false)] | .[0].headRefOid // empty')"
+          pr_head() {
+            gh pr list --base main --head "$branch" --state open --json headRefOid,isCrossRepository --jq '[.[] | select(.isCrossRepository == false)] | .[0].headRefOid // empty'
+          }
+          head="$(pr_head)"
           if [ -z "$head" ]; then exit 0; fi
           git fetch origin "refs/heads/$branch"
+          # GitHub moves the PR's head a few seconds after Release Please pushes the branch.
+          for attempt in $(seq 12); do
+            if [ "$(git rev-parse FETCH_HEAD)" = "$head" ]; then break; fi
+            echo "Waiting for the release PR to show the pushed branch (attempt $attempt)"
+            sleep 5
+            head="$(pr_head)"
+          done
           test "$(git rev-parse FETCH_HEAD)" = "$head"
           # Never execute changed code from a bot branch while holding its token.
           git diff --quiet "$GITHUB_SHA" "$head" -- . \
