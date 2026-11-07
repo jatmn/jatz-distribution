@@ -3224,6 +3224,46 @@ do -- A source switched on by taking items out (here: only while it holds under 
   check("nor later", #requests == asked)
 end
 
+-- A freighter diverted once (its provider emptied) whose second provider is emptied too: a failed
+-- pickup. A third provider holds stock, but it goes home rather than on to it (the owner: never
+-- back and forth). With `energy`, it carries that much fuel when the second is emptied.
+local function diverted_twice(logistics, energy)
+  local request, near = setup(logistics)
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 20 })
+  local third = entity("jatz-provider-depot", 60.5, 0.5, { a = 20 })
+  logistics.add(far)
+  logistics.add(third)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  near.chest.contents.a = 0
+  game.tick = 60
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  check("diverted once, to the next provider", trip.provider == far.unit_number and trip.diverted)
+  far.chest.contents.a = 0
+  trip.energy = energy or trip.energy
+  game.tick = 120
+  logistics.on_tick()
+  return trip, third
+end
+
+do
+  local logistics = reset()
+  local trip = diverted_twice(logistics)
+  check("diverted again, it goes home empty", trip.state == "to-request" and not trip.searching)
+  check("having asked about no other provider", requests[#requests].goal.x ~= 60.5 and not trip.planned)
+end
+
+do
+  local logistics = reset()
+  local fuel = fuel_depot(logistics, 30.5, 0.5, { { "coal", 20 } })
+  local trip = diverted_twice(logistics, 0.05 * MJ)
+  check("short of fuel for the way home, it looks for a Fuel depot", trip.state == "to-request" and trip.fuel_search)
+  answer(logistics, #requests, "route")
+  check("and heads there before going home", trip.refuel == fuel.unit_number)
+end
+
 do -- A freighter arriving at an emptied provider when its depot needs nothing more goes home.
   local logistics = reset()
   local request, near = setup(logistics)

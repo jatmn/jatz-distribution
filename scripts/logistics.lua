@@ -1836,9 +1836,21 @@ end
 
 -- Look for another provider for a freighter its provider no longer has a load for, leaving that
 -- one out: with a condition that taking items switches on (fetch only while below some amount,
--- say), it would pass for a new freighter and be found again, over and over.
+-- say), it would pass for a new freighter and be found again, over and over. Only once a trip
+-- (`trip.diverted`): diverted again, it is a failed pickup and goes home empty, by a Fuel depot if
+-- it is short of fuel for the way (set_off), so it never goes back and forth between providers.
 function logistics.give_up(id, trip)
   trip.loading, trip.passed = nil, trip.provider
+  local depot = storage.depots[trip.request]
+  if trip.diverted and trip.drone.valid and depot and depot.entity.valid then
+    trip.search_token, trip.searching, trip.fuel_search, trip.refuel = nil, nil, nil, nil
+    trip.planned, trip.passed = nil, nil
+    trip.state = TO_REQUEST
+    promise(trip)
+    local home, here = loading_tile(depot.entity), trip.drone.position
+    return set_off(id, trip, math.sqrt((home.x - here.x) ^ 2 + (home.y - here.y) ^ 2))
+  end
+  trip.diverted = true
   reroute(id, trip)
 end
 
