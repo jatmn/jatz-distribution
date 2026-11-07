@@ -2113,6 +2113,10 @@ local function deliveries_finished(surface, tick, result)
 end
 
 script.on_init(function()
+  -- The undo scenario (scenarios/undo) runs alone: no check world beside it.
+  if script.level.mod_name == "jatz-distribution-check" then
+    return
+  end
   local surface = game.create_surface("jatz-check", { width = 160, height = 160 })
   surface.request_to_generate_chunks({ 0, 0 }, 3)
   surface.force_generate_chunk_requests()

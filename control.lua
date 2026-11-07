@@ -9,6 +9,7 @@ local logistics = require("scripts.logistics")
 local request_gui = require("scripts.request-gui")
 local research = require("scripts.research")
 local road_monitor = require("scripts.road-monitor")
+local undo = require("scripts.undo")
 
 -- Road laid (`added`) or removed or covered (`removed`) on a surface: deliveries re-plan, and road
 -- network monitors there work out their networks again.
@@ -117,12 +118,36 @@ end
 -- A request depot mined by a player, robot or platform hands its freighters (in its slot and out
 -- on trips) to the miner; the mining buffer goes to their inventory.
 for _, event in ipairs({
-  defines.events.on_player_mined_entity,
   defines.events.on_robot_mined_entity,
   defines.events.on_space_platform_mined_entity,
 }) do
   script.on_event(event, logistics.on_depot_mined, requesting_filters)
 end
+-- Mined by a player: also the removal undo.player_removing's settings were read for (below).
+script.on_event(defines.events.on_player_mined_entity, function(event)
+  undo.player_removed(event.entity, event.player_index)
+  logistics.on_depot_mined(event)
+end, filters)
+-- A depot or road network monitor a player removes keeps its settings on the removal's undo action
+-- (scripts/undo.lua), read just before it goes, freighters in its chest still counted: marked for
+-- deconstruction (as cutting does) by a player, then taken by robots or a space platform; or mined
+-- by hand.
+script.on_event(defines.events.on_marked_for_deconstruction, function(event)
+  undo.marked(event.entity, event.player_index)
+end, filters)
+script.on_event(defines.events.on_cancelled_deconstruction, function(event)
+  undo.forget(event.entity.unit_number)
+end, filters)
+-- Taken by robots, or by a space platform (liquid depots and the monitor can stand on one).
+for _, event in ipairs({ defines.events.on_robot_pre_mined, defines.events.on_space_platform_pre_mined }) do
+  script.on_event(event, function(removing)
+    undo.removing_marked(removing.entity)
+  end, filters)
+end
+script.on_event(defines.events.on_pre_player_mined_item, function(event)
+  undo.player_removing(event.entity, event.player_index)
+end, filters)
+script.on_event(defines.events.on_undo_applied, undo.on_undo_applied)
 -- One about to be destroyed (died, or removed by a script that says so) leaves all its freighters,
 -- including any still in its chest, where it stands.
 for _, event in ipairs({ defines.events.on_entity_died, defines.events.script_raised_destroy }) do
@@ -143,6 +168,8 @@ script.on_event(defines.events.on_object_destroyed, function(event)
   road_monitor.on_object_destroyed(event)
   logistics.on_object_destroyed(event)
   if event.type == defines.target_type.entity and event.useful_id then
+    -- Gone some other way while marked for deconstruction (destroyed, say): no robot removal.
+    undo.forget(event.useful_id)
     local surface_index = depot_road.lift(event.useful_id)
     if surface_index then
       roads_changed(surface_index, false, true)
@@ -219,6 +246,9 @@ script.on_event(defines.events.on_tick, function(event)
   logistics.sample_circuits()
   logistics.on_tick_share(event.tick)
   logistics.on_impact_share(event.tick)
+  if storage.undo_pending or storage.undo_locating then
+    undo.tag_pending(event.tick)
+  end
 end)
 script.on_nth_tick(logistics.dispatch_interval, road_monitor.update)
 -- Freighters ctrl+ or shift+clicked from a player's inventory into a request depot fill its

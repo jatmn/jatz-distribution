@@ -3600,6 +3600,87 @@ local function circuit_tag(depot)
   }
 end
 
+-- Put an entity's settings on its blueprint entry (`planned`), as tags and its freighters' insert
+-- plan: a delivery depot's, or a road network monitor's. Returns whether it has any to keep.
+local function plan_settings(planned, entity)
+  local depot = entity and entity.valid and request_depot(entity)
+  local supplying = entity and entity.valid and supplying_depot(entity)
+  local changed = false
+  -- A road network monitor (scripts/road-monitor.lua): its reading.
+  local tag, value
+  if entity and entity.valid and not (depot or supplying) and logistics.monitor_tag then
+    tag, value = logistics.monitor_tag(entity)
+  end
+  if tag then
+    planned.tags = planned.tags or {}
+    planned.tags[tag] = value
+    if next(planned.tags) == nil then
+      planned.tags = nil
+    end
+    changed = true
+  end
+  if supplying and not depot then
+    -- A provider depot: its priority, unless it's the one every new depot has.
+    planned.tags = planned.tags or {}
+    planned.tags[PRIORITY_TAG] = supplying.priority ~= PRIORITY_DEFAULT and supplying.priority or nil
+    planned.tags[CIRCUIT_TAG] = circuit_tag(supplying)
+    if next(planned.tags) == nil then
+      planned.tags = nil
+    end
+    changed = true
+  end
+  if depot then
+    -- The depot's settings as they are now, replacing any from setting this blueprint up
+    -- before; other tags and other items' insert plans are kept.
+    planned.tags = planned.tags or {}
+    planned.tags[PRIORITY_TAG] = supplying and supplying.priority ~= PRIORITY_DEFAULT and supplying.priority or nil
+    planned.tags[REQUEST_TAG] = depot.request and { item = depot.request.item, count = depot.request.count } or nil
+    -- Its own tag, so it's kept even with no item requested.
+    planned.tags[FROM_BUFFERS_TAG] = depot.from_buffers or nil
+    local freighters = freighter_total(entity)
+    planned.tags[FREIGHTERS_TAG] = freighters > 0 and freighters or nil
+    planned.tags[CIRCUIT_TAG] = circuit_tag(depot)
+    if next(planned.tags) == nil then
+      planned.tags = nil
+    end
+    local items, used = {}, {}
+    for _, plan in pairs(planned.items or {}) do
+      if item_name(plan.id.name) ~= FREIGHTER then
+        items[#items + 1] = plan
+        for _, position in pairs(plan.items.in_inventory or {}) do
+          if position.inventory == defines.inventory.chest then
+            used[position.stack] = true
+          end
+        end
+      end
+    end
+    if freighters > 0 and not depot.fluid then
+      -- Chest stacks the other plans don't use, a stack of freighters at a time. (A liquid
+      -- depot has no chest: its freighters are asked for when it is built, see apply_tags.)
+      local stacks = {}
+      for index = 0, #inventory(entity) - 1 do
+        if not used[index] then
+          stacks[#stacks + 1] = index
+        end
+      end
+      local _, positions = spread(freighters, stacks)
+      items[#items + 1] = { id = { name = FREIGHTER, quality = QUALITY }, items = { in_inventory = positions } }
+    end
+    planned.items = #items > 0 and items or nil
+    changed = true
+  end
+  return changed
+end
+
+-- An entity's settings as a blueprint keeps them in its tags, or nil if it has none to keep: for
+-- its undo action when a player removes it (scripts/undo.lua). Its freighters are the
+-- `jatz_freighters` tag, which a depot built from a ghost asks robots for (apply_tags).
+function logistics.settings_tags(entity)
+  local planned = {}
+  plan_settings(planned, entity)
+  return planned.tags
+end
+
 function logistics.setup_blueprint(blueprint, mapping)
   local entities = blueprint and mapping and blueprint.get_blueprint_entities()
   if not entities then
@@ -3607,70 +3688,7 @@ function logistics.setup_blueprint(blueprint, mapping)
   end
   local changed = 0
   for _, planned in pairs(entities) do
-    local entity = mapping[planned.entity_number]
-    local depot = entity and entity.valid and request_depot(entity)
-    local supplying = entity and entity.valid and supplying_depot(entity)
-    -- A road network monitor (scripts/road-monitor.lua): its reading.
-    local tag, value
-    if entity and entity.valid and not (depot or supplying) and logistics.monitor_tag then
-      tag, value = logistics.monitor_tag(entity)
-    end
-    if tag then
-      planned.tags = planned.tags or {}
-      planned.tags[tag] = value
-      if next(planned.tags) == nil then
-        planned.tags = nil
-      end
-      changed = changed + 1
-    end
-    if supplying and not depot then
-      -- A provider depot: its priority, unless it's the one every new depot has.
-      planned.tags = planned.tags or {}
-      planned.tags[PRIORITY_TAG] = supplying.priority ~= PRIORITY_DEFAULT and supplying.priority or nil
-      planned.tags[CIRCUIT_TAG] = circuit_tag(supplying)
-      if next(planned.tags) == nil then
-        planned.tags = nil
-      end
-      changed = changed + 1
-    end
-    if depot then
-      -- The depot's settings as they are now, replacing any from setting this blueprint up
-      -- before; other tags and other items' insert plans are kept.
-      planned.tags = planned.tags or {}
-      planned.tags[PRIORITY_TAG] = supplying and supplying.priority ~= PRIORITY_DEFAULT and supplying.priority or nil
-      planned.tags[REQUEST_TAG] = depot.request and { item = depot.request.item, count = depot.request.count } or nil
-      -- Its own tag, so it's kept even with no item requested.
-      planned.tags[FROM_BUFFERS_TAG] = depot.from_buffers or nil
-      local freighters = freighter_total(entity)
-      planned.tags[FREIGHTERS_TAG] = freighters > 0 and freighters or nil
-      planned.tags[CIRCUIT_TAG] = circuit_tag(depot)
-      if next(planned.tags) == nil then
-        planned.tags = nil
-      end
-      local items, used = {}, {}
-      for _, plan in pairs(planned.items or {}) do
-        if item_name(plan.id.name) ~= FREIGHTER then
-          items[#items + 1] = plan
-          for _, position in pairs(plan.items.in_inventory or {}) do
-            if position.inventory == defines.inventory.chest then
-              used[position.stack] = true
-            end
-          end
-        end
-      end
-      if freighters > 0 and not depot.fluid then
-        -- Chest stacks the other plans don't use, a stack of freighters at a time. (A liquid
-        -- depot has no chest: its freighters are asked for when it is built, see apply_tags.)
-        local stacks = {}
-        for index = 0, #inventory(entity) - 1 do
-          if not used[index] then
-            stacks[#stacks + 1] = index
-          end
-        end
-        local _, positions = spread(freighters, stacks)
-        items[#items + 1] = { id = { name = FREIGHTER, quality = QUALITY }, items = { in_inventory = positions } }
-      end
-      planned.items = #items > 0 and items or nil
+    if plan_settings(planned, mapping[planned.entity_number]) then
       changed = changed + 1
     end
   end

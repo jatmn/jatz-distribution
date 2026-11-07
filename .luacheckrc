@@ -33,3 +33,6 @@ files["tests/factorio/*/data*.lua"].globals = {"data"}
 files["tests/factorio/*/data*.lua"].read_globals = {"pipecoverspictures"}
 files["tests/factorio/*/control.lua"].globals = {"game", "storage"}
 files["tests/factorio/*/control.lua"].read_globals = {"script", "prototypes", "helpers", "remote", "rendering"}
+-- Scenarios a test mod ships (run with --test-scenario <mod>/<name>) are runtime scripts too.
+files["tests/factorio/*/scenarios/*/control.lua"].globals = {"game", "storage"}
+files["tests/factorio/*/scenarios/*/control.lua"].read_globals = {"script", "prototypes", "helpers", "remote", "rendering"}
