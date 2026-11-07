@@ -1275,6 +1275,29 @@ local function setup_deliveries(surface, result)
   deliveries.partly = depot(surface, "request", -16.5, -66.5, 0)
   remote.call("jatz-distribution", "match_freighters", deliveries.partly, 5)
   remote.call("jatz-distribution", "add_freighters", deliveries.partly, 2)
+  -- Several item request proxies on one depot: freighters asked of its own chest by one, and an
+  -- iron plate by another, which `item_request_proxy` names. The freighters are asked of its truck
+  -- chest instead, the iron plate's plan stays. Out of the roboport's reach, so both stay pending.
+  local two = depot(surface, "request", -6.5, -36.5, 0)
+  local function ask(item, stack, count)
+    surface.create_entity({
+      name = "item-request-proxy",
+      position = two.position,
+      force = "player",
+      target = two,
+      modules = {
+        {
+          id = { name = item, quality = "normal" },
+          items = { in_inventory = { { inventory = defines.inventory.chest, stack = stack, count = count } } },
+        },
+      },
+    })
+  end
+  ask(FREIGHTER, 1, 5)
+  ask("iron-plate", 0, 1)
+  local named = two.item_request_proxy and two.item_request_proxy.insert_plan[1]
+  result.two_proxies_named = named and (type(named.id.name) == "string" and named.id.name or named.id.name.name)
+  deliveries.two_proxies = two
   -- The freighter slot can't be overfilled through the remote interface: 97 more fill it to 100.
   result.add_beyond_limit = remote.call("jatz-distribution", "add_freighters", deliveries.dying, 200)
   -- More than a stack (freighters stack to 10) is requested and taken away a stack at a time: 25
@@ -2104,6 +2127,26 @@ local function deliveries_finished(surface, tick, result)
   result.storage_after_removal = deliveries.store.get_item_count(FREIGHTER)
   result.absorbed = remote.call("jatz-distribution", "freighter_counts", deliveries.absorbing)
   result.absorbed_left_in_chest = count(deliveries.absorbing, FREIGHTER)
+  local on_depot, other_kept = 0, 0
+  for _, proxy in
+    pairs(surface.find_entities_filtered({ name = "item-request-proxy", position = deliveries.two_proxies.position }))
+  do
+    if proxy.proxy_target == deliveries.two_proxies then
+      for _, plan in pairs(proxy.insert_plan) do
+        local name = type(plan.id.name) == "string" and plan.id.name or plan.id.name.name
+        for _, position in pairs(plan.items.in_inventory) do
+          if name == FREIGHTER then
+            on_depot = on_depot + (position.count or 1)
+          elseif name == "iron-plate" then
+            other_kept = other_kept + (position.count or 1)
+          end
+        end
+      end
+    end
+  end
+  result.two_proxies_left_on_depot = on_depot
+  result.two_proxies_other_kept = other_kept
+  result.two_proxies_requested = remote.call("jatz-distribution", "requested_freighters", deliveries.two_proxies)
   result.unloaded_slot = remote.call("jatz-distribution", "freighter_counts", deliveries.unloaded)
   result.unloaded_taken = count(deliveries.unloaded_into, FREIGHTER)
   -- Request depots removed by script or destroyed leave their freighters where they stood: the

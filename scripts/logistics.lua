@@ -2027,15 +2027,17 @@ local function repaint_now(pending)
 end
 
 -- A depot's once-a-second check: a request or buffer depot dispatches, a Fuel depot's tank keeps
--- facing as the depot does, and one gone before on_object_destroyed reached it is forgotten (a Fuel
--- depot's tank goes too).
+-- facing as the depot does, and one gone before on_object_destroyed reached it (Factorio raises
+-- that at the end of the tick or the next) is forgotten exactly as that would: its freighters in
+-- the slot, on trips and in its truck chest left where it stood, its truck chest and Fuel depot tank
+-- removed, and trips to it sent elsewhere. Then on_object_destroyed finds nothing left to do.
 local function check_depot(id, depot)
   if not depot.entity.valid then
-    if depot.tank and depot.tank.valid then
-      depot.tank.destroy()
+    logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = id })
+    -- The depots checked with it saw it among their suppliers, with its promises.
+    if suppliers_cache then
+      suppliers_cache = {}
     end
-    storage.depots[id] = nil
-    index_depot(id, depot, false)
     return
   end
   if depot.circuit_enabled or depot.shown_off then
@@ -3184,7 +3186,8 @@ function logistics.add_all()
   for id, depot in pairs(storage.depots) do
     cancel_search(depot)
     if not depot.entity.valid then
-      storage.depots[id] = nil
+      -- Gone without on_object_destroyed reaching it: forgotten as that would (see check_depot).
+      logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = id })
     else
       -- Saves from before liquid depots delivered: liquid depots learn their kind.
       depot.fluid = LIQUID[depot.entity.name] or nil
@@ -3569,37 +3572,51 @@ function logistics.trim_freighter_requests(entity)
   -- asked of its truck chest instead: dropped here, and requested again below as part of its
   -- target, which they become if it has none. Robots taking freighters away from its own chest (a
   -- save from before) stop; those stay in the depot.
-  local proxy = not depot.fluid and entity.item_request_proxy
-  if proxy then
-    local moved, changed = 0, false
-    local inserts, removals = {}, {}
-    for _, plan in pairs(proxy.insert_plan) do
-      if item_name(plan.id.name) == FREIGHTER then
-        for _, position in pairs(plan.items.in_inventory or {}) do
-          moved = moved + (position.count or 1)
+  -- Several proxies can target it, and `item_request_proxy` names only the first found (another
+  -- item's, say), so it only says whether to look: every one targeting the depot is looked at, and
+  -- their freighters are added up before any becomes the target.
+  if not depot.fluid and entity.item_request_proxy then
+    local x, y = entity.position.x, entity.position.y
+    local moved = 0
+    for _, proxy in
+      pairs(entity.surface.find_entities_filtered({
+        name = PROXY,
+        area = { { x - 0.5, y - 0.5 }, { x + 0.5, y + 0.5 } },
+      }))
+    do
+      -- Not its truck chest's, at the same spot.
+      if proxy.proxy_target == entity then
+        local changed = false
+        local inserts, removals = {}, {}
+        for _, plan in pairs(proxy.insert_plan) do
+          if item_name(plan.id.name) == FREIGHTER then
+            for _, position in pairs(plan.items.in_inventory or {}) do
+              moved = moved + (position.count or 1)
+            end
+            changed = true
+          else
+            inserts[#inserts + 1] = plan
+          end
         end
-        changed = true
-      else
-        inserts[#inserts + 1] = plan
+        for _, plan in pairs(proxy.removal_plan) do
+          if item_name(plan.id.name) == FREIGHTER then
+            changed = true
+          else
+            removals[#removals + 1] = plan
+          end
+        end
+        if changed then
+          if #inserts == 0 and #removals == 0 then
+            proxy.destroy()
+          else
+            proxy.insert_plan = inserts
+            proxy.removal_plan = removals
+          end
+        end
       end
     end
-    for _, plan in pairs(proxy.removal_plan) do
-      if item_name(plan.id.name) == FREIGHTER then
-        changed = true
-      else
-        removals[#removals + 1] = plan
-      end
-    end
-    if changed then
-      if #inserts == 0 and #removals == 0 then
-        proxy.destroy()
-      else
-        proxy.insert_plan = inserts
-        proxy.removal_plan = removals
-      end
-      if moved > 0 and not depot.freighter_target then
-        depot.freighter_target = freighter_total(entity) + moved
-      end
+    if moved > 0 and not depot.freighter_target then
+      depot.freighter_target = freighter_total(entity) + moved
     end
   end
   if not depot.freighter_target and not truck_chest(entity).item_request_proxy then

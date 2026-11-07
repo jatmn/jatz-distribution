@@ -1010,6 +1010,86 @@ do -- Freighters robots bring into a request depot's truck chest go to its slot;
   check("and those in its own chest stay, as cargo", own.get_item_count() == 3)
 end
 
+do -- A request depot gone before on_object_destroyed reaches it (Factorio raises that at the end of
+  -- the tick or the next), its check coming first: forgotten as on_object_destroyed would, its
+  -- freighters in the slot and in its truck chest left where it stood, the truck chest removed.
+  local logistics = reset()
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  logistics.add(request)
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 2)) == 2)
+  local id = request.unit_number
+  local truck = storage.depots[id].chest
+  local trucks = script_inventory(4)
+  truck.get_inventory = function()
+    return trucks
+  end
+  trucks[1].name, trucks[1].count, trucks[1].valid_for_read = "jatz-quinityn-freighter", 3, true
+  request.valid = false
+  logistics.on_tick()
+  local spilled = 0
+  for _, item in ipairs(surface.spilled) do
+    if item.name == "jatz-quinityn-freighter" then
+      spilled = spilled + item.count
+    end
+  end
+  check(
+    "a depot found gone at its check leaves its 5 freighters where it stood",
+    spilled == 5 and trucks.get_item_count() == 0
+  )
+  check("and its truck chest goes with it", truck.valid == false and storage.depots[id] == nil)
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = id })
+  check("on_object_destroyed afterwards leaves nothing twice", #surface.spilled == 2)
+end
+
+do -- Several item request proxies can target a depot, and `item_request_proxy` names only the first
+  -- found: freighters asked of its own chest behind another item's proxy are asked of its truck
+  -- chest too, all of them at once, and the other item's plan stays.
+  local logistics = reset()
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  logistics.add(request)
+  local depot = storage.depots[request.unit_number]
+  local trucks = script_inventory(4)
+  depot.chest.get_inventory = function()
+    return trucks
+  end
+  local function proxy(item, count, stack_index)
+    local self = {
+      valid = true,
+      proxy_target = request,
+      removal_plan = {},
+      insert_plan = {
+        {
+          id = { name = item, quality = "normal" },
+          items = { in_inventory = { { inventory = defines.inventory.chest, stack = stack_index, count = count } } },
+        },
+      },
+    }
+    function self.destroy()
+      self.valid = false
+    end
+    return self
+  end
+  local iron, first, second =
+    proxy("b", 1, 0), proxy("jatz-quinityn-freighter", 3, 1), proxy("jatz-quinityn-freighter", 2, 2)
+  request.item_request_proxy = iron
+  function surface.find_entities_filtered(filter)
+    return filter.name == "item-request-proxy" and { iron, first, second } or {}
+  end
+  local created = #surface.created
+  logistics.trim_freighter_requests(request)
+  check("every freighter proxy on the depot goes", not first.valid and not second.valid)
+  check("the other item's stays, plan and all", iron.valid and iron.insert_plan[1].id.name == "b")
+  check("their freighters, together, become its target", depot.freighter_target == 5)
+  local asked = surface.created[#surface.created]
+  check(
+    "and are asked of its truck chest",
+    #surface.created == created + 1
+      and asked.name == "item-request-proxy"
+      and asked.parameters.target == depot.chest
+      and asked.parameters.modules[1].items.in_inventory[1].count == 5
+  )
+end
+
 do -- Running enemies over: damage can set off other mods' handlers, which may remove an enemy
   -- further down the same search, or the freighter itself. Neither is read once gone.
   local logistics = reset()
