@@ -1186,8 +1186,40 @@ end
 -- leave out.
 logistics.monitor_counts = nil
 
+-- Whether a freighter is looking for another provider (a reroute, not a Fuel depot): its promise is
+-- still filed at the provider it was heading for, but is about to move. (A field, not a local: this
+-- file has as many locals as Lua allows.)
+function logistics.rerouting(trip)
+  return trip ~= nil and trip.searching ~= nil and not trip.fuel_search
+end
+
+-- A provider keeps its promises in the order they were made there (`trip.queued`, numbered as each
+-- trip's promise is filed at a provider: setting off, or a reroute; trips from before have none and
+-- come first), trip key breaking ties. Whether the promise filed under `key` comes before `trip`'s.
+-- (A field, not a local: this file has as many locals as Lua allows.)
+function logistics.ahead(key, trip)
+  local other = storage.trips[key]
+  if not other then
+    return true
+  end
+  local mine, theirs = trip.queued or 0, other.queued or 0
+  return theirs < mine or (theirs == mine and key < trip.key)
+end
+
+-- The next place in the queue of promises (see logistics.ahead).
+function logistics.queue_place()
+  storage.promise_order = (storage.promise_order or 0) + 1
+  return storage.promise_order
+end
+
 -- Whether a depot takes part in deliveries now: its circuit condition holds, or isn't in effect.
-local function enabled(depot)
+-- With `before`, a depot reading its own contents reads them less what freighters on their way
+-- there promised to load (not those rerouting), as they will be once loaded: every promise (true)
+-- when deciding whether to send it another freighter, so once those already sent would take it
+-- below its condition no more go, or those made before the trip `before`'s (logistics.ahead), for
+-- whether that one still gets its load (logistics.honoured). Without it, what it holds now: its
+-- status, its panel, road network monitors.
+local function enabled(depot, before)
   if not depot.circuit_enabled then
     -- No condition in effect (most depots): nothing to read.
     return true
@@ -1199,7 +1231,18 @@ local function enabled(depot)
   sample = sample and sample.tick == game.tick and sample or nil
   return depot_circuit.allows(depot.entity, depot.circuit_enabled, depot.circuit_condition, depot.circuit_mode, {
     held = function()
-      return own_signals(depot)
+      local counts = own_signals(depot)
+      local items = before and storage.promised and storage.promised[depot.entity.unit_number]
+      for item, trips in pairs(items or {}) do
+        -- Freighters load the normal quality.
+        local signal = depot_circuit.key({ type = depot.fluid and "fluid" or "item", name = item })
+        for key, amount in pairs(trips) do
+          if not logistics.rerouting(storage.trips[key]) and (before == true or logistics.ahead(key, before)) then
+            counts[signal] = math.floor((counts[signal] or 0) - amount)
+          end
+        end
+      end
+      return counts
     end,
     sent = function()
       return sample and sample.sent or own_signals(depot)
@@ -1378,7 +1421,7 @@ local function suppliers(surface_index, force_index, fluid, item)
         and candidate.valid
         and candidate.force_index == force_index
         and available(provider, item) > 0
-        and enabled(provider)
+        and enabled(provider, true)
       then
         local position, on_road = loading_tile(candidate)
         if on_road then
@@ -1430,9 +1473,10 @@ end
 -- surface and force, with road at its loading zone, holding the item and not on cooldown for this
 -- request. Within each kind, the highest priority first; within each priority, nearest first in a
 -- straight line from `from`. With `full` (the least the freighter may load, for a depot sending
--- full loads only), only those holding that much unpromised. Also says whether one was skipped for
--- cooldown, and whether one was skipped for holding less than `full`.
-local function candidates(depot, from, full)
+-- full loads only), only those holding that much unpromised. `passed` (a unit number) is left out:
+-- the provider a rerouted freighter gave up on. Also says whether one was skipped for cooldown, and
+-- whether one was skipped for holding less than `full`.
+local function candidates(depot, from, full, passed)
   local entity = depot.entity
   local found, waiting, short = {}, false, false
   local buffers = depot.role == "request"
@@ -1441,7 +1485,8 @@ local function candidates(depot, from, full)
   local own = entity.unit_number
   for _, supplier in ipairs(suppliers(entity.surface_index, entity.force_index, depot.fluid, depot.request.item)) do
     local provider = supplier.depot
-    if provider.role == "provider" or (buffers and supplier.id ~= own) then
+    -- (The one passed is neither ready nor waiting: the freighter goes on, or home.)
+    if supplier.id ~= passed and (provider.role == "provider" or (buffers and supplier.id ~= own)) then
       if full and available(provider, depot.request.item) < full then
         short = true
       elseif (depot.cooldowns[supplier.id] or 0) > game.tick then
@@ -1591,6 +1636,7 @@ local function start_trip(depot, provider, from, planned, length)
   -- on_object_destroyed reports an entity's unit_number as its useful_id, the key used here.
   storage.trips[drone.unit_number] = trip
   trip.key = drone.unit_number
+  trip.queued = logistics.queue_place()
   promise(trip)
   schedule_trip(drone.unit_number, trip)
   script.register_on_object_destroyed(drone)
@@ -1715,7 +1761,9 @@ end
 -- already out (its provider was removed) and starts where it stands. Returns false, with whether
 -- a provider was skipped for cooldown, if there is nothing to look for.
 local function search_providers(depot, from, trip)
-  local found, waiting, short = candidates(depot, from, logistics.full_load(depot, trip and storage.trips[trip]))
+  local rerouted = trip and storage.trips[trip]
+  local found, waiting, short =
+    candidates(depot, from, logistics.full_load(depot, rerouted), rerouted and rerouted.passed)
   if #found == 0 then
     return false, waiting, short
   end
@@ -1755,12 +1803,99 @@ local function reroute(id, trip)
     logistics.command(trip, { type = defines.command.stop, distraction = defines.distraction.none })
   elseif trip.drone.valid and depot and depot.entity.valid then
     -- No provider for it any more: home empty, to park.
-    trip.planned = nil
+    trip.planned, trip.passed = nil, nil
     trip.state = TO_REQUEST
     promise(trip)
     drive(trip, (loading_tile(depot.entity)))
   else
     end_trip(id, trip)
+  end
+end
+
+-- Whether a freighter driving out to its provider still gets a load there: the provider's stock of
+-- its item, less what was promised there before its promise (logistics.ahead; not by freighters
+-- rerouting), is above 0, and the provider's circuit condition holds with those loads taken: as it
+-- was when the freighter was sent there, for one sent last. Stock taken out some other way (an
+-- inserter, a player) or a condition switched off since leaves the last promised without a load
+-- first. (A field, not a local: this file has as many locals as Lua allows.)
+function logistics.honoured(trip)
+  local provider = storage.depots[trip.provider]
+  if not (provider and provider.entity.valid) then
+    return false
+  end
+  -- Its stock less every promise, with those made after its own (and its own) given back.
+  local left = available(provider, trip.item)
+  local items = storage.promised[trip.provider]
+  for key, amount in pairs(items and items[trip.item] or {}) do
+    if logistics.rerouting(storage.trips[key]) or not logistics.ahead(key, trip) then
+      left = left + amount
+    end
+  end
+  return left > 0 and enabled(provider, trip)
+end
+
+-- Look for another provider for a freighter its provider no longer has a load for, leaving that
+-- one out: with a condition that taking items switches on (fetch only while below some amount,
+-- say), it would pass for a new freighter and be found again, over and over.
+function logistics.give_up(id, trip)
+  trip.loading, trip.passed = nil, trip.provider
+  reroute(id, trip)
+end
+
+-- At a provider or buffer depot's once-a-second check: freighters on their way there that it no
+-- longer has a load for (logistics.honoured: those promised first keep theirs) look for another
+-- provider now, rather than finding out on arrival. Ones standing there to load find out then
+-- (arrived_at_provider). Unless a condition reading its contents is in effect, or one reading the
+-- network doesn't hold, or its stock no longer covers what was promised, only its promises are
+-- looked at.
+function logistics.keep_promises(id, depot)
+  local items = storage.promised and storage.promised[id]
+  if not items then
+    return
+  end
+  -- (Read from the network, the condition leaves its contents out: the same for every freighter.)
+  if not depot.circuit_enabled or (not depot.circuit_mode and enabled(depot)) then
+    local short = false
+    for item in pairs(items) do
+      if available(depot, item) < 0 then
+        short = true
+        break
+      end
+    end
+    if not short then
+      return
+    end
+  end
+  local queue = {}
+  for _, trips in pairs(items) do
+    for key in pairs(trips) do
+      local trip = storage.trips[key]
+      if trip and trip.key == key then
+        queue[#queue + 1] = trip
+      end
+    end
+  end
+  -- The first promised first: a freighter rerouted from here no longer counts for those after it.
+  table.sort(queue, function(a, b)
+    return logistics.ahead(a.key, b)
+  end)
+  local looked = false
+  for _, trip in ipairs(queue) do
+    if
+      trip.state == TO_PROVIDER
+      and trip.provider == id
+      and not trip.loading
+      and not logistics.rerouting(trip)
+      and not logistics.honoured(trip)
+    then
+      -- The depots checked before it this tick saw it among their suppliers, as it was: the
+      -- search looks at the depots afresh.
+      if not looked and suppliers_cache then
+        suppliers_cache = {}
+      end
+      looked = true
+      logistics.give_up(trip.key, trip)
+    end
   end
 end
 
@@ -2106,6 +2241,9 @@ local function check_depot(id, depot)
   if depot.circuit_enabled or depot.shown_off then
     show_switched(depot)
   end
+  if depot.role == "provider" or depot.role == "buffer" then
+    logistics.keep_promises(id, depot)
+  end
   if REQUESTING[depot.role] then
     dispatch(depot)
   elseif depot.role == "fuel" then
@@ -2421,6 +2559,11 @@ local function arrived_at_provider(id, trip, depot)
   if provider and request and request.item == trip.item then
     -- What it promised, as far as the depot (counting its other freighters) still needs it.
     local _, room = need(depot, id)
+    if room > 0 and not logistics.honoured(trip) then
+      -- Nothing here for it any more (taken out some other way, or switched off since its
+      -- provider's last check): another provider, rather than home empty.
+      return logistics.give_up(id, trip)
+    end
     local limit = math.min(trip.planned or room, room)
     if trip.fluid then
       load_fluid(provider, trip, math.min(limit, fluid_capacity(depot.entity.force)))
@@ -2774,7 +2917,7 @@ local function finish_search(depot, search, owner)
     and provider.entity.valid
     and available(provider, search.item) > 0
     and (not full or available(provider, search.item) >= full)
-    and enabled(provider)
+    and enabled(provider, true)
   if search.trip then
     -- Room for this freighter's load, besides what the depot's other freighters are bringing.
     local room = full and select(2, need(depot, search.trip))
@@ -2786,6 +2929,8 @@ local function finish_search(depot, search, owner)
       local unpromised = available(provider, search.item)
       owner.planned = full and math.min(room, unpromised, carries) or math.min(owner.planned or 0, unpromised)
       owner.provider = search.best
+      -- Last in its new provider's queue; any provider may be found again for its next reroute.
+      owner.queued, owner.passed = logistics.queue_place(), nil
       promise(owner)
       owner.leg = search.best_length
       set_off(search.trip, owner, search.best_length)
