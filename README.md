@@ -33,7 +33,7 @@ Want the details? The **[player guide](docs/guide.md)** covers the freighter slo
 - **Blueprint friendly:** copy, paste and blueprints keep requests, priorities and freighters, and construction robots bring the trucks.
 - **Cargo stays intact:** armor keeps its equipment, and food keeps track of its spoilage.
 - **Research:** unlock the system, expand it to fluids, then make freighters faster (with infinite research) and carry more items and fluid.
-- **See what's on board:** a freighter's cargo bays are light grey while empty and take the color of the item or fluid it picks up.
+- **See what's on board:** a freighter's cargo bays are light grey while empty and take the color of the item or fluid it picks up. Other mods can [declare their items' colors](#for-mod-authors-cargo-colors).
 - **Paint it your way:** every truck and depot has three paint layers you can recolor.
 
 ## The depots
@@ -71,6 +71,38 @@ python3 tools/package_mod.py
 ```
 
 Then copy the zip from `dist/` into your [Factorio mods folder](https://wiki.factorio.com/Application_directory#User_data_directory) and enable it in place of the Mod Portal version.
+
+## For mod authors: cargo colors
+
+Factorio items have no color of their own, so Jat'z Distribution works out each item's cargo color from game data: its ore's map color, the fluid in a barrel, or a recipe that makes it. That covers most items, but not all. A by-product that no recipe makes on its own gets the truck's plain slate blue, and an item made from many unrelated materials takes the color of whichever recipe comes first.
+
+Your mod can declare its items' colors instead. Jat'z Distribution uses a declared color before any of its own rules, and items made from that item follow it. Add a `mod-data` prototype with `data_type = "item-colors"`:
+
+```lua
+-- data.lua (or data-updates.lua) of your mod
+data:extend({
+  {
+    type = "mod-data",
+    name = "my-mod-item-colors", -- any unique name
+    data_type = "item-colors",
+    data = {
+      items = {
+        ["my-slag"] = { r = 0.55, g = 0.36, b = 0.17 },
+        ["my-crystal"] = { r = 0.25, g = 0.62, b = 0.84 },
+      },
+    },
+  },
+})
+```
+
+- **Colors** are ordinary Factorio colors: `{ r, g, b }` or `{ 0.5, 0.2, 0.8 }`, from 0 to 1, or 0 to 255 if any value is above 1. Alpha is ignored, and a value that isn't a table is skipped.
+- **When to declare:** in `data.lua` or `data-updates.lua`. Jat'z Distribution reads the colors in its `data-final-fixes.lua`, which may run before yours.
+- **No dependency needed.** Without Jat'z Distribution the prototype is simply unused, and other mods can read the same `item-colors` data.
+- **Several mods** may declare colors. Prototypes are read in name order, and the first one to name an item wins.
+- **Fluids** already have a color, their `base_color`, so they need nothing.
+- **Painting:** freighters are painted from a fixed palette of 216 colors (each channel in steps of 0.2), so close colors share a paint.
+
+For an example, [Yuoki Industries is adding a declaration for all its items](https://github.com/jatmn/Yuoki-Factorio-2.x/pull/34), with colors read from their icons by a small generator script.
 
 ## Roadmap
 
