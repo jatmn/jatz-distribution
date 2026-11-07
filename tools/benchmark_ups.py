@@ -172,7 +172,10 @@ def table(variants, preset, warmup, ticks):
 
 
 def describe(summary):
-    return (f'{summary["surfaces"]} surface(s), {summary["providers"]} providers, {summary["requests"]} request depots, '
+    # Providers keeping a minimum: only where the mod took the condition (summary from older maps: none).
+    minimums = summary.get('minimums_set', 0)
+    kept = f' ({minimums} keeping a minimum)' if minimums else ''
+    return (f'{summary["surfaces"]} surface(s), {summary["providers"]} providers{kept}, {summary["requests"]} request depots, '
             f'{summary.get("fuel", 0)} fuel depots, '
             f'{summary["freighters_placed"]} of {summary["freighters"]} freighters placed, {summary["road_tiles"]} road tiles, '
             f'{summary["target"]} {summary["target_version"]}')

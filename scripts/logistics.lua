@@ -1217,8 +1217,9 @@ end
 -- for whether that one still gets its load). Both, not the second instead of the first: a
 -- condition that taking items switches on (only while below some amount) can hold with promises
 -- taken and not now, and a switched-off depot gives nothing. Without it, what it holds now: its
--- status, its panel, road network monitors.
-local function enabled(depot, claims)
+-- status, its panel, road network monitors. `held`: its own_signals, if the caller has read them
+-- already this tick (check_depot reads them once for its status and its promises).
+local function enabled(depot, claims, held)
   if not depot.circuit_enabled then
     -- No condition in effect (most depots): nothing to read.
     return true
@@ -1228,11 +1229,11 @@ local function enabled(depot, claims)
   -- since) what it holds now.
   local sample = depot.circuit_sample
   sample = sample and sample.tick == game.tick and sample or nil
-  local live
+  local live = held
   if
     not depot_circuit.allows(depot.entity, depot.circuit_enabled, depot.circuit_condition, depot.circuit_mode, {
       held = function()
-        live = own_signals(depot)
+        live = live or own_signals(depot)
         return live
       end,
       sent = function()
@@ -1308,8 +1309,8 @@ end
 -- as the game shows an entity its circuit condition disabled; switched on, its own status again.
 -- Written only when it changes (`depot.shown_off`): once a second, and when the setting changes.
 local SWITCHED_OFF = { diode = defines.entity_status_diode.red, label = { "jatz-circuit-status.entity-off" } }
-local function show_switched(depot)
-  local off = (depot.circuit_enabled and not enabled(depot)) or nil
+local function show_switched(depot, held)
+  local off = (depot.circuit_enabled and not enabled(depot, nil, held)) or nil
   if depot.shown_off ~= off and depot.entity.valid then
     depot.entity.custom_status = off and SWITCHED_OFF or nil
     depot.shown_off = off
@@ -1934,12 +1935,12 @@ end
 -- looked at. Otherwise its promises are walked once, in order, adding up those ahead as it goes:
 -- asking honoured for each would add them up afresh for every freighter, which for a provider with
 -- hundreds of promises took tens of milliseconds in one tick (Pullfrog's review of 712a2fd).
-function logistics.keep_promises(id, depot)
+function logistics.keep_promises(id, depot, held)
   local items = storage.promised and storage.promised[id]
   if not items then
     return
   end
-  local on = not depot.circuit_enabled or enabled(depot)
+  local on = not depot.circuit_enabled or enabled(depot, nil, held)
   local contents = depot.circuit_enabled and depot.circuit_mode == depot_circuit.contents
   -- (Read from the network, the condition leaves its contents out: the same for every freighter.)
   if on and not contents then
@@ -1957,15 +1958,15 @@ function logistics.keep_promises(id, depot)
   -- Each item's stock as it is (what is unpromised, and every promise), and the trips promised.
   local stock, queue = {}, {}
   for item, trips in pairs(items) do
-    local held = available(depot, item)
+    local count = available(depot, item)
     for key, amount in pairs(trips) do
-      held = held + amount
+      count = count + amount
       local trip = storage.trips[key]
       if trip and trip.key == key then
         queue[#queue + 1] = trip
       end
     end
-    stock[item] = held
+    stock[item] = count
   end
   -- The first promised first (logistics.ahead's order): a freighter rerouted from here no longer
   -- counts for those after it.
@@ -1973,8 +1974,8 @@ function logistics.keep_promises(id, depot)
     local first, second = a.queued or 0, b.queued or 0
     return first < second or (first == second and a.key < b.key)
   end)
-  -- What it holds, read once for the condition (only reading its contents does promises matter).
-  local live = on and contents and own_signals(depot) or nil
+  -- What it holds, for the condition (only reading its contents do promises matter).
+  local live = on and contents and (held or own_signals(depot)) or nil
   local ahead, looked = {}, false
   for _, trip in ipairs(queue) do
     local item = trip.item
@@ -2340,11 +2341,14 @@ local function check_depot(id, depot)
     end
     return
   end
+  -- A condition reading the depot's own contents reads them once for its status and its promises
+  -- (nothing in between changes them): each read builds a signal for every item it holds.
+  local held = depot.circuit_enabled and depot.circuit_mode == depot_circuit.contents and own_signals(depot) or nil
   if depot.circuit_enabled or depot.shown_off then
-    show_switched(depot)
+    show_switched(depot, held)
   end
   if depot.role == "provider" or depot.role == "buffer" then
-    logistics.keep_promises(id, depot)
+    logistics.keep_promises(id, depot, held)
   end
   if REQUESTING[depot.role] then
     dispatch(depot)

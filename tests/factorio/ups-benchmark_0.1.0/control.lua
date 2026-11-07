@@ -48,6 +48,17 @@ adapters["jatz-distribution"] = {
     return entity.get_inventory(defines.inventory.chest)
   end,
   refuel = function() end,
+  -- A provider keeping a minimum (layout.lua): switched on only while its own contents hold more
+  -- than that share of a full chest. Returns whether it has the condition (versions without
+  -- conditions on a depot's own contents, benchmarked with --compare, don't).
+  provider = function(entity, depot)
+    local count = math.floor(prototypes.item[depot.item].stack_size * CHEST_SLOTS * depot.minimum)
+    return remote.call("jatz-distribution", "set_circuit", entity, true, {
+      first_signal = { type = "item", name = depot.item },
+      comparator = ">",
+      constant = count,
+    }, "contents") == true
+  end,
 }
 
 -- Transport Drones: request depots are crafting machines whose recipe is the request, holding
@@ -86,6 +97,10 @@ adapters["Transport_Drones"] = {
   end,
   refuel = function(entity)
     entity.insert_fluid({ name = td_fuel(), amount = 100000 })
+  end,
+  -- Transport Drones' supply depots have no circuit condition: those keeping a minimum stay plain.
+  provider = function()
+    return false
   end,
 }
 
@@ -132,6 +147,8 @@ local function build()
   summary.target, summary.target_version, summary.preset = name, script.active_mods[name], preset_name
   summary.freighters_placed = 0
   summary.fuel = 0
+  -- Providers that got their minimum's condition (layout's `minimums` is how many were planned).
+  summary.minimums_set = 0
   local depots = {}
   for _, plan in ipairs(map.surfaces) do
     local surface = make_surface(plan.name, plan.extent)
@@ -153,6 +170,8 @@ local function build()
           summary.freighters_placed = summary.freighters_placed + adapter.request(entity, depot)
         elseif depot.role == "fuel" then
           summary.fuel = summary.fuel + 1
+        elseif depot.minimum and adapter.provider(entity, depot) then
+          summary.minimums_set = summary.minimums_set + 1
         end
         depots[#depots + 1] = { entity = entity, role = depot.role, item = depot.item }
       end
