@@ -3106,6 +3106,10 @@ do -- A provider switched off while a freighter drives there: it goes elsewhere.
   game.tick = 60
   logistics.on_tick()
   check("switched off, its freighter looks for another", trip.searching ~= nil and requests[#requests].goal.x == 40.5)
+  check(
+    "letting go of its promise there at once, while it looks",
+    storage.promised[near.unit_number] == nil and trip.planned == 10
+  )
   answer(logistics, #requests, "route")
   check("and drives to it", trip.provider == far.unit_number and not trip.searching)
 end
@@ -3126,6 +3130,7 @@ do -- Stock taken out by something else (an inserter, a player): the freighters 
   game.tick = 60
   logistics.on_tick()
   check("the first keeps going for the 5 left", early.provider == near.unit_number and not early.searching)
+  check("promising only those 5, so its depot sends for the rest", early.planned == 5)
   check("the second looks for another provider", late.searching ~= nil)
   answer(logistics, #requests, "route")
   check("and goes to the far one", late.provider == far.unit_number and late.planned == 10)
@@ -3262,6 +3267,74 @@ do
   check("short of fuel for the way home, it looks for a Fuel depot", trip.state == "to-request" and trip.fuel_search)
   answer(logistics, #requests, "route")
   check("and heads there before going home", trip.refuel == fuel.unit_number)
+end
+
+do -- Stock taken out after two freighters were sent: the later one, arriving first, takes only
+  -- what is left after the earlier one's promise (review of e949b72: it took the earlier one's).
+  local logistics = reset()
+  local stock = script_inventory(2)
+  for index = 1, 2 do
+    stock[index].name, stock[index].count, stock[index].valid_for_read = "a", 15, true
+    stock[index].quality = { name = "normal" }
+  end
+  local first, second, near = two_depots(logistics)
+  near.get_inventory = function()
+    return stock
+  end
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  answer(logistics, 2, "route")
+  local early, late = trip_of(first), trip_of(second)
+  check(
+    "setup: 10 promised to each, earlier first",
+    early.key < late.key and early.planned == 10 and late.planned == 10
+  )
+  stock[2].count, stock[2].valid_for_read = 0, false
+  arrive(logistics, late)
+  check("the later one loads the 5 left after the earlier promise", late.cargo.get_item_count("a") == 5)
+  check("leaving the earlier one its 10", stock.get_item_count("a") == 10)
+end
+
+do -- A freighter destroyed by a script, its on_object_destroyed not yet raised, when its provider
+  -- is emptied: lost, not handed back to its depot (Pullfrog's review of e949b72).
+  local logistics = reset()
+  local request, provider = setup(logistics)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  check("setup: four freighters home", logistics.freighter_counts(request) == 4)
+  trip.drone.valid = false
+  provider.chest.contents.a = 0
+  game.tick = 60
+  logistics.on_tick()
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = trip.key })
+  check("the destroyed freighter isn't back in the slot", logistics.freighter_counts(request) == 4)
+end
+
+do -- The same through a reroute search: a freighter destroyed while it looks for another provider
+  -- (the one it was heading for removed), its search timing out before on_object_destroyed comes.
+  local logistics = reset()
+  local request, _, trip = rerouting(logistics)
+  trip.drone.valid = false
+  game.tick = 10 * 60
+  logistics.on_tick()
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = trip.key })
+  check("a freighter destroyed while rerouting is lost", logistics.freighter_counts(request) == 4)
+  check("its trip over", storage.trips[trip.key] == nil and not has_trip(request))
+end
+
+do -- Fluid promises are taken from the exact amount, floored once (review of e949b72: floored
+  -- twice, 200.75 water less 100.5 promised read 99, not 100).
+  local logistics = reset()
+  local request, provider = liquids(logistics, 1000)
+  request.held.name, request.held.amount = "water", 899.5
+  provider.held.amount = 200.75
+  local water = { type = "fluid", name = "water" }
+  logistics.set_circuit(provider, true, { first_signal = water, comparator = ">=", constant = 100 }, "contents")
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  check("setup: a freighter promises 100.5", trip_of(request).planned == 100.5)
+  check("the 100.25 left reads 100: still on", logistics.enabled(storage.depots[provider.unit_number], true))
 end
 
 do -- A freighter arriving at an emptied provider when its depot needs nothing more goes home.
