@@ -2016,9 +2016,15 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
   check("and no other ghost", elsewhere.tags.jatz_request == nil)
   local built = depot(610)
   built.name = "jatz-request-depot"
+  local asked
+  local match = logistics.match_freighters
+  logistics.match_freighters = function(entity_, count)
+    asked = { entity = entity_, count = count }
+  end
   fire("on_robot_built_entity", { entity = built, tags = ghost.tags })
+  logistics.match_freighters = match
   check("the depot built from it has its request back", logistics.get_request(built).count == 8)
-  check("and asks robots for its freighters", storage.depots[built.unit_number].freighter_target == 5)
+  check("and asks robots for its freighters", asked and asked.entity == built and asked.count == 5)
 
   -- Deconstruction cancelled: nothing waits for robots any more.
   local kept = depot(620)

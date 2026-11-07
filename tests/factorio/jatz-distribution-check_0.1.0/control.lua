@@ -1057,7 +1057,26 @@ local function setup_deliveries(surface, result)
   deliveries.store = surface.create_entity({ name = "storage-chest", position = { 20.5, 26.5 }, force = "player" })
   -- 5 for the request depot below, 2 for the liquid one, and 2 to replace the freighters
   -- destroyed on the road (deliveries.destroyed and deliveries.ambush, both within reach).
-  deliveries.store.insert({ name = FREIGHTER, count = 9 })
+  -- 3 more for the unloaded request depot below.
+  deliveries.store.insert({ name = FREIGHTER, count = 12 })
+  -- A request depot emptied by an inserter, as players unload them onto belts: the freighters
+  -- robots bring it still reach its slot, none taken out by the inserter.
+  deliveries.unloaded = depot(surface, "request", 38.5, 28.5, 0)
+  local unloader = surface.create_entity({
+    name = "burner-inserter",
+    position = { 38.5, 26.5 },
+    direction = defines.direction.south,
+    force = "player",
+  })
+  -- It picks up from the depot (south of it) and drops into the chest north of it.
+  if unloader.pickup_position.y < 26.5 then
+    unloader.direction = defines.direction.north
+  end
+  assert(unloader.pickup_position.y > 27, "the unloader doesn't take from the depot")
+  unloader.get_fuel_inventory().insert({ name = "coal", count = 5 })
+  deliveries.unloaded_into =
+    surface.create_entity({ name = "wooden-chest", position = { 38.5, 25.5 }, force = "player" })
+  assert(remote.call("jatz-distribution", "request_freighters", deliveries.unloaded, 3) == 3, "unloaded: not requested")
   local remote_depot = depot(surface, "request", 30.5, 28.5, 1)
   deliveries.remote = remote_depot
   result.requested = remote.call("jatz-distribution", "request_freighters", remote_depot, 4)
@@ -1196,13 +1215,14 @@ local function setup_deliveries(surface, result)
   local _, back = remote.call("jatz-distribution", "take_in_freighters", full, pockets, 2)
   result.ctrl_click_only_new_returned = back
   result.ctrl_click_existing_kept = full.get_inventory(defines.inventory.chest).get_item_count(FREIGHTER)
-  -- Freighters merged into a chest stack waiting for robots to take it away: the newcomers go to
-  -- the slot, the 5 waiting stay.
+  -- Freighters put in while 5 wait in the depot's truck chest for robots to take them away: the
+  -- newcomers go to the slot, the 5 waiting stay.
   local marked = depot(surface, "request", -56.5, -46.5, 5)
   remote.call("jatz-distribution", "remove_freighters", marked, 5)
   marked.insert({ name = FREIGHTER, count = 3 })
   result.ctrl_click_merged_taken = remote.call("jatz-distribution", "take_in_freighters", marked, pockets, 3)
-  result.ctrl_click_marked_left = marked.get_inventory(defines.inventory.chest).get_item_count(FREIGHTER)
+  local waiting = surface.find_entities_filtered({ name = "jatz-truck-chest", position = marked.position })[1]
+  result.ctrl_click_marked_left = waiting and waiting.get_inventory(defines.inventory.chest).get_item_count(FREIGHTER)
   -- Freighters of any quality fill the slot (Space Age has other qualities).
   if prototypes.quality.uncommon then
     local fine = depot(surface, "request", -46.5, -46.5, 0)
@@ -1796,7 +1816,7 @@ local function deliveries_finished(surface, tick, result)
     if tick >= DELIVERY_DEADLINE then
       error(
         string.format(
-          "deliveries did not finish in time: fuel ore %d (%s), liquid fuel ore %d (%s), dry sulfur %d (%s), iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), pipes after mending %d (%s), bricks rerouted %d, buffered request %d (%s), buffer filled %d (%s), prioritised %d (%s), water %d (%s), steam %d (%s), oil fallback %d (%s), liquid robots %d, run over %d (%s), ambushed %d (%s, killed %s), %d freighter(s) out",
+          "deliveries did not finish in time: fuel ore %d (%s), liquid fuel ore %d (%s), dry sulfur %d (%s), iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), pipes after mending %d (%s), bricks rerouted %d, buffered request %d (%s), buffer filled %d (%s), prioritised %d (%s), water %d (%s), steam %d (%s), oil fallback %d (%s), liquid robots %d, run over %d (%s), ambushed %d (%s, killed %s), unloaded depot %d in slot (%d taken out, %d in storage), %d freighter(s) out",
           count(deliveries.fuelled.request, "iron-ore"),
           tostring(status(deliveries.fuelled.request)),
           count(deliveries.liquid_fuelled.request, "copper-ore"),
@@ -1833,6 +1853,9 @@ local function deliveries_finished(surface, tick, result)
           count(deliveries.ambush.request, "copper-ore"),
           tostring(status(deliveries.ambush.request)),
           tostring(deliveries.ambush.killed),
+          remote.call("jatz-distribution", "freighter_counts", deliveries.unloaded),
+          count(deliveries.unloaded_into, FREIGHTER),
+          deliveries.store.get_item_count(FREIGHTER),
           #surface.find_entities_filtered({ name = DRONES })
         )
       )
@@ -2081,6 +2104,8 @@ local function deliveries_finished(surface, tick, result)
   result.storage_after_removal = deliveries.store.get_item_count(FREIGHTER)
   result.absorbed = remote.call("jatz-distribution", "freighter_counts", deliveries.absorbing)
   result.absorbed_left_in_chest = count(deliveries.absorbing, FREIGHTER)
+  result.unloaded_slot = remote.call("jatz-distribution", "freighter_counts", deliveries.unloaded)
+  result.unloaded_taken = count(deliveries.unloaded_into, FREIGHTER)
   -- Request depots removed by script or destroyed leave their freighters where they stood: the
   -- orphaned one (2 in its slot, 1 out) and the dying one (100 in its slot, 2 in its chest).
   result.orphaned_freighters_dropped = on_ground(surface, { { 60, 18 }, { 66, 24 } })

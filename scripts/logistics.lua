@@ -118,8 +118,10 @@ logistics.requesting = { [REQUEST] = true, [BUFFER] = true, [LIQUID_REQUEST] = t
 logistics.drone = DRONE
 logistics.drones = paint.names()
 logistics.freighter = FREIGHTER
--- Liquid depots are storage tanks, with no item inventory: robots bring their freighters into
--- this invisible chest under them instead (prototypes/truck-chest.lua).
+-- Robots bring a requesting depot's freighters into this invisible chest under it
+-- (prototypes/truck-chest.lua), which inserters can't reach: liquid depots are storage tanks with
+-- no item inventory, and inserters unloading an item depot's chest would take freighters out of it
+-- before they reach the slot.
 local TRUCK_CHEST = "jatz-truck-chest"
 logistics.truck_chest = TRUCK_CHEST
 
@@ -311,15 +313,11 @@ local function inventory(entity)
 end
 logistics.inventory = inventory
 
--- Where a requesting depot's freighters arrive as items, and robots bring them: its own chest, or
--- for a liquid depot the truck chest under it (made if missing: a save from before liquid depots
--- delivered, or one removed by another mod).
+-- Where robots bring a requesting depot's freighters: the truck chest under it (made if missing: a
+-- save from before, or one removed by another mod). Anything else is its own.
 local function truck_chest(entity)
-  if not LIQUID[entity.name] then
-    return entity
-  end
   local depot = storage.depots and storage.depots[entity.unit_number]
-  if not depot then
+  if not (depot and REQUESTING[depot.role]) then
     return entity
   end
   if not (depot.chest and depot.chest.valid) then
@@ -336,7 +334,7 @@ local function truck_chest(entity)
   return depot.chest or entity
 end
 
--- The inventory a requesting depot's freighters arrive in (see truck_chest).
+-- The inventory robots bring a requesting depot's freighters into (see truck_chest).
 local function freighter_chest(entity)
   return inventory(truck_chest(entity))
 end
@@ -530,6 +528,17 @@ local function count_freighters(inventory_)
   return inventory_.get_item_count_filtered(FREIGHTERS_ANY_QUALITY)
 end
 
+-- Freighters in a requesting depot's chests, waiting to move into its slot or to be taken away by
+-- robots: its truck chest's, and an item depot's own chest's. (A field, not a local: this file has
+-- as many locals as Lua allows.)
+function logistics.waiting_freighters(entity)
+  local count = count_freighters(freighter_chest(entity))
+  if not LIQUID[entity.name] then
+    count = count + count_freighters(inventory(entity))
+  end
+  return count
+end
+
 -- What is learned about road (road lengths, whether a loading zone is road) is forgotten after
 -- this long, in case another mod changed tiles without raising an event.
 local ROAD_MEMORY_TICKS = 5 * 60 * 60
@@ -590,7 +599,7 @@ function logistics.add(entity)
   storage.depots[entity.unit_number] = depot
   index_depot(entity.unit_number, depot, true)
   script.register_on_object_destroyed(entity)
-  if LIQUID[entity.name] and REQUESTING[role] then
+  if REQUESTING[role] then
     truck_chest(entity)
   end
   fuel_tank(entity)
@@ -1843,14 +1852,16 @@ local function path_length(from, path)
   return length
 end
 
--- Freighters put into a request depot's chest (by hand, inserters or robots) go into its slot, as
--- far as it has room, unless freighters are what it requests.
+-- Freighters robots brought into a request depot's truck chest, and those put into an item depot's
+-- own chest (by hand or by inserters), go into its slot, as far as it has room; those in its own
+-- chest stay there when freighters are what it requests (they are cargo then).
 local function absorb_freighters(depot)
-  if depot.request and depot.request.item == FREIGHTER then
-    return
-  end
-  local chest = freighter_chest(depot.entity)
-  if count_freighters(chest) == 0 then
+  local entity = depot.entity
+  local chest = freighter_chest(entity)
+  local own = not depot.fluid and not (depot.request and depot.request.item == FREIGHTER) and inventory(entity) or nil
+  local in_truck_chest = count_freighters(chest)
+  local in_own = own and count_freighters(own) or 0
+  if in_truck_chest == 0 and in_own == 0 then
     depot.chest_seen = 0
     return
   end
@@ -1864,14 +1875,19 @@ local function absorb_freighters(depot)
   end
   local room = FREIGHTER_CAPACITY - slot.get_item_count() - out
   if room > 0 then
-    -- Freighters waiting in the chest for robots to take them away stay there. (A buffer depot's
-    -- freighters could be another depot's cargo: the depots checked with it look again.)
-    if load(chest, slot, FREIGHTER, room, logistics.leaving(depot.entity), true) > 0 and suppliers_cache then
+    -- Freighters waiting in the truck chest for robots to take them away stay there.
+    local moved = in_truck_chest > 0 and load(chest, slot, FREIGHTER, room, logistics.leaving(entity), true) or 0
+    if in_own > 0 and moved < room then
+      moved = moved + load(own, slot, FREIGHTER, room - moved, nil, true)
+    end
+    -- (A buffer depot's freighters could be another depot's cargo: the depots checked with it look
+    -- again.)
+    if moved > 0 and suppliers_cache then
       suppliers_cache = {}
     end
   end
-  -- What the chest holds now, so freighters a player puts in later can be told apart.
-  depot.chest_seen = count_freighters(chest)
+  -- What the chest a player puts freighters in holds now, so those put in later can be told apart.
+  depot.chest_seen = count_freighters(own or chest)
 end
 
 local function dispatch(depot)
@@ -2863,19 +2879,21 @@ end
 
 -- A request depot about to be destroyed (died, or a script raising script_raised_destroy): all its
 -- freighters, in the slot, out on trips and still in its chest, are left where it stands.
+-- (Those in its truck chest are left there too, when on_object_destroyed removes it.)
 function logistics.on_depot_destroyed(event)
   local depot = request_depot(event.entity)
   if depot then
-    refund(depot, nil, freighter_chest(event.entity))
+    -- Those put in its own chest: an item depot's, or a liquid depot's truck chest.
+    refund(depot, nil, inventory(depot.fluid and truck_chest(event.entity) or event.entity))
   end
 end
 
--- A request depot mined by a player, robot or platform: its freighters go with it, and for a
--- liquid depot those waiting in its truck chest too (an item depot's chest is mined with it).
+-- A request depot mined by a player, robot or platform: its freighters go with it, those waiting in
+-- its truck chest too (an item depot's own chest is mined with it).
 function logistics.on_depot_mined(event)
   local depot = request_depot(event.entity)
   if depot then
-    refund(depot, event.buffer, depot.fluid and freighter_chest(event.entity) or nil)
+    refund(depot, event.buffer, freighter_chest(event.entity))
   end
 end
 
@@ -3180,7 +3198,7 @@ function logistics.add_all()
       end
       depot.circuit_mode = depot_circuit.mode(depot.circuit_mode) or nil
       watch(depot)
-      if depot.fluid and REQUESTING[depot.role] then
+      if REQUESTING[depot.role] then
         truck_chest(depot.entity)
       end
     end
@@ -3249,7 +3267,7 @@ function logistics.freighter_counts(entity)
 end
 
 -- Freighters can also be requested, like modules or fuel: an item request proxy asks construction
--- robots to deliver them into the depot's chest, from where they move into the slot. This is how a
+-- robots to deliver them into the depot's truck chest, from where they move into the slot. This is how a
 -- player in remote view (or anywhere without freighters in hand) stocks a depot.
 local PROXY = "item-request-proxy"
 
@@ -3261,7 +3279,7 @@ end
 -- bring, and to take away; and the chest stacks (0-based) freighters are to be taken from.
 function freighter_requests(entity)
   local proxies, requested, removing, marked = {}, 0, 0, {}
-  -- A liquid depot's requests are on its truck chest.
+  -- Its requests are on its truck chest.
   entity = truck_chest(entity)
   -- Usually none at all: then the ground needn't be searched for them.
   if not entity.item_request_proxy then
@@ -3378,7 +3396,7 @@ local function request_up_to(entity, goal)
   end
   local chest = freighter_chest(entity)
   local proxies, requested, removing = freighter_requests(entity)
-  local have = in_slot + out + count_freighters(chest) - removing + requested
+  local have = in_slot + out + logistics.waiting_freighters(entity) - removing + requested
   goal = math.min(goal, capacity)
   if goal <= have then
     return 0
@@ -3465,7 +3483,7 @@ end
 local function freighter_total(entity)
   local in_slot, out, capacity = logistics.freighter_counts(entity)
   local _, coming, removing = freighter_requests(entity)
-  local in_chest = count_freighters(freighter_chest(entity)) - removing
+  local in_chest = logistics.waiting_freighters(entity) - removing
   return in_slot + out + in_chest + coming, capacity, coming
 end
 logistics.freighter_total = freighter_total
@@ -3545,6 +3563,45 @@ end
 -- whenever freighters are put in by hand.
 function logistics.trim_freighter_requests(entity)
   local depot = request_depot(entity)
+  -- Freighters asked of an item depot's own chest, by an item request proxy targeting the depot: a
+  -- blueprint ghost's insert plan, a request from a save from before the truck chest, or another
+  -- mod's. Inserters unloading the depot could take them before they reach the slot, so they are
+  -- asked of its truck chest instead: dropped here, and requested again below as part of its
+  -- target, which they become if it has none. Robots taking freighters away from its own chest (a
+  -- save from before) stop; those stay in the depot.
+  local proxy = not depot.fluid and entity.item_request_proxy
+  if proxy then
+    local moved, changed = 0, false
+    local inserts, removals = {}, {}
+    for _, plan in pairs(proxy.insert_plan) do
+      if item_name(plan.id.name) == FREIGHTER then
+        for _, position in pairs(plan.items.in_inventory or {}) do
+          moved = moved + (position.count or 1)
+        end
+        changed = true
+      else
+        inserts[#inserts + 1] = plan
+      end
+    end
+    for _, plan in pairs(proxy.removal_plan) do
+      if item_name(plan.id.name) == FREIGHTER then
+        changed = true
+      else
+        removals[#removals + 1] = plan
+      end
+    end
+    if changed then
+      if #inserts == 0 and #removals == 0 then
+        proxy.destroy()
+      else
+        proxy.insert_plan = inserts
+        proxy.removal_plan = removals
+      end
+      if moved > 0 and not depot.freighter_target then
+        depot.freighter_target = freighter_total(entity) + moved
+      end
+    end
+  end
   if not depot.freighter_target and not truck_chest(entity).item_request_proxy then
     -- No target and no requests: nothing to keep.
     return
@@ -3577,7 +3634,8 @@ end
 
 -- Blueprints (and copy and paste) of request depots keep their request, as a tag, and their
 -- freighters (in the slot, out and coming), as an insert plan into the chest: the ghost asks for
--- them, robots or a player bring them, and they move into the slot.
+-- them, and the depot built from it asks robots for them into its truck chest instead (see
+-- trim_freighter_requests), or a player brings them, and they move into the slot.
 local REQUEST_TAG = "jatz_request"
 local FREIGHTERS_TAG = "jatz_freighters"
 local FROM_BUFFERS_TAG = "jatz_from_buffers"
@@ -3733,8 +3791,13 @@ end
 
 -- A depot built from a blueprint ghost takes its settings from the ghost's tags: any delivery
 -- depot its circuit condition, a provider or buffer depot its priority, a request or buffer depot
--- its request (its freighters arrive through the ghost's insert plan).
+-- its request and freighters. Called for every depot built, tags or not.
 function logistics.apply_tags(entity, tags)
+  if request_depot(entity) then
+    -- The ghost's insert plan for freighters, into an item depot's own chest: asked of its truck
+    -- chest instead at once, before robots bring any (a ghost built without its tags too).
+    logistics.trim_freighter_requests(entity)
+  end
   if not tags then
     return
   end
@@ -3764,14 +3827,9 @@ function logistics.apply_tags(entity, tags)
   end
   local freighters = tags[FREIGHTERS_TAG]
   if type(freighters) == "number" and freighters >= 0 then
-    if depot.fluid then
-      -- A liquid depot's ghost can't carry an insert plan (a storage tank has no chest): ask
-      -- robots for its freighters now, into its truck chest.
-      logistics.match_freighters(entity, freighters)
-    else
-      -- The ghost's insert plan asks robots for the freighters; this is how many it is for.
-      depot.freighter_target = math.floor(freighters)
-    end
+    -- An item depot's ghost asked for them by its insert plan too: trimming above made that its
+    -- target, so they aren't asked for twice.
+    logistics.match_freighters(entity, freighters)
   end
 end
 
@@ -3844,7 +3902,9 @@ function logistics.take_in_freighters(entity, give_back, moved)
   if not depot or (depot.request and depot.request.item == FREIGHTER) then
     return 0, 0
   end
-  local chest = freighter_chest(entity)
+  -- Freighters put in by hand go into an item depot's own chest (a liquid depot has none but its
+  -- truck chest).
+  local chest = inventory(depot.fluid and truck_chest(entity) or entity)
   local now = count_freighters(chest)
   local new = math.min(math.max(0, now - (depot.chest_seen or 0)), math.floor(tonumber(moved) or 0))
   if new <= 0 then
@@ -3853,7 +3913,8 @@ function logistics.take_in_freighters(entity, give_back, moved)
   end
   local slot = trucks_of(depot)
   local in_slot, out, capacity = logistics.freighter_counts(entity)
-  local leave = logistics.leaving(entity)
+  -- Robots take freighters away from the truck chest only (a liquid depot's is its hand chest).
+  local leave = depot.fluid and logistics.leaving(entity) or {}
   local taken = load(chest, slot, FREIGHTER, math.min(new, math.max(0, capacity - in_slot - out)), leave, true)
   local returned = 0
   if give_back then
@@ -3985,7 +4046,7 @@ function logistics.describe_freighters(entity)
     game.tick,
     in_slot,
     out,
-    count_freighters(freighter_chest(entity)),
+    logistics.waiting_freighters(entity),
     coming,
     removing,
     tostring(depot.freighter_target),

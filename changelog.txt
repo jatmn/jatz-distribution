@@ -1,4 +1,8 @@
 ---------------------------------------------------------------------------------------------------
+Version: Unreleased
+  Bugfixes:
+    - Fixed freighters brought by construction robots disappearing from request and buffer depots whose contents an inserter or loader takes out: the inserter took them onto the belt before they reached the freighter slot, and the depot asked robots for more, over and over. Robots now bring freighters into a hidden chest under the depot that inserters can't reach. Freighters you put in the depot's chest yourself still move into the slot.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.2
 Date: 2026-11-07
   Bugfixes:
