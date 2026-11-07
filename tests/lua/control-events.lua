@@ -1083,6 +1083,17 @@ do -- The priority slider: provider depots get a panel with it and their circuit
     "which follows the setting changed elsewhere (another player, a paste, a mod)",
     relative.jatz_request_frame.children[1] == inner and full_loads.state == true
   )
+  local from_buffers = inner.jatz_request_from_buffers
+  check("it has the request-from-buffers checkbox, unticked", from_buffers and from_buffers.state == false)
+  logistics.set_from_buffers(request, true)
+  nth[30]()
+  check(
+    "which follows the setting changed elsewhere too",
+    relative.jatz_request_frame.children[1] == inner and from_buffers.state == true
+  )
+  logistics.set_from_buffers(request, false)
+  nth[30]()
+  check("and back off", from_buffers.state == false)
   -- A panel left open across the update that added the checkbox: rebuilt with it.
   full_loads.destroy()
   nth[30]()

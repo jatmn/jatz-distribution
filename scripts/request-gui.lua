@@ -754,8 +754,8 @@ local function on_gui_selection_state_changed(event)
   end
 end
 
--- Keep the status line, the "Full loads only" checkbox, priority and circuit light current while
--- the window is open: other players, Copy and Paste settings and mods change them too.
+-- Keep the status line, both request checkboxes, priority and circuit light current while the
+-- window is open: other players, Copy and Paste settings and mods change them too.
 local function refresh()
   if not storage.request_gui then
     return
@@ -786,6 +786,12 @@ local function refresh()
         show_freighters(inner, entity)
         show_freighter_fuel(inner, entity)
         inner[FULL_LOADS].state = logistics.get_full_loads(entity)
+        -- Request depots only; every layout that passes the check above has it (it predates
+        -- freighter_fuel).
+        local from_buffers = inner[FROM_BUFFERS]
+        if from_buffers then
+          from_buffers.state = logistics.get_from_buffers(entity)
+        end
       end
       show_priority(inner, entity)
       show_circuit_status(inner, entity)
