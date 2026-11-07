@@ -2415,7 +2415,9 @@ local function arrived_at_provider(id, trip, depot)
   local provider = depot_entity(trip.provider)
   local request = depot and depot.entity.valid and depot.request
   -- Load only what the request depot still asks for, and has room for: the request may have
-  -- changed to another item, or been filled some other way, since the freighter set off.
+  -- changed to another item, or been filled some other way, since the freighter set off. This holds
+  -- with Full loads only too: that rule decides when a freighter sets off (dispatch, reroute), and
+  -- once it is here, bringing what fits beats driving home empty for the same trip.
   if provider and request and request.item == trip.item then
     -- What it promised, as far as the depot (counting its other freighters) still needs it.
     local _, room = need(depot, id)

@@ -51,7 +51,7 @@ If one freighter isn't enough, or one provider doesn't have it all, the depot se
 
 ### Full loads only
 
-Tick **Full loads only** on a request or buffer depot (item or liquid) to keep freighters from driving out for a handful of items. A freighter then sets off only when it can come back full: a depot it fetches from has a whole load to give (ten stacks of the item, or 500 of a fluid, more with capacity research), and the requesting depot has room for one. Providers holding less are passed by, even when they're nearer, and smaller amounts wait until a full load is ready. A request smaller than one load counts as a full load, so it's fetched whole once the depot has room for all of it. It's off by default.
+Tick **Full loads only** on a request or buffer depot (item or liquid) to keep freighters from driving out for a handful of items. A freighter then sets off only when it can come back full: a depot it fetches from has a whole load to give (ten stacks of the item, or 500 of a fluid, more with capacity research), and the requesting depot has room for one. Providers holding less are passed by, even when they're nearer, and smaller amounts wait until a full load is ready. A request smaller than one load counts as a full load, so it's fetched whole once the depot has room for all of it. The check is made when a freighter sets off, and again if it's sent on to another provider. If the depot fills up some other way, or the provider's stock is taken, while the freighter is on its way, it still brings back what fits rather than come home empty. It's off by default.
 
 ## The freighter slot
 
