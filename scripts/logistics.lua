@@ -1210,13 +1210,15 @@ function logistics.queue_place()
 end
 
 -- Whether a depot takes part in deliveries now: its circuit condition holds, or isn't in effect.
--- With `before`, a depot reading its own contents reads them less what freighters on their way
--- there promised to load, as they will be once loaded: every promise (true)
--- when deciding whether to send it another freighter, so once those already sent would take it
--- below its condition no more go, or those made before the trip `before`'s (logistics.ahead), for
--- whether that one still gets its load (logistics.honoured). Without it, what it holds now: its
+-- With `claims`, a depot reading its own contents must also still hold it once freighters on their
+-- way there have loaded what they promised: `true` for every promise filed there (whether to send
+-- it another freighter, so once those already sent would take it below its condition no more go),
+-- or a table of amounts by item (logistics.claims_ahead: the promises made before a freighter's,
+-- for whether that one still gets its load). Both, not the second instead of the first: a
+-- condition that taking items switches on (only while below some amount) can hold with promises
+-- taken and not now, and a switched-off depot gives nothing. Without it, what it holds now: its
 -- status, its panel, road network monitors.
-local function enabled(depot, before)
+local function enabled(depot, claims)
   if not depot.circuit_enabled then
     -- No condition in effect (most depots): nothing to read.
     return true
@@ -1226,42 +1228,80 @@ local function enabled(depot, before)
   -- since) what it holds now.
   local sample = depot.circuit_sample
   sample = sample and sample.tick == game.tick and sample or nil
-  return depot_circuit.allows(depot.entity, depot.circuit_enabled, depot.circuit_condition, depot.circuit_mode, {
-    held = function()
-      local counts = own_signals(depot)
-      local items = before and storage.promised and storage.promised[depot.entity.unit_number]
-      for item, trips in pairs(items or {}) do
-        local claimed = 0
-        for key, amount in pairs(trips) do
-          if before == true or logistics.ahead(key, before) then
-            claimed = claimed + amount
-          end
-        end
-        if claimed > 0 then
-          -- Freighters load the normal quality.
-          local signal = depot_circuit.key({ type = depot.fluid and "fluid" or "item", name = item })
-          if depot.fluid then
-            -- Promises of fluid can be fractions: taken from the exact amount, then floored once, as
-            -- the tank would send what is left (own_signals has floored it already).
-            counts[signal] = math.floor(depot.entity.get_fluid_count(item) - claimed)
-          else
-            counts[signal] = (counts[signal] or 0) - claimed
-          end
-        end
-      end
-      return counts
-    end,
-    sent = function()
-      return sample and sample.sent or own_signals(depot)
-    end,
-    segment = function()
-      return sample and sample.segment or segment_signals(depot)
-    end,
-  }, counted and function(network)
-    return counted(depot.entity.unit_number, network)
-  end)
+  local live
+  if
+    not depot_circuit.allows(depot.entity, depot.circuit_enabled, depot.circuit_condition, depot.circuit_mode, {
+      held = function()
+        live = own_signals(depot)
+        return live
+      end,
+      sent = function()
+        return sample and sample.sent or own_signals(depot)
+      end,
+      segment = function()
+        return sample and sample.segment or segment_signals(depot)
+      end,
+    }, counted and function(network)
+      return counted(depot.entity.unit_number, network)
+    end)
+  then
+    return false
+  end
+  if not claims or depot.circuit_mode ~= depot_circuit.contents then
+    -- Read from the network, the condition leaves the depot's own contents out: promises don't
+    -- change it.
+    return true
+  end
+  if claims == true then
+    claims = logistics.claims_ahead(depot.entity.unit_number)
+  end
+  return logistics.holds_less(depot, claims, live or own_signals(depot))
 end
 logistics.enabled = enabled
+
+-- Whether a depot's condition, reading its own contents, holds with `claims` (amounts by item)
+-- taken out of `live` (own_signals, read once by the caller; not changed). Freighters load the
+-- normal quality. Promises of fluid can be fractions: taken from the exact amount, then floored
+-- once, as the tank would send what is left (own_signals has floored it already). (A field, not a
+-- local: this file has as many locals as Lua allows.)
+function logistics.holds_less(depot, claims, live)
+  if next(claims) == nil then
+    return true
+  end
+  local counts = {}
+  for signal, count in pairs(live) do
+    counts[signal] = count
+  end
+  for item, claimed in pairs(claims) do
+    local signal = depot_circuit.key({ type = depot.fluid and "fluid" or "item", name = item })
+    if depot.fluid then
+      counts[signal] = math.floor(depot.entity.get_fluid_count(item) - claimed)
+    else
+      counts[signal] = (counts[signal] or 0) - claimed
+    end
+  end
+  return depot_circuit.allows(depot.entity, true, depot.circuit_condition, depot.circuit_mode, {
+    held = function()
+      return counts
+    end,
+  })
+end
+
+-- The promises filed at a provider (unit number) made before `trip`'s (logistics.ahead), or all of
+-- them without one: amounts by item.
+function logistics.claims_ahead(unit_number, trip)
+  local claims = {}
+  for item, trips in pairs(storage.promised and storage.promised[unit_number] or {}) do
+    local claimed = 0
+    for key, amount in pairs(trips) do
+      if not trip or logistics.ahead(key, trip) then
+        claimed = claimed + amount
+      end
+    end
+    claims[item] = claimed
+  end
+  return claims
+end
 
 -- The entity info panel (hover) shows a depot's own status, "Normal" for a chest. While its
 -- circuit condition switches it off, it shows that instead (LuaEntity.custom_status, a red light),
@@ -1790,8 +1830,26 @@ local function search_providers(depot, from, trip)
   return true
 end
 
+-- A failed pickup: home empty, through set_off like any leg, so a freighter short of fuel for the
+-- way fills up at a Fuel depot first (as one that found nothing to load at its provider always
+-- did). (A field, not a local: this file has as many locals as Lua allows.)
+function logistics.home_empty(id, trip, depot)
+  if trip.departing then
+    -- Still at home, never set off (waiting to hear where to fill up): it parks there and then, as
+    -- one that can't set off does (go_without_fuel), rather than driving to a Fuel depot and back.
+    return end_trip(id, trip)
+  end
+  trip.planned, trip.passed = nil, nil
+  trip.state = TO_REQUEST
+  promise(trip)
+  -- As far by road as it came (when it came from home), never less than the straight line: as one
+  -- that found nothing to load at its provider (arrived_at_provider).
+  local home, here = loading_tile(depot.entity), trip.drone.position
+  set_off(id, trip, math.max(trip.leg or 0, math.sqrt((home.x - here.x) ^ 2 + (home.y - here.y) ^ 2)))
+end
+
 -- Find a new provider, nearest by road from where it stands, for a freighter whose provider is
--- gone or no longer suitable. It waits while the search runs, and leaves if there is none.
+-- gone or no longer suitable. It waits while the search runs, and goes home if there is none.
 local function reroute(id, trip)
   local depot = storage.depots[trip.request]
   local request = depot and depot.entity.valid and depot.request
@@ -1814,11 +1872,8 @@ local function reroute(id, trip)
     -- its truck would go back into the slot for free (Pullfrog's review of e949b72).
     logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = id })
   elseif depot and depot.entity.valid then
-    -- No provider for it any more: home empty, to park.
-    trip.planned, trip.passed = nil, nil
-    trip.state = TO_REQUEST
-    promise(trip)
-    drive(trip, (loading_tile(depot.entity)))
+    -- No provider for it any more (none found at once, or every one asked had no road): home empty.
+    logistics.home_empty(id, trip, depot)
   else
     end_trip(id, trip)
   end
@@ -1826,11 +1881,12 @@ end
 
 -- What a freighter driving out to its provider can still load there, or false for nothing: the
 -- provider's stock of its item less what was promised there before its promise (logistics.ahead),
--- if above 0 and the provider's circuit condition holds with those loads taken (as it was when the
--- freighter was sent there, for one sent last). Stock taken out some other way (an inserter, a
--- player) or a condition switched off since leaves the last promised without a load first, and
--- the stock left after earlier promises is all a later freighter may take, even arriving first.
--- (A field, not a local: this file has as many locals as Lua allows.)
+-- if above 0 and the provider's circuit condition holds now and with those loads taken (as it was
+-- when the freighter was sent there, for one sent last). Stock taken out some other way (an
+-- inserter, a player) or a condition switched off since leaves the last promised without a load
+-- first, and the stock left after earlier promises is all a later freighter may take, even
+-- arriving first. For one freighter (arriving to load); keep_promises works the same out for all of
+-- a provider's in one pass. (A field, not a local: this file has as many locals as Lua allows.)
 function logistics.honoured(trip)
   local provider = storage.depots[trip.provider]
   if not (provider and provider.entity.valid) then
@@ -1844,7 +1900,12 @@ function logistics.honoured(trip)
       left = left + amount
     end
   end
-  return left > 0 and enabled(provider, trip) and left or false
+  if left <= 0 then
+    return false
+  end
+  -- Only a condition reading its contents needs the promises ahead, of every item.
+  local contents = provider.circuit_enabled and provider.circuit_mode == depot_circuit.contents
+  return enabled(provider, contents and logistics.claims_ahead(trip.provider, trip) or nil) and left or false
 end
 
 -- Look for another provider for a freighter its provider no longer has a load for, leaving that
@@ -1859,29 +1920,29 @@ function logistics.give_up(id, trip)
   local depot = storage.depots[trip.request]
   if trip.diverted and trip.drone.valid and depot and depot.entity.valid then
     trip.search_token, trip.searching, trip.fuel_search, trip.refuel = nil, nil, nil, nil
-    trip.planned, trip.passed = nil, nil
-    trip.state = TO_REQUEST
-    promise(trip)
-    local home, here = loading_tile(depot.entity), trip.drone.position
-    return set_off(id, trip, math.sqrt((home.x - here.x) ^ 2 + (home.y - here.y) ^ 2))
+    return logistics.home_empty(id, trip, depot)
   end
   trip.diverted = true
   reroute(id, trip)
 end
 
 -- At a provider or buffer depot's once-a-second check: freighters on their way there that it no
--- longer has a load for (logistics.honoured: those promised first keep theirs) look for another
+-- longer has a load for (as logistics.honoured: those promised first keep theirs) look for another
 -- provider now, rather than finding out on arrival. Ones standing there to load find out then
 -- (arrived_at_provider). Unless a condition reading its contents is in effect, or one reading the
 -- network doesn't hold, or its stock no longer covers what was promised, only its promises are
--- looked at.
+-- looked at. Otherwise its promises are walked once, in order, adding up those ahead as it goes:
+-- asking honoured for each would add them up afresh for every freighter, which for a provider with
+-- hundreds of promises took tens of milliseconds in one tick (Pullfrog's review of 712a2fd).
 function logistics.keep_promises(id, depot)
   local items = storage.promised and storage.promised[id]
   if not items then
     return
   end
+  local on = not depot.circuit_enabled or enabled(depot)
+  local contents = depot.circuit_enabled and depot.circuit_mode == depot_circuit.contents
   -- (Read from the network, the condition leaves its contents out: the same for every freighter.)
-  if not depot.circuit_enabled or (not depot.circuit_mode and enabled(depot)) then
+  if on and not contents then
     local short = false
     for item in pairs(items) do
       if available(depot, item) < 0 then
@@ -1893,24 +1954,33 @@ function logistics.keep_promises(id, depot)
       return
     end
   end
-  local queue = {}
-  for _, trips in pairs(items) do
-    for key in pairs(trips) do
+  -- Each item's stock as it is (what is unpromised, and every promise), and the trips promised.
+  local stock, queue = {}, {}
+  for item, trips in pairs(items) do
+    local held = available(depot, item)
+    for key, amount in pairs(trips) do
+      held = held + amount
       local trip = storage.trips[key]
       if trip and trip.key == key then
         queue[#queue + 1] = trip
       end
     end
+    stock[item] = held
   end
-  -- The first promised first: a freighter rerouted from here no longer counts for those after it.
+  -- The first promised first (logistics.ahead's order): a freighter rerouted from here no longer
+  -- counts for those after it.
   table.sort(queue, function(a, b)
-    return logistics.ahead(a.key, b)
+    local first, second = a.queued or 0, b.queued or 0
+    return first < second or (first == second and a.key < b.key)
   end)
-  local looked = false
+  -- What it holds, read once for the condition (only reading its contents does promises matter).
+  local live = on and contents and own_signals(depot) or nil
+  local ahead, looked = {}, false
   for _, trip in ipairs(queue) do
+    local item = trip.item
     if trip.state == TO_PROVIDER and trip.provider == id and not trip.loading then
-      local left = logistics.honoured(trip)
-      if not left then
+      local left = stock[item] - (ahead[item] or 0)
+      if not (on and left > 0 and (not live or logistics.holds_less(depot, ahead, live))) then
         -- The depots checked before it this tick saw it among their suppliers, as it was: the
         -- search looks at the depots afresh.
         if not looked and suppliers_cache then
@@ -1923,6 +1993,10 @@ function logistics.keep_promises(id, depot)
         trip.planned = left
         promise(trip)
       end
+    end
+    -- What it still promises here comes before those after it.
+    if trip.promise and trip.promise.provider == id then
+      ahead[item] = (ahead[item] or 0) + trip.promise.amount
     end
   end
 end
