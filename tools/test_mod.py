@@ -92,12 +92,14 @@ EXPECTED = {'recipes': RECIPES,
             # isolated road tile gets nothing, and the one without road sends no freighter.
             'delivered': 30, 'provider_left': 20, 'island_received': 0, 'request_status': 'satisfied',
             'island_status': 'unreachable', 'unpaved_status': 'no-road',
-            # Cargo keeps item data; a full request depot fetches nothing; a destroyed freighter is
-            # replaced; a changed request doesn't load the old item; cargo cut off from its
+            # Cargo keeps item data; a full request depot fetches nothing; a freighter killed by a
+            # script is lost and replaced by robots, never put back for free; robots repair a damaged
+            # freighter; a changed request doesn't load the old item; cargo cut off from its
             # destination goes back to the provider; nothing is ever spilled; requests are
             # validated, cloned and cleared; road is laid on ground but not water.
             'armor_equipment': 1, 'full_status': 'full', 'full_provider_left': 50,
-            'redelivered_after_destroy': 30, 'destroyed_restocked': 3, 'changed_provider_left': 20, 'changed_received': 0,
+            'redelivered_after_destroy': 30, 'destroyed_replacement_requested': 1, 'destroyed_restocked': 3,
+            'freighter_repaired': True, 'changed_provider_left': 20, 'changed_received': 0,
             'changed_status': 'no-provider', 'cut_returned': 30, 'cut_received': 0, 'cut_status': 'unreachable',
             'spilled': 0, 'bad_item_rejected': True, 'refused_request_kept': True, 'cloned_request': 'wood x5', 'request_cleared': True, 'road_on_grass': True,
             'road_on_water': False,

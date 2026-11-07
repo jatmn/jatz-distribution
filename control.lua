@@ -241,8 +241,12 @@ request_gui.register()
 -- is (request depots sending freighters, freighters burning fuel: logistics.on_tick_share), and of
 -- the freighters looking for enemies to run over every 20 ticks (logistics.on_impact_share), so
 -- none of it lands all on the same tick. Once a second: road network monitors show their
--- networks. The game raises on_tick before on_nth_tick.
+-- networks. The game raises on_tick before on_nth_tick. Before all that, the commands freighters
+-- failed since the last tick (logistics.failed_commands).
 script.on_event(defines.events.on_tick, function(event)
+  if storage.failed_trips then
+    logistics.failed_commands()
+  end
   logistics.sample_circuits()
   logistics.on_tick_share(event.tick)
   logistics.on_impact_share(event.tick)
