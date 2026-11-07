@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.1.3](https://github.com/jatmn/jatz-distribution/compare/v0.1.2...v0.1.3) (2026-11-07)
+
+
+### Bug Fixes
+
+* keep robot-delivered freighters away from inserters ([#63](https://github.com/jatmn/jatz-distribution/issues/63)) ([a07ecfa](https://github.com/jatmn/jatz-distribution/commit/a07ecfa8522c015b193fe52e10a887ad31d6ee7c))
+
+
+### CI
+
+* verify portal publication past the portal's CDN cache ([#61](https://github.com/jatmn/jatz-distribution/issues/61)) ([84a4551](https://github.com/jatmn/jatz-distribution/commit/84a45519c6dd80e3a7b5caf1d2ffbd44c7b6e4be))
+
 ## [0.1.2](https://github.com/jatmn/jatz-distribution/compare/v0.1.1...v0.1.2) (2026-11-07)
 
 
