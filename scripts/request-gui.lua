@@ -117,10 +117,9 @@ end
 
 -- The line beside the freighter slot, whose own number is the freighters at home: how many are
 -- out on the road, always, so home and out read at a glance, and a green "+N" while N more are
--- requested (from robots, or by a pasted depot). The chest's own requested-item ghosts don't
--- redraw while the depot's window is open (Factorio's container window only draws them when
--- opened), so this is where a request that changes meanwhile shows. Everything else (freighters
--- being taken away, the slot's limit) is in the tooltip.
+-- requested (from robots, or by a pasted depot). Those requests are on the depot's hidden truck
+-- chest, so its window draws no requested-item ghosts for them: this is where they show. Everything
+-- else (freighters being taken away, the slot's limit) is in the tooltip.
 function request_gui.freighter_caption(out, coming)
   local caption = { "", { "jatz-gui.freighters-out", out } }
   if coming and coming > 0 then
@@ -680,9 +679,8 @@ function request_gui.on_player_main_inventory_changed(event)
   storage.pocket_freighters[event.player_index] = carried(player)
 end
 
--- A freighter placed from the cursor into a request depot's chest (onto the ghost of a requested
--- freighter, say) goes to its freighter slot at once too, so the chest slot shows the rest of the
--- request again straight away rather than at the next dispatch.
+-- A freighter placed from the cursor into a request depot's chest goes to its freighter slot at
+-- once too, rather than at the next dispatch.
 request_gui.on_player_cursor_stack_changed = request_gui.on_player_main_inventory_changed
 
 local function on_gui_checked_state_changed(event)

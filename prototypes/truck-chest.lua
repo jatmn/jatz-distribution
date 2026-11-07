@@ -1,10 +1,11 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
--- The truck chest: an invisible ten-slot chest under each liquid request and liquid buffer depot.
--- Liquid depots are storage tanks, which have no item inventory, so construction robots have
--- nowhere to bring freighters to. scripts/logistics.lua makes one of these at the depot's centre
--- and asks robots to bring freighters into it, from where they move into the depot's freighter
--- slot, exactly as with a request depot's own chest. It can't be seen, selected, mined, built or
--- blueprinted, collides with nothing, and inserters ignore it; it goes with its depot.
+-- The truck chest: an invisible chest under each request and buffer depot, item and liquid.
+-- Construction robots bring freighters into it, never into the depot itself: liquid depots are
+-- storage tanks, which have no item inventory, and inserters unloading an item depot's chest would
+-- take freighters out of it before they reach the slot. scripts/logistics.lua makes one at the
+-- depot's centre and asks robots to bring freighters into it, from where they move into the
+-- depot's freighter slot. It can't be seen, selected, mined, built or blueprinted, collides with
+-- nothing, and inserters ignore it; it goes with its depot.
 local util = require("util")
 local constants = require("prototypes.constants")
 
@@ -32,8 +33,9 @@ data:extend({
     max_health = 100,
     collision_box = { { -0.1, -0.1 }, { 0.1, 0.1 } },
     collision_mask = { layers = {} },
-    -- Ten stacks of freighters (they stack to 10): a depot's whole slot.
-    inventory_size = 10,
+    -- Twenty stacks of freighters (they stack to 10): room to ask for a depot's whole slot (100) a
+    -- stack at a time, even with stacks already taken by part-stacks requested or leaving.
+    inventory_size = 20,
     picture = util.empty_sprite(),
   },
 })

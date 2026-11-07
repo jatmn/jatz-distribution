@@ -80,7 +80,7 @@ for _, event in ipairs({
 }) do
   script.on_event(event, on_built, filters)
 end
--- Freighters and liquid depots' truck chests cloned along with an area are removed: they belong to
+-- Freighters and request and buffer depots' truck chests cloned along with an area are removed: they belong to
 -- the original's trips and depots, and a cloned depot makes its own. A Fuel depot's tank cloned with
 -- its depot stays with the clone, fluid and all; one cloned without its depot is removed.
 local clone_filters = {

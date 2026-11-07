@@ -871,11 +871,17 @@ do -- A freighter goes back into the slot after its trip; one destroyed on the w
   -- its depot asks robots for a replacement.
   local logistics = reset()
   local request = supplied(logistics, 2)
-  -- A chest with stacks, for the replacement's request to go into.
+  -- A chest with stacks, for the cargo to be unloaded into.
   local chest = script_inventory(4)
   chest.get_insertable_count = request.chest.get_insertable_count
   request.get_inventory = function()
     return chest
+  end
+  -- And its truck chest, for the replacement's request to go into.
+  local truck = storage.depots[request.unit_number].chest
+  local trucks = script_inventory(4)
+  truck.get_inventory = function()
+    return trucks
   end
   logistics.on_tick()
   answer(logistics, 1, "route")
@@ -896,21 +902,22 @@ do -- A freighter goes back into the slot after its trip; one destroyed on the w
   check("a freighter destroyed on the way is lost", in_slot == 1 and out == 0)
   local proxy = surface.created[#surface.created]
   check(
-    "and its depot asks robots for one freighter to replace it",
+    "and its depot asks robots for one freighter to replace it, into its truck chest",
     proxy.name == "item-request-proxy"
-      and proxy.parameters.target == request
+      and proxy.parameters.target == truck
+      and truck.name == "jatz-truck-chest"
       and proxy.parameters.modules[1].items.in_inventory[1].count == 1
       and storage.depots[request.unit_number].freighter_target == 2
   )
 end
 
-do -- A freighter lost while every stack of its depot's chest is taken: robots can't be asked yet,
-  -- but the depot remembers it is short, and asks once a stack is free.
+do -- A freighter lost while every stack of its depot's truck chest is taken (by freighters
+  -- waiting for robots to take them away, say): robots can't be asked yet, but the depot remembers
+  -- it is short, and asks once a stack is free.
   local logistics = reset()
   local request = supplied(logistics, 2)
   local chest = script_inventory(2)
-  chest.get_insertable_count = request.chest.get_insertable_count
-  request.get_inventory = function()
+  storage.depots[request.unit_number].chest.get_inventory = function()
     return chest
   end
   logistics.on_tick()
@@ -937,13 +944,12 @@ do -- A freighter lost while every stack of its depot's chest is taken: robots c
   )
 end
 
-do -- Freighters asked for while the chest has no free stack wait for one; asking for more adds
-  -- to them, and once a stack is free they are all requested, once.
+do -- Freighters asked for while the truck chest has no free stack wait for one; asking for more
+  -- adds to them, and once a stack is free they are all requested, once.
   local logistics = reset()
   local request = supplied(logistics, 0)
   local chest = script_inventory(2)
-  chest.get_insertable_count = request.chest.get_insertable_count
-  request.get_inventory = function()
+  storage.depots[request.unit_number].chest.get_inventory = function()
     return chest
   end
   for index = 1, 2 do
@@ -968,6 +974,120 @@ do -- Freighters asked for while the chest has no free stack wait for one; askin
       and proxy.parameters.modules[1].items.in_inventory[1].count == 6
   )
   check("and the target isn't counted twice", depot.freighter_target == 6)
+end
+
+do -- Freighters robots bring into a request depot's truck chest go to its slot; those in its own
+  -- chest too, unless freighters are what it requests (then they are cargo), while those in its
+  -- truck chest still go (they never are).
+  local logistics = reset()
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  logistics.add(request)
+  local own = script_inventory(4)
+  own.get_insertable_count = request.chest.get_insertable_count
+  request.get_inventory = function()
+    return own
+  end
+  local trucks = script_inventory(4)
+  storage.depots[request.unit_number].chest.get_inventory = function()
+    return trucks
+  end
+  trucks[1].name, trucks[1].count, trucks[1].valid_for_read = "jatz-quinityn-freighter", 2, true
+  own[1].name, own[1].count, own[1].valid_for_read = "jatz-quinityn-freighter", 3, true
+  logistics.on_tick()
+  check(
+    "freighters in the truck chest and the depot's own chest go to its slot",
+    logistics.freighter_counts(request) == 5 and trucks.get_item_count() == 0 and own.get_item_count() == 0
+  )
+  assert(logistics.set_request(request, "jatz-quinityn-freighter", 10))
+  trucks[1].name, trucks[1].count, trucks[1].valid_for_read = "jatz-quinityn-freighter", 2, true
+  own[1].name, own[1].count, own[1].valid_for_read = "jatz-quinityn-freighter", 3, true
+  game.tick = 60
+  logistics.on_tick()
+  check(
+    "requesting freighters, those robots brought still go to its slot",
+    logistics.freighter_counts(request) == 7 and trucks.get_item_count() == 0
+  )
+  check("and those in its own chest stay, as cargo", own.get_item_count() == 3)
+end
+
+do -- A request depot gone before on_object_destroyed reaches it (Factorio raises that at the end of
+  -- the tick or the next), its check coming first: forgotten as on_object_destroyed would, its
+  -- freighters in the slot and in its truck chest left where it stood, the truck chest removed.
+  local logistics = reset()
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  logistics.add(request)
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 2)) == 2)
+  local id = request.unit_number
+  local truck = storage.depots[id].chest
+  local trucks = script_inventory(4)
+  truck.get_inventory = function()
+    return trucks
+  end
+  trucks[1].name, trucks[1].count, trucks[1].valid_for_read = "jatz-quinityn-freighter", 3, true
+  request.valid = false
+  logistics.on_tick()
+  local spilled = 0
+  for _, item in ipairs(surface.spilled) do
+    if item.name == "jatz-quinityn-freighter" then
+      spilled = spilled + item.count
+    end
+  end
+  check(
+    "a depot found gone at its check leaves its 5 freighters where it stood",
+    spilled == 5 and trucks.get_item_count() == 0
+  )
+  check("and its truck chest goes with it", truck.valid == false and storage.depots[id] == nil)
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = id })
+  check("on_object_destroyed afterwards leaves nothing twice", #surface.spilled == 2)
+end
+
+do -- Several item request proxies can target a depot, and `item_request_proxy` names only the first
+  -- found: freighters asked of its own chest behind another item's proxy are asked of its truck
+  -- chest too, all of them at once, and the other item's plan stays.
+  local logistics = reset()
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  logistics.add(request)
+  local depot = storage.depots[request.unit_number]
+  local trucks = script_inventory(4)
+  depot.chest.get_inventory = function()
+    return trucks
+  end
+  local function proxy(item, count, stack_index)
+    local self = {
+      valid = true,
+      proxy_target = request,
+      removal_plan = {},
+      insert_plan = {
+        {
+          id = { name = item, quality = "normal" },
+          items = { in_inventory = { { inventory = defines.inventory.chest, stack = stack_index, count = count } } },
+        },
+      },
+    }
+    function self.destroy()
+      self.valid = false
+    end
+    return self
+  end
+  local iron, first, second =
+    proxy("b", 1, 0), proxy("jatz-quinityn-freighter", 3, 1), proxy("jatz-quinityn-freighter", 2, 2)
+  request.item_request_proxy = iron
+  function surface.find_entities_filtered(filter)
+    return filter.name == "item-request-proxy" and { iron, first, second } or {}
+  end
+  local created = #surface.created
+  logistics.trim_freighter_requests(request)
+  check("every freighter proxy on the depot goes", not first.valid and not second.valid)
+  check("the other item's stays, plan and all", iron.valid and iron.insert_plan[1].id.name == "b")
+  check("their freighters, together, become its target", depot.freighter_target == 5)
+  local asked = surface.created[#surface.created]
+  check(
+    "and are asked of its truck chest",
+    #surface.created == created + 1
+      and asked.name == "item-request-proxy"
+      and asked.parameters.target == depot.chest
+      and asked.parameters.modules[1].items.in_inventory[1].count == 5
+  )
 end
 
 do -- Running enemies over: damage can set off other mods' handlers, which may remove an enemy
@@ -1417,9 +1537,14 @@ do -- Requests: fluids for liquid depots, items for item depots.
   local chest = surface.created[1]
   check("a liquid request depot gets a truck chest", chest and chest.name == "jatz-truck-chest")
   check("under its centre", chest.position.x == 0.5 and chest.position.y == 0.5)
+  local item_chest = surface.created[2]
+  check(
+    "so does an item request depot, for robots to bring freighters where inserters can't take them",
+    item_chest and item_chest.name == "jatz-truck-chest" and item_chest.position.x == 20.5
+  )
   local provider = tank("jatz-liquid-provider-depot", 10.5, 0.5)
   logistics.add(provider)
-  check("a liquid provider needs none", #surface.created == 1)
+  check("a liquid provider needs none", #surface.created == 2)
   check(
     "liquid providers have a priority too",
     logistics.set_priority(provider, 7) and logistics.get_priority(provider) == 7

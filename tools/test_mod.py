@@ -159,6 +159,13 @@ EXPECTED = {'recipes': RECIPES,
             # freighter back.
             'removal_marked': 1, 'removal_cancelled': 1, 'robots_removal_marked': 2, 'slot_after_removal': 2,
             'storage_after_removal': 4,
+            # A request depot an inserter empties: robots' freighters reach its slot, and the
+            # inserter takes none of them.
+            'unloaded_slot': 3, 'unloaded_taken': 0,
+            # Freighters asked of a depot's own chest by a proxy that item_request_proxy doesn't name
+            # (an iron plate's does) are asked of its truck chest; the iron plate's plan stays.
+            'two_proxies_named': 'iron-plate', 'two_proxies_left_on_depot': 0, 'two_proxies_other_kept': 1,
+            'two_proxies_requested': 5,
             # Enemies: a freighter runs over a biter on the road (impact damage) and delivers
             # anyway, leaving the player beside it unhurt; biters destroy another freighter, which
             # explodes and leaves the car's wreck where it died. Its depot asks robots for a

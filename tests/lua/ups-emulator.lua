@@ -106,6 +106,7 @@ end
 
 local DRONE, FREIGHTER, ROAD = "jatz-freighter-drone", "jatz-quinityn-freighter", "jatz-road"
 local FUEL_TANK = "jatz-fuel-depot-tank"
+local TRUCK_CHEST = "jatz-truck-chest"
 local STACK_SIZE = {
   ["iron-plate"] = 100,
   ["copper-plate"] = 100,
@@ -606,13 +607,39 @@ local function new_surface(index, plan)
     end
     return natives(tank)
   end
+  -- A request or buffer depot's hidden truck chest: no robots bring freighters into it here.
+  local function new_truck_chest(parameters)
+    next_unit = next_unit + 1
+    local position = parameters.position
+    local chest = new_inventory(20)
+    local truck = {
+      valid = true,
+      name = TRUCK_CHEST,
+      unit_number = next_unit,
+      position = { x = position.x or position[1], y = position.y or position[2] },
+      surface = surface,
+      surface_index = surface.index,
+      force = parameters.force,
+      force_index = parameters.force.index,
+    }
+    function truck.get_inventory()
+      return chest
+    end
+    function truck.destroy()
+      truck.valid = false
+    end
+    return natives(truck)
+  end
   function surface.create_entity(parameters)
     if parameters.name == FUEL_TANK then
       return new_tank(parameters)
     end
+    if parameters.name == TRUCK_CHEST then
+      return new_truck_chest(parameters)
+    end
     assert(
       parameters.name:sub(1, #DRONE) == DRONE,
-      "emulator only creates freighters and tanks, not " .. parameters.name
+      "emulator only creates freighters, tanks and truck chests, not " .. parameters.name
     )
     stats.drones = stats.drones + 1
     next_unit = next_unit + 1
