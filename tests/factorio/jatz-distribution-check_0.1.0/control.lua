@@ -369,6 +369,11 @@ local function check_road(result)
   record_recipe(ROAD, ROAD, result)
   assert(not prototypes.tile[ROAD].collision_mask.layers.jatz_off_road, "road: must not be off-road")
   assert(prototypes.tile.concrete.collision_mask.layers.jatz_off_road, "concrete: must be off-road")
+  -- Players run on both road tiles as fast as on Transport Drones' road.
+  for _, tile in ipairs({ ROAD, "jatz-depot-road" }) do
+    local speed = prototypes.tile[tile].walking_speed_modifier
+    assert(speed == 1.5, tile .. ": walking speed must be 1.5, got " .. speed)
+  end
 end
 
 -- Road is built like any floor tile: from a ghost, on ordinary ground but not on water.
