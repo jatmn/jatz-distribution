@@ -1393,19 +1393,28 @@ local function suppliers(surface_index, force_index, fluid, item)
   return found
 end
 
--- For a depot set to send full loads only, the least a freighter of it may set off to load: a full
--- load (its cargo stacks of the item, or its fluid capacity, both with research), or the whole
--- request if that is less (so a request smaller than a load still comes, in one trip). nil for
--- other depots, which send a freighter for any amount. (On the module table, as `missing` is, to
--- spare this file's main chunk a local: Lua allows 200, and it is close; see issue #69.)
-function logistics.full_load(depot)
+-- For a depot set to send full loads only, the least a freighter of it may set off (or be rerouted)
+-- to load: a full load, or the whole request if that is less (so a request smaller than a load
+-- still comes, in one trip); and what the freighter carries. A new freighter (no `trip`) carries
+-- the force's cargo stacks of the item or its fluid capacity, both with research; one already out
+-- carries what its cargo inventory holds, sized when it set off, or for fluid the force's fluid
+-- capacity, which arrived_at_provider reads as it loads. nil for other depots, which send a
+-- freighter for any amount. (On the module table, as `missing` is, to spare this file's main
+-- chunk a local: Lua allows 200, and it is close; see issue #69.)
+function logistics.full_load(depot, trip)
   local request = depot.request
   if not depot.full_loads or not request or request.count <= 0 then
     return nil
   end
   local force = depot.entity.force
-  local capacity = depot.fluid and fluid_capacity(force) or cargo_stacks(force) * stack_size_of(request.item)
-  return math.min(capacity, request.count)
+  local capacity
+  if depot.fluid then
+    capacity = fluid_capacity(force)
+  else
+    local stacks = trip and trip.cargo and #trip.cargo or cargo_stacks(force)
+    capacity = stacks * stack_size_of(request.item)
+  end
+  return math.min(capacity, request.count), capacity
 end
 
 -- Every depot that could serve a requesting depot: provider depots, and for a request depot,
@@ -1414,12 +1423,12 @@ end
 -- them last, so it falls back to a buffer only for what no provider can supply. All on the same
 -- surface and force, with road at its loading zone, holding the item and not on cooldown for this
 -- request. Within each kind, the highest priority first; within each priority, nearest first in a
--- straight line from `from`. Also says whether one was skipped for cooldown, and whether one was
--- skipped for holding less than a full load (for a depot sending full loads only).
-local function candidates(depot, from)
+-- straight line from `from`. With `full` (the least the freighter may load, for a depot sending
+-- full loads only), only those holding that much unpromised. Also says whether one was skipped for
+-- cooldown, and whether one was skipped for holding less than `full`.
+local function candidates(depot, from, full)
   local entity = depot.entity
   local found, waiting, short = {}, false, false
-  local full = logistics.full_load(depot)
   local buffers = depot.role == "request"
   -- The kind of depot asked about first.
   local first = buffers and depot.from_buffers and "buffer" or "provider"
@@ -1700,7 +1709,7 @@ end
 -- already out (its provider was removed) and starts where it stands. Returns false, with whether
 -- a provider was skipped for cooldown, if there is nothing to look for.
 local function search_providers(depot, from, trip)
-  local found, waiting, short = candidates(depot, from)
+  local found, waiting, short = candidates(depot, from, logistics.full_load(depot, trip and storage.trips[trip]))
   if #found == 0 then
     return false, waiting, short
   end
@@ -1727,10 +1736,14 @@ local function reroute(id, trip)
   local request = depot and depot.entity.valid and depot.request
   -- A Fuel depot it was heading for, or looking for, waits: set_off decides again for the new leg.
   trip.search_token, trip.searching, trip.fuel_search, trip.refuel = nil, nil, nil, nil
+  -- A depot sending full loads only sends this one on only while the depot has room for its full
+  -- load, besides what its other freighters are bringing, as when it was sent.
+  local full = request and logistics.full_load(depot, trip)
   if
     trip.drone.valid
     and request
     and request.item == trip.item
+    and (not full or select(2, need(depot, id)) >= full)
     and search_providers(depot, trip.drone.position, id)
   then
     logistics.command(trip, { type = defines.command.stop, distraction = defines.distraction.none })
@@ -2744,8 +2757,9 @@ local function finish_search(depot, search, owner)
     return
   end
   local provider = search.best and storage.depots[search.best]
-  -- Sending full loads only: the provider must still have one, and the depot room for one.
-  local full = logistics.full_load(depot)
+  -- Sending full loads only: the provider must still have one, and the depot room for one (for a
+  -- rerouted freighter, the full load its cargo holds).
+  local full, carries = logistics.full_load(depot, search.trip and owner)
   local still = depot.request
     and depot.request.item == search.item
     and provider
@@ -2754,17 +2768,22 @@ local function finish_search(depot, search, owner)
     and (not full or available(provider, search.item) >= full)
     and enabled(provider)
   if search.trip then
-    if still then
+    -- Room for this freighter's load, besides what the depot's other freighters are bringing.
+    local room = full and select(2, need(depot, search.trip))
+    if still and (not full or room >= full) then
       owner.search_token, owner.searching = nil, nil
       -- Promise only what the new provider has unpromised (this trip's old promise was at the
-      -- removed provider, so `available` doesn't count it).
-      owner.planned = math.min(owner.planned or 0, available(provider, search.item))
+      -- removed provider, so `available` doesn't count it). Sending full loads only, a full load:
+      -- planned afresh, as a freighter sent off now would be, whatever it set off for.
+      local unpromised = available(provider, search.item)
+      owner.planned = full and math.min(room, unpromised, carries) or math.min(owner.planned or 0, unpromised)
       owner.provider = search.best
       promise(owner)
       owner.leg = search.best_length
       set_off(search.trip, owner, search.best_length)
     else
-      -- The provider found was emptied or removed meanwhile: look again among the rest.
+      -- The provider found was emptied or removed meanwhile: look again among the rest. (Or the
+      -- depot no longer has room for a full load: reroute sends it home.)
       reroute(search.trip, owner)
     end
     return
