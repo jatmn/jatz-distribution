@@ -1193,7 +1193,11 @@ logistics.monitor_counts = nil
 -- A provider keeps its promises in the order they were made there (`trip.queued`, numbered as each
 -- trip's promise is filed at a provider: setting off, or a reroute; trips from before have none and
 -- come first), trip key breaking ties. Whether the promise filed under `key` comes before `trip`'s.
--- (A field, not a local: this file has as many locals as Lua allows.)
+-- A promise is filed under the trip's key, and found by it in storage.trips: a trip holding one is
+-- driving out (TO_PROVIDER, set only in start_trip), carrying nothing, in the empty paint it was
+-- made in, so `repaint` (which would give it a new unit number) never touches it until it has
+-- loaded and its promise is gone. (A field, not a local: this file has as many locals as Lua
+-- allows.)
 function logistics.ahead(key, trip)
   local other = storage.trips[key]
   if not other then
@@ -1852,7 +1856,10 @@ end
 -- Find a new provider, nearest by road from where it stands, for a freighter whose provider is
 -- gone or no longer suitable. It waits while the search runs, and goes home if there is none, or if
 -- its depot no longer has room for what it would bring (filled meanwhile, by hand or otherwise):
--- sent on, it would drive farther only to load nothing (Copilot's review of 86332ce).
+-- sent on, it would drive farther only to load nothing (Copilot's review of 86332ce). A freighter
+-- is sent to another provider only once a trip (`trip.diverted`, set when a reroute finds one,
+-- whatever started it: its provider removed, or given up on): another reroute is a failed pickup,
+-- and it goes home, never on to a third provider (the owner: no going back and forth).
 local function reroute(id, trip)
   local depot = storage.depots[trip.request]
   local request = depot and depot.entity.valid and depot.request
@@ -1865,6 +1872,7 @@ local function reroute(id, trip)
     trip.drone.valid
     and request
     and request.item == trip.item
+    and not trip.diverted
     and select(2, need(depot, id)) > 0
     and (not full or select(2, need(depot, id)) >= full)
     and search_providers(depot, trip.drone.position, id)
@@ -1876,7 +1884,8 @@ local function reroute(id, trip)
     -- its truck would go back into the slot for free (Pullfrog's review of e949b72).
     logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = id })
   elseif depot and depot.entity.valid then
-    -- No provider for it any more (none found at once, or every one asked had no road): home empty.
+    -- No provider for it any more (none found at once, or every one asked had no road; diverted
+    -- once already; nothing more needed): home empty.
     logistics.home_empty(id, trip, depot)
   else
     end_trip(id, trip)
@@ -1914,19 +1923,13 @@ end
 
 -- Look for another provider for a freighter its provider no longer has a load for, leaving that
 -- one out: with a condition that taking items switches on (fetch only while below some amount,
--- say), it would pass for a new freighter and be found again, over and over. Only once a trip
--- (`trip.diverted`): diverted again, it is a failed pickup and goes home empty, by a Fuel depot if
--- it is short of fuel for the way (set_off), so it never goes back and forth between providers.
+-- say), it would pass for a new freighter and be found again, over and over. Its promise there
+-- goes at once (promise files none while `passed`), so others can have that stock. reroute sends
+-- it home instead if it was diverted once already, by a Fuel depot if it is short of fuel for the
+-- way (home_empty), so it never goes back and forth between providers.
 function logistics.give_up(id, trip)
-  -- Its promise there goes at once (promise files none while `passed`), so others can have that stock.
   trip.loading, trip.passed = nil, trip.provider
   promise(trip)
-  local depot = storage.depots[trip.request]
-  if trip.diverted and trip.drone.valid and depot and depot.entity.valid then
-    trip.search_token, trip.searching, trip.fuel_search, trip.refuel = nil, nil, nil, nil
-    return logistics.home_empty(id, trip, depot)
-  end
-  trip.diverted = true
   reroute(id, trip)
 end
 
@@ -1979,19 +1982,18 @@ function logistics.keep_promises(id, depot, held)
   end)
   -- What it holds, for the condition (only reading its contents do promises matter).
   local live = on and contents and (held or own_signals(depot)) or nil
-  local ahead, looked = {}, false
+  -- Every freighter is decided first, and those it no longer has a load for give up only after:
+  -- each give-up starts a search, which reads the providers (`suppliers`), so they must see this
+  -- provider's promises as they end up, not some still to be let go (Sourcery's review of ac9ab0a).
+  local ahead, failed = {}, {}
   for _, trip in ipairs(queue) do
     local item = trip.item
+    local kept = true
     if trip.state == TO_PROVIDER and trip.provider == id and not trip.loading then
       local left = stock[item] - (ahead[item] or 0)
       if not (on and left > 0 and (not live or logistics.holds_less(depot, ahead, live))) then
-        -- The depots checked before it this tick saw it among their suppliers, as it was: the
-        -- search looks at the depots afresh.
-        if not looked and suppliers_cache then
-          suppliers_cache = {}
-        end
-        looked = true
-        logistics.give_up(trip.key, trip)
+        failed[#failed + 1] = trip
+        kept = false
       elseif left < trip.planned then
         -- Only part of its load is left: it promises that, and its depot sends for the rest.
         trip.planned = left
@@ -1999,9 +2001,24 @@ function logistics.keep_promises(id, depot, held)
       end
     end
     -- What it still promises here comes before those after it.
-    if trip.promise and trip.promise.provider == id then
+    if kept and trip.promise and trip.promise.provider == id then
       ahead[item] = (ahead[item] or 0) + trip.promise.amount
     end
+  end
+  if #failed == 0 then
+    return
+  end
+  for _, trip in ipairs(failed) do
+    trip.loading, trip.passed = nil, trip.provider
+    promise(trip)
+  end
+  -- The depots checked before it this tick saw it among their suppliers, with those promises: the
+  -- searches look at the depots afresh.
+  if suppliers_cache then
+    suppliers_cache = {}
+  end
+  for _, trip in ipairs(failed) do
+    logistics.give_up(trip.key, trip)
   end
 end
 
@@ -3030,20 +3047,24 @@ local function finish_search(depot, search, owner)
     and (not full or available(provider, search.item) >= full)
     and enabled(provider, true)
   if search.trip then
-    -- Room for this freighter's load, besides what the depot's other freighters are bringing. Its
-    -- depot filled during the search: reroute sends it home.
-    local room = select(2, need(depot, search.trip))
+    -- What its depot still has room for, counting its other freighters (not this one).
+    local _, room = need(depot, search.trip)
+    -- Its depot filled during the search: reroute sends it home. Sending full loads only, it needs
+    -- room for this freighter's full load.
     if still and room > 0 and (not full or room >= full) then
       owner.search_token, owner.searching = nil, nil
-      -- Promise only what the new provider has unpromised (`available` doesn't count this trip's
-      -- promise: it gave up on its old provider, logistics.give_up, which unfiled it, or that one
-      -- was removed, its entry left under the removed depot's number). Sending full loads only, a
-      -- full load: planned afresh, as a freighter sent off now would be, whatever it set off for.
+      -- Promise only what its depot still has room for (it may have filled in part during the
+      -- search: Sourcery's review of ac9ab0a), and the new provider has unpromised (`available`
+      -- doesn't count this trip's promise: it gave up on its old provider, logistics.give_up, which
+      -- unfiled it, or that one was removed, its entry left under the removed depot's number).
+      -- Sending full loads only, a full load: planned afresh, as a freighter sent off now would be,
+      -- whatever it set off for.
       local unpromised = available(provider, search.item)
-      owner.planned = full and math.min(room, unpromised, carries) or math.min(owner.planned or 0, unpromised)
+      owner.planned = full and math.min(room, unpromised, carries) or math.min(owner.planned or 0, room, unpromised)
       owner.provider = search.best
-      -- Last in its new provider's queue; any provider may be found again for its next reroute.
-      owner.queued, owner.passed = logistics.queue_place(), nil
+      -- Last in its new provider's queue, and its one diversion used (reroute). Any provider may be
+      -- found again by a later search (the one passed was only for this one).
+      owner.queued, owner.passed, owner.diverted = logistics.queue_place(), nil, true
       promise(owner)
       owner.leg = search.best_length
       set_off(search.trip, owner, search.best_length)

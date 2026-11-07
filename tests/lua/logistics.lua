@@ -3523,6 +3523,91 @@ do -- Filled while it looks for another provider: the answer sends it home, not 
   check("filled meanwhile, it goes home", trip.state == "to-request" and trip.provider ~= far.unit_number)
 end
 
+-- A freighter whose provider is removed, rerouted to the far one; a third provider holds the item
+-- too. Requests: 1 = dispatch, 2 = the reroute search (answered here).
+local function removed_then_rerouted(logistics)
+  local request, near = setup(logistics)
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 20 })
+  local third = entity("jatz-provider-depot", 60.5, 0.5, { a = 20 })
+  logistics.add(far)
+  logistics.add(third)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  near.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = near.unit_number })
+  answer(logistics, #requests, "route")
+  return trip, far
+end
+
+do -- A reroute for a removed provider is the freighter's one diversion too (Sourcery's review of
+  -- ac9ab0a: it was counted only when a provider gave it up, so a third provider came next).
+  local logistics = reset()
+  local trip, far = removed_then_rerouted(logistics)
+  check("setup: rerouted to the far provider, its one diversion", trip.provider == far.unit_number and trip.diverted)
+  far.chest.contents.a = 0
+  game.tick = 60
+  local asked = #requests
+  logistics.on_tick()
+  check("that one emptied, it goes home, not on to a third", trip.state == "to-request" and #requests == asked)
+  logistics = reset()
+  trip, far = removed_then_rerouted(logistics)
+  asked = #requests
+  far.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = far.unit_number })
+  check("that one removed too, it goes home, not on to a third", trip.state == "to-request" and #requests == asked)
+end
+
+do -- A rerouted freighter promises no more than its depot still has room for (Sourcery's review of
+  -- ac9ab0a: filled in part during the search, it kept its whole promise at the new provider).
+  local logistics = reset()
+  local request, near = setup(logistics)
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 20 })
+  logistics.add(far)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  near.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = near.unit_number })
+  request.chest.contents.a = 6
+  answer(logistics, #requests, "route")
+  check(
+    "the 4 its depot still has room for are all it promises there",
+    trip.provider == far.unit_number and trip.planned == 4
+  )
+  check("and all it holds there", storage.promised[far.unit_number].a[trip.key] == 4)
+end
+
+do -- A provider's check decides all its freighters before any gives up: each give-up's search reads
+  -- the providers, so it must find this one's promises as they end up (Sourcery's review of ac9ab0a).
+  local logistics = reset()
+  local first, second, near = two_depots(logistics)
+  local third = entity("jatz-request-depot", 0.5, 20.5)
+  logistics.add(third)
+  assert(logistics.set_request(third, "a", 10))
+  assert(logistics.put_freighters(third, stack("jatz-quinityn-freighter", 1)) == 1)
+  logistics.on_tick()
+  for id = 1, #requests do
+    answer(logistics, id, "route")
+  end
+  check("setup: three freighters promised 10 each", has_trip(first) and has_trip(second) and has_trip(third))
+  near.chest.contents.a = 5
+  local seen, give_up = {}, logistics.give_up
+  logistics.give_up = function(id, trip)
+    local filed = 0
+    for _ in pairs(storage.promised[near.unit_number] and storage.promised[near.unit_number].a or {}) do
+      filed = filed + 1
+    end
+    seen[#seen + 1] = filed
+    return give_up(id, trip)
+  end
+  game.tick = 60
+  logistics.on_tick()
+  logistics.give_up = give_up
+  check("two give up", #seen == 2)
+  check("each search starts with only the kept promise filed", seen[1] == 1 and seen[2] == 1)
+end
+
 do -- A freighter arriving at an emptied provider when its depot needs nothing more goes home.
   local logistics = reset()
   local request, near = setup(logistics)
