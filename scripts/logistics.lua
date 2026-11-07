@@ -1905,20 +1905,34 @@ function logistics.honoured(trip)
   if not (provider and provider.entity.valid) then
     return false
   end
-  -- Its stock less every promise, with those made after its own (and its own) given back.
-  local left = available(provider, trip.item)
+  -- Its stock less every promise, with those made after its own (and its own) given back; and what
+  -- the promises ahead of its own add up to, of its item.
+  local left, ahead = available(provider, trip.item), 0
   local items = storage.promised[trip.provider]
   for key, amount in pairs(items and items[trip.item] or {}) do
-    if not logistics.ahead(key, trip) then
+    if logistics.ahead(key, trip) then
+      ahead = ahead + amount
+    else
       left = left + amount
     end
   end
   if left <= 0 then
     return false
   end
-  -- Only a condition reading its contents needs the promises ahead, of every item.
-  local contents = provider.circuit_enabled and provider.circuit_mode == depot_circuit.contents
-  return enabled(provider, contents and logistics.claims_ahead(trip.provider, trip) or nil) and left or false
+  -- Only a condition reading its contents needs the promises ahead. One reading only this item's
+  -- signal (a minimum on what it provides, the usual) needs only those of its item, added up above:
+  -- scanning every item's again for each freighter made many arriving at a busy provider together
+  -- cost the square of its promises (Sourcery's review of 2559152). Any other reads them all.
+  local claims
+  if provider.circuit_enabled and provider.circuit_mode == depot_circuit.contents then
+    local own = depot_circuit.key({ type = provider.fluid and "fluid" or "item", name = trip.item })
+    if depot_circuit.reads(provider.circuit_condition) == own then
+      claims = { [trip.item] = ahead }
+    else
+      claims = logistics.claims_ahead(trip.provider, trip)
+    end
+  end
+  return enabled(provider, claims) and left or false
 end
 
 -- Look for another provider for a freighter its provider no longer has a load for, leaving that
@@ -1985,7 +1999,7 @@ function logistics.keep_promises(id, depot, held)
   -- Every freighter is decided first, and those it no longer has a load for give up only after:
   -- each give-up starts a search, which reads the providers (`suppliers`), so they must see this
   -- provider's promises as they end up, not some still to be let go (Sourcery's review of ac9ab0a).
-  local ahead, failed = {}, {}
+  local ahead, failed, trimmed = {}, {}, false
   for _, trip in ipairs(queue) do
     local item = trip.item
     local kept = true
@@ -1998,6 +2012,7 @@ function logistics.keep_promises(id, depot, held)
         -- Only part of its load is left: it promises that, and its depot sends for the rest.
         trip.planned = left
         promise(trip)
+        trimmed = true
       end
     end
     -- What it still promises here comes before those after it.
@@ -2006,14 +2021,20 @@ function logistics.keep_promises(id, depot, held)
     end
   end
   if #failed == 0 then
+    -- A promise made smaller changes what this provider has unpromised, and what its condition
+    -- reads with promises taken: the depots checked before it this tick saw it as it was (Sourcery's
+    -- review of 2559152).
+    if trimmed and suppliers_cache then
+      suppliers_cache = {}
+    end
     return
   end
   for _, trip in ipairs(failed) do
     trip.loading, trip.passed = nil, trip.provider
     promise(trip)
   end
-  -- The depots checked before it this tick saw it among their suppliers, with those promises: the
-  -- searches look at the depots afresh.
+  -- The depots checked before it this tick saw it among their suppliers, with those promises (and
+  -- any made smaller): the searches look at the depots afresh.
   if suppliers_cache then
     suppliers_cache = {}
   end

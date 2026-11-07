@@ -3608,6 +3608,45 @@ do -- A provider's check decides all its freighters before any gives up: each gi
   check("each search starts with only the kept promise filed", seen[1] == 1 and seen[2] == 1)
 end
 
+do -- A promise made smaller in a provider's check changes what other depots checked in the same
+  -- pass see (Sourcery's review of 2559152): this provider, switched on while its own iron plate
+  -- count less promises is at least 0, offers item b once its promise of item a is trimmed, to a
+  -- depot checked after it, though one checked before it found it off.
+  local logistics = reset()
+  local for_a = entity("jatz-request-depot", 0.5, 0.5)
+  local before = entity("jatz-request-depot", 0.5, 10.5)
+  local provider = entity("jatz-provider-depot", 10.5, 0.5, { a = 20, b = 20 })
+  local after = entity("jatz-request-depot", 0.5, 20.5)
+  for _, depot in ipairs({ for_a, before, provider, after }) do
+    logistics.add(depot)
+  end
+  local a = { type = "item", name = "a" }
+  logistics.set_circuit(provider, true, { first_signal = a, comparator = ">=", constant = 0 }, "contents")
+  assert(logistics.set_request(for_a, "a", 20))
+  for _, depot in ipairs({ for_a, before, after }) do
+    assert(logistics.put_freighters(depot, stack("jatz-quinityn-freighter", 1)) == 1)
+  end
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  check("setup: 20 of a promised", trip_of(for_a).planned == 20)
+  provider.chest.contents.a = 12
+  assert(logistics.set_request(before, "b", 10) and logistics.set_request(after, "b", 10))
+  local order, count = {}, 0
+  for id in pairs(storage.depots) do
+    count = count + 1
+    order[id] = count
+  end
+  check(
+    "setup: the depots are checked in the order made",
+    order[before.unit_number] < order[provider.unit_number] and order[provider.unit_number] < order[after.unit_number]
+  )
+  game.tick = 60
+  logistics.on_tick()
+  check("setup: the promise is trimmed to the 12 left", trip_of(for_a).planned == 12)
+  check("the depot checked before it found it off", storage.depots[before.unit_number].searching == nil)
+  check("the depot checked after it finds it on", storage.depots[after.unit_number].searching ~= nil)
+end
+
 do -- A freighter arriving at an emptied provider when its depot needs nothing more goes home.
   local logistics = reset()
   local request, near = setup(logistics)

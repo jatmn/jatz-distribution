@@ -52,16 +52,20 @@ adapters["jatz-distribution"] = {
   -- than that share of a full chest. Returns whether it has the condition: versions from before
   -- circuit conditions (#34, which brought `set_circuit` and the contents mode together),
   -- benchmarked with --compare, have no `set_circuit`, and calling it would stop the map's build.
+  -- A version that has it must take the condition: refused, the map would measure plain providers
+  -- instead without saying so.
   provider = function(entity, depot)
     if not remote.interfaces["jatz-distribution"].set_circuit then
       return false
     end
     local count = math.floor(prototypes.item[depot.item].stack_size * CHEST_SLOTS * depot.minimum)
-    return remote.call("jatz-distribution", "set_circuit", entity, true, {
+    local set = remote.call("jatz-distribution", "set_circuit", entity, true, {
       first_signal = { type = "item", name = depot.item },
       comparator = ">",
       constant = count,
-    }, "contents") == true
+    }, "contents")
+    assert(set == true, "ups-benchmark: set_circuit refused a provider's minimum")
+    return true
   end,
 }
 
