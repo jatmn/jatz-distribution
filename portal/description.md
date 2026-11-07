@@ -139,8 +139,19 @@ Upgrade levels add science packs as they climb, from red and green up to utility
 - **[Milestones](https://mods.factorio.com/mod/Milestones):** tracks your first freighter, 100 freighters and 1,000 road, whichever preset you use.
 
   ![Milestones announcing it added milestones from Jat'z Distribution](images/milestones.png)
-- **Overhaul mods:** cargo colors come from game data, not a fixed list, so most items from overhauls such as Bob's and Angel's get a color too.
+- **Overhaul mods:** cargo colors come from game data, not a fixed list, so most items from overhauls such as Bob's and Angel's get a color too. Mods can also declare their items' colors themselves (see below).
 - **Not compatible** with Transport Drones or its forks, since they do the same job. Factorio won't let you enable them together.
+
+**For mod authors: cargo colors.** Factorio items have no color, so freighters work their cargo's color out from game data. A by-product no recipe makes, or an item made from many different materials, can come out the plain slate blue or the wrong color. Declare your items' colors instead, in your `data.lua` or `data-updates.lua`. No dependency on Jat'z Distribution is needed:
+
+```lua
+data:extend({ {
+  type = "mod-data", name = "my-mod-item-colors", data_type = "item-colors",
+  data = { items = { ["my-slag"] = { r = 0.55, g = 0.36, b = 0.17 } } },
+} })
+```
+
+A declared color comes before every other rule, and items made from it follow it. Colors are ordinary Factorio colors (0 to 1, or 0 to 255). When several mods name the same item, the first prototype by name wins. Fluids keep their `base_color`. [More details](../README.md#for-mod-authors-cargo-colors).
 
 ---
 
