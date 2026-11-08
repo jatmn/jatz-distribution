@@ -7,18 +7,19 @@
 local depot_circuit = require("scripts.depot-circuit")
 local robot_requests = require("scripts.freighter-requests")
 local robot_access = require("scripts.robot-access")
+local switching = require("scripts.circuit-switch")
 
 local blueprints = {}
 
 local item_name, freighter_total = robot_requests.item_name, robot_requests.freighter_total
 
 -- scripts/logistics.lua, and its helpers, from blueprints.install.
-local logistics, request_depot, supplying_depot, PRIORITY_DEFAULT, FREIGHTER
+local logistics, request_depot, supplying_depot, PRIORITY_DEFAULT, FREIGHTER, LIQUID
 
 function blueprints.install(owner, shared)
   logistics = owner
   request_depot, supplying_depot = shared.request_depot, shared.supplying_depot
-  PRIORITY_DEFAULT, FREIGHTER = shared.priority_default, shared.freighter
+  PRIORITY_DEFAULT, FREIGHTER, LIQUID = shared.priority_default, shared.freighter, shared.liquid
 end
 
 -- Blueprints (and copy and paste) of request depots keep their request and their freighters (in
@@ -244,5 +245,53 @@ function blueprints.apply_tags(entity, tags)
     logistics.match_freighters(entity, freighters)
   end
 end
+
+-- Copy one depot's settings onto another (Copy and Paste settings, and clones): any delivery
+-- depot's circuit condition, a request depot's request, and a provider or buffer depot's priority.
+local function copy_request(source, destination)
+  local from = switching.delivery_depot(source)
+  if from and switching.delivery_depot(destination) then
+    logistics.set_circuit(
+      destination,
+      from.circuit_enabled,
+      from.circuit_condition or {},
+      from.circuit_mode or depot_circuit.network
+    )
+  end
+  -- Items and fluids don't mix: nothing else is copied between an item depot and a liquid depot.
+  if (LIQUID[source.name] or false) ~= (LIQUID[destination.name] or false) then
+    return
+  end
+  if request_depot(source) and request_depot(destination) then
+    local request = logistics.get_request(source)
+    logistics.set_request(destination, request and request.item, request and request.count)
+    logistics.set_from_buffers(destination, logistics.get_from_buffers(source))
+    logistics.set_full_loads(destination, logistics.get_full_loads(source))
+  end
+  if supplying_depot(source) and supplying_depot(destination) then
+    logistics.set_priority(destination, logistics.get_priority(source))
+    local access = robot_access.get(source)
+    if access ~= nil then
+      robot_access.set(destination, access)
+    end
+  end
+end
+
+-- Copy and Paste settings: the request, and the freighters. The destination asks robots for as
+-- many more freighters as it takes to match the source's (in its slot, out and coming); a player
+-- can fill them in by hand instead.
+function blueprints.on_entity_settings_pasted(event)
+  copy_request(event.source, event.destination)
+  if
+    request_depot(event.source)
+    and request_depot(event.destination)
+    and (LIQUID[event.source.name] or false) == (LIQUID[event.destination.name] or false)
+  then
+    -- All the source has or will have: slot, out, chest (not leaving) and coming.
+    logistics.match_freighters(event.destination, logistics.freighter_total(event.source))
+  end
+end
+
+blueprints.copy_request = copy_request
 
 return blueprints

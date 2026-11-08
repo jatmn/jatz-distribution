@@ -2659,52 +2659,6 @@ function logistics.on_impact_share(tick)
   end
 end
 
--- Copy one depot's settings onto another (Copy and Paste settings, and clones): any delivery
--- depot's circuit condition, a request depot's request, and a provider or buffer depot's priority.
-local function copy_request(source, destination)
-  local from = switching.delivery_depot(source)
-  if from and switching.delivery_depot(destination) then
-    logistics.set_circuit(
-      destination,
-      from.circuit_enabled,
-      from.circuit_condition or {},
-      from.circuit_mode or depot_circuit.network
-    )
-  end
-  -- Items and fluids don't mix: nothing else is copied between an item depot and a liquid depot.
-  if (LIQUID[source.name] or false) ~= (LIQUID[destination.name] or false) then
-    return
-  end
-  if request_depot(source) and request_depot(destination) then
-    local request = logistics.get_request(source)
-    logistics.set_request(destination, request and request.item, request and request.count)
-    logistics.set_from_buffers(destination, logistics.get_from_buffers(source))
-    logistics.set_full_loads(destination, logistics.get_full_loads(source))
-  end
-  if supplying_depot(source) and supplying_depot(destination) then
-    logistics.set_priority(destination, logistics.get_priority(source))
-    local access = robot_access.get(source)
-    if access ~= nil then
-      robot_access.set(destination, access)
-    end
-  end
-end
-
--- Copy and Paste settings: the request, and the freighters. The destination asks robots for as
--- many more freighters as it takes to match the source's (in its slot, out and coming); a player
--- can fill them in by hand instead.
-function logistics.on_entity_settings_pasted(event)
-  copy_request(event.source, event.destination)
-  if
-    request_depot(event.source)
-    and request_depot(event.destination)
-    and (LIQUID[event.source.name] or false) == (LIQUID[event.destination.name] or false)
-  then
-    -- All the source has or will have: slot, out, chest (not leaving) and coming.
-    logistics.match_freighters(event.destination, logistics.freighter_total(event.source))
-  end
-end
-
 -- A cloned depot is a new depot with the original's request; a cloned freighter has no trip.
 -- Whether a cloned Fuel depot tank belongs to a Fuel depot cloned with it: one that owns it
 -- already, or one standing on it whose own clone event hasn't come yet (fuel_tank adopts it then).
@@ -2745,7 +2699,7 @@ function logistics.on_cloned(source, destination)
       tank.set_fluid(1, held)
     end
   end
-  copy_request(source, destination)
+  blueprints.copy_request(source, destination)
 end
 
 -- A depot the game knew as `old_id` is now `entity`, a new entity of the same depot standing where
@@ -2922,6 +2876,7 @@ blueprints.install(logistics, {
   supplying_depot = supplying_depot,
   priority_default = PRIORITY_DEFAULT,
   freighter = FREIGHTER,
+  liquid = LIQUID,
 })
 logistics.request_tag = blueprints.request_tag
 logistics.freighters_tag = blueprints.freighters_tag
@@ -2929,6 +2884,7 @@ logistics.settings_tags = blueprints.settings_tags
 logistics.setup_blueprint = blueprints.setup_blueprint
 logistics.on_player_setup_blueprint = blueprints.on_player_setup_blueprint
 logistics.apply_tags = blueprints.apply_tags
+logistics.on_entity_settings_pasted = blueprints.on_entity_settings_pasted
 
 function logistics.cancel_freighter_removal(entity)
   if not request_depot(entity) then
