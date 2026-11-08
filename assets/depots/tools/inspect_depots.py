@@ -27,9 +27,16 @@ def inspect_transfer_paths(scene, role, size):
     bpy.data.objects['Depot | rotate this assembly'].rotation_euler.z=0
     bpy.context.view_layer.update()
     graph=bpy.context.evaluated_depsgraph_get();clear_paths=0
+    # Probe heights are for the full-height model; a master lowered by lower_depots.py
+    # moves them as it moved the building, so each probe tests the same spot.
+    root=bpy.data.objects['Depot | rotate this assembly']
+    scale,pivot=root.get('height_scale',1),root.get('height_pivot',0)
+    def lowered(point):
+        x,y,z=point
+        return (x,y,z if z<=pivot else pivot+(z-pivot)*scale)
     def clear(a,b):
         nonlocal clear_paths
-        a,b=Vector(a)*factor,Vector(b)*factor
+        a,b=Vector(lowered(a))*factor,Vector(lowered(b))*factor
         hit,location,normal,index,obj,matrix=scene.ray_cast(graph,a,(b-a).normalized(),distance=(b-a).length)
         assert not hit,(role,size,'blocked transfer/frame path',tuple(a),tuple(b),obj.name if obj else None)
         clear_paths+=1

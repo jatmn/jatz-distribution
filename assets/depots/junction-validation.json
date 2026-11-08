@@ -10,7 +10,7 @@
     {
       "role": "fuel",
       "size": 3,
-      "source_sha256": "4d0a6a1e3a6afbfaf86089d6f2cb8db0571f6b0e1265a7016c08d1b4cb55a338",
+      "source_sha256": "86e7000822c6d7da6e3b6dfc7efa39ecf28f13851f03d4a91551cc2955a754db",
       "connected_routes": [
         {
           "route": "Factory full bore tank route -1",
@@ -220,7 +220,7 @@
     {
       "role": "liquid-provider",
       "size": 3,
-      "source_sha256": "8202017b05aa0da3bbc5a178da2b7b76755373130e2dcfd30cfc44d219d01318",
+      "source_sha256": "d15bff2609e2c8153088899b7901da38ddae1922b500320bd755ea81314f4521",
       "connected_routes": [
         {
           "route": "Factory full bore tank route 0",
@@ -321,7 +321,7 @@
     {
       "role": "liquid-request",
       "size": 3,
-      "source_sha256": "07717de71f4867fb1d2620082d994184871b470e6fa21a64d01d4f5c44126eed",
+      "source_sha256": "f5c8f1a8af7389adae56d797ea2228eb2b221f534f59aacd0c4046295877af5a",
       "connected_routes": [
         {
           "route": "Factory full bore tank route 0",
@@ -422,7 +422,7 @@
     {
       "role": "liquid-buffer",
       "size": 3,
-      "source_sha256": "99fd4e1c6bf78aea076558c3cb9d82d88ae76822b5d8c862518a1d1e2fbc800f",
+      "source_sha256": "86d5cab2527a7bd308dadcefe2924c7949c411b7d1e54f09e8bb72c223fbbf28",
       "connected_routes": [
         {
           "route": "Factory full bore tank route -1",
@@ -563,7 +563,7 @@
         {
           "heading": 1,
           "route": "Factory full bore tank route 1",
-          "root_embed": 0.006721749414969673,
+          "root_embed": 0.006721751309256896,
           "exposed": true,
           "tail_radius": 0.305
         },
@@ -584,7 +584,7 @@
         {
           "heading": 3,
           "route": "Factory full bore tank route -1",
-          "root_embed": 0.007892300876103837,
+          "root_embed": 0.00789230337533233,
           "exposed": true,
           "tail_radius": 0.305
         },

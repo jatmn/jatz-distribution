@@ -23,7 +23,7 @@ Seven 3×3 depot buildings: Provider, Request, Buffer, Fuel, Liquid Provider, Li
 | `connectors/validation.json` | Connector registration data. **Tools read this file**, so keep it. |
 | `factorio/` | Lua helpers for depot pictures and pipe pictures, plus generated definitions |
 | `previews/` | All depots in a grid, all depots at in-game scale, and `recolor.html`, a recoloring viewer you open in a browser |
-| `tools/` | Builders, renderers, packagers, geometry inspectors and preview generator |
+| `tools/` | Builders, renderers, packagers, geometry inspectors, preview generator and `lower_depots.py`, which lowered the masters (see below) |
 | `archive/1x1/` | Retired 1×1 versions of all seven depots; see its [README](archive/1x1/README.md) |
 | `*validation.json` | Results from the most recent geometry, junction and packaging checks |
 
@@ -98,6 +98,12 @@ Open `source/<role>-3.blend`. Things to preserve:
 - **Paint materials** feed the role, clamp and housing coverage outputs. Wear lives in the untinted materials.
 
 `tools/build_depots.py` rebuilds the models from scratch, but it **overwrites** the `.blend` files. If you edit a file by hand, either carry the change into the builder or don't run it. Use `--role fuel` (for example) to limit a build or render to one depot.
+
+**The masters are lowered.** The depots stood taller than the game's own 3×3 buildings and hid what stood behind them, so `tools/lower_depots.py` squashed every master above 0.75 (the top of the pipes, their adapters, belts and loading floor, which don't move) to 0.6 of its height (the owner's choice, November 7, 2026): item depots now rise about 0.9 tiles above their footprint instead of 1.3, liquid depots about 0.7 instead of 1.0. The assembly records it (`height_scale`, `height_pivot`), `inspect_depots.py` moves its clearance probes with it, and the tool refuses a master already lowered. The builder doesn't lower, and it doesn't reproduce the current masters anyway (their `fidelity_pass` is older than its own), so a rebuilt master needs `lower_depots.py -- --scale 0.6` before inspection and rendering:
+
+```sh
+blender -b assets/depots/source/<role>-3.blend --python-exit-code 1 --python assets/depots/tools/lower_depots.py -- --scale 0.6
+```
 
 ## Re-rendering the sprites
 

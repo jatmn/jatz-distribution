@@ -1,51 +1,51 @@
 {
   "role": "provider",
   "size": 3,
-  "source_sha256": "bf796fad83261c4742cb27f4038d612405de960bdf69e1f65073cd3c2ed83ade",
+  "source_sha256": "9cdddcb6cab68e01274a2b9a7299fda92531998cd38ed8cf15878a4a816fca35",
   "directions": [
     {
       "direction": 0,
       "sizes": {
         "2048": {
-          "alpha_max_error": 2.2351741790771484e-08,
-          "neutral_rgb_mean_error": 0.0010720790343862266,
+          "alpha_max_error": 2.421438694000244e-08,
+          "neutral_rgb_mean_error": 0.0010053604817104004,
           "body_bbox": [
             623,
-            258,
+            343,
             1425,
             1421
           ],
           "shadow_bbox": [
             622,
-            372,
-            1681,
+            428,
+            1614,
             1426
           ],
           "mask_pixels": {
-            "cab": 142432,
-            "trim": 23247,
-            "cargo": 92420
+            "cab": 141625,
+            "trim": 18418,
+            "cargo": 64043
           }
         },
         "512": {
-          "alpha_max_error": 7.935870294240033e-08,
-          "neutral_rgb_mean_error": 0.0010538488025571037,
+          "alpha_max_error": 7.702346138671601e-08,
+          "neutral_rgb_mean_error": 0.0009866738989699972,
           "body_bbox": [
             153,
-            62,
+            83,
             359,
             358
           ],
           "shadow_bbox": [
             155,
-            92,
-            421,
+            106,
+            404,
             357
           ],
           "mask_pixels": {
-            "cab": 10238,
-            "trim": 2294,
-            "cargo": 6220
+            "cab": 10223,
+            "trim": 1820,
+            "cargo": 4376
           }
         }
       }
@@ -54,45 +54,45 @@
       "direction": 1,
       "sizes": {
         "2048": {
-          "alpha_max_error": 2.7008354663848877e-08,
-          "neutral_rgb_mean_error": 0.0010274211264308369,
+          "alpha_max_error": 2.60770320892334e-08,
+          "neutral_rgb_mean_error": 0.0009568939759617229,
           "body_bbox": [
             623,
-            261,
+            356,
             1434,
             1421
           ],
           "shadow_bbox": [
             622,
-            382,
-            1691,
+            446,
+            1630,
             1426
           ],
           "mask_pixels": {
-            "cab": 177459,
-            "trim": 25853,
-            "cargo": 46475
+            "cab": 162772,
+            "trim": 21574,
+            "cargo": 28391
           }
         },
         "512": {
-          "alpha_max_error": 7.949130420570327e-08,
-          "neutral_rgb_mean_error": 0.0010110668959674748,
+          "alpha_max_error": 7.925253653340292e-08,
+          "neutral_rgb_mean_error": 0.0009465431544853667,
           "body_bbox": [
             153,
-            63,
+            87,
             361,
             358
           ],
           "shadow_bbox": [
             155,
-            95,
-            423,
+            111,
+            408,
             357
           ],
           "mask_pixels": {
-            "cab": 12980,
-            "trim": 2528,
-            "cargo": 3255
+            "cab": 12079,
+            "trim": 2211,
+            "cargo": 2187
           }
         }
       }
@@ -101,45 +101,45 @@
       "direction": 2,
       "sizes": {
         "2048": {
-          "alpha_max_error": 2.2351741790771484e-08,
-          "neutral_rgb_mean_error": 0.0007078791268628576,
+          "alpha_max_error": 2.421438694000244e-08,
+          "neutral_rgb_mean_error": 0.0007610417427474511,
           "body_bbox": [
             623,
-            269,
+            364,
             1425,
             1421
           ],
           "shadow_bbox": [
             622,
-            391,
-            1681,
+            454,
+            1614,
             1426
           ],
           "mask_pixels": {
-            "cab": 150560,
-            "trim": 31751,
-            "cargo": 7823
+            "cab": 146404,
+            "trim": 26289,
+            "cargo": 3056
           }
         },
         "512": {
-          "alpha_max_error": 7.896891363046166e-08,
-          "neutral_rgb_mean_error": 0.0007457680846093889,
+          "alpha_max_error": 7.703366156075475e-08,
+          "neutral_rgb_mean_error": 0.0007794117261386414,
           "body_bbox": [
             153,
-            65,
+            89,
             359,
             358
           ],
           "shadow_bbox": [
             155,
-            97,
-            421,
+            113,
+            404,
             357
           ],
           "mask_pixels": {
-            "cab": 11122,
-            "trim": 3126,
-            "cargo": 741
+            "cab": 10860,
+            "trim": 2650,
+            "cargo": 319
           }
         }
       }
@@ -148,45 +148,45 @@
       "direction": 3,
       "sizes": {
         "2048": {
-          "alpha_max_error": 2.7939677238464355e-08,
-          "neutral_rgb_mean_error": 0.0010596326991384572,
+          "alpha_max_error": 2.8870999813079834e-08,
+          "neutral_rgb_mean_error": 0.0009773557658511146,
           "body_bbox": [
             614,
-            261,
+            356,
             1425,
             1421
           ],
           "shadow_bbox": [
             622,
-            382,
-            1673,
+            446,
+            1605,
             1426
           ],
           "mask_pixels": {
-            "cab": 177461,
-            "trim": 25905,
-            "cargo": 46411
+            "cab": 162851,
+            "trim": 21481,
+            "cargo": 28324
           }
         },
         "512": {
-          "alpha_max_error": 7.995206807720479e-08,
-          "neutral_rgb_mean_error": 0.0010474557413443658,
+          "alpha_max_error": 7.538615909297164e-08,
+          "neutral_rgb_mean_error": 0.000969630006196491,
           "body_bbox": [
             151,
-            63,
+            87,
             359,
             358
           ],
           "shadow_bbox": [
             155,
-            95,
-            419,
+            111,
+            402,
             357
           ],
           "mask_pixels": {
-            "cab": 12977,
-            "trim": 2530,
-            "cargo": 3254
+            "cab": 12105,
+            "trim": 2215,
+            "cargo": 2168
           }
         }
       }
