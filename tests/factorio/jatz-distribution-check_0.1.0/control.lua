@@ -1152,18 +1152,24 @@ local function setup_deliveries(surface, result)
       settings = entry
     end
   end
-  local slot = settings and settings.control_behavior.sections.sections[1].filters[1]
-  result.blueprint_settings = slot and (slot.name .. " x" .. slot.count) or "none"
-  local freighter_slot = settings and settings.control_behavior.sections.sections[1].filters[2]
-  result.blueprint_freighter_settings = freighter_slot and (freighter_slot.name .. " x" .. freighter_slot.count)
+  -- Decider conditions: the request compares its item to its amount, the freighters are a
+  -- constant with no signal (so parametrising offers no item for them).
+  local conditions = settings and settings.control_behavior.decider_conditions.conditions
+  local wanted = conditions and conditions[1]
+  result.blueprint_settings = wanted and wanted.first_signal and (wanted.first_signal.name .. " x" .. wanted.constant)
     or "none"
-  if slot and freighter_slot then
+  local freighter_condition = conditions and conditions[2]
+  result.blueprint_freighter_settings = freighter_condition
+      and (freighter_condition.first_signal and freighter_condition.first_signal.name or "no signal") .. " x" .. freighter_condition.constant
+    or "none"
+  if wanted and freighter_condition then
     local entities = blueprint.get_blueprint_entities()
     for _, entry in pairs(entities) do
       if entry.name == "jatz-depot-settings" then
-        entry.control_behavior.sections.sections[1].filters[1].name = "iron-plate"
-        entry.control_behavior.sections.sections[1].filters[1].count = 11
-        entry.control_behavior.sections.sections[1].filters[2].count = 5
+        local changed = entry.control_behavior.decider_conditions.conditions
+        changed[1].first_signal.name = "iron-plate"
+        changed[1].constant = 11
+        changed[2].constant = 5
       end
     end
     blueprint.set_blueprint_entities(entities)
@@ -1190,9 +1196,14 @@ local function setup_deliveries(surface, result)
   -- Request settings standing beside a depot built at once with no tags (a script's
   -- create_entity): the depot takes them, read through the real control behavior, and they go.
   local beside = surface.create_entity({ name = "jatz-depot-settings", position = { -36.5, -66.5 }, force = "player" })
-  local section = beside.get_control_behavior().get_section(1)
-  section.set_slot(1, { value = { type = "item", name = "iron-plate", quality = "normal" }, min = 13 })
-  section.set_slot(2, { value = { type = "item", name = "jatz-quinityn-freighter", quality = "normal" }, min = 2 })
+  beside.get_control_behavior().parameters = {
+    conditions = {
+      { comparator = "=", constant = 2 },
+      { first_signal = { type = "item", name = "iron-plate" }, comparator = "=", constant = 13 },
+    },
+    outputs = {},
+    else_outputs = {},
+  }
   local script_built = surface.create_entity({
     name = "jatz-request-depot",
     position = { -36.5, -66.5 },
@@ -1207,7 +1218,7 @@ local function setup_deliveries(surface, result)
     remote.call("jatz-distribution", "set_request", script_built, nil)
     remote.call("jatz-distribution", "cancel_freighter_requests", script_built)
   end
-  -- A blueprint slot's count is an int32: a request at that limit goes in the settings, and one
+  -- A condition's constant is an int32: a request at that limit goes in the settings, and one
   -- above it (the panel takes any) stays in its tag only, the blueprint still made.
   local limits = game.create_inventory(1)
   limits.insert({ name = "blueprint" })
@@ -1224,8 +1235,8 @@ local function setup_deliveries(surface, result)
         tagged = string.format("%d", entry.tags.jatz_request.count)
       end
       if entry.name == "jatz-depot-settings" then
-        local first = entry.control_behavior.sections.sections[1].filters[1]
-        in_settings = first.index == 1 and string.format("%d", first.count) or "freighters only"
+        local first = entry.control_behavior.decider_conditions.conditions[1]
+        in_settings = first.first_signal and string.format("%d", first.constant) or "freighters only"
       end
     end
     result.blueprint_count_limit[#result.blueprint_count_limit + 1] = string.format(

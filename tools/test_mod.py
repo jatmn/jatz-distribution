@@ -239,13 +239,14 @@ EXPECTED = {'recipes': RECIPES,
             # hand count towards what was requested: requests beyond it go (6 asked, 7 put in ->
             # 0; 5 asked, 5 put in -> 0; 5 asked, 2 put in -> 3; the blueprint's 3, put in -> 0).
             # Parametrisation: the blueprint also holds the request and freighters as request
-            # settings (7 wood, 3 freighters); changed to 11 iron plates and 5 freighters as
-            # parametrising would and pasted, the depot built asks for 11 iron plates and 5
-            # freighters, and no settings stay in the world. Settings beside a depot a script
-            # builds at once, untagged, give it their request (13 iron plates, 2 freighters) and
-            # go. A request at a slot's int32 limit goes in the settings; one above stays in its
-            # tag only, the blueprint still made.
-            'blueprint_settings': 'wood x7', 'blueprint_freighter_settings': 'jatz-quinityn-freighter x3',
+            # settings (7 wood, and 3 freighters as a number with no signal, so parametrising
+            # offers no item for them); changed to 11 iron plates and 5 freighters as parametrising
+            # would and pasted, the depot built asks for 11 iron plates and 5 freighters, and no
+            # settings stay in the world. Settings beside a depot a script builds at once,
+            # untagged, give it their request (13 iron plates, 2 freighters; freighters first
+            # there, as either order is read) and go. A request at a condition's int32 limit goes
+            # in the settings; one above stays in its tag only, the blueprint still made.
+            'blueprint_settings': 'wood x7', 'blueprint_freighter_settings': 'no signal x3',
             'parametrised_request': 'iron-plate x11', 'parametrised_freighters': 5, 'settings_left': 0,
             'at_once_request': 'iron-plate x13', 'at_once_freighters': 2, 'at_once_settings_left': False,
             'blueprint_count_limit': ['2147483647: made, tag 2147483647, settings 2147483647',

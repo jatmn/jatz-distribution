@@ -1,22 +1,21 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- Blueprint parametrisation for request and buffer depots. The game's parametrisation rewrites only
 -- its own entity settings, never a mod's tags, so a blueprint of a depot with a request or
--- freighters holds them a second time: in a constant combinator that only blueprints hold
+-- freighters holds them a second time: in a decider combinator that only blueprints hold
 -- (prototypes/depot-settings.lua), at the depot's centre, where the game can turn them into
--- parameters. Its first slot is the request (item or fluid, amount), its second the freighters
--- (the freighter item, how many). Its ghost, placed with the depot's, hands them (parametrised or
--- not) to the depot's ghost as its tags, or to a depot already there, and goes at once, so none
--- stays in the world and saves need nothing new. Blueprints from before keep working from their
--- tags alone.
+-- parameters. The request is a condition comparing its item or fluid to its amount; the
+-- freighters a condition with no signal, only their number, so parametrising offers the number
+-- and no item to swap for the freighter. Its ghost, placed with the depot's, hands them
+-- (parametrised or not) to the depot's ghost as its tags, or to a depot already there, and goes at
+-- once, so none stays in the world and saves need nothing new. Blueprints from before keep working
+-- from their tags alone.
 local logistics = require("scripts.logistics")
 
 local depot_settings = {}
 local NAME = "jatz-depot-settings"
 depot_settings.name = NAME
--- Slots of the combinator's first logistic section.
-local REQUEST_SLOT, FREIGHTERS_SLOT = 1, 2
--- A blueprint slot's count is an int32 (BlueprintLogisticFilter.count); a request above it stays
--- in its tag only, so the blueprint can still be made.
+-- A condition's constant is an int32 (DeciderCombinatorCondition.constant); a request above it
+-- stays in its tag only, so the blueprint can still be made.
 local COUNT_MAX = 2147483647
 
 local function key(position)
@@ -39,56 +38,46 @@ function depot_settings.plan(entities, requests)
     end
   end
   for planned, depot in pairs(requests) do
-    local filters = {}
+    local conditions = {}
     local request = depot.request
     if request and request.count <= COUNT_MAX then
-      filters[#filters + 1] = {
-        index = REQUEST_SLOT,
-        type = depot.fluid and "fluid" or "item",
-        name = request.item,
-        quality = "normal",
+      conditions[#conditions + 1] = {
+        first_signal = { type = depot.fluid and "fluid" or "item", name = request.item },
         comparator = "=",
-        count = request.count,
+        constant = request.count,
       }
     end
     if depot.freighters > 0 then
-      filters[#filters + 1] = {
-        index = FREIGHTERS_SLOT,
-        type = "item",
-        name = logistics.freighter,
-        quality = "normal",
-        comparator = "=",
-        count = math.min(depot.freighters, COUNT_MAX),
-      }
+      conditions[#conditions + 1] = { comparator = "=", constant = math.min(depot.freighters, COUNT_MAX) }
     end
-    if #filters > 0 then
+    if #conditions > 0 then
       last = last + 1
       kept[#kept + 1] = {
         entity_number = last,
         name = NAME,
         position = planned.position,
-        control_behavior = { sections = { sections = { { index = 1, filters = filters } } } },
+        control_behavior = { decider_conditions = { conditions = conditions, outputs = {} } },
       }
     end
   end
   return kept
 end
 
--- What request settings (or their ghost) hold: the request ({ item = name, count = n }) and the
--- freighters (a number), either nil when its slot is empty. The freighters' slot counts whatever
--- item parametrising put there.
+-- What request settings (or their ghost) hold: the request ({ item = name, count = n }), from the
+-- condition with a signal, and the freighters (a number), from the one with only a constant;
+-- either nil without its condition.
 local function settings_of(entity)
   local behavior = entity.get_control_behavior()
-  local section = behavior and behavior.sections_count > 0 and behavior.get_section(1)
-  if not section then
-    return nil, nil
+  local parameters = behavior and behavior.parameters
+  local request, freighters
+  for _, condition in ipairs(parameters and parameters.conditions or {}) do
+    local signal = condition.first_signal
+    if signal and type(signal.name) == "string" then
+      request = request or { item = signal.name, count = condition.constant or 0 }
+    elseif not condition.second_signal and condition.constant then
+      freighters = freighters or math.max(0, condition.constant)
+    end
   end
-  local slot = section.get_slot(REQUEST_SLOT)
-  local value = slot and slot.value
-  local request = value and type(value.name) == "string" and { item = value.name, count = slot.min or 0 } or nil
-  slot = section.get_slot(FREIGHTERS_SLOT)
-  value = slot and slot.value
-  local freighters = value and type(value.name) == "string" and math.max(0, slot.min or 0) or nil
   return request, freighters
 end
 

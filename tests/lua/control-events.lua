@@ -787,8 +787,9 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
   )
 
   -- Blueprint parametrisation: the request and the freighters also go in as request settings, a
-  -- constant combinator at the depot's centre whose first two slots the game can turn into
-  -- parameters.
+  -- decider combinator at the depot's centre whose conditions the game can turn into parameters:
+  -- the request compares its item to its amount, the freighters are a constant with no signal, so
+  -- parametrising offers their number but no item.
   local function settings_entry(entries)
     for _, entry in pairs(entries) do
       if entry.name == "jatz-depot-settings" then
@@ -796,39 +797,43 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
       end
     end
   end
-  -- A blueprint slot's count is an int32: the game refuses others ("Count out of bounds").
+  local function conditions_of(entry)
+    return entry and entry.control_behavior.decider_conditions.conditions
+  end
+  -- A condition's constant is an int32: the game refuses others.
   local function strict_set(entities)
     for _, entry in pairs(entities) do
-      for _, section in pairs(entry.control_behavior and entry.control_behavior.sections.sections or {}) do
-        for _, filter in pairs(section.filters) do
-          assert(filter.count >= -2147483648 and filter.count <= 2147483647, "Count out of bounds: " .. filter.count)
-        end
+      for _, condition in pairs(entry.control_behavior and entry.control_behavior.decider_conditions.conditions or {}) do
+        assert(
+          condition.constant >= -2147483648 and condition.constant <= 2147483647,
+          "Count out of bounds: " .. condition.constant
+        )
       end
     end
     saved = entities
   end
   blueprint.set_blueprint_entities = strict_set
   local settings = settings_entry(saved)
-  local planned_slots = settings and settings.control_behavior.sections.sections[1].filters
-  local slot, freighter_slot = planned_slots and planned_slots[1], planned_slots and planned_slots[2]
+  local planned_conditions = conditions_of(settings)
+  local wanted, freighter_condition =
+    planned_conditions and planned_conditions[1], planned_conditions and planned_conditions[2]
   check(
     "a blueprint holds the request as request settings at the depot",
-    slot
-      and slot.index == 1
-      and slot.type == "item"
-      and slot.name == "wood"
-      and slot.count == 7
+    wanted
+      and wanted.first_signal.type == "item"
+      and wanted.first_signal.name == "wood"
+      and wanted.comparator == "="
+      and wanted.constant == 7
       and settings.position.x == planned.position.x
       and settings.position.y == planned.position.y
       and settings.entity_number == 2
   )
   check(
-    "and its freighters, as the freighter item and how many",
-    freighter_slot
-      and freighter_slot.index == 2
-      and freighter_slot.type == "item"
-      and freighter_slot.name == "jatz-quinityn-freighter"
-      and freighter_slot.count == 3
+    "and its freighters, as a number with no signal",
+    freighter_condition
+      and freighter_condition.first_signal == nil
+      and freighter_condition.second_signal == nil
+      and freighter_condition.constant == 3
   )
   -- Set up again, the blueprint keeps one, with the request as it is now.
   assert(logistics.set_request(source, "wood", 9))
@@ -840,37 +845,43 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
   for _, entry in pairs(saved) do
     if entry.name == "jatz-depot-settings" then
       count = count + 1
-      again = entry.control_behavior.sections.sections[1].filters[1].count
+      again = conditions_of(entry)[1].constant
     end
   end
   check("setting it up again replaces them", #saved == 2 and count == 1 and again == 9)
 
-  -- A request above a slot's int32 count (the panel and set_request take any) stays in its tag
-  -- only: the blueprint is still made, its settings holding the freighters.
+  -- A request above a condition's int32 constant (the panel and set_request take any) stays in its
+  -- tag only: the blueprint is still made, its settings holding the freighters.
   assert(logistics.set_request(source, "wood", 9999999999))
   local made = pcall(logistics.setup_blueprint, blueprint, { [1] = source })
-  local huge = settings_entry(saved)
-  local huge_filters = huge and huge.control_behavior.sections.sections[1].filters
+  local huge_conditions = conditions_of(settings_entry(saved))
   check(
-    "a request too large for a slot still blueprints, in its tag",
+    "a request too large for a condition still blueprints, in its tag",
     made
       and saved[1].tags.jatz_request.count == 9999999999
-      and #huge_filters == 1
-      and huge_filters[1].index == 2
-      and huge_filters[1].count == 3
+      and #huge_conditions == 1
+      and huge_conditions[1].first_signal == nil
+      and huge_conditions[1].constant == 3
   )
   assert(logistics.set_request(source, "wood", 9))
 
-  -- Request settings as built: a ghost (or, at once, the combinator itself) whose slots read the
-  -- request and the freighters, either empty. Strict: only get_slot reads a slot.
+  -- Request settings as built: a ghost (or, at once, the combinator itself) whose decider
+  -- parameters read the request and the freighters, either missing, in either order. Strict: only
+  -- `parameters` reads them, as LuaDeciderCombinatorControlBehavior gives them.
   prototypes.item["iron-plate"] = { name = "iron-plate" }
   local function placed_settings(x, item, count_, freighters, force)
-    local slots = {
-      [1] = item and { value = { type = "item", name = item, quality = "normal" }, min = count_ } or {},
-      [2] = freighters
-          and { value = { type = "item", name = "jatz-quinityn-freighter", quality = "normal" }, min = freighters }
-        or {},
-    }
+    local conditions = {}
+    if freighters then
+      conditions[#conditions + 1] = { comparator = "=", constant = freighters, compare_type = "or" }
+    end
+    if item then
+      table.insert(conditions, 1, {
+        first_signal = { type = "item", name = item },
+        comparator = "=",
+        constant = count_,
+        compare_type = "or",
+      })
+    end
     local entity = {
       valid = true,
       name = "entity-ghost",
@@ -880,17 +891,7 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
       surface = surface,
       force = force or "player",
       get_control_behavior = function()
-        return {
-          sections_count = 1,
-          get_section = function(index)
-            assert(index == 1)
-            return {
-              get_slot = function(slot_index)
-                return slots[slot_index] or {}
-              end,
-            }
-          end,
-        }
+        return { parameters = { conditions = conditions, outputs = {}, else_outputs = {} } }
       end,
     }
     function entity.destroy()
@@ -899,7 +900,7 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
     return entity
   end
   local function at_once(entity)
-    entity.name, entity.type, entity.ghost_name = "jatz-depot-settings", "constant-combinator", nil
+    entity.name, entity.type, entity.ghost_name = "jatz-depot-settings", "decider-combinator", nil
     return entity
   end
   -- Entities at a spot, as find_entities_filtered gives them: by position, name, ghost name and
@@ -1495,16 +1496,19 @@ do -- Liquid depots: the same panels, beside the storage tank window, choosing a
   logistics.setup_blueprint(blueprint, { request })
   local tags = saved[1].tags
   check("a liquid request depot's blueprint keeps its request", tags and tags.jatz_request.item == "water")
-  local settings = saved[2] and saved[2].control_behavior.sections.sections[1].filters[1]
+  local settings = saved[2] and saved[2].control_behavior.decider_conditions.conditions[1]
   check(
     "and its request settings, as a fluid",
-    saved[2].name == "jatz-depot-settings" and settings.type == "fluid" and settings.name == "water"
+    saved[2].name == "jatz-depot-settings"
+      and settings.first_signal.type == "fluid"
+      and settings.first_signal.name == "water"
+      and settings.constant == 1000
   )
   check("and how many freighters", tags.jatz_freighters == 4)
-  local freighter_settings = saved[2] and saved[2].control_behavior.sections.sections[1].filters[2]
+  local freighter_settings = saved[2] and saved[2].control_behavior.decider_conditions.conditions[2]
   check(
-    "in its request settings too",
-    freighter_settings and freighter_settings.name == "jatz-quinityn-freighter" and freighter_settings.count == 4
+    "in its request settings too, as a number with no signal",
+    freighter_settings and freighter_settings.first_signal == nil and freighter_settings.constant == 4
   )
   check("without an insert plan", saved[1].items == nil)
   local asked
