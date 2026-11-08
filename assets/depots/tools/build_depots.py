@@ -29,13 +29,14 @@ MONITOR_PALETTE = {'cab':[.36,.26,.17], 'trim':[.80,.38,.12], 'cargo':[.43,.43,.
 # points and activity LED are these, projected for each direction (monitor_points).
 MONITOR_POSTS = {'red':(-.46,.42,1.60), 'green':(.46,.42,1.60)}
 MONITOR_LENS = (.60,-.40,1.28)
-# The road tunnel portal (prototypes/road-tunnel.lua): a low 1x1 arched hood in the same finish,
-# its mouth to the north (+Y), where freighters drive in from the road and go under ground.
-# Build it alone: --role road-tunnel --size 1.
+# The road tunnel portal (prototypes/road-tunnel.lua): a low 1x1 armoured box built like the item
+# depots' loading side, in their dark steel, with the monitor's grey housing and brown band, its
+# mouth to the north (+Y), where freighters drive in from the road and go under ground (the owner,
+# November 8, 2026). Build it alone: --role road-tunnel --size 1.
 TUNNEL = 'road-tunnel'
 TUNNEL_PALETTE = MONITOR_PALETTE
-# The hood's arch, in model units (three to a tile): its axis height, outer radius and shell.
-TUNNEL_ARCH = (.10,1.24,.16)
+# The top of its walls, in model units (three to a tile).
+TUNNEL_HEIGHT = 1.45
 
 
 def finish(obj, name, mat, bevel=0):
@@ -787,77 +788,70 @@ def monitor_body():
     box('Monitor road plate',(.55,-.735,.92),(.40,.02,.20),brass,.008)
 
 
-def arch(name,y0,y1,radius,thickness,mat,z=TUNNEL_ARCH[0],segments=40):
-    """A half-pipe shell along Y from y0 to y1, standing on the ground: the part of a ring of
-    `radius` (outer) and `thickness` around an axis `z` high that is above the ground."""
-    inner=radius-thickness
-    start=math.asin(max(-1,min(1,-z/radius)))
-    start_inner=math.asin(max(-1,min(1,-z/inner)))
-    verts=[];faces=[]
-    for i in range(segments+1):
-        t=i/segments
-        a=start+(math.pi-2*start)*t
-        b=start_inner+(math.pi-2*start_inner)*t
-        for y in (y0,y1):
-            verts.append((radius*math.cos(a),y,z+radius*math.sin(a)))
-            verts.append((inner*math.cos(b),y,z+inner*math.sin(b)))
-    # Per segment: outer front, inner front, outer back, inner back.
-    for i in range(segments):
-        o0,i0,O0,I0=4*i,4*i+1,4*i+2,4*i+3
-        o1,i1,O1,I1=o0+4,i0+4,O0+4,I0+4
-        faces += [(o0,O0,O1,o1),(i0,i1,I1,I0),(o0,o1,i1,i0),(O0,I0,I1,O1)]
-    last=4*segments
-    faces += [(0,1,3,2),(last,last+2,last+3,last+1)]
-    mesh=bpy.data.meshes.new(name);mesh.from_pydata(verts,[],faces);mesh.update()
-    mesh.validate()
-    shell_mesh=bmesh.new();shell_mesh.from_mesh(mesh)
-    bmesh.ops.recalc_face_normals(shell_mesh,faces=shell_mesh.faces)
-    shell_mesh.to_mesh(mesh);shell_mesh.free()
-    for face in mesh.polygons:face.use_smooth=True
-    obj=bpy.data.objects.new(name,mesh);scene.collection.objects.link(obj)
-    return finish(obj,name,mat)
-
-
 def tunnel_body():
-    """The road tunnel portal, at depot scale (3 units to a tile) for the 1x1 build to scale."""
-    z,radius,shell=TUNNEL_ARCH
-    # Bronze skid under the hood, as under the monitor and the liquid depots' tanks.
-    for x in (-1.12,1.12):
-        box('Tunnel skid rail',(x,-.10,.06),(.26,2.70,.12),steel,.018)
-    for x in (-1.12,1.12):
-        for y in (-1.20,1.00):
-            taper('Bolted tunnel foot',(x,y,.07),(.34,.34),(.28,.28),.14,steel,.05)
-            bolt((x,y,.15),radius=.04)
-    # The grey hood, a half-pipe from the back of the tile to its mouth, with bronze ribs over it.
-    arch('Tunnel hood shell',-1.30,1.05,radius,shell,housing)
-    for y in (-1.05,-.35):
-        arch('Tunnel bronze rib',y-.07,y+.07,radius+.05,shell+.07,steel)
-    # Its brown band near the mouth, and a heavy bronze collar round the mouth itself.
-    arch('Tunnel identification band',.30,.62,radius+.03,shell+.05,rolepaint)
-    arch('Tunnel mouth collar',.95,1.25,radius+.09,shell+.20,steel)
-    # Back wall closing the hood.
-    arch('Tunnel back plate',-1.38,-1.30,radius,radius-.01,housing)
-    # The dark way in, going down under the ground: a deep recess in the mouth, and the ramp's floor.
-    arch('Tunnel mouth darkness',.20,1.06,radius-shell+.005,radius-shell-.10,black)
-    arch('Tunnel deep darkness',.15,.25,radius-shell+.005,radius-shell-.005,black)
-    box('Tunnel ramp floor',(0,.62,.012),(1.80,.86,.024),black,0)
-    # Orange clasps holding the collar to the skid, and brass bolts along the collar's foot.
-    # Orange clasps at both ends, so each view shows some.
-    for x in (-1.22,1.22):
-        for y in (1.10,-1.28):
-            box('Tunnel collar clasp',(x,y,.22),(.16,.34,.30),trim,.012)
-            bolt((x+math.copysign(.085,x),y,.28),'X',radius=.03)
-    for i in range(9):
-        a=math.pi*(i+1)/10
-        bolt((math.cos(a)*(radius+.05),1.255,z+math.sin(a)*(radius+.05)),'Y',radius=.03)
-    # A violet status lens on the crown of the collar, as the depots have.
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=24,ring_count=12,radius=1,location=(0,1.10,z+radius+.12))
-    obj=bpy.context.object;obj.scale=(.09,.09,.05)
-    for face in obj.data.polygons:face.use_smooth=True
-    finish(obj,'Tunnel convex status lens',violet)
-    cylinder('Tunnel status bezel',(0,1.10,z+radius+.10),.13,.05,edge)
-    # Road cue: a brass road-tile plate on the back of the hood.
-    box('Tunnel road plate',(0,-1.385,.45),(.50,.02,.24),brass,.008)
+    """The road tunnel portal, at depot scale (3 units to a tile) for the 1x1 build to scale: a low
+    armoured box built like an item depot's loading side, its mouth to the north (+Y), where a dark
+    ramp goes down under ground."""
+    # The item depots' steel pan, cast corner shoes and sills.
+    foundation(TUNNEL)
+    top=TUNNEL_HEIGHT
+    mid=(.30+top)/2;tall=top-.30
+    # Armoured walls: back and sides, leaving the mouth open.
+    box('Tunnel rear wall',(0,-1.09,mid),(2.38,.23,tall),housing,.045)
+    for x in [-1.08,1.08]:
+        box('Tunnel side armored wall',(x,-.05,mid),(.22,2.22,tall),housing,.045)
+        box('Tunnel side identification belt',(x*1.113,-.07,mid+.12),(.025,2.06,.30),rolepaint,.005)
+        box('Tunnel side panel seam',(x*1.115,-.15,mid),(.027,.026,tall-.20),black,.002)
+        box('Tunnel side sill vent recess',(x*1.117,-.15,.50),(.035,1.51,.14),black,.006)
+        for y in [i*.12-.78 for i in range(12)]:
+            box('Tunnel side sill grille slat',(x*1.139,y,.50),(.025,.025,.11),edge,.003)
+    # Corner castings with sloped shoulders and caps, painted belts and orange locks, as on the depots.
+    for x in [-1.19,1.19]:
+        for y in [-1.16,1.16]:
+            taper('Tunnel corner casting',(x,y,mid),(.50,.44),(.50,.44),tall,steel,.075)
+            taper('Tunnel sloped armored shoulder',(x,y,top+.10),(.54,.54),(.40,.40),.30,steel,.09)
+            cylinder('Tunnel recessed corner cap',(x,y,top+.263),.106,.045,edge)
+            cylinder('Tunnel corner cap center',(x,y,top+.292),.071,.018,steel)
+            box('Tunnel corner painted belt',(x,y,mid+.12),(.505,.445,.30),rolepaint,.03)
+            box('Tunnel orange vertical lock',(x,y+math.copysign(.22,y),mid-.18),(.07,.08,.23),trim,.012)
+            bolt((x,y+math.copysign(.195,y),.55),'Y',.04)
+    # Flat armoured roof with a raised centre plate, hinges and a brass road plate.
+    box('Tunnel roof casting',(0,0,top+.08),(2.48,2.45,.16),steel,.055)
+    taper('Tunnel raised roof plate',(0,-.05,top+.20),(1.70,1.80),(1.56,1.66),.10,housing,.06)
+    box('Tunnel roof identification band',(0,.60,top+.257),(1.50,.20,.012),rolepaint,.004)
+    for x in [-.62,.62]:
+        for y in [-.72,.62]:bolt((x,y,top+.26))
+    for x in [-.96,.96]:hinge(x,-.05,top+.23,'Y',.36)
+    box('Tunnel road plate',(0,-.55,top+.257),(.60,.36,.012),brass,.006)
+    # Rear service hatches and louvers, as on the depots' backs.
+    for x in [-.62,.62]:
+        box('Tunnel rear armored service hatch',(x,-1.222,mid),(.58,.05,tall-.30),steel,.025)
+        for z in [mid-.13,mid,mid+.13]:box('Tunnel rear louver',(x,-1.26,z),(.41,.035,.045),edge,.006)
+    # The mouth: guides with orange wear shoes, a lintel, and a retracted shutter with its band and
+    # an inward chevron above.
+    width=1.62;opening=top-.36
+    for side in [-1,1]:
+        xx=side*(width/2+.06)
+        box('Tunnel mouth vertical guide',(xx,1.10,(.16+opening)/2),(.12,.20,opening-.16),steel,.015)
+        box('Tunnel guide orange wear shoe',(xx,1.215,.38),(.13,.04,.34),trim,.009)
+        for z in [.25,.52,opening-.12]:bolt((xx,1.245,z),'Y',.025)
+    box('Tunnel mouth lintel',(0,1.12,opening+.05),(width+.20,.24,.10),steel,.012)
+    box('Tunnel retracted shutter',(0,1.08,opening+.24),(width,.17,.30),housing,.022)
+    box('Tunnel shutter identity band',(0,1.172,opening+.25),(width-.06,.022,.15),rolepaint,.004)
+    chevron(0,1.188,opening+.24,width*.40,edge,False,double=False)
+    panel_fasteners(0,1.185,opening+.33,width-.13,.06)
+    lens(width/2+.06,1.25,opening+.24)
+    # Dark inside: lined walls and ceiling, and a ramp going down out of sight.
+    box('Tunnel throat ceiling lining',(0,.10,opening-.02),(width,2.10,.035),black,0)
+    for side in [-1,1]:
+        box('Tunnel throat side lining',(side*width/2,.10,(.16+opening)/2),(.035,2.10,opening-.16),black,0)
+    box('Tunnel throat rear lining',(0,-.93,(.16+opening)/2),(width,.035,opening-.16),black,0)
+    ramp=box('Tunnel ramp going down',(0,.15,.11),(width,2.15,.035),black,0)
+    ramp.rotation_euler.x=-math.atan2(.14,2.15)
+    for y in [.75,.35,-.05]:
+        for side in [-1,1]:
+            beam('Tunnel ramp painted chevron',(side*width*.24,y+.025,.16+(y-1.2)*.065),(0,y-.035,.16+(y-1.2)*.065),.026,.006,rolepaint)
+    box('Tunnel ramp wear lip',(0,1.36,.17),(width,.065,.04),edge,.008)
 
 
 def monitor_points(size):
@@ -1361,7 +1355,7 @@ def build(role,size):
         ramp.elements[1].color=(*color,1)
         mat.diffuse_color=(*color,1)
     configure_depot_materials()
-    if role in ['fuel','liquid-provider','liquid-request','liquid-buffer',MONITOR,TUNNEL]:warm_fluid_metal()
+    if role in ['fuel','liquid-provider','liquid-request','liquid-buffer',MONITOR]:warm_fluid_metal()
     dial=edge.copy();dial.name='BASE | enamel gauge face'
     dial.node_tree.nodes['Surface pigment'].color_ramp.elements[1].color=(.65,.58,.43,1)
     root=bpy.data.objects.new('Depot | rotate this assembly',None)
