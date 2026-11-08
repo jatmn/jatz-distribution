@@ -176,6 +176,52 @@ class LogisticsSearchTests(unittest.TestCase):
         self.assertIn('all control event checks passed', result.stdout)
 
 
+# Lua 5.2 compiles at most 200 active locals in one function, and a file's main chunk is one: every
+# top-level local stays active to the end of the file. Each runtime script must still compile with
+# LOCALS_HEADROOM more, put just before its closing `return <module>`; for one that doesn't, the
+# check prints how many it has.
+LOCALS_HEADROOM = 20
+LOCALS_CHECK = r"""
+local headroom = tonumber(arg[1])
+local function with_probes(source, count)
+  local probes = {}
+  for index = 1, count do
+    probes[index] = "local __probe" .. index .. " = " .. index
+  end
+  local replaced, found = source:gsub("\nreturn ([%w_]+)%s*$", "\n" .. table.concat(probes, "\n") .. "\nreturn %1")
+  return found == 1 and load(replaced) or nil, found
+end
+for index = 2, #arg do
+  local path = arg[index]
+  local file = assert(io.open(path))
+  local source = file:read("*a")
+  file:close()
+  local compiled, found = with_probes(source, headroom)
+  if found ~= 1 then
+    print(path .. ": doesn't end with return <module>")
+  elseif not compiled then
+    local extra = 0
+    while with_probes(source, extra + 1) do
+      extra = extra + 1
+    end
+    print(path .. ": " .. (200 - extra) .. " top-level locals, room for " .. extra .. " more")
+  end
+end
+"""
+
+
+class LocalsLimitTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('lua5.2'), 'the Mod CI job installs Lua 5.2')
+    def test_runtime_scripts_have_room_for_more_top_level_locals(self):
+        # scripts/logistics.lua reached the limit (issue #69), and the next local stopped the mod
+        # from loading. Split a script along its seams into modules under scripts/ before it gets
+        # this close, so the limit shows up in review rather than as a load error mid-feature.
+        scripts = sorted(str(path.relative_to(ROOT)) for path in (ROOT / 'scripts').glob('*.lua'))
+        result = subprocess.run(['lua5.2', '-', str(LOCALS_HEADROOM), *scripts], input=LOCALS_CHECK, cwd=ROOT,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '', f'fewer than {LOCALS_HEADROOM} locals of headroom left')
+
 class FreighterColorTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('lua5.2'), 'the Mod CI job installs Lua 5.2')
     def test_items_and_fluids_get_the_paint_of_their_color(self):
