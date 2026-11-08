@@ -16,6 +16,44 @@ local constants = require("prototypes.constants")
 local art = require("prototypes.freighter-art")
 local paint = require("scripts.freighter-paint")
 
+-- Headlights at night: the car's light cones (the drivable freighter keeps them as they are),
+-- scaled to the small freighter. The car's cones are centred 14 tiles ahead and, on many
+-- freighters, lit the whole road network around a busy depot (the owner's screenshot,
+-- November 7, 2026). Each cone's reach, width and distance ahead scale together, as the base
+-- spidertron's cones do, so it still starts at the freighter; the two beams sit closer
+-- together and shine less brightly.
+local HEADLIGHT_REACH = 0.7 -- of the car's cone length and width
+local HEADLIGHT_SPREAD = 0.5 -- of the car's distance between its two beams
+local HEADLIGHT_INTENSITY = 0.75 -- of the car's brightness
+
+local function headlights()
+  local lights = table.deepcopy(data.raw.car.car.light)
+  if not lights then
+    return nil
+  end
+  -- A LightDefinition is one light or an array of them.
+  if lights.type or lights.picture or lights.intensity then
+    lights = { lights }
+  end
+  for _, light in ipairs(lights) do
+    if light.size then
+      light.size = light.size * HEADLIGHT_REACH
+    end
+    if light.intensity then
+      light.intensity = light.intensity * HEADLIGHT_INTENSITY
+    end
+    local shift = light.shift
+    if shift then
+      light.shift = {
+        (shift.x or shift[1] or 0) * HEADLIGHT_SPREAD,
+        (shift.y or shift[2] or 0) * HEADLIGHT_REACH,
+      }
+    end
+  end
+  return lights
+end
+local HEADLIGHTS = headlights()
+
 -- The freighter drone `name`, its cargo painted `cargo` (nil: the artwork's own slate blue).
 local function drone(name, cargo)
   local animation = art.animation(cargo and { cargo = cargo } or nil)
@@ -34,9 +72,9 @@ local function drone(name, cargo)
     -- explodes and leaves the car's wreck, which the game removes after 15 minutes.
     dying_explosion = data.raw.car.car.dying_explosion,
     corpse = data.raw.car.car.corpse,
-    -- Headlights at night, the car's two light cones, as the drivable freighter has (it keeps the
-    -- car's `light`). Transport Drones' trucks (Factorio 1.1) lit the road ahead the same way.
-    light = data.raw.car.car.light,
+    -- Headlights at night (HEADLIGHTS above). Transport Drones' trucks (Factorio 1.1) lit the
+    -- road ahead the same way.
+    light = HEADLIGHTS,
     -- A target enemies go for, as they do the player's other vehicles and units (a unit's
     -- default, said here because deliveries rely on it).
     is_military_target = true,
