@@ -1573,51 +1573,51 @@
     {
       "role": "road-tunnel",
       "size": 1,
-      "source_sha256": "6efc285767b2b81a471c4c9cfe01e8e6bc114e8a843703c86e7504e3f254df17",
+      "source_sha256": "674b3fe4bfb3468437cb35cc46adee86fbbf21f7556623470aebda4f5b740d64",
       "directions": [
         {
           "direction": 0,
           "sizes": {
             "2048": {
-              "alpha_max_error": 1.955777406692505e-08,
-              "neutral_rgb_mean_error": 0.0017055968033388694,
+              "alpha_max_error": 0.0,
+              "neutral_rgb_mean_error": 0.0019285424331067066,
               "body_bbox": [
-                734,
-                220,
-                1314,
+                738,
+                217,
+                1310,
                 1595
               ],
               "shadow_bbox": [
-                734,
-                288,
-                1467,
+                749,
+                290,
+                1477,
                 1600
               ],
               "mask_pixels": {
-                "cab": 22143,
-                "trim": 1223,
-                "cargo": 296889
+                "cab": 21748,
+                "trim": 4396,
+                "cargo": 310123
               }
             },
             "512": {
-              "alpha_max_error": 7.712150484895375e-08,
-              "neutral_rgb_mean_error": 0.0015912964176361616,
+              "alpha_max_error": 7.43308005146659e-08,
+              "neutral_rgb_mean_error": 0.0018276207120059163,
               "body_bbox": [
-                181,
-                53,
-                331,
+                182,
+                52,
+                330,
                 401
               ],
               "shadow_bbox": [
-                183,
-                71,
-                367,
+                187,
+                72,
+                370,
                 401
               ],
               "mask_pixels": {
-                "cab": 1732,
-                "trim": 118,
-                "cargo": 19345
+                "cab": 1700,
+                "trim": 364,
+                "cargo": 20452
               }
             }
           }
@@ -1626,45 +1626,45 @@
           "direction": 1,
           "sizes": {
             "2048": {
-              "alpha_max_error": 1.4901161193847656e-08,
-              "neutral_rgb_mean_error": 0.0017760608667651014,
+              "alpha_max_error": 2.7939677238464355e-09,
+              "neutral_rgb_mean_error": 0.002334332615269912,
               "body_bbox": [
-                437,
-                518,
-                1611,
-                1308
+                443,
+                504,
+                1605,
+                1289
               ],
               "shadow_bbox": [
                 448,
-                590,
-                1769,
-                1313
+                581,
+                1767,
+                1299
               ],
               "mask_pixels": {
-                "cab": 42100,
-                "trim": 1373,
-                "cargo": 313318
+                "cab": 38919,
+                "trim": 4126,
+                "cargo": 370402
               }
             },
             "512": {
-              "alpha_max_error": 7.867966544949923e-08,
-              "neutral_rgb_mean_error": 0.0016255265778282717,
+              "alpha_max_error": 7.419135228392548e-08,
+              "neutral_rgb_mean_error": 0.0021521311524780695,
               "body_bbox": [
-                107,
-                127,
-                405,
-                329
+                109,
+                124,
+                403,
+                324
               ],
               "shadow_bbox": [
                 111,
-                147,
-                443,
-                329
+                144,
+                442,
+                325
               ],
               "mask_pixels": {
-                "cab": 3514,
-                "trim": 160,
-                "cargo": 21512
+                "cab": 3440,
+                "trim": 338,
+                "cargo": 25506
               }
             }
           }
@@ -1673,45 +1673,45 @@
           "direction": 2,
           "sizes": {
             "2048": {
-              "alpha_max_error": 2.421438694000244e-08,
-              "neutral_rgb_mean_error": 0.0017324924337225867,
+              "alpha_max_error": 0.0,
+              "neutral_rgb_mean_error": 0.0019621821227100394,
               "body_bbox": [
-                734,
-                378,
-                1314,
+                738,
+                394,
+                1310,
                 1595
               ],
               "shadow_bbox": [
-                734,
-                393,
-                1467,
+                749,
+                405,
+                1477,
                 1600
               ],
               "mask_pixels": {
-                "cab": 18110,
-                "trim": 4022,
-                "cargo": 233761
+                "cab": 17224,
+                "trim": 5671,
+                "cargo": 241551
               }
             },
             "512": {
-              "alpha_max_error": 7.886010233715268e-08,
-              "neutral_rgb_mean_error": 0.0015719736616897494,
+              "alpha_max_error": 7.860866768627517e-08,
+              "neutral_rgb_mean_error": 0.0017891887696684222,
               "body_bbox": [
-                181,
-                92,
-                331,
+                182,
+                96,
+                330,
                 401
               ],
               "shadow_bbox": [
-                183,
-                98,
-                367,
+                187,
+                100,
+                370,
                 401
               ],
               "mask_pixels": {
-                "cab": 1555,
-                "trim": 445,
-                "cargo": 15565
+                "cab": 1483,
+                "trim": 494,
+                "cargo": 16186
               }
             }
           }
@@ -1720,45 +1720,45 @@
           "direction": 3,
           "sizes": {
             "2048": {
-              "alpha_max_error": 1.6763806343078613e-08,
-              "neutral_rgb_mean_error": 0.001931272189445053,
+              "alpha_max_error": 3.725290298461914e-09,
+              "neutral_rgb_mean_error": 0.0024968140613409527,
               "body_bbox": [
-                437,
-                518,
-                1611,
-                1308
+                443,
+                504,
+                1605,
+                1288
               ],
               "shadow_bbox": [
                 448,
-                590,
-                1657,
-                1313
+                581,
+                1645,
+                1299
               ],
               "mask_pixels": {
-                "cab": 42105,
-                "trim": 1354,
-                "cargo": 313343
+                "cab": 38876,
+                "trim": 4136,
+                "cargo": 370472
               }
             },
             "512": {
-              "alpha_max_error": 7.919873279416123e-08,
-              "neutral_rgb_mean_error": 0.001741792232741597,
+              "alpha_max_error": 6.985288358851705e-08,
+              "neutral_rgb_mean_error": 0.0022803199334651184,
               "body_bbox": [
-                107,
-                127,
-                405,
-                329
+                109,
+                124,
+                403,
+                324
               ],
               "shadow_bbox": [
                 111,
-                147,
-                415,
-                329
+                144,
+                412,
+                325
               ],
               "mask_pixels": {
-                "cab": 3523,
-                "trim": 160,
-                "cargo": 21532
+                "cab": 3423,
+                "trim": 337,
+                "cargo": 25496
               }
             }
           }

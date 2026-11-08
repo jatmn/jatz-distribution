@@ -807,56 +807,66 @@ def prism(name,x,width,profile,mat,bevel=.02):
 def tunnel_body():
     """The road tunnel portal, at depot scale (3 units to a tile) for the 1-tile build to scale: two
     tiles deep (Y), built like an item depot's loading side at its mouth (north, +Y), its roof and
-    walls sloping down to the ground at the back, so it reads as a ramp going under ground."""
+    walls sloping down to the ground at the back, so it reads as a ramp going under ground. Every
+    part on the slope follows it: nothing stands proud of the walls where they are low."""
     top,front,back=TUNNEL_HEIGHT,2.95,-2.95
     flat=front-.50
-    def wall(y):
-        # The walls' top: full height at the mouth, sloping to the ground at the back.
-        return top if y>=flat else .30+(y-back)/(flat-back)*(top-.30)
+    base=.14
+    def line(y,high,low):
+        # Full height `high` from the mouth back to `flat`, then straight down to `low` at the back.
+        return high if y>=flat else low+(y-back)/(flat-back)*(high-low)
     def roof(y):
-        # The top of the roof slab over the slope.
-        return .46+(y+3.0)/(flat+3.0)*(top+.16-.46)
-    # The item depots' steel pan, cast corner shoes and side sills, two tiles long.
-    taper('Low steel foundation pan',(0,0,.07),(2.91,5.85),(2.84,5.78),.14,steel,.19)
-    for x in [-1.25,1.25]:
-        for y in [-2.70,2.70]:
-            taper('Cast octagonal corner shoe',(x,y,.30),(.43,.43),(.35,.35),.40,steel,.10)
-            bolt((x,y,.52),radius=.06)
-        box('Side structural sill',(x*1.072,0,.28),(.14,5.10,.28),steel,.018)
-    # Armoured side walls, sloping down to the back; the slope's roof slab over them.
-    for x in [-1.08,1.08]:
-        prism('Tunnel sloping side wall',x,.22,[(front,.30),(front,top),(flat,top),(back,.32),(back,.30)],housing,.04)
-        y_end=-1.1
-        prism('Tunnel side identification belt',x*1.113,.025,[(front-.10,top-.12),(flat,top-.12),(y_end,wall(y_end)-.12),
-              (y_end,wall(y_end)-.32),(flat,top-.32),(front-.10,top-.32)],rolepaint,.004)
-        box('Tunnel side sill vent recess',(x*1.117,.90,.50),(.035,2.40,.14),black,.006)
-        for y in [i*.12-.25 for i in range(20)]:
-            box('Tunnel side sill grille slat',(x*1.139,y,.50),(.025,.025,.11),edge,.003)
-    prism('Tunnel sloping roof casting',0,2.48,[(3.0,top),(3.0,top+.16),(flat,top+.16),(-3.0,.46),(-3.0,.30),(flat,top)],steel,.05)
-    # A raised grey plate along the slope, with the brown band near the mouth, bolts and a brass road plate.
-    def on_roof(name,width,y1,y2,lift,thick,mat):
-        return prism(name,0,width,[(y1,roof(y1)+lift),(y1,roof(y1)+lift+thick),(y2,roof(y2)+lift+thick),(y2,roof(y2)+lift)],mat,.01)
-    on_roof('Tunnel raised slope plate',1.70,2.20,-2.30,0,.08,housing)
-    on_roof('Tunnel slope identification band',1.50,2.00,1.70,.08,.014,rolepaint)
-    on_roof('Tunnel road plate',.60,-.40,-1.10,.08,.014,brass)
+        return line(y,top,.20)
+    def wall(y):
+        # The walls stand a little above the roof, as a curb.
+        return line(y,top+.10,.30)
+    # A low steel pan under the whole ramp, with cast shoes under the mouth's corner castings only.
+    taper('Low steel foundation pan',(0,0,base/2),(2.62,5.85),(2.56,5.78),base,steel,.12)
+    for x in [-1.19,1.19]:
+        taper('Cast octagonal corner shoe',(x,front-.29,.30),(.50,.44),(.44,.40),.36,steel,.08)
+    # The sloping roof between the walls, and a raised grey plate along it with the brown band near
+    # the mouth, bolts and a brass road plate.
+    prism('Tunnel sloping roof slab',0,2.00,[(front,top-.14),(front,top),(flat,top),(back,.20),(back,base),(flat,top-.14)],steel,.02)
+    def on_roof(name,x,width,y1,y2,lift,thick,mat):
+        return prism(name,x,width,[(y1,roof(y1)+lift),(y1,roof(y1)+lift+thick),(y2,roof(y2)+lift+thick),(y2,roof(y2)+lift)],mat,.01)
+    on_roof('Tunnel raised slope plate',0,1.70,2.20,-2.30,0,.08,housing)
+    on_roof('Tunnel slope identification band',0,1.50,2.00,1.70,.08,.014,rolepaint)
+    on_roof('Tunnel road plate',0,.60,-.40,-1.10,.08,.014,brass)
     for x in [-.75,.75]:
         for y in [1.90,.50,-.90,-2.05]:bolt((x,y,roof(y)+.09))
-    # Its toe at the back, clamped down with orange clasps.
-    box('Tunnel slope toe plate',(0,-2.95,.34),(2.48,.10,.08),edge,.01)
-    for x in [-.80,.80]:
-        box('Tunnel orange toe clamp',(x,-2.80,.42),(.26,.20,.14),trim,.015)
-        bolt((x,-2.80,.50),radius=.03)
-    # Corner castings with sloped shoulders and caps, painted belts and orange locks at the mouth.
+    # At the back the slope meets the ground: a worn steel threshold across it, and two orange clamps
+    # bolted down on the slope.
+    box('Tunnel slope threshold',(0,back+.06,base+.04),(2.50,.14,.08),edge,.012)
+    for x in [-.62,.62]:
+        on_roof('Tunnel orange slope clamp',x,.18,-2.45,-2.72,.0,.07,trim)
+        bolt((x,-2.58,roof(-2.58)+.08),radius=.025)
+    # Armoured side walls following the slope: a steel coping along their top, the brown band
+    # parallel to it, panel seams below the band, and a vent grille where the wall is tall.
+    for side in [-1,1]:
+        x=side*1.12;face=x+side*.131
+        prism('Tunnel sloping side wall',x,.26,[(front,base),(front,top+.10),(flat,top+.10),(back,.30),(back,base)],housing,.03)
+        prism('Tunnel side wall coping',x,.32,[(front+.02,top+.10),(front+.02,top+.17),(flat,top+.17),(back-.02,.37),(back-.02,.30),(flat,top+.10)],steel,.015)
+        for y in [2.20,1.00,-.20,-1.40,-2.50]:bolt((x,y,wall(y)+.075),radius=.03)
+        y1,y2=2.38,-1.60
+        prism('Tunnel side identification belt',face,.012,[(y1,wall(y1)-.18),(y2,wall(y2)-.18),(y2,wall(y2)-.34),(y1,wall(y1)-.34)],rolepaint,.003)
+        for y in [.75,-.45]:
+            height=wall(y)-.40-(base+.08)
+            if height>.10:
+                box('Tunnel side panel seam',(face,y,base+.08+height/2),(.014,.026,height),black,.002)
+        box('Tunnel side vent recess',(face,1.75,.52),(.016,1.10,.20),black,.004)
+        for y in [1.27+i*.12 for i in range(9)]:
+            box('Tunnel side vent slat',(face+side*.008,y,.52),(.02,.026,.17),edge,.003)
+    # Corner castings at the mouth, with sloped shoulders and caps, painted belts and orange locks,
+    # as on the depots.
     mid=(.30+top)/2;tall=top-.30
     for x in [-1.19,1.19]:
         y=front-.29
-        taper('Tunnel corner casting',(x,y,mid),(.50,.44),(.50,.44),tall,steel,.075)
-        taper('Tunnel sloped armored shoulder',(x,y,top+.10),(.54,.54),(.40,.40),.30,steel,.09)
-        cylinder('Tunnel recessed corner cap',(x,y,top+.263),.106,.045,edge)
-        cylinder('Tunnel corner cap center',(x,y,top+.292),.071,.018,steel)
+        taper('Tunnel corner casting',(x,y,mid+.05),(.50,.44),(.50,.44),tall+.10,steel,.075)
+        taper('Tunnel sloped armored shoulder',(x,y,top+.20),(.54,.54),(.40,.40),.30,steel,.09)
+        cylinder('Tunnel recessed corner cap',(x,y,top+.363),.106,.045,edge)
+        cylinder('Tunnel corner cap center',(x,y,top+.392),.071,.018,steel)
         box('Tunnel corner painted belt',(x,y,mid+.12),(.505,.445,.30),rolepaint,.03)
         box('Tunnel orange vertical lock',(x,y+.22,mid-.18),(.07,.08,.23),trim,.012)
-        box('Tunnel orange side lock',(x+math.copysign(.25,x),y-.10,mid-.18),(.08,.07,.23),trim,.012)
         bolt((x,y+.195,.55),'Y',.04)
     # The mouth: guides with orange wear shoes, a lintel, and a retracted shutter with its band and
     # an inward chevron above.
