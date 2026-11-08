@@ -176,7 +176,8 @@ local function sent(entity, colour, own)
     return nil
   end
   local kind = defines.control_behavior.type
-  if behavior.type == kind.container then
+  -- Item provider and buffer depots are logistic containers (scripts/robot-access.lua).
+  if behavior.type == kind.container or behavior.type == kind.logistic_container then
     return behavior.read_contents and own.sent() or nil
   elseif behavior.type == kind.single_fluid_box then
     local modes = defines.control_behavior.single_fluid_box.exclusive_mode

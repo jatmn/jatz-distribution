@@ -121,6 +121,13 @@ local SLOT_SETTINGS = {
   buffer = "jatz-buffer-depot-slots",
   fuel = "jatz-fuel-depot-slots",
 }
+-- Item provider and buffer depots are logistic containers, so logistic robots can take from them as
+-- from a passive provider or buffer chest, while the depot lets them: scripts/robot-access.lua
+-- switches their logistic points, off on every new depot. They were plain containers before, and
+-- Factorio rebuilds an entity whose type changed facing north, and drops its ghosts, so the
+-- migration (migrations/) renames the ones in older saves, ghosts and blueprints to these legacy
+-- containers instead, which scripts/legacy-depots.lua replaces with the depot as it was.
+local LOGISTIC_MODES = { provider = "passive-provider", buffer = "buffer" }
 
 -- A depot's storage tank: its ports, drawing their connectors, and the given artwork.
 local function tank(role, definition, artwork)
@@ -189,6 +196,18 @@ for index, role in ipairs(ORDER) do
   -- Ground marking on the loading side; it rotates, ghosts and disappears with the depot.
   entity.integration_patch = orientation.loading_zone({ filename = constants.loading_zone, size = 64, scale = 0.5 })
   entity.integration_patch_render_layer = orientation.loading_zone_render_layer
+  if LOGISTIC_MODES[role] then
+    -- The container it was, kept under another name for saves and blueprints from before (above).
+    local legacy = table.deepcopy(entity)
+    legacy.name = name .. "-legacy"
+    legacy.hidden = true
+    legacy.placeable_by = { item = name, count = 1 }
+    data:extend({ legacy })
+    entity.type = "logistic-container"
+    entity.logistic_mode = LOGISTIC_MODES[role]
+    -- Most depots are off the logistic network (robot access is off by default): no warning icon.
+    entity.render_not_in_network_icon = false
+  end
 
   data:extend({
     entity,

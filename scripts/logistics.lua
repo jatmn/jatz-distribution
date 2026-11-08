@@ -67,6 +67,7 @@ local depot_circuit = require("scripts.depot-circuit")
 local research = require("scripts.research")
 local impact = require("scripts.impact")
 local tunnels = require("scripts.tunnels")
+local robot_access = require("scripts.robot-access")
 
 local logistics = {}
 
@@ -597,6 +598,8 @@ function logistics.add(entity)
   storage.depots[entity.unit_number] = depot
   index_depot(entity.unit_number, depot, true)
   script.register_on_object_destroyed(entity)
+  -- Robots stay out of a new item provider or buffer depot until it lets them (scripts/robot-access.lua).
+  robot_access.set(entity, false)
   if REQUESTING[role] then
     truck_chest(entity)
   end
@@ -3765,6 +3768,10 @@ local function copy_request(source, destination)
   end
   if supplying_depot(source) and supplying_depot(destination) then
     logistics.set_priority(destination, logistics.get_priority(source))
+    local access = robot_access.get(source)
+    if access ~= nil then
+      robot_access.set(destination, access)
+    end
   end
 end
 
@@ -3824,6 +3831,54 @@ function logistics.on_cloned(source, destination)
     end
   end
   copy_request(source, destination)
+end
+
+-- A depot the game knew as `old_id` is now `entity`, a new entity of the same depot standing where
+-- it stood (scripts/legacy-depots.lua: an item provider or buffer depot from before they were
+-- logistic containers). Everything kept by its unit number moves to the new one, so its settings,
+-- freighters, trips and the promises made to it carry on. Called before add_all, which starts
+-- searches afresh and files promises again.
+function logistics.replaced(old_id, entity)
+  local depots = storage.depots
+  local depot = depots and depots[old_id]
+  local id = entity.unit_number
+  if not (depot and id) then
+    return
+  end
+  index_depot(old_id, depot, false)
+  depots[old_id], depots[id] = nil, depot
+  index_depot(id, depot, true)
+  depot.entity = entity
+  -- The old entity's inventory, and its custom status, which the new one doesn't show yet.
+  depot.stock_inventory, depot.shown_off = nil, nil
+  script.register_on_object_destroyed(entity)
+  for _, other in pairs(depots) do
+    local cooldowns = other.cooldowns
+    if cooldowns and cooldowns[old_id] then
+      cooldowns[id], cooldowns[old_id] = cooldowns[old_id], nil
+    end
+  end
+  for _, trip in pairs(storage.trips) do
+    if trip.request == old_id then
+      trip.request = id
+    end
+    if trip.provider == old_id then
+      trip.provider = id
+    end
+    if trip.passed == old_id then
+      trip.passed = id
+    end
+  end
+  for _, name in ipairs({ "promised", "promise_totals", "coming", "spoiling", "circuit_watch" }) do
+    local by_depot = storage[name]
+    if by_depot and by_depot[old_id] ~= nil then
+      by_depot[id], by_depot[old_id] = by_depot[old_id], nil
+    end
+  end
+  -- The second's plan of depot checks names the old one: planned again.
+  if storage.passes then
+    storage.passes.depots = nil
+  end
 end
 
 -- Find every provider and request depot already in the game (new saves and updated ones), and
@@ -4358,6 +4413,7 @@ local function plan_settings(planned, entity)
     -- A provider depot: its priority, unless it's the one every new depot has.
     planned.tags = planned.tags or {}
     planned.tags[PRIORITY_TAG] = supplying.priority ~= PRIORITY_DEFAULT and supplying.priority or nil
+    planned.tags[robot_access.tag] = robot_access.get(entity) or nil
     planned.tags[CIRCUIT_TAG] = circuit_tag(supplying)
     if next(planned.tags) == nil then
       planned.tags = nil
@@ -4369,6 +4425,7 @@ local function plan_settings(planned, entity)
     -- before; other tags and other items' insert plans are kept.
     planned.tags = planned.tags or {}
     planned.tags[PRIORITY_TAG] = supplying and supplying.priority ~= PRIORITY_DEFAULT and supplying.priority or nil
+    planned.tags[robot_access.tag] = robot_access.get(entity) or nil
     planned.tags[REQUEST_TAG] = depot.request and { item = depot.request.item, count = depot.request.count } or nil
     -- Its own tag, so it's kept even with no item requested.
     planned.tags[FROM_BUFFERS_TAG] = depot.from_buffers or nil
@@ -4490,6 +4547,9 @@ function logistics.apply_tags(entity, tags)
   -- Tags can come from anywhere (other mods, edited blueprint strings): use them only if well formed.
   if type(tags[PRIORITY_TAG]) == "number" then
     logistics.set_priority(entity, tags[PRIORITY_TAG])
+  end
+  if tags[robot_access.tag] == true then
+    robot_access.set(entity, true)
   end
   local circuit = tags[CIRCUIT_TAG]
   if type(circuit) == "table" and type(circuit.condition) == "table" then
@@ -4886,6 +4946,9 @@ function logistics.register()
     -- A provider or buffer depot's priority, 1 to 10.
     set_priority = logistics.set_priority,
     get_priority = logistics.get_priority,
+    -- Whether logistic robots may use an item provider or buffer depot (scripts/robot-access.lua).
+    set_robot_access = robot_access.set,
+    get_robot_access = robot_access.get,
     -- Any delivery depot's enable/disable circuit condition (enabled, condition, mode: "network",
     -- the default, or "contents").
     set_circuit = logistics.set_circuit,

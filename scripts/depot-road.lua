@@ -122,6 +122,18 @@ function depot_road.lay(entity)
   return surface.index, removed
 end
 
+-- A depot replaced by a new entity standing where it stood, facing the same way
+-- (scripts/legacy-depots.lua): the road it laid is the new one's.
+function depot_road.replaced(old_unit_number, entity)
+  local record = records()[old_unit_number]
+  if record == nil then
+    return
+  end
+  records()[old_unit_number] = nil
+  records()[entity.unit_number] = record
+  script.register_on_object_destroyed(entity)
+end
+
 -- Tile positions arrive as { x = .., y = .. } from the game, and may be { x, y } from scripts.
 local function xy(position)
   return position.x or position[1], position.y or position[2]

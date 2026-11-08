@@ -2129,6 +2129,67 @@ local function stocked(depot, name, count, size)
   return chest
 end
 
+do -- A depot replaced by a new entity of itself where it stood (scripts/legacy-depots.lua: item
+  -- provider and buffer depots from before they were logistic containers) keeps its settings,
+  -- freighters, trips and the promises made to it, as if it were the same depot.
+  local logistics = reset()
+  local buffer = entity("jatz-buffer-depot", 0.5, 0.5)
+  local provider = entity("jatz-provider-depot", 10.5, 0.5)
+  stocked(provider, "a", 20)
+  logistics.add(buffer)
+  logistics.add(provider)
+  assert(logistics.set_request(buffer, "a", 10))
+  assert(logistics.put_freighters(buffer, stack("jatz-quinityn-freighter", 2)) == 2)
+  assert(logistics.set_priority(provider, 7))
+  local chest = stocked(buffer)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(buffer)[1]
+  check(
+    "setup: a buffer depot's freighter is on its way to the provider for 10",
+    trip and trip.provider == provider.unit_number and trip.planned == 10
+  )
+  local old_provider, old_buffer = provider.unit_number, buffer.unit_number
+  local new_provider = entity("jatz-provider-depot", 10.5, 0.5)
+  local stock = stocked(new_provider, "a", 20)
+  local new_buffer = entity("jatz-buffer-depot", 0.5, 0.5)
+  new_buffer.get_inventory = buffer.get_inventory
+  provider.valid, buffer.valid = false, false
+  logistics.replaced(old_provider, new_provider)
+  logistics.replaced(old_buffer, new_buffer)
+  check(
+    "replaced depots are known by their new unit numbers only",
+    storage.depots[old_provider] == nil
+      and storage.depots[old_buffer] == nil
+      and storage.depots[new_provider.unit_number].entity == new_provider
+      and storage.depots[new_buffer.unit_number].entity == new_buffer
+  )
+  check("their trip is theirs", trip.provider == new_provider.unit_number and trip.request == new_buffer.unit_number)
+  check(
+    "and so is its promise",
+    storage.promised[old_provider] == nil
+      and storage.promised[new_provider.unit_number] ~= nil
+      and storage.coming[new_buffer.unit_number] ~= nil
+  )
+  check("the provider keeps its priority", logistics.get_priority(new_provider) == 7)
+  local in_slot, out = logistics.freighter_counts(new_buffer)
+  check(
+    "the buffer depot keeps its request and freighters",
+    logistics.get_request(new_buffer).count == 10 and in_slot == 1 and out == 1
+  )
+  -- The old entities' destruction is reported later: it changes nothing.
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = old_provider })
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = old_buffer })
+  check("the old depots' removal reports change nothing", storage.trips[trip.key] == trip)
+  arrive(logistics, trip) -- at the provider
+  arrive(logistics, trip) -- home
+  check(
+    "the freighter loads at the new provider and unloads into the new buffer depot",
+    stock.get_item_count("a") == 10 and chest.get_item_count("a") == 10
+  )
+  check("and goes back into its slot", logistics.freighter_counts(new_buffer) == 2)
+end
+
 do -- Loading fills every cargo stack it can, though stacks of one item differ in their data: a
   -- damaged stack doesn't merge into a stack at full health, and a later one at full health does.
   local logistics = reset()
