@@ -370,6 +370,12 @@ local ROAD_TILES = { [ROADS[1]] = true, [ROADS[2]] = true }
 -- the route on from the entry tile often starts across the road, so without this first stretch
 -- straight out it was never seen to leave the mouth (the owner's video, November 8, 2026). Nil if
 -- the portal is gone.
+-- It appears 0.25 from the entry tile's centre, so its collision box (0.2 each way) ends 0.05 short
+-- of the portal's tile. At 0.3 the box ended on that edge, and the game, which rounds positions to
+-- 1/256 tile towards zero, put it on the edge itself out of a mouth facing west or north at negative
+-- coordinates: touching the portal's tile, which is off road, so no route led on from there, and a
+-- loaded freighter took its load back to the provider (the owner's save, November 8, 2026).
+local WAY_OUT_INSET = 0.25
 function tunnels.way_out(unit_number, exit)
   local portal = storage.tunnel_portals and storage.tunnel_portals[unit_number]
   local entity = portal and portal.entity
@@ -377,7 +383,7 @@ function tunnels.way_out(unit_number, exit)
     return nil
   end
   local facing = FACING[entity.direction] or FACING[defines.direction.north]
-  local start = { x = exit.x - facing[1] * 0.3, y = exit.y - facing[2] * 0.3 }
+  local start = { x = exit.x - facing[1] * WAY_OUT_INSET, y = exit.y - facing[2] * WAY_OUT_INSET }
   local beyond = { x = exit.x + facing[1], y = exit.y + facing[2] }
   local tile = entity.surface.get_tile(math.floor(beyond.x), math.floor(beyond.y))
   local out = tile.valid and ROAD_TILES[tile.name] and beyond or { x = exit.x, y = exit.y }

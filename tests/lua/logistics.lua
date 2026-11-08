@@ -4777,7 +4777,7 @@ do -- Through a tunnel to a provider on another road network, and back.
   check(
     "it comes out just inside the east mouth, seen again",
     trip.drone.name == "jatz-freighter-drone"
-      and math.abs(trip.drone.position.x - 30.2) < 1e-9
+      and math.abs(trip.drone.position.x - 30.25) < 1e-9
       and trip.drone.position.y == 0.5
       and trip.tunnel == nil
   )
@@ -4846,7 +4846,7 @@ do -- A portal removed while a freighter is under ground: it still comes out at 
   arrive(logistics, trip)
   check(
     "out at the far end",
-    trip.drone.valid and math.abs(trip.drone.position.x - 30.2) < 1e-9 and trip.drone.name == "jatz-freighter-drone"
+    trip.drone.valid and math.abs(trip.drone.position.x - 30.25) < 1e-9 and trip.drone.name == "jatz-freighter-drone"
   )
 end
 
@@ -5052,7 +5052,7 @@ do -- Out of a mouth onto a one-tile road: the first stretch ends on the entry t
   local start, out, facing = require("scripts.tunnels").way_out(portals.east.unit_number, { x = 30.5, y = 0.5 })
   check(
     "it appears inside the mouth and drives only to the entry tile's centre",
-    math.abs(start.x - 30.2) < 1e-9 and out.x == 30.5 and out.y == 0.5 and facing == 0.25
+    math.abs(start.x - 30.25) < 1e-9 and out.x == 30.5 and out.y == 0.5 and facing == 0.25
   )
   surface.get_tile = road_tile
 end
@@ -5123,10 +5123,10 @@ do -- One short tunnel.
   local energy = trip.energy
   arrive(logistics, trip)
   arrive(logistics, trip)
-  -- Out at x 30.2, then straight out to x 31.5.
+  -- Out at x 30.25, then straight out to x 31.5.
   trip.drone.position = { x = 31.5, y = 0.5 }
   arrive(logistics, trip)
-  check("a tile in, the tunnel's 10, then 1.3 out", math.abs(burned(trip, energy) - 12.3) < 1e-9)
+  check("a tile in, the tunnel's 10, then 1.25 out", math.abs(burned(trip, energy) - 12.25) < 1e-9)
 end
 
 do -- Two tunnels one after another, through a one-tile road between them.
@@ -5188,7 +5188,7 @@ do -- Two tunnels one after another, through a one-tile road between them.
   local energy = trip.energy
   arrive(logistics, trip)
   arrive(logistics, trip)
-  -- Out of the first at x 25.2, to the tile's centre, then straight into the second.
+  -- Out of the first at x 25.25, to the tile's centre, then straight into the second.
   trip.drone.position = { x = 25.5, y = 0.5 }
   arrive(logistics, trip)
   arrive(logistics, trip)
@@ -5196,8 +5196,8 @@ do -- Two tunnels one after another, through a one-tile road between them.
   trip.drone.position = { x = 32.5, y = 0.5 }
   arrive(logistics, trip)
   check(
-    "a tile in, 6 through, 0.3 across, 6 through, then 1.3 out",
-    math.abs(burned(trip, energy) - 14.6) < 1e-9 and trip.drone.commands[#trip.drone.commands].destination.x == 40.5
+    "a tile in, 6 through, 0.25 across, 6 through, then 1.25 out",
+    math.abs(burned(trip, energy) - 14.5) < 1e-9 and trip.drone.commands[#trip.drone.commands].destination.x == 40.5
   )
   surface.get_tile = road_tile
 end
