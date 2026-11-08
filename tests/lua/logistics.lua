@@ -4685,6 +4685,8 @@ do -- Through a tunnel to a provider on another road network, and back.
     "standing as long as the tunnel takes to drive",
     wait.type == defines.command.stop and wait.ticks_to_wait == math.ceil(10 / trip.drone.speed)
   )
+  -- The unseen freighter has one direction: the game turns it north.
+  trip.drone.orientation = 0
   local commands = #trip.drone.commands
   logistics.on_roads_changed(1, false, true)
   check("re-planning waits until it is out", #trip.drone.commands == commands)
@@ -4697,6 +4699,7 @@ do -- Through a tunnel to a provider on another road network, and back.
       and trip.drone.position.y == 0.5
       and trip.tunnel == nil
   )
+  check("facing out of the east mouth, not north", trip.drone.orientation == 0.25)
   drive = trip.drone.commands[#trip.drone.commands]
   check("and drives on to the provider", drive.destination.x == 40.5 and drive.destination.y == 2.5)
   check("drawing nothing while empty", #surface.sprites == sprites)
@@ -4710,7 +4713,10 @@ do -- Through a tunnel to a provider on another road network, and back.
   arrive(logistics, trip)
   check("under ground, its cargo shows nothing", trip.drone.name == "jatz-freighter-drone-underground")
   arrive(logistics, trip)
-  check("out at the west mouth in its cargo's paint", trip.drone.name == "jatz-freighter-drone-500")
+  check(
+    "out at the west mouth in its cargo's paint, facing west",
+    trip.drone.name == "jatz-freighter-drone-500" and trip.drone.orientation == 0.75
+  )
   check("with its cargo shown again", sprites_on(trip.drone) ~= "")
   arrive(logistics, trip)
   check("the load arrives", home.get_item_count("a") == 10 and not has_trip(request))

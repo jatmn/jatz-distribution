@@ -326,6 +326,13 @@ function tunnels.route(surface_index, from, to)
     }
 end
 
+-- The way out of a portal's mouth, as an orientation (0 north, 0.25 east...), if it is still there.
+function tunnels.facing(unit_number)
+  local portal = storage.tunnel_portals and storage.tunnel_portals[unit_number]
+  local entity = portal and portal.entity
+  return entity and entity.valid and entity.direction / 16 or nil
+end
+
 -- Whether a tunnel planned by `route` is still there, its two portals still paired.
 function tunnels.open(hop)
   local portals = storage.tunnel_portals or {}

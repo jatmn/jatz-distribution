@@ -3055,6 +3055,8 @@ function logistics.into_tunnel(id, trip)
     return drive(trip, trip.destination or target(trip))
   end
   tunnel.under = true
+  -- The unseen freighter has one direction, so the game turns it north: remember which way it went in.
+  tunnel.orientation = trip.drone.orientation
   if not repaint(id, trip) then
     tunnel.under = nil
     return logistics.command(trip, {
@@ -3093,6 +3095,9 @@ function logistics.out_of_tunnel(id, trip)
     -- (check_trip).
     trip.drone.teleport(tunnel.exit)
   end
+  -- Facing out of the far mouth (or as it went in, should that portal be gone), not as the unseen
+  -- freighter stood: north, which it then turned from at once.
+  trip.drone.orientation = tunnels.facing(tunnel.to) or tunnel.orientation or trip.drone.orientation
   show_cargo(trip)
   drive(trip, trip.destination or target(trip))
 end
