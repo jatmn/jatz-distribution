@@ -105,6 +105,37 @@ def check_depots(root, errors):
            'run assets/depots/tools/inspect_junctions.py in Blender')
 
 
+# What destroyed depots and freighters leave: wrecks of the masters made by build_remnants.py,
+# rendered with the shared renderer. Each area keeps its own wrecks (assets/<area>/remnants/), and
+# CI's art checkout of an area also fetches the other area's tools/, so both are here to hash.
+REMNANT_BUILDER = 'assets/depots/tools/build_remnants.py'
+RENDERER = 'assets/quinityn-freighter/tools/render_directions.py'
+REMNANT_LAYERS = ('shadow', 'base', 'mask-cab', 'mask-trim', 'mask-cargo')
+
+
+def check_remnants(root, area, errors):
+    """Each of the area's wrecks was rendered from the committed master, asset.json, builder and renderer."""
+    for meta_path in sorted((root / AREAS[area] / 'remnants').glob('*/asset.json')):
+        meta, folder = load(meta_path), meta_path.parent
+        shown = folder.relative_to(root)
+        fix = (f'render and package it again (assets/depots/tools/render_remnants.py --name {folder.name}, '
+               'then package_remnants.py)')
+        record = load(folder / 'validation.json')
+        master = root / meta['master']
+        if not master.is_file():
+            errors.append(f'{shown}: master {meta["master"]} is missing')
+            continue
+        for field, actual in (('asset_sha256', sha256(meta_path)), ('master', meta['master']),
+                              ('master_sha256', sha256(master)),
+                              ('builder_sha256', sha256(root / REMNANT_BUILDER)),
+                              ('renderer_sha256', sha256(root / RENDERER))):
+            if record.get(field) != actual:
+                errors.append(f'{shown}: its sprites are from another {field} than the committed one; {fix}')
+        for layer in REMNANT_LAYERS:
+            if not (folder / f'sheets/{layer}.png').is_file():
+                errors.append(f'{shown}/sheets/{layer}.png: missing; {fix}')
+
+
 def check_freighter(root, errors):
     asset = root / 'assets/quinityn-freighter'
     source = asset / 'source/quinityn-freighter.blend'
@@ -285,6 +316,7 @@ def check(root, areas=tuple(AREAS)):
         try:
             check_headers(root, AREAS[area], errors)
             check_icons(root, area, errors)
+            check_remnants(root, area, errors)
             if area == 'freighter':
                 check_freighter(root, errors)
             else:

@@ -1,0 +1,37 @@
+{
+  "name": "liquid-buffer",
+  "remnants_of": [
+    "liquid-buffer"
+  ],
+  "master": "assets/depots/source/liquid-buffer-3.blend",
+  "root": "Depot | rotate this assembly",
+  "profile": "depot",
+  "seed": 13,
+  "directions": [
+    "north",
+    "east",
+    "south",
+    "west"
+  ],
+  "projection_y_scale": 1.4142135623730951,
+  "master_size": 2048,
+  "game_frame_size": 512,
+  "game_scale": 0.46875,
+  "palette": {
+    "cab": [
+      0.42,
+      0.52,
+      0.24
+    ],
+    "trim": [
+      0.8,
+      0.38,
+      0.12
+    ],
+    "cargo": [
+      0.43,
+      0.43,
+      0.4
+    ]
+  }
+}

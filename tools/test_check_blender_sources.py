@@ -200,6 +200,68 @@ class CheckerTests(unittest.TestCase):
         write(self.root / 'assets/quinityn-freighter/source/approved-concept.png', b'other concept')
         self.assertOneError(self.errors('freighter'), 'approved-concept.png', 'must stay unchanged')
 
+    def add_remnants(self, area, name, master):
+        """A wreck in an area's remnants/, rendered from the committed master, asset.json and tools."""
+        root, folder = self.root, self.root / area / 'remnants' / name
+        builder = root / 'assets/depots/tools/build_remnants.py'
+        renderer = root / 'assets/quinityn-freighter/tools/render_directions.py'
+        for path, text in ((builder, 'print("wreck")\n'), (renderer, 'print("render")\n')):
+            if not path.exists():
+                write(path, text)
+        record(folder / 'asset.json', {'name': name, 'master': master, 'seed': 7})
+
+        def digest(path):
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+        record(folder / 'validation.json', {
+            'name': name, 'asset_sha256': digest(folder / 'asset.json'), 'master': master,
+            'master_sha256': digest(root / master), 'builder_sha256': digest(builder),
+            'renderer_sha256': digest(renderer)})
+        for layer in ('shadow', 'base', 'mask-cab', 'mask-trim', 'mask-cargo'):
+            write(folder / f'sheets/{layer}.png', b'sheet')
+        return folder
+
+    def add_both_wrecks(self):
+        depot = self.add_remnants('assets/depots', 'fuel', 'assets/depots/source/fuel-3.blend')
+        truck = self.add_remnants('assets/quinityn-freighter', 'freighter',
+                                  'assets/quinityn-freighter/source/quinityn-freighter.blend')
+        return depot, truck
+
+    def test_remnants_follow_their_master_record_and_tools(self):
+        self.add_both_wrecks()
+        self.assertEqual(self.errors(), [])
+        # The shared builder and renderer: each area checks its own wrecks against them.
+        for tool in ('assets/depots/tools/build_remnants.py', 'assets/quinityn-freighter/tools/render_directions.py'):
+            build(self.root)
+            self.add_both_wrecks()
+            write(self.root / tool, 'print("changed")\n')
+            self.assertOneError(self.errors('depots'), 'remnants/fuel', 'render_remnants.py')
+            self.assertOneError(self.errors('freighter'), 'remnants/freighter', 'render_remnants.py')
+        # Each wreck follows its own master and asset.json (a turned sheet_order, say).
+        build(self.root)
+        self.add_both_wrecks()
+        write(self.root / 'assets/depots/source/fuel-3.blend', BLEND_HEADER + b'edited fuel model')
+        self.assertTrue(any('remnants/fuel' in error and 'master_sha256' in error for error in self.errors('depots')))
+        build(self.root)
+        _, truck = self.add_both_wrecks()
+        record(truck / 'asset.json', {'name': 'freighter', 'seed': 8,
+                                      'master': 'assets/quinityn-freighter/source/quinityn-freighter.blend'})
+        self.assertOneError(self.errors('freighter'), 'remnants/freighter', 'asset_sha256')
+        self.assertEqual(self.errors('depots'), [])
+        build(self.root)
+        depot, _ = self.add_both_wrecks()
+        (depot / 'sheets/mask-trim.png').unlink()
+        self.assertOneError(self.errors('depots'), 'mask-trim.png', 'missing')
+
+    def test_remnants_in_an_art_checkout(self):
+        # CI's art job checks out one area and the other area's tools/ (.github/workflows/area.yml).
+        for area, other in (('depots', 'assets/quinityn-freighter'), ('freighter', 'assets/depots')):
+            build(self.root)
+            self.add_both_wrecks()
+            for path in sorted((self.root / other).iterdir()):
+                if path.name != 'tools':
+                    shutil.rmtree(path) if path.is_dir() else path.unlink()
+            self.assertEqual(self.errors(area), [], area)
+
     def test_frozen_archive(self):
         write(self.root / ARCHIVE / 'source/fuel-1.blend', BLEND_HEADER + b'changed small model')
         self.assertOneError(self.errors('depots'), 'fuel-1.blend', 'frozen')

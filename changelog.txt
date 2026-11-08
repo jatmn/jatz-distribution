@@ -1,4 +1,8 @@
 ---------------------------------------------------------------------------------------------------
+Version: Unreleased
+  Graphics:
+    - Destroyed depots now leave wrecks of themselves instead of a steel chest's or storage tank's remains: caved in, burnt and scattered about, in the depot's own colours. Destroyed freighters leave a freighter wreck instead of a car's. Like the game's own, wrecks disappear after 15 minutes.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.4
 Date: 2026-11-08
   Features:

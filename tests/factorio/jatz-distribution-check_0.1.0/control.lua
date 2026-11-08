@@ -315,6 +315,12 @@ local function check_depot(surface, role, row, result)
       -- Turned by a script, which raises no event: its tank must follow within a second.
       assert(entity.rotate({}), name .. ": rotation failed")
       storage.turned_fuel = { depot = entity, tank = tank, from = heading }
+    elseif index > 1 then
+      -- Destroyed, it leaves its own wreck, facing as it did (prototypes/remnants.lua).
+      assert(entity.die(), name .. ": did not die")
+      local wrecks = surface.find_entities_filtered({ type = "corpse", position = position, radius = 0.5 })
+      assert(#wrecks == 1, name .. ": " .. #wrecks .. " wrecks")
+      result.wrecks[wrecks[1].name .. "/" .. wrecks[1].direction] = true
     end
   end
 end
@@ -2087,14 +2093,19 @@ local function interfere(surface)
     end
   elseif not ambush.killed and ambush.drone.valid then
     ambush.position = ambush.drone.position
+    ambush.orientation = ambush.drone.orientation
   elseif not ambush.killed then
     ambush.killed = game.tick
     -- Where it died: an explosion, and the wreck it leaves.
     local around = { position = ambush.position, radius = 3 }
     around.name = "car-explosion"
     ambush.exploded = #surface.find_entities_filtered(around) > 0
-    around.name = "car-remnants"
-    ambush.wrecks = #surface.find_entities_filtered(around)
+    around.name = "jatz-freighter-remnants"
+    local wrecks = surface.find_entities_filtered(around)
+    ambush.wrecks = #wrecks
+    -- Facing as the freighter last drove (a unit's orientation; directions are sixteenths).
+    ambush.wreck_faces_freighter = wrecks[1] ~= nil
+      and wrecks[1].direction == math.floor(ambush.orientation * 16 + 0.5) % 16
     ambush.requested = remote.call("jatz-distribution", "requested_freighters", ambush.request)
     for _, behemoth in ipairs(ambush.biters) do
       if behemoth.valid then
@@ -2357,6 +2368,7 @@ local function deliveries_finished(surface, tick, result)
   result.ambush_killed_by = killed[ambush.drone_id] or "unknown"
   result.ambush_exploded = ambush.exploded
   result.ambush_wrecks = ambush.wrecks
+  result.ambush_wreck_faces_freighter = ambush.wreck_faces_freighter
   result.ambush_replacement_requested = ambush.requested
   result.ambush_received = count(ambush.request, ambush.item)
   result.ambush_freighters_home = remote.call("jatz-distribution", "freighter_counts", ambush.request)
@@ -2607,6 +2619,7 @@ script.on_init(function()
     recipes = {},
     ghosts = 0,
     placed = 0,
+    wrecks = {},
     rotations = 0,
     pipe_connections = 0,
     localised_names = {},

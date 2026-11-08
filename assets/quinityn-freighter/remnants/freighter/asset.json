@@ -1,0 +1,41 @@
+{
+  "name": "freighter",
+  "remnants_of": [
+    "freighter"
+  ],
+  "master": "assets/quinityn-freighter/source/quinityn-freighter.blend",
+  "root": "Freighter | rotate this assembly",
+  "profile": "freighter",
+  "seed": 17,
+  "directions": [
+    "north",
+    "north-east",
+    "east",
+    "south-east",
+    "south",
+    "south-west",
+    "west",
+    "north-west"
+  ],
+  "projection_y_scale": 1,
+  "master_size": 1024,
+  "game_frame_size": 512,
+  "game_scale": 0.395,
+  "palette": {
+    "cab": [
+      0.48,
+      0.26,
+      0.58
+    ],
+    "trim": [
+      0.78,
+      0.43,
+      0.14
+    ],
+    "cargo": [
+      0.36,
+      0.46,
+      0.57
+    ]
+  }
+}

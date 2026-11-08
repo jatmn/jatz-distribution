@@ -48,6 +48,9 @@ def mod_files(root=REPO):
     files += [depots / f'technology/{name}.png' for name in ('liquid-provider-depot', 'road-monitor')]
     files += [depots / f'connectors/sheets/{layer}.png' for layer in ('base', 'shadow')]
     files += [depots / 'loading-zone/loading-zone.png']
+    # What destroyed depots and freighters leave (prototypes/remnants.lua).
+    for metadata in sorted(depots.glob('remnants/*/asset.json')) + sorted(freighter.glob('remnants/*/asset.json')):
+        files += [metadata.parent / f'sheets/{layer}.png' for layer in LAYERS]
     # The road art is Yuoki's (CC BY-NC-SA 4.0), so its licence ships beside it.
     roads = root / 'assets/roads/yuoki-railways'
     files += [roads / name for name in ROAD_ART + ('Licence.txt',)]

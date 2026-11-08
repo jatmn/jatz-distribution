@@ -198,6 +198,12 @@ class RoutingTests(unittest.TestCase):
             (['assets/depots/source/fuel-3.blend'], {'depots', 'depots_art'}),
             (['assets/depots/fuel/3/asset.json', 'assets/depots/geometry-validation.json'], {'depots', 'depots_art'}),
             (['assets/depots/tools/render_connector.py'], {'depots', 'depots_art'}),
+            # Every wreck records the builder and renderer that made it: changing either runs both art checks.
+            (['assets/depots/tools/build_remnants.py'], {'depots', 'depots_art', 'freighter', 'freighter_art'}),
+            (['assets/quinityn-freighter/tools/render_directions.py'],
+             {'depots', 'depots_art', 'freighter', 'freighter_art'}),
+            (['assets/depots/remnants/fuel/sheets/base.png'], {'depots', 'depots_art'}),
+            (['assets/quinityn-freighter/remnants/freighter/asset.json'], {'freighter', 'freighter_art'}),
             (['assets/depots/archive/1x1/README.md'], {'depots', 'depots_art'}),
             (['info.json', 'data.lua', 'control.lua', 'prototypes/freighter.lua',
               'scripts/dispatch.lua', 'locale/en/jatz.cfg'], {'mod'}),

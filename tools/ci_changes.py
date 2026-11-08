@@ -28,6 +28,8 @@ SHARED_LINT = {'.luacheckrc', '.stylua.toml', '.ruff.toml', '.gitattributes'}
 DOCUMENTATION = {'README.md', 'AGENTS.md', 'CONTRIBUTING.md', 'SECURITY.md', 'NOTICE', 'COPYING',
                  'COPYING.LESSER', '.gitignore'}
 ART_SUFFIXES = {'.blend', '.png', '.webp', '.json'}
+# Every wreck (assets/*/remnants/) records the wreck builder and the renderer it was made with.
+WRECK_TOOLS = {'assets/depots/tools/build_remnants.py', 'assets/quinityn-freighter/tools/render_directions.py'}
 # The art check, icon generator and their Python dependencies cover both art areas.
 ART_TOOLS = {'tools/check_blender_sources.py', 'tools/make_icons.py', 'tools/test_art_dependencies.py', 'requirements.txt'}
 
@@ -72,6 +74,9 @@ def classify(paths):
         if path in SHARED_LINT:
             for area in AREAS:
                 checks[area] = True
+            continue
+        if path in WRECK_TOOLS:
+            checks.update(freighter_art=True, depots_art=True)
             continue
         if path in ART_TOOLS:
             checks.update(repository=True, freighter_art=True, depots_art=True)

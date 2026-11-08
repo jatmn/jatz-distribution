@@ -14,6 +14,8 @@ assets/**/masters/exr/
 assets/**/masters/layers/
 assets/**/masters/shadow-silhouettes/
 assets/**/masters/render-inputs.json
+# The wrecked model the remnants are rendered from (assets/depots/tools/build_remnants.py makes it).
+assets/*/remnants/*/masters/wreck.blend
 assets/**/frames/
 # The depot preview and packaging tools composite these small connector frames.
 !assets/depots/connectors/frames/

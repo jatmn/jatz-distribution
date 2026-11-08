@@ -1,0 +1,43 @@
+{
+  "name": "buffer",
+  "remnants_of": [
+    "buffer"
+  ],
+  "master": "assets/depots/source/buffer-3.blend",
+  "root": "Depot | rotate this assembly",
+  "profile": "depot",
+  "seed": 5,
+  "directions": [
+    "north",
+    "east",
+    "south",
+    "west"
+  ],
+  "sheet_order": [
+    2,
+    3,
+    0,
+    1
+  ],
+  "projection_y_scale": 1.4142135623730951,
+  "master_size": 2048,
+  "game_frame_size": 512,
+  "game_scale": 0.46875,
+  "palette": {
+    "cab": [
+      0.42,
+      0.52,
+      0.24
+    ],
+    "trim": [
+      0.8,
+      0.38,
+      0.12
+    ],
+    "cargo": [
+      0.43,
+      0.43,
+      0.4
+    ]
+  }
+}

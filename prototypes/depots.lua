@@ -12,6 +12,7 @@ local definitions = require("prototypes.depot-definitions")
 local orientation = require("prototypes.orientation")
 local pictures = require("assets.depots.factorio.depot-pictures")
 local pipe_pictures = require("assets.depots.factorio.depot-pipe-pictures")
+local remnants = require("prototypes.remnants")
 
 local SIZE = 3
 -- Order within our row in the crafting menu and Factoriopedia: dry cargo, then fluids, then
@@ -166,6 +167,9 @@ for index, role in ipairs(ORDER) do
   entity.icon = icon
   entity.icon_size = constants.icon_size
   entity.minable = { mining_time = 0.3, result = name }
+  -- Destroyed, it leaves its own wreck, not the steel chest's or storage tank's
+  -- (prototypes/remnants.lua); it still explodes as they do.
+  entity.corpse = remnants.depot(role)
   footprint(entity)
   -- The depots take wires (footprint() leaves the hidden fuel tank under a Fuel depot without).
   local connector = orientation.half_turn[role] and PILLAR_CONNECTOR or CIRCUIT_CONNECTOR
