@@ -1824,6 +1824,9 @@ do -- Requests: fluids for liquid depots, items for item depots.
   check("a liquid request depot takes a fluid", logistics.set_request(request, "water", 1000))
   check("not an item", logistics.set_request(request, "a", 10) == false)
   check("an item request depot takes no fluid", logistics.set_request(item_depot, "water", 10) == false)
+  check("a fluid request above the tank's size", logistics.set_request(request, "water", 1000000))
+  check("is the tank's size", logistics.get_request(request).count == 25000)
+  assert(logistics.set_request(request, "water", 1000))
   local chest = surface.created[1]
   check("a liquid request depot gets a truck chest", chest and chest.name == "jatz-truck-chest")
   check("under its centre", chest.position.x == 0.5 and chest.position.y == 0.5)

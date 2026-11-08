@@ -752,6 +752,9 @@ local function setup_deliveries(surface, result)
   assert(remote.call("jatz-distribution", "add_freighters", liquid.request, 3) == 3, "liquid: no freighters")
   result.liquid_refuses_items = remote.call("jatz-distribution", "set_request", liquid.request, "iron-plate", 10)
   result.item_depot_refuses_fluids = remote.call("jatz-distribution", "set_request", prioritised.request, "water", 10)
+  -- A request above the tank's size is its size: 25,000, and 15,000 for a liquid buffer here.
+  assert(remote.call("jatz-distribution", "set_request", liquid.request, "water", 1000000), "water: refused")
+  result.liquid_request_capped = remote.call("jatz-distribution", "get_request", liquid.request).count
   assert(remote.call("jatz-distribution", "set_request", liquid.request, "water", 1200), "water: refused")
   result.truck_chests = #surface.find_entities_filtered({ name = "jatz-truck-chest", position = { 20.5, -36.5 } })
   result.provider_truck_chests =
@@ -768,6 +771,9 @@ local function setup_deliveries(surface, result)
   lay_road(surface, 20, -45, 50, -45)
   assert(steam.provider.insert_fluid({ name = "steam", amount = 1000, temperature = 165 }) == 1000, "steam")
   assert(steam.buffer.insert_fluid({ name = "steam", amount = 1000, temperature = 500 }) == 1000, "hot steam")
+  assert(remote.call("jatz-distribution", "set_request", steam.buffer, "steam", 1000000), "buffer: refused")
+  result.liquid_buffer_request_capped = remote.call("jatz-distribution", "get_request", steam.buffer).count
+  assert(remote.call("jatz-distribution", "set_request", steam.buffer, nil), "buffer: not cleared")
   assert(remote.call("jatz-distribution", "add_freighters", steam.request, 1) == 1, "steam: no freighters")
   assert(remote.call("jatz-distribution", "set_from_buffers", steam.request, true), "steam: from buffers refused")
   assert(remote.call("jatz-distribution", "set_request", steam.request, "steam", 300), "steam: refused")

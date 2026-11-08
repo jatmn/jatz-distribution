@@ -321,6 +321,9 @@ EXPECTED = {'recipes': RECIPES,
             # robots bring a liquid depot's 2 freighters through it; items and fluids don't mix.
             'water_delivered': 1200, 'water_provider_left': 800, 'truck_chests': 1, 'provider_truck_chests': 0,
             'liquid_refuses_items': False, 'item_depot_refuses_fluids': False,
+            # A liquid request above the tank's size is capped at it (25,000; 15,000 for the
+            # check mod's liquid buffer).
+            'liquid_request_capped': 25000, 'liquid_buffer_request_capped': 15000,
             'steam_delivered': 300, 'steam_temperature': 500, 'steam_buffer_left': 700,
             'steam_provider_left': 1000, 'liquid_requested': 2, 'liquid_robots_delivered': 2,
             # Not set to request from buffers, with the only liquid provider empty, a liquid request

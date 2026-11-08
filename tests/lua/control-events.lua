@@ -1596,6 +1596,9 @@ do -- Liquid depots: the same panels, beside the storage tank window, choosing a
     entity.get_fluid_contents = function()
       return {}
     end
+    entity.get_fluid_capacity = function()
+      return 25000
+    end
     fire("on_built_entity", { entity = entity })
     return entity
   end
@@ -1647,6 +1650,13 @@ do -- Liquid depots: the same panels, beside the storage tank window, choosing a
   fire("on_gui_elem_changed", { player_index = 12, element = chooser })
   local request_set = logistics.get_request(request)
   check("a fluid chosen starts at 1000", request_set and request_set.item == "water" and request_set.count == 1000)
+  local amount = inner.request_row.jatz_request_count
+  amount.text = "1000000"
+  fire("on_gui_text_changed", { player_index = 12, element = amount, text = amount.text })
+  check(
+    "an amount above the tank's size is its size, in the field too",
+    logistics.get_request(request).count == 25000 and amount.text == "25000"
+  )
 
   local buffer = liquid(310, "jatz-liquid-buffer-depot")
   fire("on_gui_opened", { player_index = 12, entity = buffer })
@@ -1689,7 +1699,7 @@ do -- Liquid depots: the same panels, beside the storage tank window, choosing a
     saved[2].name == "jatz-depot-settings"
       and settings.first_signal.type == "fluid"
       and settings.first_signal.name == "water"
-      and settings.constant == 1000
+      and settings.constant == 25000
   )
   check("and how many freighters", tags.jatz_freighters == 4)
   local freighter_settings = saved[2] and saved[2].control_behavior.decider_conditions.conditions[2]

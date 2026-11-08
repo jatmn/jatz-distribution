@@ -134,7 +134,7 @@ Liquid depots work the same way for fluids. Research **Liquid freight** to unloc
 - A **liquid request** depot keeps a fluid in its tank, sending its freighters to liquid provider depots and liquid buffer depots (buffers first if **Request from buffer depots** is ticked, only when no provider can supply it otherwise), 500 units at a time (more with fluid capacity research).
 - A **liquid buffer** depot fills from liquid providers only.
 - Liquid provider and buffer depots have the same priority slider.
-- Every liquid depot's tank holds 25,000 by default. You can change the tank size of liquid provider depots and of liquid buffer depots separately under **Settings → Mod settings → Startup**. Making a tank smaller on an existing save can lose the fluid above the new size.
+- Every liquid depot's tank holds 25,000 by default. You can change the tank size of liquid provider depots and of liquid buffer depots separately under **Settings → Mod settings → Startup**. Making a tank smaller on an existing save can lose the fluid above the new size. A liquid request or buffer depot can't request more than its tank holds: a larger amount is set to the tank's size.
 - Fluids keep their temperature on the way.
 - A liquid depot whose tank holds a different fluid waits until it is emptied.
 - Items and fluids never mix: item depots only deal with item depots, liquid depots with liquid depots.
