@@ -5,7 +5,7 @@
     {
       "role": "buffer",
       "size": 3,
-      "source_sha256": "004b577afcb69bc6be93aa1a62db03746cc835317f1f4c9125f541ec875f5326",
+      "source_sha256": "659d01fc8504d0336051ad7e697f36c83becc2dcc66e9f12495343076111f3af",
       "functional_geometry": {
         "clear_path_probes": 18,
         "conveyor_surface_heights_large_equivalent": [
@@ -29,7 +29,7 @@
         [
           1.4638060331344604,
           1.496000051498413,
-          2.2983999252319336
+          1.6790399551391602
         ]
       ],
       "socket_projection_checks": 0
@@ -37,7 +37,7 @@
     {
       "role": "fuel",
       "size": 3,
-      "source_sha256": "4d0a6a1e3a6afbfaf86089d6f2cb8db0571f6b0e1265a7016c08d1b4cb55a338",
+      "source_sha256": "86e7000822c6d7da6e3b6dfc7efa39ecf28f13851f03d4a91551cc2955a754db",
       "functional_geometry": {
         "clear_path_probes": 6,
         "conveyor_surface_heights_large_equivalent": []
@@ -52,7 +52,7 @@
         [
           1.4638060331344604,
           1.4638060331344604,
-          2.5210001468658447
+          1.8126002550125122
         ]
       ],
       "socket_projection_checks": 4
@@ -60,7 +60,7 @@
     {
       "role": "liquid-buffer",
       "size": 3,
-      "source_sha256": "99fd4e1c6bf78aea076558c3cb9d82d88ae76822b5d8c862518a1d1e2fbc800f",
+      "source_sha256": "86d5cab2527a7bd308dadcefe2924c7949c411b7d1e54f09e8bb72c223fbbf28",
       "functional_geometry": {
         "clear_path_probes": 8,
         "conveyor_surface_heights_large_equivalent": []
@@ -75,7 +75,7 @@
         [
           1.5040000677108765,
           1.4749999046325684,
-          2.13100004196167
+          1.5786000490188599
         ]
       ],
       "socket_projection_checks": 8
@@ -83,7 +83,7 @@
     {
       "role": "liquid-provider",
       "size": 3,
-      "source_sha256": "8202017b05aa0da3bbc5a178da2b7b76755373130e2dcfd30cfc44d219d01318",
+      "source_sha256": "d15bff2609e2c8153088899b7901da38ddae1922b500320bd755ea81314f4521",
       "functional_geometry": {
         "clear_path_probes": 8,
         "conveyor_surface_heights_large_equivalent": []
@@ -98,7 +98,7 @@
         [
           1.4183989763259888,
           1.4424999952316284,
-          2.3324999809265137
+          1.6995000839233398
         ]
       ],
       "socket_projection_checks": 4
@@ -106,7 +106,7 @@
     {
       "role": "liquid-request",
       "size": 3,
-      "source_sha256": "07717de71f4867fb1d2620082d994184871b470e6fa21a64d01d4f5c44126eed",
+      "source_sha256": "f5c8f1a8af7389adae56d797ea2228eb2b221f534f59aacd0c4046295877af5a",
       "functional_geometry": {
         "clear_path_probes": 8,
         "conveyor_surface_heights_large_equivalent": []
@@ -121,7 +121,7 @@
         [
           1.4183989763259888,
           1.4424999952316284,
-          2.2810001373291016
+          1.668600082397461
         ]
       ],
       "socket_projection_checks": 4
@@ -129,7 +129,7 @@
     {
       "role": "provider",
       "size": 3,
-      "source_sha256": "bf796fad83261c4742cb27f4038d612405de960bdf69e1f65073cd3c2ed83ade",
+      "source_sha256": "9cdddcb6cab68e01274a2b9a7299fda92531998cd38ed8cf15878a4a816fca35",
       "functional_geometry": {
         "clear_path_probes": 9,
         "conveyor_surface_heights_large_equivalent": [
@@ -149,7 +149,7 @@
         [
           1.4638060331344604,
           1.496000051498413,
-          2.2983999252319336
+          1.6790399551391602
         ]
       ],
       "socket_projection_checks": 0
@@ -157,7 +157,7 @@
     {
       "role": "request",
       "size": 3,
-      "source_sha256": "2859e423a8b093fc7e9c04107cad33421fff154de79b580780f5512e60f2ce71",
+      "source_sha256": "45af1c6b3d4b1e068c6f28c8ca2bf45e4ab9954590424be3f1dd9ef698a7a731",
       "functional_geometry": {
         "clear_path_probes": 9,
         "conveyor_surface_heights_large_equivalent": [
@@ -177,7 +177,7 @@
         [
           1.4638060331344604,
           1.496000051498413,
-          2.2983999252319336
+          1.6790399551391602
         ]
       ],
       "socket_projection_checks": 0

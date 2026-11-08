@@ -92,7 +92,9 @@ end
 -- Liquid depots have it where a 3x3 assembling machine does, on the skid's front corner. Item
 -- depots (and the Fuel depot) would have it on the edge of their loading opening there, so theirs
 -- sits higher and further out, on the right-hand pillar below its painted band, which every one of
--- their four views has in the same place (checked on the sprite sheets).
+-- their four views has in the same place (checked on the sprite sheets). Lowering the depots
+-- (assets/depots/README.md) brought the band 6 frame pixels down, so the connector moved 3 pixels
+-- down with it, keeping the gap it had below the band; it stays on solid pillar in every view.
 local CIRCUIT_CONNECTOR = {
   variation = 18,
   main_offset = util.by_pixel(24, 25),
@@ -101,8 +103,8 @@ local CIRCUIT_CONNECTOR = {
 }
 local PILLAR_CONNECTOR = {
   variation = 18,
-  main_offset = util.by_pixel(37, 28),
-  shadow_offset = util.by_pixel(48, 34),
+  main_offset = util.by_pixel(37, 31),
+  shadow_offset = util.by_pixel(48, 37),
   show_shadow = true,
 }
 -- Tank sizes players can set (settings.lua); every other depot with ports holds 25,000.
