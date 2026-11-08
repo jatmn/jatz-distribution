@@ -91,6 +91,7 @@ Freighters burn fuel as they drive, and fill up at **fuel depots** by themselves
 - Freighters only fill up at fuel depots, and are only sent when there is fuel to get. Fuel in provider, request or buffer depots is ordinary cargo: freighters deliver it like anything else and never burn it.
 - A freighter that can't even reach the provider on what it has stays home rather than being sent to wait at an empty fuel depot. If there are fuel depots but none has fuel, the request depot's light turns yellow, and the freighter sets off as soon as one does. If no fuel depot is connected by road, the light turns red, and the freighter sets off as soon as you build one or connect it by road (and it has fuel).
 - The fuel depot's window shows the fluid in it. If a fluid that doesn't burn got in, the **flush** button beside it empties it (and the pipes joined to it).
+- A fuel depot has 48 slots for fuel items and a tank of 25,000 for liquid fuel by default. You can change both under **Settings → Mod settings → Startup**. Making either smaller on an existing save can lose what no longer fits.
 - How big the tank is and how much a tile of driving burns are **Settings → Mod settings → Map** options. Setting the use to 0 turns fuel off.
 
 ## The status light
@@ -201,4 +202,5 @@ With [Milestones](https://mods.factorio.com/mod/Milestones) installed, its list 
 - Cargo keeps its data on the way: armor keeps its equipment, food how far it has spoiled.
 - In alt mode, a loaded freighter shows the icon of the item or fluid it carries, as machines show their recipe. Empty freighters show nothing.
 - Requests are for normal-quality items.
+- Provider, request, buffer and fuel depots have 48 slots each by default, like a steel chest. You can change each kind's slot count separately (1 to 1,000) under **Settings → Mod settings → Startup**. Making it smaller on an existing save can lose the items in the slots taken away.
 - By default, provider depots are red, request depots blue, buffer depots green and the fuel depot amber. Every color can be changed.

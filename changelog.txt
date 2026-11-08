@@ -1,5 +1,7 @@
 ---------------------------------------------------------------------------------------------------
 Version: Unreleased
+  Features:
+    - Startup settings for how many slots provider, request, buffer and fuel depots have, each kind separately, 48 by default, and for the size of the fuel depot's liquid fuel tank, 25,000 by default.
   Graphics:
     - Destroyed depots now leave wrecks of themselves instead of a steel chest's or storage tank's remains: caved in, burnt and scattered about, in the depot's own colours. Destroyed freighters leave a freighter wreck instead of a car's. Like the game's own, wrecks disappear after 15 minutes.
 ---------------------------------------------------------------------------------------------------

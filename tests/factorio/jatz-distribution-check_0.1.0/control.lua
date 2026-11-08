@@ -305,6 +305,7 @@ local function check_depot(surface, role, row, result)
     result.wired_depots = result.wired_depots + 1
     if entity.type == "container" then
       assert(entity.insert({ name = "iron-plate", count = 10 }) == 10, name .. ": cannot store items")
+      result.slot_counts[role] = #entity.get_inventory(defines.inventory.chest)
     end
     if entity.type ~= "container" or tank then
       result.tank_sizes[role] = (tank or entity).get_fluid_capacity(1)
@@ -2624,6 +2625,7 @@ script.on_init(function()
     pipe_connections = 0,
     localised_names = {},
     cleared_zones = 0,
+    slot_counts = {},
     tank_sizes = {},
     wired_depots = 0,
   }

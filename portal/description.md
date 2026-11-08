@@ -64,7 +64,7 @@ Every depot is 3×3, can face any direction, and has a worn "no parking: loading
 | **Liquid request** | Keeps a fluid in stock. Fluids keep their temperature on the way |
 | **Liquid buffer** | Stocks a fluid from liquid providers. Two pipe connections |
 
-Every depot takes red and green wires. Liquid depots connect to ordinary pipes and hold 25,000 fluid, and you can resize liquid provider and liquid buffer tanks in the startup settings.
+Every depot takes red and green wires. Item depots and the fuel depot have 48 slots, and liquid depots connect to ordinary pipes and hold 25,000 fluid. You can change the slots of each item depot and of the fuel depot, and the tanks of liquid provider, liquid buffer and fuel depots, in the startup settings.
 
 ---
 
