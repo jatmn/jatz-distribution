@@ -155,8 +155,15 @@ def combine(variant):
 def table(variants, preset, warmup, ticks):
     """A Markdown table of the variants' medians, with the change against the first."""
     first = combine(variants[0])
+    # A revision from before circuit conditions (--compare) builds its providers keeping a minimum plain.
+    kept = [variant['map'].get('minimums_set', 0) for variant in variants]
+    if len(set(kept)) > 1:
+        each = ', '.join(f'{count} for {variant["label"]}' for count, variant in zip(kept, variants))
+        note = f' Providers keeping a minimum: {each}.'
+    else:
+        note = ''
     lines = [f'Preset `{preset}`: {describe(variants[0]["map"])}; {warmup} warm-up ticks, {ticks} measured, '
-             f'{len(variants[0]["runs"])} run(s) each. Times are ms per tick (median of runs).', '',
+             f'{len(variants[0]["runs"])} run(s) each. Times are ms per tick (median of runs).{note}', '',
              '| | Mean update | UPS | Script | Pathfinder | p99 | Max | Run spread | Vehicles out | Delivered/min |',
              '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |']
     for variant in variants:
@@ -172,7 +179,10 @@ def table(variants, preset, warmup, ticks):
 
 
 def describe(summary):
-    return (f'{summary["surfaces"]} surface(s), {summary["providers"]} providers, {summary["requests"]} request depots, '
+    # Providers keeping a minimum: only where the mod took the condition (summary from older maps: none).
+    minimums = summary.get('minimums_set', 0)
+    kept = f' ({minimums} keeping a minimum)' if minimums else ''
+    return (f'{summary["surfaces"]} surface(s), {summary["providers"]} providers{kept}, {summary["requests"]} request depots, '
             f'{summary.get("fuel", 0)} fuel depots, '
             f'{summary["freighters_placed"]} of {summary["freighters"]} freighters placed, {summary["road_tiles"]} road tiles, '
             f'{summary["target"]} {summary["target_version"]}')

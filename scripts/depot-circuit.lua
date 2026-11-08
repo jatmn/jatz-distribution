@@ -130,6 +130,20 @@ local function key(signal)
 end
 depot_circuit.key = key
 
+-- The key of the one signal a (normalised) condition reads, or nil when it reads more than one (a
+-- wildcard, or a second signal) or none.
+function depot_circuit.reads(condition)
+  local first = condition and condition.first_signal
+  if not first or condition.second_signal then
+    return nil
+  end
+  local name = first.type == "virtual" and first.name or nil
+  if name == "signal-everything" or name == "signal-anything" then
+    return nil
+  end
+  return key(first)
+end
+
 -- The red and green circuit networks wired to an entity (none, one or two), with their colour.
 local function networks(entity)
   local found = {}

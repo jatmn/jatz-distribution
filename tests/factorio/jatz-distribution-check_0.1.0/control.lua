@@ -632,6 +632,10 @@ local function setup_deliveries(surface, result)
   -- The request changes to another item while the freighter is on its way out: it must not load
   -- the old item.
   deliveries.changed = pair(40, 2, 12, "plastic-bar", 20, 10)
+  -- The request depot is filled some other way (here by script) while its freighter is on its way
+  -- out: it lets its promise go and the freighter turns home, never reaching the provider 48 tiles
+  -- away, which keeps its stock.
+  deliveries.handfilled = pair(60, -40, 48, "stone-furnace", 20, 10)
   -- Something stuck to the freighter when it loads (interfere sticks a sticker to it): it keeps
   -- its paint, and the sticker, until the sticker wears off. A long road, so that is on the way.
   deliveries.sticky = pair(-10, 2, 24, "iron-plate", 10, 10)
@@ -834,6 +838,32 @@ local function setup_deliveries(surface, result)
   assert(multi.far.insert({ name = "iron-stick", count = 40 }) == 40, "sticks: cannot stock")
   assert(remote.call("jatz-distribution", "set_request", multi.request, "iron-stick", 60), "sticks: refused")
   deliveries.multi = multi
+  -- A provider keeping a minimum: 30 iron chests, switched on only while it holds more than 25 (its
+  -- own contents), with two request depots for 10 each on its road. Once one freighter has
+  -- promised 10, the 20 left would not be more than 25, so the other depot sends none: the
+  -- provider keeps 20, and 10 are delivered in all.
+  local minimum = {
+    first = depot(surface, "request", 0.5, 74.5, 1),
+    second = depot(surface, "request", 10.5, 74.5, 1),
+    provider = depot(surface, "provider", 20.5, 74.5),
+  }
+  lay_road(surface, 0, 76, 20, 76)
+  assert(minimum.provider.insert({ name = "iron-chest", count = 30 }) == 30, "minimum: cannot stock")
+  assert(
+    remote.call(
+      "jatz-distribution",
+      "set_circuit",
+      minimum.provider,
+      true,
+      { first_signal = { type = "item", name = "iron-chest" }, comparator = ">", constant = 25 },
+      "contents"
+    ),
+    "minimum: condition refused"
+  )
+  for _, name in ipairs({ "first", "second" }) do
+    assert(remote.call("jatz-distribution", "set_request", minimum[name], "iron-chest", 10), "minimum: refused")
+  end
+  deliveries.minimum = minimum
   -- No freighters: nothing is sent, and the depot says so.
   -- Circuit conditions and the road network monitor (loading zones at y 39). On one road: a
   -- request depot for 10 stone walls, a provider holding 20 switched off by a combinator until
@@ -2066,6 +2096,16 @@ local function interfere(surface)
     assert(remote.call("jatz-distribution", "set_request", changed.request, "electronic-circuit", 5), "change refused")
     changed.done = true
   end
+  local handfilled = deliveries.handfilled
+  if not handfilled.done and status(handfilled.request) == "delivering" then
+    assert(handfilled.request.insert({ name = handfilled.item, count = 10 }) == 10, "handfilled: cannot fill")
+    handfilled.done = true
+  end
+  if handfilled.done and not handfilled.reached then
+    -- Anywhere near the provider's loading zone (x 60, y -38).
+    local near = surface.count_entities_filtered({ name = DRONES, area = { { 57, -41 }, { 66, -35 } } })
+    handfilled.reached = near > 0 or nil
+  end
   local cut = deliveries.cut
   if not cut.done and count(cut.provider, cut.item) < 30 then
     -- Loaded and about to head east: remove a road tile halfway, as a mod would, reporting it.
@@ -2137,6 +2177,8 @@ local function deliveries_finished(surface, tick, result)
     and destroyed.done
     and count(destroyed.request, destroyed.item) == 30
     and changed.done
+    and deliveries.handfilled.done
+    and remote.call("jatz-distribution", "freighter_counts", deliveries.handfilled.request) == 3
     and cut.returned
     and deliveries.mended.delivered
     and count(deliveries.rerouted.request, "stone-brick") == 10
@@ -2144,6 +2186,7 @@ local function deliveries_finished(surface, tick, result)
     and count(deliveries.shortest.request, "coal") == 10
     and count(storage.depot_roads.request, "small-electric-pole") == 5
     and count(deliveries.multi.request, "iron-stick") == 60
+    and count(deliveries.minimum.first, "iron-chest") + count(deliveries.minimum.second, "iron-chest") >= 10
     and count(deliveries.researched.request) == 2000
     and count(deliveries.runover.request, "iron-ore") == 10
     and deliveries.ambush.killed
@@ -2308,6 +2351,9 @@ local function deliveries_finished(surface, tick, result)
   result.ambush_freighters_home = remote.call("jatz-distribution", "freighter_counts", ambush.request)
   -- Freighters out pollute a little, credited to them in the pollution statistics.
   result.freighters_polluted = game.get_pollution_statistics(surface).get_input_count(DRONE) > 0
+  result.filled_reached_provider = deliveries.handfilled.reached == true
+  result.filled_provider_left = count(deliveries.handfilled.provider, deliveries.handfilled.item)
+  result.filled_received = count(deliveries.handfilled.request, deliveries.handfilled.item)
   result.changed_provider_left = count(changed.provider, changed.item)
   result.changed_received = count(changed.request, changed.item)
   result.changed_status = status(changed.request)
@@ -2356,6 +2402,10 @@ local function deliveries_finished(surface, tick, result)
   result.multi_from_near = 30 - count(multi.near, "iron-stick")
   result.multi_from_far = 40 - count(multi.far, "iron-stick")
   result.multi_freighters_home = remote.call("jatz-distribution", "freighter_counts", multi.request)
+  -- Only one freighter fetched from the provider keeping a minimum.
+  local minimum = deliveries.minimum
+  result.minimum_delivered = count(minimum.first, "iron-chest") + count(minimum.second, "iron-chest")
+  result.minimum_kept = count(minimum.provider, "iron-chest")
   result.no_trucks_status = status(deliveries.no_trucks)
   local buffering = deliveries.buffering
   result.buffered_request = count(buffering.request, "copper-cable")

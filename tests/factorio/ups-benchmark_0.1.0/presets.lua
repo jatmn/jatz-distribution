@@ -17,6 +17,11 @@ local common = {
   across_share = 0.1,
   -- Freighters (drones) per request depot, lowest and highest.
   freighters = { 5, 100 },
+  -- Every this-many-th provider keeps a minimum: a circuit condition reading its own contents
+  -- switches it on only while it holds more than `minimum_share` of a full chest (for mods that
+  -- have circuit conditions: Transport Drones' providers stay plain).
+  minimum_every = 4,
+  minimum_share = 0.5,
   -- Fuel depots, as a share of the depots above (built only for mods whose freighters fill up at
   -- them: Transport Drones keeps its drones' fuel in the request depot).
   fuel_share = 0.1,

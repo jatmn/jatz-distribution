@@ -100,7 +100,11 @@ EXPECTED = {'recipes': RECIPES,
             'armor_equipment': 1, 'full_status': 'full', 'full_provider_left': 50,
             'redelivered_after_destroy': 30, 'destroyed_replacement_requested': 1, 'destroyed_restocked': 3,
             'freighter_repaired': True, 'changed_provider_left': 20, 'changed_received': 0,
-            'changed_status': 'no-provider', 'cut_returned': 30, 'cut_received': 0, 'cut_status': 'unreachable',
+            'changed_status': 'no-provider',
+            # A request depot filled some other way while its freighter is out lets its promise go:
+            # the freighter turns home before reaching the provider, which keeps its stock.
+            'filled_reached_provider': False, 'filled_provider_left': 20, 'filled_received': 10,
+            'cut_returned': 30, 'cut_received': 0, 'cut_status': 'unreachable',
             'spilled': 0, 'bad_item_rejected': True, 'refused_request_kept': True, 'cloned_request': 'wood x5', 'request_cleared': True, 'road_on_grass': True,
             'road_on_water': False,
             # Nothing but belts, pipes, train tracks and vehicles can be placed on road: not depots,
@@ -148,6 +152,9 @@ EXPECTED = {'recipes': RECIPES,
             'multi_freighters_sent': 2, 'multi_received': 60, 'multi_from_near': 30, 'multi_from_far': 30,
             'multi_freighters_home': 5, 'no_trucks_status': 'no-trucks', 'absorbed': 2, 'absorbed_left_in_chest': 0,
             'orphaned_freighters_dropped': 3, 'destroyed_freighters_dropped': 102,
+            # A provider switched on while it holds more than 25 of its 30 counts the 10 one freighter
+            # promised: a second request depot sends none.
+            'minimum_delivered': 10, 'minimum_kept': 20,
             # A slot holding 3 takes 97 more (a depot holds 100), however many are asked for; more
             # than a stack (10) is requested and taken away a stack at a time.
             'add_beyond_limit': 97, 'requested_many': 25, 'requested_many_pending': 25, 'removing_many': 25,

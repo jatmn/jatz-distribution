@@ -871,6 +871,14 @@ for index, plan in ipairs(map.surfaces) do
       jatz.set_freighter_fuel(entity, depot.fuel * settings.global["jatz-freighter-fuel-capacity"].value * 1000000)
     elseif depot.role == "fuel" then
       chest.insert({ name = depot.item, count = STACK_SIZE[depot.item] * CHEST_SLOTS })
+    elseif depot.minimum and jatz.set_circuit then
+      -- A provider keeping a minimum, as the benchmark mod sets it (layout.lua).
+      local condition = {
+        first_signal = { type = "item", name = depot.item },
+        comparator = ">",
+        constant = math.floor(STACK_SIZE[depot.item] * CHEST_SLOTS * depot.minimum),
+      }
+      assert(jatz.set_circuit(entity, true, condition, "contents"), "condition refused")
     end
     serviced[#serviced + 1] = { role = depot.role, item = depot.item, chest = chest }
   end

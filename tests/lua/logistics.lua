@@ -516,6 +516,34 @@ local function coming_filed()
       return false, id .. " not filed"
     end
   end
+  -- The promises' kept totals (storage.promise_totals) must be their sum, each rounded up to a
+  -- whole unit, with no total left where nothing is promised.
+  if storage.promised and storage.promise_totals then
+    local sums = {}
+    for provider, items in pairs(storage.promised) do
+      for item, trips in pairs(items) do
+        local sum = 0
+        for _, amount in pairs(trips) do
+          sum = sum + math.ceil(amount)
+        end
+        sums[provider .. " " .. item] = sum
+      end
+    end
+    for provider, items in pairs(storage.promise_totals) do
+      for item, total in pairs(items) do
+        local id = provider .. " " .. item
+        if sums[id] ~= total then
+          return false, "promises at " .. id .. " total " .. tostring(sums[id]) .. ", kept " .. total
+        end
+        sums[id] = nil
+      end
+    end
+    for id, sum in pairs(sums) do
+      if sum ~= 0 then
+        return false, "promises at " .. id .. " total " .. sum .. ", none kept"
+      end
+    end
+  end
   return true
 end
 
@@ -3053,6 +3081,962 @@ do -- Reading its own contents, a depot needs no wire.
   check("leaving the mode as it was", logistics.get_circuit(provider).mode == "contents")
   check("the circuit network can be chosen again", logistics.set_circuit(provider, true, nil, "network"))
   check("and is stored as the default", storage.depots[provider.unit_number].circuit_mode == nil)
+end
+
+-- Two request depots for 10 of item a each, a near provider holding 30 and a far one holding 20.
+-- Requests 1 and 2: each depot asks about the near provider.
+local function two_depots(logistics)
+  local first, near = setup(logistics)
+  local second = entity("jatz-request-depot", 0.5, 10.5)
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 20 })
+  logistics.add(second)
+  logistics.add(far)
+  assert(logistics.set_request(second, "a", 10))
+  assert(logistics.put_freighters(second, stack("jatz-quinityn-freighter", 5)) == 5)
+  near.chest.contents.a = 30
+  return first, second, near, far
+end
+
+do -- Reading its own contents, a provider counts what freighters are on their way to take.
+  local logistics = reset()
+  local first, second, near, far = two_depots(logistics)
+  logistics.set_circuit(
+    near,
+    true,
+    { first_signal = { type = "item", name = "a" }, comparator = ">", constant = 25 },
+    "contents"
+  )
+  logistics.on_tick()
+  check("both depots ask about the near provider", #requests == 2 and requests[2].goal.x == 10.5)
+  answer(logistics, 1, "route")
+  check("the first freighter promises 10 of its 30", trip_of(first).provider == near.unit_number)
+  answer(logistics, 2, "route")
+  check("20 left once it has them is not more than 25: no second freighter there", not has_trip(second))
+  check("its contents are still 30, so its own status stays on", logistics.get_circuit(near).fulfilled)
+  game.tick = 60
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  check("the second depot fetches from the far provider", trip_of(second).provider == far.unit_number)
+end
+
+do -- A provider switched off while a freighter drives there: it goes elsewhere.
+  local logistics = reset()
+  local request, near = setup(logistics)
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 20 })
+  logistics.add(far)
+  wire(near, { ["signal-A"] = 1 })
+  logistics.set_circuit(near, true, { first_signal = A, comparator = ">", constant = 0 })
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  check("the freighter heads for the switched-on provider", trip.provider == near.unit_number)
+  wire(near, { ["signal-A"] = 0 })
+  game.tick = 60
+  logistics.on_tick()
+  check("switched off, its freighter looks for another", trip.searching ~= nil and requests[#requests].goal.x == 40.5)
+  check(
+    "letting go of its promise there at once, while it looks",
+    storage.promised[near.unit_number] == nil and trip.planned == 10
+  )
+  answer(logistics, #requests, "route")
+  check("and drives to it", trip.provider == far.unit_number and not trip.searching)
+end
+
+do -- Stock taken out by something else (an inserter, a player): the freighters it no longer
+  -- covers, the last sent first, go elsewhere.
+  local logistics = reset()
+  local first, second, near, far = two_depots(logistics)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  answer(logistics, 2, "route")
+  local early, late = trip_of(first), trip_of(second)
+  check(
+    "setup: both freighters head for the near provider",
+    early.provider == near.unit_number and late.provider == near.unit_number
+  )
+  near.chest.contents.a = 5
+  game.tick = 60
+  logistics.on_tick()
+  check("the first keeps going for the 5 left", early.provider == near.unit_number and not early.searching)
+  check("promising only those 5, so its depot sends for the rest", early.planned == 5)
+  check("the second looks for another provider", late.searching ~= nil)
+  answer(logistics, #requests, "route")
+  check("and goes to the far one", late.provider == far.unit_number and late.planned == 10)
+  arrive(logistics, early)
+  check("the first one arriving loads there and heads home", early.state == "to-request" and not early.searching)
+end
+
+do -- A freighter arriving at a provider emptied since the last check goes elsewhere, not home.
+  local logistics = reset()
+  local request, near = setup(logistics)
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 20 })
+  logistics.add(far)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  near.chest.contents.a = 0
+  arrive(logistics, trip)
+  check("finding nothing there, it looks for another provider", trip.state == "to-provider" and trip.searching ~= nil)
+  answer(logistics, #requests, "route")
+  check("and drives to it", trip.provider == far.unit_number and not trip.loading)
+end
+
+do -- A freighter rerouted to a provider joins the end of its queue: it doesn't take the load of
+  -- one sent there before it (review of the first draft: it kept its place by trip key).
+  local logistics = reset()
+  local first = entity("jatz-request-depot", 0.5, 0.5)
+  local near = entity("jatz-provider-depot", 10.5, 0.5, { a = 25 })
+  local kept = entity("jatz-provider-depot", 40.5, 0.5, { a = 30 })
+  local second = entity("jatz-request-depot", 50.5, 0.5)
+  for _, depot in ipairs({ first, near, kept, second }) do
+    logistics.add(depot)
+  end
+  assert(logistics.set_request(first, "a", 25) and logistics.set_request(second, "a", 5))
+  assert(logistics.put_freighters(first, stack("jatz-quinityn-freighter", 1)) == 1)
+  assert(logistics.put_freighters(second, stack("jatz-quinityn-freighter", 1)) == 1)
+  local a = { type = "item", name = "a" }
+  logistics.set_circuit(kept, true, { first_signal = a, comparator = ">", constant = 10 }, "contents")
+  logistics.on_tick()
+  -- The first depot's freighter sets off first, so its trip key is the smaller.
+  local near_asked = requests[1].goal.x == 10.5 and 1 or 2
+  answer(logistics, near_asked, "route")
+  answer(logistics, 3 - near_asked, "route")
+  local early, late = trip_of(first), trip_of(second)
+  check(
+    "setup: 25 promised at the near provider, then 5 at the other",
+    early.provider == near.unit_number and late.provider == kept.unit_number and late.planned == 5
+  )
+  check("setup: by a freighter with a later trip key", early.key < late.key)
+  near.chest.contents.a = 0
+  game.tick = 60
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  check(
+    "the first is rerouted there, for the 25 not promised",
+    early.provider == kept.unit_number and early.planned == 25
+  )
+  game.tick = 120
+  logistics.on_tick()
+  check(
+    "the one sent there first keeps its load",
+    late.state == "to-provider" and late.provider == kept.unit_number and late.planned == 5 and not late.searching
+  )
+end
+
+do -- A source switched on by taking items out (here: only while it holds under 100) that switches
+  -- off leaves its freighters nowhere to go but home: they don't find it again, over and over.
+  local logistics = reset()
+  local buffer = entity("jatz-buffer-depot", 10.5, 0.5, { a = 80 })
+  local first = entity("jatz-request-depot", 0.5, 0.5)
+  local second = entity("jatz-request-depot", 0.5, 10.5)
+  for _, depot in ipairs({ buffer, first, second }) do
+    logistics.add(depot)
+  end
+  local a = { type = "item", name = "a" }
+  logistics.set_circuit(buffer, true, { first_signal = a, comparator = "<", constant = 100 }, "contents")
+  assert(logistics.set_request(first, "a", 50) and logistics.set_request(second, "a", 30))
+  for _, depot in ipairs({ first, second }) do
+    assert(logistics.put_freighters(depot, stack("jatz-quinityn-freighter", 1)) == 1)
+  end
+  logistics.on_tick()
+  for id = 1, #requests do
+    answer(logistics, id, "route")
+  end
+  check("setup: both freighters head for the buffer depot", has_trip(first) and has_trip(second))
+  buffer.chest.contents.a = 120
+  game.tick = 60
+  logistics.on_tick()
+  local asked = #requests
+  check(
+    "holding 120, it no longer supplies: both go home",
+    trip_of(first).state == "to-request" and trip_of(second).state == "to-request"
+  )
+  check("without searching again", not trip_of(first).searching and not trip_of(second).searching)
+  game.tick = 120
+  logistics.on_tick()
+  check("nor later", #requests == asked)
+end
+
+-- A freighter diverted once (its provider emptied) whose second provider is emptied too: a failed
+-- pickup. A third provider holds stock, but it goes home rather than on to it (the owner: never
+-- back and forth). With `energy`, it carries that much fuel when the second is emptied.
+local function diverted_twice(logistics, energy)
+  local request, near = setup(logistics)
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 20 })
+  local third = entity("jatz-provider-depot", 60.5, 0.5, { a = 20 })
+  logistics.add(far)
+  logistics.add(third)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  near.chest.contents.a = 0
+  game.tick = 60
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  check("diverted once, to the next provider", trip.provider == far.unit_number and trip.diverted)
+  far.chest.contents.a = 0
+  trip.energy = energy or trip.energy
+  game.tick = 120
+  logistics.on_tick()
+  return trip, third
+end
+
+do
+  local logistics = reset()
+  local trip = diverted_twice(logistics)
+  check("diverted again, it goes home empty", trip.state == "to-request" and not trip.searching)
+  check("having asked about no other provider", requests[#requests].goal.x ~= 60.5 and not trip.planned)
+end
+
+do
+  local logistics = reset()
+  local fuel = fuel_depot(logistics, 30.5, 0.5, { { "coal", 20 } })
+  local trip = diverted_twice(logistics, 0.05 * MJ)
+  check("short of fuel for the way home, it looks for a Fuel depot", trip.state == "to-request" and trip.fuel_search)
+  answer(logistics, #requests, "route")
+  check("and heads there before going home", trip.refuel == fuel.unit_number)
+end
+
+do -- Stock taken out after two freighters were sent: the later one, arriving first, takes only
+  -- what is left after the earlier one's promise (review of e949b72: it took the earlier one's).
+  local logistics = reset()
+  local stock = script_inventory(2)
+  for index = 1, 2 do
+    stock[index].name, stock[index].count, stock[index].valid_for_read = "a", 15, true
+    stock[index].quality = { name = "normal" }
+  end
+  local first, second, near = two_depots(logistics)
+  near.get_inventory = function()
+    return stock
+  end
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  answer(logistics, 2, "route")
+  local early, late = trip_of(first), trip_of(second)
+  check(
+    "setup: 10 promised to each, earlier first",
+    early.key < late.key and early.planned == 10 and late.planned == 10
+  )
+  stock[2].count, stock[2].valid_for_read = 0, false
+  arrive(logistics, late)
+  check("the later one loads the 5 left after the earlier promise", late.cargo.get_item_count("a") == 5)
+  check("leaving the earlier one its 10", stock.get_item_count("a") == 10)
+end
+
+do -- A freighter destroyed by a script, its on_object_destroyed not yet raised, when its provider
+  -- is emptied: lost, not handed back to its depot (Pullfrog's review of e949b72).
+  local logistics = reset()
+  local request, provider = setup(logistics)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  check("setup: four freighters home", logistics.freighter_counts(request) == 4)
+  trip.drone.valid = false
+  provider.chest.contents.a = 0
+  game.tick = 60
+  logistics.on_tick()
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = trip.key })
+  check("the destroyed freighter isn't back in the slot", logistics.freighter_counts(request) == 4)
+end
+
+do -- The same through a reroute search: a freighter destroyed while it looks for another provider
+  -- (the one it was heading for removed), its search timing out before on_object_destroyed comes.
+  local logistics = reset()
+  local request, _, trip = rerouting(logistics)
+  trip.drone.valid = false
+  game.tick = 10 * 60
+  logistics.on_tick()
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = trip.key })
+  check("a freighter destroyed while rerouting is lost", logistics.freighter_counts(request) == 4)
+  check("its trip over", storage.trips[trip.key] == nil and not has_trip(request))
+end
+
+do -- Fluid promises are taken from the exact amount, floored once (review of e949b72: floored
+  -- twice, 200.75 water less 100.5 promised read 99, not 100).
+  local logistics = reset()
+  local request, provider = liquids(logistics, 1000)
+  request.held.name, request.held.amount = "water", 899.5
+  provider.held.amount = 200.75
+  local water = { type = "fluid", name = "water" }
+  logistics.set_circuit(provider, true, { first_signal = water, comparator = ">=", constant = 100 }, "contents")
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  check("setup: a freighter promises 100.5", trip_of(request).planned == 100.5)
+  check("the 100.25 left reads 100: still on", logistics.enabled(storage.depots[provider.unit_number], true))
+end
+
+do -- A condition that taking items switches on (only while under 100) must hold now, not only with
+  -- promises taken: 120 held less the 50 promised first is 70, but the depot is off (Copilot's
+  -- review of 712a2fd). The later freighter, arriving before the next check, loads nothing, and no
+  -- new freighter is sent there.
+  local logistics = reset()
+  local stock = script_inventory(3)
+  for index, count in ipairs({ 50, 30 }) do
+    stock[index].name, stock[index].count, stock[index].valid_for_read = "a", count, true
+    stock[index].quality = { name = "normal" }
+  end
+  function stock.get_contents()
+    return { { name = "a", quality = "normal", count = stock.get_item_count("a") } }
+  end
+  local buffer = entity("jatz-buffer-depot", 10.5, 0.5)
+  buffer.get_inventory = function()
+    return stock
+  end
+  local first = entity("jatz-request-depot", 0.5, 0.5)
+  local second = entity("jatz-request-depot", 0.5, 10.5)
+  for _, depot in ipairs({ buffer, first, second }) do
+    logistics.add(depot)
+  end
+  local a = { type = "item", name = "a" }
+  logistics.set_circuit(buffer, true, { first_signal = a, comparator = "<", constant = 100 }, "contents")
+  assert(logistics.set_request(first, "a", 50) and logistics.set_request(second, "a", 30))
+  for _, depot in ipairs({ first, second }) do
+    assert(logistics.put_freighters(depot, stack("jatz-quinityn-freighter", 1)) == 1)
+  end
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  answer(logistics, 2, "route")
+  local early, late = trip_of(first), trip_of(second)
+  if late.key < early.key then
+    early, late = late, early
+  end
+  check("setup: 80 promised, in two loads", early.planned + late.planned == 80)
+  stock[3].name, stock[3].count, stock[3].valid_for_read = "a", 40, true
+  stock[3].quality = { name = "normal" }
+  check("holding 120 it is off, promises or not", not logistics.enabled(storage.depots[buffer.unit_number], true))
+  arrive(logistics, late)
+  check(
+    "the later freighter loads nothing there",
+    late.cargo.get_item_count("a") == 0 and stock.get_item_count("a") == 120
+  )
+  local third = entity("jatz-request-depot", 0.5, 20.5)
+  logistics.add(third)
+  assert(logistics.set_request(third, "a", 10))
+  assert(logistics.put_freighters(third, stack("jatz-quinityn-freighter", 1)) == 1)
+  game.tick = 60
+  local asked = #requests
+  logistics.on_tick()
+  check("and no new freighter is sent to it", not has_trip(third) and #requests == asked)
+end
+
+-- A freighter arriving at its emptied provider short of fuel for the way home (fuel for 5 tiles), a
+-- Fuel depot on its road: `none` is the reroute's answer about another provider, or no other.
+local function failed_pickup_short_of_fuel(logistics, other)
+  local request, provider = setup(logistics)
+  local fuel = fuel_depot(logistics, 5.5, 0.5, { { "coal", 20 } })
+  if other then
+    logistics.add(entity("jatz-provider-depot", 40.5, 0.5, { a = 20 }))
+  end
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  trip.energy = 0.05 * MJ
+  provider.chest.contents.a = 0
+  arrive(logistics, trip)
+  if other then
+    check("setup: it asks about the other provider", trip.searching and requests[#requests].goal.x == 40.5)
+    answer(logistics, #requests, "none")
+  end
+  return trip, fuel
+end
+
+do -- Home from a failed pickup goes through the fuel check, as every leg (Pullfrog's review of
+  -- 712a2fd: the first diversion drove straight home).
+  local logistics = reset()
+  local trip = failed_pickup_short_of_fuel(logistics)
+  check("no other provider: home, looking for a Fuel depot first", trip.state == "to-request" and trip.fuel_search)
+  logistics = reset()
+  trip = failed_pickup_short_of_fuel(logistics, true)
+  check(
+    "the other provider without road: home, looking for a Fuel depot first",
+    trip.state == "to-request" and trip.fuel_search
+  )
+end
+
+do -- A freighter still at home, waiting to hear where to fill up before it sets off, whose pickup
+  -- fails parks at once: no drive to a Fuel depot and back (review of the home_empty change).
+  local logistics = reset()
+  local request, provider = setup(logistics)
+  fuel_depot(logistics, 5.5, 30.5, { { "coal", 20 } })
+  logistics.set_freighter_fuel(request, 0.05 * MJ)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  check("setup: short of fuel, it waits at home for a Fuel depot's road", trip.departing and trip.fuel_search)
+  provider.chest.contents.a = 0
+  game.tick = 60
+  local asked = #requests
+  logistics.on_tick()
+  check("its pickup failed, it parks", not has_trip(request) and logistics.freighter_counts(request) == 5)
+  check("without asking the way anywhere", #requests == asked)
+end
+
+do -- A provider's check walks its promises once: hundreds of freighters coming to a provider whose
+  -- condition reads its contents cost about in proportion, not with the square (Pullfrog's review
+  -- of 712a2fd: 400 promises took 323,351 order comparisons and tens of milliseconds in one tick).
+  local function cost(count)
+    local logistics = reset()
+    local provider = entity("jatz-provider-depot", 10.5, 0.5, { a = 100000 })
+    logistics.add(provider)
+    local a = { type = "item", name = "a" }
+    logistics.set_circuit(provider, true, { first_signal = a, comparator = ">", constant = 25 }, "contents")
+    for index = 1, count do
+      local request = entity("jatz-request-depot", 0.5, 0.5 + index)
+      logistics.add(request)
+      assert(logistics.set_request(request, "a", 1))
+      assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+    end
+    logistics.on_tick()
+    for id = 1, #requests do
+      answer(logistics, id, "route")
+    end
+    local steps = 0
+    debug.sethook(function()
+      steps = steps + 1
+    end, "", 100)
+    logistics.keep_promises(provider.unit_number, storage.depots[provider.unit_number])
+    debug.sethook()
+    return steps, count
+  end
+  local small = cost(100)
+  local large, promised = cost(400)
+  check("setup: 400 promises at one provider", promised == 400)
+  check("four times the promises cost well under sixteen times as much", large < small * 8)
+end
+
+do -- Freighters arriving to load at a busy provider cost about in proportion too, counting only the
+  -- mod's own work: while the provider's stock covers every promise there, an arrival doesn't ask
+  -- which are ahead of its own (Pullfrog's review of feca8c7: 800 arrivals in one tick took 320,400
+  -- order comparisons, 7.75 million instructions).
+  local function cost(count)
+    local logistics = reset()
+    local provider = entity("jatz-provider-depot", 10.5, 0.5)
+    -- 2,400 in stacks a freighter can load from.
+    local stock = script_inventory(48)
+    for index = 1, 48 do
+      stock[index].name, stock[index].count, stock[index].valid_for_read = "a", 50, true
+      stock[index].quality = { name = "normal" }
+    end
+    function stock.get_contents()
+      return { { name = "a", quality = "normal", count = stock.get_item_count("a") } }
+    end
+    provider.get_inventory = function()
+      return stock
+    end
+    logistics.add(provider)
+    local a = { type = "item", name = "a" }
+    logistics.set_circuit(provider, true, { first_signal = a, comparator = ">", constant = 25 }, "contents")
+    for index = 1, count do
+      local request = entity("jatz-request-depot", 0.5, 0.5 + index * 4)
+      logistics.add(request)
+      assert(logistics.set_request(request, "a", 1))
+      assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+    end
+    logistics.on_tick()
+    for id = 1, #requests do
+      answer(logistics, id, "route")
+    end
+    local trips = {}
+    for _, trip in pairs(storage.trips) do
+      trip.loading = true
+      trips[#trips + 1] = trip
+    end
+    local steps = 0
+    debug.sethook(function()
+      if debug.getinfo(2, "S").source:find("scripts/", 1, true) then
+        steps = steps + 1
+      end
+    end, "", 1)
+    for _, trip in ipairs(trips) do
+      logistics.on_ai_command_completed({
+        unit_number = trip.drone.unit_number,
+        result = defines.behavior_result.success,
+      })
+    end
+    debug.sethook()
+    local loaded = 0
+    for _, trip in ipairs(trips) do
+      loaded = loaded + trip.cargo.get_item_count("a")
+    end
+    return steps, loaded
+  end
+  local small = cost(100)
+  local large, loaded = cost(400)
+  check("setup: 400 freighters each load their 1", loaded == 400)
+  -- (Adding up the promises ahead for each made it 9.5 times as much.)
+  check("four times the arrivals cost about four times as much", large < small * 6)
+end
+
+do -- Searches ending at one busy provider whose condition reads its contents cost about in
+  -- proportion too: each asks whether the provider holds with every promise there taken, from their
+  -- kept totals, not by adding them up again (Copilot's review of be24d17: 800 searches added up
+  -- 319,600 promises).
+  local function cost(count)
+    local logistics = reset()
+    local provider = entity("jatz-provider-depot", 10.5, 0.5, { a = 100000 })
+    logistics.add(provider)
+    local a = { type = "item", name = "a" }
+    logistics.set_circuit(provider, true, { first_signal = a, comparator = ">", constant = 25 }, "contents")
+    for index = 1, count do
+      local request = entity("jatz-request-depot", 0.5, 0.5 + index * 4)
+      logistics.add(request)
+      assert(logistics.set_request(request, "a", 1))
+      assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+    end
+    logistics.on_tick()
+    local steps = 0
+    debug.sethook(function()
+      if debug.getinfo(2, "S").source:find("scripts/", 1, true) then
+        steps = steps + 1
+      end
+    end, "", 1)
+    for id = 1, #requests do
+      answer(logistics, id, "route")
+    end
+    debug.sethook()
+    local promised = 0
+    for _ in pairs(storage.trips) do
+      promised = promised + 1
+    end
+    return steps, promised
+  end
+  local small = cost(100)
+  local large, promised = cost(400)
+  check("setup: 400 freighters sent to the one provider", promised == 400)
+  -- (Deterministic counts: 4.00 times now; adding the promises up again made it 4.92 times.)
+  check("four times the searches cost about four times as much", large < small * 4.5)
+end
+
+do -- Arriving where the stock covers every promise, but the condition (reading the provider's
+  -- contents) fails with every other promise taken: the promises ahead are added up after all, so
+  -- the first promised still loads and the last, which the condition no longer covers, doesn't
+  -- (with no other provider, it goes home).
+  local logistics = reset()
+  local provider = entity("jatz-provider-depot", 10.5, 0.5)
+  local stock = script_inventory(1)
+  stock[1].name, stock[1].count, stock[1].valid_for_read = "a", 30, true
+  stock[1].quality = { name = "normal" }
+  function stock.get_contents()
+    return { { name = "a", quality = "normal", count = stock.get_item_count("a") } }
+  end
+  provider.get_inventory = function()
+    return stock
+  end
+  logistics.add(provider)
+  local a = { type = "item", name = "a" }
+  local trips = {}
+  for index = 1, 3 do
+    local request = entity("jatz-request-depot", 0.5, 0.5 + index * 4)
+    logistics.add(request)
+    assert(logistics.set_request(request, "a", 10))
+    assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+    logistics.on_tick()
+    answer(logistics, #requests, "route")
+    trips[index] = trip_of(request)
+  end
+  check(
+    "setup: three promises of 10, the stock covering them",
+    trips[1].planned == 10 and trips[2].planned == 10 and trips[3].planned == 10
+  )
+  -- Now kept above 12: 30 less the 20 promised before the first doesn't hold, 30 does.
+  logistics.set_circuit(provider, true, { first_signal = a, comparator = ">", constant = 12 }, "contents")
+  for _, trip in ipairs(trips) do
+    trip.loading = true
+  end
+  logistics.on_ai_command_completed({
+    unit_number = trips[1].drone.unit_number,
+    result = defines.behavior_result.success,
+  })
+  check("the first promised loads its 10", trips[1].cargo.get_item_count("a") == 10)
+  logistics.on_ai_command_completed({
+    unit_number = trips[3].drone.unit_number,
+    result = defines.behavior_result.success,
+  })
+  check(
+    "the last (20 left, less the 10 ahead of it, isn't above 12) loads nothing there",
+    trips[3].cargo.get_item_count("a") == 0 and trips[3].state == "to-request" and stock.get_item_count("a") == 20
+  )
+end
+
+-- A freighter heading for the near provider, a far one holding the item too; its request depot is
+-- then filled some other way (by hand, say), so it needs nothing more.
+local function filled_meanwhile(logistics)
+  local request, near = setup(logistics)
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 20 })
+  logistics.add(far)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  request.chest.contents.a = 10
+  return trip, near, far
+end
+
+do -- Not sent on to another provider when its depot needs nothing more (Copilot's review of
+  -- 86332ce): it would drive farther only to load nothing.
+  local logistics = reset()
+  local trip, near = filled_meanwhile(logistics)
+  near.chest.contents.a = 0
+  game.tick = 60
+  local asked = #requests
+  logistics.on_tick()
+  check("its provider emptied, it goes home rather than on", trip.state == "to-request" and #requests == asked)
+  logistics = reset()
+  trip, near = filled_meanwhile(logistics)
+  asked = #requests
+  near.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = near.unit_number })
+  check("its provider removed, it goes home rather than on", trip.state == "to-request" and #requests == asked)
+end
+
+do -- Filled while it looks for another provider: the answer sends it home, not there.
+  local logistics = reset()
+  local request, near = setup(logistics)
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 20 })
+  logistics.add(far)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  near.chest.contents.a = 0
+  game.tick = 60
+  logistics.on_tick()
+  check("setup: it looks for another provider", trip.searching ~= nil and requests[#requests].goal.x == 40.5)
+  request.chest.contents.a = 10
+  answer(logistics, #requests, "route")
+  check("filled meanwhile, it goes home", trip.state == "to-request" and trip.provider ~= far.unit_number)
+end
+
+-- A freighter whose provider is removed, rerouted to the far one; a third provider holds the item
+-- too. Requests: 1 = dispatch, 2 = the reroute search (answered here).
+local function removed_then_rerouted(logistics)
+  local request, near = setup(logistics)
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 20 })
+  local third = entity("jatz-provider-depot", 60.5, 0.5, { a = 20 })
+  logistics.add(far)
+  logistics.add(third)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  near.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = near.unit_number })
+  answer(logistics, #requests, "route")
+  return trip, far
+end
+
+do -- A reroute for a removed provider is the freighter's one diversion too (Sourcery's review of
+  -- ac9ab0a: it was counted only when a provider gave it up, so a third provider came next).
+  local logistics = reset()
+  local trip, far = removed_then_rerouted(logistics)
+  check("setup: rerouted to the far provider, its one diversion", trip.provider == far.unit_number and trip.diverted)
+  far.chest.contents.a = 0
+  game.tick = 60
+  local asked = #requests
+  logistics.on_tick()
+  check("that one emptied, it goes home, not on to a third", trip.state == "to-request" and #requests == asked)
+  logistics = reset()
+  trip, far = removed_then_rerouted(logistics)
+  asked = #requests
+  far.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = far.unit_number })
+  check("that one removed too, it goes home, not on to a third", trip.state == "to-request" and #requests == asked)
+end
+
+do -- A rerouted freighter promises no more than its depot still has room for (Sourcery's review of
+  -- ac9ab0a: filled in part during the search, it kept its whole promise at the new provider).
+  local logistics = reset()
+  local request, near = setup(logistics)
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 20 })
+  logistics.add(far)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  near.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = near.unit_number })
+  request.chest.contents.a = 6
+  answer(logistics, #requests, "route")
+  check(
+    "the 4 its depot still has room for are all it promises there",
+    trip.provider == far.unit_number and trip.planned == 4
+  )
+  check("and all it holds there", storage.promised[far.unit_number].a[trip.key] == 4)
+end
+
+do -- A provider's check decides all its freighters before any gives up: each give-up's search reads
+  -- the providers, so it must find this one's promises as they end up (Sourcery's review of ac9ab0a).
+  local logistics = reset()
+  local first, second, near = two_depots(logistics)
+  local third = entity("jatz-request-depot", 0.5, 20.5)
+  logistics.add(third)
+  assert(logistics.set_request(third, "a", 10))
+  assert(logistics.put_freighters(third, stack("jatz-quinityn-freighter", 1)) == 1)
+  logistics.on_tick()
+  for id = 1, #requests do
+    answer(logistics, id, "route")
+  end
+  check("setup: three freighters promised 10 each", has_trip(first) and has_trip(second) and has_trip(third))
+  near.chest.contents.a = 5
+  local seen, give_up = {}, logistics.give_up
+  logistics.give_up = function(id, trip)
+    local filed = 0
+    for _ in pairs(storage.promised[near.unit_number] and storage.promised[near.unit_number].a or {}) do
+      filed = filed + 1
+    end
+    seen[#seen + 1] = filed
+    return give_up(id, trip)
+  end
+  game.tick = 60
+  logistics.on_tick()
+  logistics.give_up = give_up
+  check("two give up", #seen == 2)
+  check("each search starts with only the kept promise filed", seen[1] == 1 and seen[2] == 1)
+end
+
+do -- A promise made smaller in a provider's check changes what other depots checked in the same
+  -- pass see (Sourcery's review of 2559152): this provider, switched on while its own iron plate
+  -- count less promises is at least 0, offers item b once its promise of item a is trimmed, to a
+  -- depot checked after it, though one checked before it found it off.
+  local logistics = reset()
+  local for_a = entity("jatz-request-depot", 0.5, 0.5)
+  local before = entity("jatz-request-depot", 0.5, 10.5)
+  local provider = entity("jatz-provider-depot", 10.5, 0.5, { a = 20, b = 20 })
+  local after = entity("jatz-request-depot", 0.5, 20.5)
+  for _, depot in ipairs({ for_a, before, provider, after }) do
+    logistics.add(depot)
+  end
+  local a = { type = "item", name = "a" }
+  logistics.set_circuit(provider, true, { first_signal = a, comparator = ">=", constant = 0 }, "contents")
+  assert(logistics.set_request(for_a, "a", 20))
+  for _, depot in ipairs({ for_a, before, after }) do
+    assert(logistics.put_freighters(depot, stack("jatz-quinityn-freighter", 1)) == 1)
+  end
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  check("setup: 20 of a promised", trip_of(for_a).planned == 20)
+  provider.chest.contents.a = 12
+  assert(logistics.set_request(before, "b", 10) and logistics.set_request(after, "b", 10))
+  local order, count = {}, 0
+  for id in pairs(storage.depots) do
+    count = count + 1
+    order[id] = count
+  end
+  check(
+    "setup: the depots are checked in the order made",
+    order[before.unit_number] < order[provider.unit_number] and order[provider.unit_number] < order[after.unit_number]
+  )
+  game.tick = 60
+  logistics.on_tick()
+  check("setup: the promise is trimmed to the 12 left", trip_of(for_a).planned == 12)
+  check("the depot checked before it found it off", storage.depots[before.unit_number].searching == nil)
+  check("the depot checked after it finds it on", storage.depots[after.unit_number].searching ~= nil)
+end
+
+do -- A depot filled some other way lets its freighters' promises go at once, rather than when they
+  -- get there to load nothing (the owner's decision, from Sourcery's review of 2559152).
+  local logistics = reset()
+  local request, provider = setup(logistics)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  check("setup: 10 promised at the provider", storage.promised[provider.unit_number].a[trip.key] == 10)
+  request.chest.contents.a = 10
+  game.tick = 60
+  local asked = #requests
+  logistics.on_tick()
+  check("filled by hand, its promise goes", storage.promised[provider.unit_number] == nil)
+  check("and its freighter, with nothing to fetch, goes home", trip.state == "to-request" and #requests == asked)
+end
+
+do -- A pickup cancelled on the road burns the way out and the way back, though it turns without
+  -- standing anywhere and parks before any once-a-second check: `drive` burns what was driven
+  -- since the last sample as each leg starts, and `end_trip` as it parks (Copilot's review of
+  -- feca8c7: it parked with a full tank).
+  local logistics = reset()
+  local request = fuelled(logistics, 20 * MJ)
+  local trip = trips_from(request)[1]
+  local home = { x = trip.drone.position.x, y = trip.drone.position.y }
+  check("setup: it sets off with a full tank", trip.energy == 20 * MJ)
+  trip.drone.position = { x = home.x + 5, y = home.y }
+  -- Filled by hand meanwhile: its dispatch lets the whole promise go.
+  request.chest.contents.a = 10
+  logistics.release_excess(storage.depots[request.unit_number], 10)
+  check("setup: it turns home with nothing to fetch", trip.state == "to-request" and not trip.planned)
+  check("the 5 tiles out are burned as it turns", math.abs(trip.energy - (20 * MJ - 5 * 10000)) < 1)
+  trip.drone.position = { x = home.x, y = home.y }
+  arrive(logistics, trip)
+  local parked = logistics.freighter_fuel(request).home
+  check(
+    "and the 5 back as it parks",
+    not has_trip(request) and math.abs(trip.energy - (20 * MJ - 10 * 10000)) < 1 and parked[#parked] == trip.energy
+  )
+end
+
+do -- Turned on the road, a freighter decides whether the way home needs a Fuel depot on the fuel it
+  -- has, not on what it had at its last check: with 2.13 MJ, enough for the 10 tiles out (2.125 MJ
+  -- with the margin and reserve), it has 2.08 MJ 5 tiles out, short of the 2.125 MJ the 10 tiles
+  -- home need (Copilot's review of be24d17: it set off home without filling up).
+  local logistics = reset()
+  local request = fuelled(logistics, 2.13 * MJ, function()
+    return fuel_depot(logistics, -10.5, 0.5, { { "coal", 20 } })
+  end)
+  local trip = trips_from(request)[1]
+  check("setup: enough for the way out, it drives to the provider", not trip.fuel_search and trip.leg == 10)
+  trip.drone.position = { x = trip.drone.position.x + 5, y = trip.drone.position.y }
+  request.chest.contents.a = 10
+  logistics.release_excess(storage.depots[request.unit_number], 10)
+  check("setup: it turns home", trip.state == "to-request")
+  check("short for the way home, it looks for a Fuel depot first", trip.fuel_search and trip.searching ~= nil)
+  check("on what it has now", math.abs(trip.energy - (2.13 * MJ - 5 * 10000)) < 1)
+end
+
+do -- A stand cut short burns the way there too: its provider removed while it stands (before the
+  -- check in the stand), it goes home empty, and the way out and the way back are both burned
+  -- (independent review of the fix for Copilot's review of feca8c7).
+  local logistics = reset()
+  local request, provider = fuelled(logistics, 20 * MJ)
+  local trip = trips_from(request)[1]
+  local home = { x = trip.drone.position.x, y = trip.drone.position.y }
+  trip.drone.position = { x = provider.position.x, y = provider.position.y }
+  logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = defines.behavior_result.success })
+  check("setup: it stands at the provider", trip.loading == true and trip.energy == 20 * MJ)
+  provider.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = provider.unit_number })
+  check("setup: with no other provider, it turns home", trip.state == "to-request")
+  trip.drone.position = { x = home.x, y = home.y }
+  arrive(logistics, trip)
+  local tiles = 2 * math.sqrt((provider.position.x - home.x) ^ 2 + (provider.position.y - home.y) ^ 2)
+  check("both ways are burned", not has_trip(request) and math.abs(trip.energy - (20 * MJ - tiles * 10000)) < 1)
+end
+
+do -- A save from before the promises' totals were kept: a freighter finishing its stand at the
+  -- provider before anything else files them loads as before (independent review of the fix for
+  -- Pullfrog's review of feca8c7: it crashed reading the totals).
+  for _, lost in ipairs({ "promise_totals", "promised", "both" }) do
+    local logistics = reset()
+    local request, provider = setup(logistics)
+    local stock = script_inventory(1)
+    stock[1].name, stock[1].count, stock[1].valid_for_read = "a", 20, true
+    stock[1].quality = { name = "normal" }
+    provider.get_inventory = function()
+      return stock
+    end
+    logistics.on_tick()
+    answer(logistics, 1, "route")
+    local trip = trip_of(request)
+    if lost ~= "promised" then
+      storage.promise_totals = nil
+    end
+    if lost ~= "promise_totals" then
+      storage.promised = nil
+    end
+    arrive(logistics, trip)
+    check(
+      "without " .. lost .. ", it loads its 10",
+      trip.state == "to-request"
+        and trip.cargo.get_item_count("a") == 10
+        and stock.get_item_count("a") == 10
+        and storage.promise_totals ~= nil
+    )
+  end
+end
+
+do -- Sent on to another provider from the road (its own emptied by an inserter): the way it came is
+  -- burned as it turns, not measured against the way on.
+  local logistics = reset()
+  local request, near = fuelled(logistics, 20 * MJ)
+  local far = entity("jatz-provider-depot", -40.5, 0.5, { a = 20 })
+  logistics.add(far)
+  local trip = trips_from(request)[1]
+  local home = { x = trip.drone.position.x, y = trip.drone.position.y }
+  trip.drone.position = { x = home.x + 5, y = home.y }
+  near.chest.contents.a = 0
+  logistics.keep_promises(near.unit_number, storage.depots[near.unit_number])
+  check("setup: it looks for another provider", trip.searching ~= nil)
+  answer(logistics, #requests, "route")
+  check("setup: it sets off for the far one", trip.provider == far.unit_number and trip.destination.x == far.position.x)
+  check("the 5 tiles it came are burned as it turns", math.abs(trip.energy - (20 * MJ - 5 * 10000)) < 1)
+end
+
+do -- Filled in part: the last freighter sent gives up what isn't needed first.
+  local logistics = reset()
+  local request, near, far = supplied(logistics, 5)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  game.tick = 60
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  local trips = trips_from(request)
+  check(
+    "setup: 30 promised at the near provider, then 70 at the far one",
+    trips[1].planned == 30 and trips[2].planned == 70
+  )
+  request.chest.contents.a = 80
+  game.tick = 120
+  logistics.on_tick()
+  check("80 put in by hand: the later freighter goes home", trips[2].state == "to-request" and not trips[2].planned)
+  check("and its promise at the far provider goes", storage.promised[far.unit_number] == nil)
+  check("the earlier one keeps the 20 still needed", trips[1].planned == 20 and trips[1].provider == near.unit_number)
+  check("what freighters bring adds up to the request", logistics.missing(storage.depots[request.unit_number]) == 0)
+end
+
+do -- Lowering a request leaves the freighters already sent alone, as before: the request panel sets
+  -- the amount as it is typed, so typing 100 passes through 1 and 10 (review of this change).
+  local logistics = reset()
+  local request = supplied(logistics, 5)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  game.tick = 60
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  local trips = trips_from(request)
+  assert(logistics.set_request(request, "a", 1))
+  game.tick = 120
+  logistics.on_tick()
+  assert(logistics.set_request(request, "a", 100))
+  check(
+    "a request passing through 1 cuts no freighter on the road",
+    trips[1].planned == 30 and trips[2].planned == 70 and trips[2].state == "to-provider"
+  )
+end
+
+do -- One standing at its provider to load is left to load what its depot needs then; one still at
+  -- home, waiting to hear where to fill up, parks.
+  local logistics = reset()
+  local request = setup(logistics)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = defines.behavior_result.success })
+  check("setup: standing at the provider to load", trip.loading)
+  request.chest.contents.a = 10
+  game.tick = 60
+  logistics.on_tick()
+  check("filled by hand, the one standing there to load is left alone", trip.loading and trip.planned == 10)
+  logistics = reset()
+  request = setup(logistics)
+  fuel_depot(logistics, 5.5, 30.5, { { "coal", 20 } })
+  logistics.set_freighter_fuel(request, 0.05 * MJ)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  trip = trip_of(request)
+  check("setup: short of fuel, it waits at home", trip.departing and trip.fuel_search)
+  request.chest.contents.a = 10
+  game.tick = 60
+  logistics.on_tick()
+  check("filled by hand, it parks", not has_trip(request) and logistics.freighter_counts(request) == 5)
+end
+
+do -- A freighter arriving at an emptied provider when its depot needs nothing more goes home.
+  local logistics = reset()
+  local request, near = setup(logistics)
+  local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 20 })
+  logistics.add(far)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  near.chest.contents.a = 0
+  request.chest.contents.a = 10
+  local asked = #requests
+  arrive(logistics, trip)
+  check("with nothing needed it goes straight home", trip.state == "to-request" and #requests == asked)
 end
 
 do -- A liquid depot reads its fluid in whole units, as it sends it.

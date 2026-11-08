@@ -276,10 +276,13 @@ end
 -- Each request depot's `fuel` is the share of a full tank its freighters start with, spread evenly
 -- from 5% to full (no random draw, so the layout stays the same): as after hours of play, when
 -- freighters come home with whatever their last trips left, so filling up is part of the run.
+-- Every `minimum_every`-th provider's `minimum` is the share of a full chest it keeps (a circuit
+-- condition on its own contents, where the mod has one; again no random draw): freighters' promises
+-- count against it, so its promises are checked in full every second.
 function layout.generate(preset)
   local random = random_source(preset.seed)
   local surfaces = {}
-  local requests = 0
+  local requests, providers = 0, 0
   for index = 1, preset.surfaces do
     local surface = surface_layout(preset, random, random_source(preset.seed + 7919 * index))
     surface.name = "ups-benchmark-" .. index
@@ -288,6 +291,11 @@ function layout.generate(preset)
       if depot.role == "request" then
         requests = requests + 1
         depot.fuel = 0.05 + 0.95 * (requests * 0.6180339887 % 1)
+      elseif depot.role == "provider" then
+        providers = providers + 1
+        if preset.minimum_every and providers % preset.minimum_every == 0 then
+          depot.minimum = preset.minimum_share
+        end
       end
     end
   end
@@ -296,7 +304,8 @@ end
 
 -- Totals, for the report.
 function layout.summary(map)
-  local summary = { surfaces = #map.surfaces, providers = 0, requests = 0, fuel = 0, freighters = 0, road_tiles = 0 }
+  local summary =
+    { surfaces = #map.surfaces, providers = 0, minimums = 0, requests = 0, fuel = 0, freighters = 0, road_tiles = 0 }
   for _, surface in ipairs(map.surfaces) do
     summary.road_tiles = summary.road_tiles + surface.tiles
     for _, depot in ipairs(surface.depots) do
@@ -307,6 +316,9 @@ function layout.summary(map)
         summary.fuel = summary.fuel + 1
       else
         summary.providers = summary.providers + 1
+        if depot.minimum then
+          summary.minimums = summary.minimums + 1
+        end
       end
     end
   end
