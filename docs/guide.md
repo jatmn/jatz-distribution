@@ -26,7 +26,7 @@ Upgrades make freighters better:
 
 - **Freighter speed:** each level makes delivering freighters 20% faster, freighters already on the road included. After four levels it goes on forever, each level costing twice the last.
 - **Freighter item capacity:** each of ten levels lets a freighter carry one more stack of items (two to start with, twelve at the last).
-- **Freighter fluid capacity:** after Liquid freight, each of ten levels lets a freighter carry 175 more fluid (750 to start with, 2,500 at the last level).
+- **Freighter fluid capacity:** after Liquid freight, each of ten levels lets a freighter carry 375 more fluid (750 to start with, 4,500 at the last level).
 
 A freighter already out keeps the load size it set off with.
 

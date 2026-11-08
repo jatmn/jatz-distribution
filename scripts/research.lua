@@ -27,12 +27,12 @@ research.speed_levels = 4
 research.speed_bonus = 0.2
 -- Item capacity: ten levels, one more stack a level, from 2 up to 12 (the owner's choice,
 -- November 8, 2026).
--- Fluid capacity: ten levels, 175 a level, from 750 up to 2,500 (the owner's choice, November 8,
+-- Fluid capacity: ten levels, 375 a level, from 750 up to 4,500 (the owner's choice, November 8,
 -- 2026). The two stay separate upgrades.
 research.capacity_levels = 10
 research.fluid_capacity_levels = 10
 research.stacks_per_level = 1
-research.fluid_per_level = 175
+research.fluid_per_level = 375
 -- A freighter carries at most this many stacks, or this much fluid, before capacity research.
 research.base_stacks = 2
 research.base_fluid = 750

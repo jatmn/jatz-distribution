@@ -4214,7 +4214,7 @@ do -- Research: bigger loads and faster freighters, on the road too.
   check("and forgotten when forces change", storage.research_levels == nil)
 end
 
-do -- The infinite speed level counts every level researched; fluid capacity grows by 175 a level,
+do -- The infinite speed level counts every level researched; fluid capacity grows by 375 a level,
   -- and item capacity doesn't change it.
   local logistics = reset()
   local force = researching({ [SPEED] = 7, [ITEMS] = 4, [FLUIDS] = 2 })
@@ -4225,9 +4225,9 @@ do -- The infinite speed level counts every level researched; fluid capacity gro
   answer(logistics, 1, "route")
   local trip = trips_from(request)[1]
   check("seven speed levels, four finite and three infinite", near(trip.drone.speed, 0.2 * 2.4))
-  check("two fluid capacity levels: 1100 fluid a freighter", trip.planned == 1100)
+  check("two fluid capacity levels: 1500 fluid a freighter", trip.planned == 1500)
   arrive(logistics, trip)
-  check("all of it pumped out", trip.fluid.amount == 1100)
+  check("all of it pumped out", trip.fluid.amount == 1500)
   prototypes.technology = {}
 end
 
@@ -4245,16 +4245,16 @@ do -- Ten item capacity levels carry 12 stacks: the base 2 plus 1 each.
   prototypes.technology = {}
 end
 
-do -- Ten fluid capacity levels carry 2500: the base 750 plus 175 each.
+do -- Ten fluid capacity levels carry 4500: the base 750 plus 375 each.
   local logistics = reset()
   local force = researching({ [SPEED] = 0, [ITEMS] = 0, [FLUIDS] = 10 })
-  local request, provider = liquids(logistics, 3000)
-  provider.held.amount = 3000
+  local request, provider = liquids(logistics, 5000)
+  provider.held.amount = 5000
   request.force, provider.force = force, force
   logistics.on_tick()
   answer(logistics, 1, "route")
   local trip = trips_from(request)[1]
-  check("all ten fluid capacity levels: 2500 fluid a freighter", trip and trip.planned == 2500)
+  check("all ten fluid capacity levels: 4500 fluid a freighter", trip and trip.planned == 4500)
   prototypes.technology = {}
 end
 
