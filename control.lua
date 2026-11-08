@@ -12,6 +12,7 @@ local research = require("scripts.research")
 local road_monitor = require("scripts.road-monitor")
 local tunnels = require("scripts.tunnels")
 local undo = require("scripts.undo")
+local legacy_depots = require("scripts.legacy-depots")
 
 -- Road laid (`added`) or removed or covered (`removed`) on a surface: deliveries re-plan, and road
 -- network monitors there work out their networks again.
@@ -62,6 +63,12 @@ local function on_built(event)
     -- have changed, go to the depot.
     depot_settings.built(entity, event.tags)
   elseif entity and entity.valid then
+    -- An item provider or buffer depot from before they were logistic containers (a blueprint from
+    -- before), or its ghost: replaced at once by the depot (scripts/legacy-depots.lua).
+    entity = legacy_depots.built(entity)
+    if not entity then
+      return
+    end
     if loading_zone.depots[entity.name] then
       settle(entity)
     end
@@ -101,6 +108,10 @@ local built_filters = {
 }
 for _, filter in ipairs(filters) do
   built_filters[#built_filters + 1] = filter
+end
+for _, name in ipairs(legacy_depots.names) do
+  built_filters[#built_filters + 1] = { filter = "name", name = name }
+  built_filters[#built_filters + 1] = { filter = "ghost_name", name = name }
 end
 -- Every way a depot or a road network monitor can be built: by hand, robots, other mods' scripts, revived ghosts, platforms.
 for _, event in ipairs({
@@ -304,6 +315,9 @@ script.on_event(defines.events.on_selected_entity_changed, request_gui.on_select
 script.on_event(defines.events.on_player_cursor_stack_changed, request_gui.on_player_cursor_stack_changed)
 
 local function setup()
+  -- Item provider and buffer depots from before they were logistic containers become the depots
+  -- they were first, so deliveries find them as they were (scripts/legacy-depots.lua).
+  legacy_depots.replace_all()
   logistics.init()
   -- Depots that were in the game before this mod laid road under them (it was added to a save,
   -- or updated) get theirs now.

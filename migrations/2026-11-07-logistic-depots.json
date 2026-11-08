@@ -1,0 +1,6 @@
+{
+  "entity": [
+    ["jatz-provider-depot", "jatz-provider-depot-legacy"],
+    ["jatz-buffer-depot", "jatz-buffer-depot-legacy"]
+  ]
+}

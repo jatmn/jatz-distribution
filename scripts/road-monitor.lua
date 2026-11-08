@@ -313,6 +313,19 @@ function road_monitor.counted(unit_number, network)
 end
 logistics.monitor_counts = road_monitor.counted
 
+-- A depot replaced by a new entity of itself (scripts/legacy-depots.lua): the monitors count it
+-- under its new unit number, so a condition reading the network still leaves its own share out
+-- before the monitors next work out their roads.
+function road_monitor.replaced(old_unit_number, new_unit_number)
+  for _, monitor in pairs(storage.road_monitors or {}) do
+    for _, by_depot in pairs({ monitor.depots, monitor.counted, monitor.previous }) do
+      if by_depot[old_unit_number] ~= nil then
+        by_depot[new_unit_number], by_depot[old_unit_number] = by_depot[old_unit_number], nil
+      end
+    end
+  end
+end
+
 -- Put `filters` on the monitor's signals: its first sections, SECTION_SIZE signals each, and no
 -- others.
 -- The monitor owns its whole output, not just the filters: Copy and Paste settings from a constant

@@ -309,11 +309,13 @@ local function check_depot(surface, role, row, result)
     assert(entity.get_circuit_network(red), name .. ": wired, but on no circuit network")
     combinator.destroy()
     result.wired_depots = result.wired_depots + 1
-    if entity.type == "container" then
+    -- Item provider and buffer depots are logistic containers (scripts/robot-access.lua).
+    local chest = entity.type == "container" or entity.type == "logistic-container"
+    if chest then
       assert(entity.insert({ name = "iron-plate", count = 10 }) == 10, name .. ": cannot store items")
       result.slot_counts[role] = #entity.get_inventory(defines.inventory.chest)
     end
-    if entity.type ~= "container" or tank then
+    if not chest or tank then
       result.tank_sizes[role] = (tank or entity).get_fluid_capacity(1)
       local fluid = role == "fuel" and "light-oil" or "water"
       assert((tank or entity).insert_fluid({ name = fluid, amount = 500 }) == 500, name .. ": cannot store fluid")
@@ -1860,6 +1862,112 @@ end
 -- Our Milestones preset addon (control.lua) must name only real items, as "name xquantity":
 -- Milestones drops unknown names without a word. tools/test_mod.py --mod with Milestones checks
 -- that Milestones loads the addon (it tracks only forces with players, so nothing is reached here).
+-- Logistic robots and item provider and buffer depots (scripts/robot-access.lua), on a surface of
+-- their own so the robots meet nothing else. A roboport's robots serve three requester chests
+-- asking for 10 each: from a provider depot let in, from one left as built (robots stay out of a
+-- new depot), and, set to request from buffers, from a buffer depot let in. A liquid provider has
+-- no such setting. A blueprint keeps it, and the depot built from the blueprint is let in too.
+-- An item provider depot from before they were logistic containers (built by a script, as an old
+-- blueprint's would be) and the ghost of one become the depot, facing as they did, the ghost with
+-- its tags.
+local function setup_robot_access(result)
+  local surface = game.create_surface("jatz-robots", { width = 96, height = 96 })
+  surface.request_to_generate_chunks({ 0, 0 }, 2)
+  surface.force_generate_chunk_requests()
+  for _, entity in pairs(surface.find_entities()) do
+    entity.destroy()
+  end
+  local tiles = {}
+  for x = -40, 40 do
+    for y = -40, 40 do
+      tiles[#tiles + 1] = { name = "concrete", position = { x, y } }
+    end
+  end
+  surface.set_tiles(tiles)
+  surface.create_entity({ name = "substation", position = { 0, 4 }, force = "player" })
+  surface.create_entity({ name = "electric-energy-interface", position = { 3, 4 }, force = "player" })
+  local port = surface.create_entity({ name = "roboport", position = { 0, 0 }, force = "player" })
+  port.get_inventory(defines.inventory.roboport_robot).insert({ name = "logistic-robot", count = 20 })
+  local function requester(x, y, item, from_buffers)
+    local chest = surface.create_entity({ name = "requester-chest", position = { x, y }, force = "player" })
+    chest.request_from_buffers = from_buffers
+    local point = chest.get_logistic_point(defines.logistic_member_index.logistic_container)
+    point.get_section(1).set_slot(1, { value = item, min = 10 })
+    return chest
+  end
+  local robots = {
+    open = depot(surface, "provider", 10.5, -8.5),
+    closed = depot(surface, "provider", 10.5, 8.5),
+    buffer = depot(surface, "buffer", -10.5, -8.5, 0),
+  }
+  robots.open_requester = requester(-4.5, -12.5, "iron-plate", false)
+  robots.closed_requester = requester(-2.5, -12.5, "copper-plate", false)
+  robots.buffer_requester = requester(-0.5, -12.5, "stone", true)
+  assert(robots.open.insert({ name = "iron-plate", count = 30 }) == 30, "iron: cannot stock")
+  assert(robots.closed.insert({ name = "copper-plate", count = 30 }) == 30, "copper: cannot stock")
+  assert(robots.buffer.insert({ name = "stone", count = 30 }) == 30, "stone: cannot stock")
+  result.robot_access_default = remote.call("jatz-distribution", "get_robot_access", robots.open)
+  assert(remote.call("jatz-distribution", "set_robot_access", robots.open, true), "robots: refused")
+  assert(remote.call("jatz-distribution", "set_robot_access", robots.buffer, true), "robots: refused")
+  local liquid = depot(surface, "liquid-provider", 24.5, 20.5)
+  result.liquid_has_no_robot_access = remote.call("jatz-distribution", "set_robot_access", liquid, true)
+  local holder = game.create_inventory(1)
+  holder.insert({ name = "blueprint" })
+  local blueprint = holder[1]
+  local mapping = blueprint.create_blueprint({ surface = surface, force = "player", area = { { 9, -10 }, { 12, -7 } } })
+  remote.call("jatz-distribution", "setup_blueprint", blueprint, mapping)
+  local planned = blueprint.get_blueprint_entities()[1]
+  result.blueprint_robot_access = planned.tags and planned.tags.jatz_robot_access
+  local revived
+  for _, ghost in pairs(blueprint.build_blueprint({ surface = surface, force = "player", position = { 24.5, -20.5 } })) do
+    if ghost.valid then
+      local _, entity = ghost.revive({ raise_revive = true })
+      revived = entity or revived
+    end
+  end
+  result.built_robot_access = revived and remote.call("jatz-distribution", "get_robot_access", revived)
+  holder.destroy()
+  surface.create_entity({
+    name = "jatz-provider-depot-legacy",
+    position = { -10.5, 8.5 },
+    direction = defines.direction.west,
+    force = "player",
+    raise_built = true,
+  })
+  local legacy = surface.find_entities_filtered({
+    position = { -10.5, 8.5 },
+    radius = 0.5,
+    type = { "container", "logistic-container" },
+  })[1]
+  result.legacy_built = legacy
+    and { legacy.name, legacy.direction, remote.call("jatz-distribution", "get_robot_access", legacy) }
+  surface.create_entity({
+    name = "entity-ghost",
+    inner_name = "jatz-provider-depot-legacy",
+    position = { -20.5, 8.5 },
+    direction = defines.direction.south,
+    force = "player",
+    tags = { jatz_priority = 4 },
+    raise_built = true,
+  })
+  local ghost = surface.find_entities_filtered({ position = { -20.5, 8.5 }, radius = 0.5, type = "entity-ghost" })[1]
+  result.legacy_ghost = ghost and { ghost.ghost_name, ghost.direction, ghost.tags and ghost.tags.jatz_priority }
+  storage.robots = robots
+end
+
+-- What the robots took, once the deliveries are done.
+local function record_robot_access(result)
+  local robots = storage.robots
+  result.robots_from_open = 30 - count(robots.open)
+  result.robots_from_closed = 30 - count(robots.closed, "copper-plate")
+  result.robots_from_buffer = 30 - count(robots.buffer, "stone")
+  result.robots_requested = {
+    count(robots.open_requester),
+    count(robots.closed_requester, "copper-plate"),
+    count(robots.buffer_requester, "stone"),
+  }
+end
+
 local function check_milestones(result)
   result.milestones = {}
   local addons = remote.call("jatz-distribution-milestones", "milestones_preset_addons")
@@ -2726,6 +2834,7 @@ script.on_init(function()
   check_menu_placement(result)
   setup_deliveries(surface, result)
   setup_mining(surface)
+  setup_robot_access(result)
   check_milestones(result)
   local start = { 0.5, 30.5 }
   assert(surface.can_place_entity({ name = FREIGHTER, position = start, force = "player" }), "freighter: cannot place")
@@ -2774,6 +2883,7 @@ script.on_event(defines.events.on_tick, function(event)
   end
   if result.driven_tiles and deliveries_finished(surface, event.tick, result) then
     result.written = true
+    record_robot_access(result)
     helpers.write_file("jatz-distribution-check.json", helpers.table_to_json(result), false)
     log("JATZ_DISTRIBUTION_CHECK passed")
   end

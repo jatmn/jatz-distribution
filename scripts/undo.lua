@@ -22,6 +22,7 @@
 -- the oldest), so every action tagged here is marked as its entity's removal (MARK) and no other
 -- removal takes it.
 local logistics = require("scripts.logistics")
+local legacy_depots = require("scripts.legacy-depots")
 
 local undo = {}
 
@@ -329,8 +330,12 @@ function undo.on_undo_applied(event)
     -- else undone) is looked for.
     local surface = (kept and next(kept) ~= nil or waiting) and game.surfaces[action.surface_index]
     local ghost
+    -- A removal from before item provider and buffer depots were logistic containers names the
+    -- legacy depot, whose ghost may already have been replaced by the depot's (scripts/legacy-depots.lua).
+    local replaced = target and legacy_depots.replacement[target.name]
+    local names = replaced and { target.name, replaced } or (target and target.name)
     for _, found in
-      pairs(surface and surface.find_entities_filtered({ ghost_name = target.name, position = target.position }) or {})
+      pairs(surface and surface.find_entities_filtered({ ghost_name = names, position = target.position }) or {})
     do
       if found.position.x == target.position.x and found.position.y == target.position.y then
         ghost = found

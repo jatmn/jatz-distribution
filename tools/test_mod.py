@@ -325,6 +325,16 @@ EXPECTED = {'recipes': RECIPES,
             # at priority 2; providers start at 5; request depots have no priority.
             'priority_from_far': 10, 'priority_from_near': 0, 'priority_default': 5,
             'request_has_no_priority': False,
+            # Logistic robots (scripts/robot-access.lua): off on a new depot; robots take 10 iron plates
+            # from a provider depot let in, nothing from one left as built, and 10 stone from a buffer
+            # depot let in, for a requester set to request from buffers; liquid depots have no such
+            # setting; a blueprint keeps it as a tag and the depot built from it is let in. An item
+            # provider depot from before (built facing west) and the ghost of one (facing south, with
+            # its priority tag) become the depot.
+            'robot_access_default': False, 'liquid_has_no_robot_access': False,
+            'robots_from_open': 10, 'robots_from_closed': 0, 'robots_from_buffer': 10,
+            'robots_requested': [10, 0, 10], 'blueprint_robot_access': True, 'built_robot_access': True,
+            'legacy_built': ['jatz-provider-depot', 12, False], 'legacy_ghost': ['jatz-provider-depot', 8, 4],
             # Full loads only: a request depot set to it, asking for 30 (less than a load), takes
             # all 30 from a provider 24 tiles away holding 40, passing by one 10 tiles away holding
             # only 10; off by default; provider depots have no such setting.

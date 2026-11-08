@@ -3,8 +3,11 @@ Version: Unreleased
   Features:
     - Startup settings for how many slots provider, request, buffer and fuel depots have, each kind separately, 48 by default, and for the size of the fuel depot's liquid fuel tank, 25,000 by default.
     - Road tunnels: freighters can now go under your factory. Build two road tunnels facing each other, with up to 18 tiles between them, each at the end of a road with its mouth to it, like underground belts. A request depot whose provider (or fuel depot) is on another road network that tunnels join sends its freighters through them: they drive into one tunnel, disappear, and come out of the other after as long as driving that far on road takes. Freighters use tunnels only to reach another road network, never as a shortcut on the same one. Unlocked by the new Road tunnels research, after Freight system and Logistics.
+    - Provider and buffer depots can join the logistic network: tick "Logistic robots can use it" in the depot's window, and robots take items from a provider depot as from a passive provider chest, and use a buffer depot as a buffer chest. It's off by default, also for depots already built. Copy and Paste settings, blueprints and undo carry it. Liquid depots are unchanged.
   Graphics:
     - Destroyed depots now leave wrecks of themselves instead of a steel chest's or storage tank's remains: caved in, burnt and scattered about, in the depot's own colours. Destroyed freighters leave a freighter wreck instead of a car's. Like the game's own, wrecks disappear after 15 minutes.
+  Changes:
+    - Provider and buffer depots are now logistic containers. Ones built before this update, and their ghosts and blueprints, are replaced by the new depots as they are loaded or built, keeping their facing, contents, settings, wires and freighters.
   Bugfixes:
     - Fixed request and buffer depots accepting a request for more items than their slots hold (such as 1,000,000 iron plates). A larger request is now set to as much of the item as fills every slot, which the depot's window shows: with the default 48 slots, 4,800 of an item that stacks to 100, 480 of one that stacks to 10.
 ---------------------------------------------------------------------------------------------------

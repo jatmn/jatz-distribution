@@ -3,7 +3,8 @@
 -- the item to keep in stock and how many, holds the depot's freighters, and shows what the depot is
 -- doing as a status light (hover it for the status in words), with a "Full loads only" checkbox
 -- (and "Request from buffer depots" for request depots). Buffer depots have the same panel,
--- with a priority slider at the top; provider depots have a panel with only that slider. Liquid
+-- with a priority slider at the top; provider depots have a panel with only that slider. Item
+-- provider and buffer depots also have a "Logistic robots can use it" checkbox under it. Liquid
 -- depots have the same panels, for a fluid, beside their storage tank window (a pipe window in
 -- Factorio 2.1). The Fuel depot's panel shows the liquid fuel in its hidden tank, which has no
 -- window of its own, with a button to flush it. Changes apply as they are made. Factorio shows the
@@ -24,6 +25,7 @@
 -- saying whether the depot is enabled now.
 local logistics = require("scripts.logistics")
 local depot_circuit = require("scripts.depot-circuit")
+local robot_access = require("scripts.robot-access")
 -- The road network monitor's panel gets the GUI events first (scripts/road-monitor-gui.lua).
 local monitor_gui = require("scripts.road-monitor-gui")
 
@@ -39,6 +41,7 @@ local FROM_BUFFERS = "jatz_request_from_buffers"
 local FULL_LOADS = "jatz_request_full_loads"
 local PRIORITY = "jatz_depot_priority"
 local PRIORITY_VALUE = "jatz_depot_priority_value"
+local ROBOT_ACCESS = "jatz_depot_robot_access"
 local FUEL_FLUID = "jatz_fuel_fluid"
 local FUEL_AMOUNT = "jatz_fuel_amount"
 local FLUSH = "jatz_fuel_flush"
@@ -198,6 +201,16 @@ local function show_priority(inner, entity)
     row[PRIORITY].slider_value = priority
     row[PRIORITY_VALUE].caption = tostring(priority)
   end
+end
+
+-- The robot access checkbox of item provider and buffer depots: their setting, or, greyed out,
+-- what their own circuit condition (the game's, in their circuit settings) makes it.
+local function show_robot_access(checkbox, entity)
+  local controlled = robot_access.circuit_controlled(entity)
+  checkbox.state = robot_access.get(entity) or false
+  checkbox.enabled = not controlled
+  checkbox.tooltip = controlled and { "jatz-gui.robot-access-circuit-tooltip" }
+    or { "jatz-gui.robot-access-tooltip-" .. ROLES[entity.name] }
 end
 
 -- The priority slider of provider and buffer depots: 1 to 10, higher first.
@@ -402,6 +415,14 @@ local function open(player, entity)
   -- Provider and buffer depots: the priority slider first, above the request.
   if ROLES[entity.name] ~= "request" then
     add_priority(inner, entity)
+  end
+  -- Item provider and buffer depots: whether logistic robots may use them (scripts/robot-access.lua).
+  local access = robot_access.get(entity)
+  if access ~= nil then
+    show_robot_access(
+      inner.add({ type = "checkbox", name = ROBOT_ACCESS, caption = { "jatz-gui.robot-access" }, state = access }),
+      entity
+    )
   end
   if not REQUESTING[entity.name] then
     add_circuit(inner, entity)
@@ -737,6 +758,13 @@ local function on_gui_checked_state_changed(event)
     end
     return
   end
+  if event.element.name == ROBOT_ACCESS then
+    local entity = opened_depot(game.get_player(event.player_index))
+    if entity then
+      robot_access.set(entity, event.element.state)
+    end
+    return
+  end
   if event.element.name ~= FROM_BUFFERS then
     return
   end
@@ -767,7 +795,7 @@ local function on_gui_selection_state_changed(event)
   end
 end
 
--- Keep the status line, both request checkboxes, priority and circuit light current while the
+-- Keep the status line, the checkboxes, priority and circuit light current while the
 -- window is open: other players, Copy and Paste settings and mods change them too.
 local function refresh()
   if not storage.request_gui then
@@ -789,6 +817,7 @@ local function refresh()
         not (inner.priority_row or ROLES[entity.name] == "request")
         or (requesting and not (inner.request_row and inner.request_row[STATUS] and inner.freighter_fuel and inner[FULL_LOADS]))
         or not inner.circuit_mode_row
+        or (robot_access.get(entity) ~= nil and not inner[ROBOT_ACCESS])
       then
         -- A panel opened before an update that changed its layout: build it again.
         open(player, entity)
@@ -807,6 +836,9 @@ local function refresh()
         end
       end
       show_priority(inner, entity)
+      if inner[ROBOT_ACCESS] then
+        show_robot_access(inner[ROBOT_ACCESS], entity)
+      end
       show_circuit_status(inner, entity)
     else
       storage.request_gui[index] = nil
