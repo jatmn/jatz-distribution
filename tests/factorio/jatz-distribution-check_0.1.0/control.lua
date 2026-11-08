@@ -1459,8 +1459,11 @@ local function setup_deliveries(surface, result)
   local five_mapping =
     blueprint.create_blueprint({ surface = surface, force = "player", area = { { -8, -48 }, { -5, -45 } } })
   remote.call("jatz-distribution", "setup_blueprint", blueprint, five_mapping)
-  local from_before = blueprint.get_blueprint_entities()
-  for _, entry in pairs(from_before) do
+  -- As a blueprint from before: the depot alone (no request settings, which would give it the 5
+  -- freighters themselves, whichever ghost is revived first: Copilot's review of acbe158), with
+  -- its freighters as an insert plan.
+  local from_before = {}
+  for _, entry in pairs(blueprint.get_blueprint_entities()) do
     if entry.name == "jatz-request-depot" then
       entry.items = {
         {
@@ -1468,18 +1471,15 @@ local function setup_deliveries(surface, result)
           items = { in_inventory = { { inventory = defines.inventory.chest, stack = 0, count = 5 } } },
         },
       }
+      from_before[#from_before + 1] = entry
     end
   end
   blueprint.set_blueprint_entities(from_before)
   for _, ghost in pairs(blueprint.build_blueprint({ surface = surface, force = "player", position = { -66.5, -36.5 } })) do
-    if ghost.valid and ghost.ghost_name ~= "jatz-depot-settings" then
-      ghost.tags = nil
-      local _, built = ghost.revive({ raise_revive = true })
-      deliveries.untagged = built or deliveries.untagged
-    elseif ghost.valid then
-      -- (A player's paste removes it at once.)
-      ghost.destroy()
-    end
+    assert(ghost.ghost_name == "jatz-request-depot", "from before: " .. ghost.ghost_name)
+    ghost.tags = nil
+    local _, built = ghost.revive({ raise_revive = true })
+    deliveries.untagged = built or deliveries.untagged
   end
   -- /jatz-freighters describes it (real request proxies, plans and counts).
   local described = remote.call("jatz-distribution", "describe_freighters", deliveries.untagged)
