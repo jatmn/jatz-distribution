@@ -1,8 +1,8 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- Jat'z Distribution runtime: loading zones (scripts/loading-zone.lua), the road each depot lays
 -- under its loading zone (scripts/depot-road.lua), deliveries between provider and request depots
--- (scripts/logistics.lua), the request panel (scripts/request-gui.lua) and the road network
--- monitor (scripts/road-monitor.lua).
+-- (scripts/logistics.lua), the request panel (scripts/request-gui.lua), the road network
+-- monitor (scripts/road-monitor.lua) and road tunnels (scripts/tunnels.lua).
 local loading_zone = require("scripts.loading-zone")
 local depot_road = require("scripts.depot-road")
 local logistics = require("scripts.logistics")
@@ -10,6 +10,7 @@ local depot_settings = require("scripts.depot-settings")
 local request_gui = require("scripts.request-gui")
 local research = require("scripts.research")
 local road_monitor = require("scripts.road-monitor")
+local tunnels = require("scripts.tunnels")
 local undo = require("scripts.undo")
 
 -- Road laid (`added`) or removed or covered (`removed`) on a surface: deliveries re-plan, and road
@@ -40,10 +41,19 @@ local function settle(entity)
   end
 end
 
+-- A road tunnel's portal built, turned or removed: which road networks tunnels join changed.
+local function tunnels_changed(surface_index)
+  tunnels.changed(surface_index, true)
+  roads_changed(surface_index, true, true)
+end
+
 local function on_built(event)
   local entity = event.entity or event.destination
   local settings = depot_settings.name
-  if
+  if entity and entity.valid and entity.name == tunnels.name then
+    tunnels.add(entity)
+    tunnels_changed(entity.surface_index)
+  elseif
     entity
     and entity.valid
     and (entity.name == settings or (entity.type == "entity-ghost" and entity.ghost_name == settings))
@@ -70,7 +80,9 @@ end
 -- Turning or flipping a depot moves its loading zone.
 local function on_turned(event)
   local entity = event.entity
-  if entity and entity.valid and loading_zone.depots[entity.name] then
+  if entity and entity.valid and entity.name == tunnels.name then
+    tunnels_changed(entity.surface_index)
+  elseif entity and entity.valid and loading_zone.depots[entity.name] then
     settle(entity)
     depot_changed(entity)
   end
@@ -81,9 +93,11 @@ for name in pairs(loading_zone.depots) do
   filters[#filters + 1] = { filter = "name", name = name }
 end
 -- And a blueprint's depot request settings, or their ghost (scripts/depot-settings.lua).
+-- And road tunnels' portals.
 local built_filters = {
   { filter = "name", name = depot_settings.name },
   { filter = "ghost_name", name = depot_settings.name },
+  { filter = "name", name = tunnels.name },
 }
 for _, filter in ipairs(filters) do
   built_filters[#built_filters + 1] = filter
@@ -104,6 +118,7 @@ end
 local clone_filters = {
   { filter = "name", name = logistics.truck_chest },
   { filter = "name", name = logistics.fuel_tank },
+  { filter = "name", name = tunnels.name },
 }
 for _, name in ipairs(logistics.drones) do
   clone_filters[#clone_filters + 1] = { filter = "name", name = name }
@@ -116,7 +131,11 @@ end
 -- trip, and a cloned truck chest no depot, so they are removed (logistics.on_cloned).
 script.on_event(defines.events.on_entity_cloned, function(event)
   local entity = event.destination
-  if entity.valid then
+  if entity.valid and entity.name == tunnels.name then
+    -- A cloned portal is a portal like any built one.
+    tunnels.add(entity)
+    tunnels_changed(entity.surface_index)
+  elseif entity.valid then
     if loading_zone.depots[entity.name] then
       settle(entity)
     end
@@ -186,6 +205,11 @@ script.on_event(defines.events.on_object_destroyed, function(event)
   road_monitor.on_object_destroyed(event)
   logistics.on_object_destroyed(event)
   if event.type == defines.target_type.entity and event.useful_id then
+    -- A road tunnel's portal removed by any means: freighters re-plan without its tunnel.
+    local tunnel_surface = tunnels.removed(event.useful_id)
+    if tunnel_surface then
+      roads_changed(tunnel_surface, false, true)
+    end
     -- Gone some other way while marked for deconstruction (destroyed, say): no robot removal.
     undo.forget(event.useful_id)
     local surface_index = depot_road.lift(event.useful_id)
@@ -292,6 +316,7 @@ local function setup()
   end
   loading_zone.clear_all()
   road_monitor.add_all()
+  tunnels.add_all()
 end
 script.on_init(function()
   research.init()

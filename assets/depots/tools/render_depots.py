@@ -20,8 +20,8 @@ def main():
     parser.add_argument('--threads',type=int,default=6)
     parser.add_argument('--role')
     args=parser.parse_args()
-    # The 3x3 depots, and the 1x1 road network monitor built in their finish.
-    variants=sorted(ROOT.glob('*/3/asset.json'))+sorted(ROOT.glob('road-monitor/1/asset.json'))
+    # The 3x3 depots, and the 1x1 road network monitor and road tunnel built in their finish.
+    variants=sorted(ROOT.glob('*/3/asset.json'))+sorted(ROOT.glob('road-monitor/1/asset.json'))+sorted(ROOT.glob('road-tunnel/1/asset.json'))
     if args.role: variants=[p for p in variants if p.parents[1].name==args.role]
     assert variants, 'No built depot masters found'
 

@@ -44,6 +44,12 @@ return {
   fuel_tank = "jatz-fuel-depot-tank",
   -- The combinator that reads what the depots on its road network hold (prototypes/road-monitor.lua).
   road_monitor = "jatz-road-monitor",
+  -- A road tunnel's portal (prototypes/road-tunnel.lua), and how far apart two may be (their back
+  -- tiles, 18 tiles between them at most): about twice Space Age's longest underground belt, with
+  -- the two ends meeting in the middle left out (the owner's choice, November 8, 2026).
+  road_tunnel = "jatz-road-tunnel",
+  tunnel_reach = 19,
+  tunnel_technology_icon = "__jatz-distribution__/assets/depots/technology/road-tunnel.png",
   -- A blueprint's copy of a request or buffer depot's request, for parametrisation
   -- (prototypes/depot-settings.lua).
   depot_settings = "jatz-depot-settings",

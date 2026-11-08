@@ -57,6 +57,8 @@ ROLES = ('provider', 'request', 'buffer', 'fuel', 'liquid-provider', 'liquid-req
 # The 1x1 road network monitor, built in the depots' finish, as players place it: facing north,
 # its gauge window toward them.
 MONITOR, MONITOR_DIRECTION = 'road-monitor', 0
+# The 1x1 road tunnel portal, built the same way, facing south: its mouth toward the player.
+TUNNEL, TUNNEL_DIRECTION = 'road-tunnel', 2
 
 
 def frame_box(direction, columns):
@@ -80,12 +82,17 @@ def sources(root=REPO, areas=('freighter', 'depots')):
                    frame_box(DEPOT_DIRECTION, 4), ICON_SIZE, MIPMAPS)
         yield (depots / 'icons', f'{MONITOR}.png', depots / MONITOR / '1/sheets/preview.png',
                frame_box(MONITOR_DIRECTION, 4), ICON_SIZE, MIPMAPS)
+        yield (depots / 'icons', f'{TUNNEL}.png', depots / TUNNEL / '1/sheets/preview.png',
+               frame_box(TUNNEL_DIRECTION, 4), ICON_SIZE, MIPMAPS)
         # Liquid freight research (the liquid depots) and fluid capacity research.
         yield (depots / 'technology', 'liquid-provider-depot.png', depots / 'liquid-provider/3/sheets/preview.png',
                frame_box(DEPOT_DIRECTION, 4), TECHNOLOGY_SIZE, 1)
         # Road network monitor research.
         yield (depots / 'technology', f'{MONITOR}.png', depots / MONITOR / '1/sheets/preview.png',
                frame_box(MONITOR_DIRECTION, 4), TECHNOLOGY_SIZE, 1)
+        # Road tunnels research.
+        yield (depots / 'technology', f'{TUNNEL}.png', depots / TUNNEL / '1/sheets/preview.png',
+               frame_box(TUNNEL_DIRECTION, 4), TECHNOLOGY_SIZE, 1)
 
 
 def thumbnail_source(root=REPO):

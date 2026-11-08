@@ -32,6 +32,8 @@ Roles are `provider`, `request`, `buffer`, `fuel`, `liquid-provider`, `liquid-re
 
 The 1×1 **road network monitor** (`road-monitor/1/`, `source/road-monitor-1.blend`) is built, rendered and packaged with the same tools, in the liquid depots' finish: grey housing like their tank shells, bronze skid, lid rim and strap, and a brown band (`MONITOR_PALETTE` in `build_depots.py`), with two terminal posts for its wires and a status lens on its lid. The builder records in its `asset.json` where the wires meet the posts, their shadows and the lens for each direction (`points`); `prototypes/road-monitor-points.lua` copies them, and `tools/test_mod_setup.py` checks the copy. The mod draws its `preview` and `shadow` sheets. Its icon, `icons/road-monitor.png`, shows it facing north, as it is placed. It has no loading path or pipes, so the geometry and junction inspectors skip it.
 
+The **road tunnel** (`road-tunnel/1/`, `source/road-tunnel-1.blend`; one tile wide and two deep, rendered over 3.5 tiles, `TUNNEL_VIEW`) is built the same way, like the item depots' loading side at its mouth, in their dark steel (no bronze), with the monitor's grey housing and brown band (`TUNNEL_PALETTE`). It stands on a two-tile version of the item depots' foundation pan. Its mouth has their corner castings, sloped shoulders and orange locks, vertical guides with orange wear shoes, lintel and retracted shutter with a band, an inward chevron and a violet lens, over a dark ramp going down. From there its roof and walls slope down to the ground at the back, so it reads as a ramp going under ground. Everything on the slope follows it: a steel coping along the top of each side wall, the brown band parallel to it, panel seams below the band, a vent grille only where the wall is tall, and at the back a threshold where the slope meets the ground and two orange clamps bolted to the slope. Its mouth faces north (+Y), as the portal does placed unrotated, so the south view looks into it; its icon and technology icon (`icons/road-tunnel.png`, `technology/road-tunnel.png`) show that view. The mod draws its `preview` and `shadow` sheets. It has no loading path or pipes, so the geometry and junction inspectors skip it.
+
 ## Paint layers
 
 The packaging pipeline is shared with the freighter, so the files keep the freighter's mask names:
@@ -131,6 +133,15 @@ python3 $T/render_depots.py --role road-monitor
 ```
 
 Then copy the new `points` from `road-monitor/1/asset.json` into `prototypes/road-monitor-points.lua`.
+
+The road tunnel alone:
+
+```sh
+blender -b --python-exit-code 1 --python $T/build_depots.py -- --role road-tunnel --size 1
+python3 $T/render_depots.py --role road-tunnel
+(cd $T && ../../../.venv/bin/python package_depots.py --role road-tunnel)
+.venv/bin/python tools/make_icons.py
+```
 
 After changing the pipe connector:
 

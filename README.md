@@ -11,7 +11,7 @@ Build depots where goods are made and where they're needed, connect them with ro
 
 ## How it works
 
-1. **Research Freight system**, after Engine, to unlock the item depots, freighters and road (and later **Liquid freight** for the liquid depots, and **Road network monitor** for the monitor).
+1. **Research Freight system**, after Engine, to unlock the item depots, freighters and road (and later **Liquid freight** for the liquid depots, **Road network monitor** for the monitor, and **Road tunnels** for tunnels under the factory).
 2. **Lay road.** Freighters drive only on road, which you'll find in the mod's row of the crafting menu. Each depot lays a road tile under its loading zone (except on space platforms), so just run your road up to it.
 3. **Place a provider depot** and fill it with goods.
 4. **Place a request depot**, open it, and choose an item and how many to keep in stock.
@@ -26,6 +26,7 @@ Want the details? The **[player guide](docs/guide.md)** covers the freighter slo
 
 - **Trucks, not drones:** the Quinityn sealed freighter is an armored eight-wheeler that follows your roads.
 - **Smart routing:** freighters pick the nearest provider by road, not in a straight line, and re-route the moment a road is cut.
+- **Road tunnels:** like underground belts for roads. Freighters drive in at one end and come out at the other, under whatever stands between.
 - **They need fuel, like real trucks:** a freighter low on fuel for where it's going stops at the nearest fuel depot first, fills up, then carries on. Any fuel works, item or fluid, from any mod.
 - **Items and fluids:** separate depots for dry cargo and for fluids, and fluids keep their temperature.
 - **Buffers and priority:** stage stock close to where it's needed, and rank depots from 1 to 10.

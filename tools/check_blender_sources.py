@@ -31,9 +31,9 @@ def load(path):
 
 
 AREAS = {'freighter': 'assets/quinityn-freighter', 'depots': 'assets/depots'}
-# The 1x1 road network monitor, built, rendered and packaged with the depots (no geometry or
-# junction inspection: it has no loading path or pipes).
-MONITOR = 'road-monitor/1/asset.json'
+# The 1x1 road network monitor and road tunnel, built, rendered and packaged with the depots (no
+# geometry or junction inspection: they have no loading path or pipes).
+SMALL = ('road-monitor/1/asset.json', 'road-tunnel/1/asset.json')
 
 
 def tracked_blends(root, directory):
@@ -84,8 +84,10 @@ def check_depots(root, errors):
         if meta['ports']:
             expect(errors, junctions.get(role, {}), 'source_sha256', digest, model,
                    'run assets/depots/tools/inspect_junctions.py in Blender')
-    monitor = depots / MONITOR
-    if monitor.is_file():
+    for small in SMALL:
+        monitor = depots / small
+        if not monitor.is_file():
+            continue
         meta = load(monitor)
         source = depots / meta['source']
         model, digest = source.relative_to(root), sha256(source)
@@ -193,7 +195,7 @@ def required_icons(root, area):
         return {'quinityn-freighter.png'}
     depots = root / 'assets/depots'
     icons = {f'{load(path)["role"]}-depot.png' for path in depots.glob('*/3/asset.json')}
-    return icons | ({'road-monitor.png'} if (depots / MONITOR).is_file() else set())
+    return icons | {f'{load(depots / small)["role"]}.png' for small in SMALL if (depots / small).is_file()}
 
 
 def png_rgba(path):

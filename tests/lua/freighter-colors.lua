@@ -160,7 +160,12 @@ end
 local items, fluids = colors.derive(raw, { "item", "ammo" })
 
 check("palette: 216 painted freighters", #paint.palette() == 216)
-check("plus the empty and the unknown", #paint.names() == 218 and paint.is_drone("jatz-freighter-drone-loaded"))
+check(
+  "plus the empty, the unknown and the one under ground",
+  #paint.names() == 219
+    and paint.is_drone("jatz-freighter-drone-loaded")
+    and paint.is_drone("jatz-freighter-drone-underground")
+)
 check("not other units", not paint.is_drone("small-biter"))
 check("a color rounds to the nearest paint", paint.drone_for({ 0.41, 0.53, 0.58 }) == "jatz-freighter-drone-233")
 check("0-255 colors are scaled", paint.drone_for({ r = 255, g = 102, b = 0 }) == "jatz-freighter-drone-520")

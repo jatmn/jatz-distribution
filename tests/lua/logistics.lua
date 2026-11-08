@@ -361,6 +361,12 @@ local function reset()
     }
     drone.force = parameters.force or PLAYER
     drone.health = 500
+    -- LuaControl::teleport, to a position on its own surface.
+    function drone.teleport(position)
+      assert(type(position) == "table" and position.x and position.y, "teleport to a MapPosition")
+      drone.position = { x = position.x, y = position.y }
+      return true
+    end
     -- Destroyed, it answers the mod only `valid`, as in the game: reading anything else from an
     -- invalid LuaEntity is an error (start_trip read a freighter its own set_off had sent home).
     -- These checks may still look at what it was.
@@ -2173,6 +2179,7 @@ do -- The cargo paint: grey out, the load's color from the provider home, the sa
     painted.position.x == empty.position.x
       and painted.position.y == empty.position.y
       and painted.orientation == 0.25
+      and painted.parameters.direction == defines.direction.east
       and painted.health == 321
       and painted.speed == 0.02
   )
@@ -4609,6 +4616,534 @@ do
     "so does the first schedule of a save from before phases",
     leg > 0 and energy and math.abs(energy - (20000000 - 2 * leg * 10000)) < 1e-6
   )
+end
+
+-- Road tunnels (scripts/tunnels.lua): two road networks, west (x up to 20) and east (x from 30),
+-- that no road joins. The pathfinder finds no road between them; two portals facing each other
+-- across the gap, mouths on each network, join them.
+local function tunnelled(logistics, with_portals)
+  function surface.get_connected_tiles(position, names)
+    assert(names[1] == "jatz-road" and names[2] == "jatz-depot-road", "flooded over both road tiles")
+    local x, y = position[1], position[2]
+    if y < -5 or y > 5 then
+      return {}
+    end
+    local from, to
+    if x >= -5 and x <= 20 then
+      from, to = -5, 20
+    elseif x >= 30 and x <= 60 then
+      from, to = 30, 60
+    else
+      return {}
+    end
+    local tiles = {}
+    for tx = from, to do
+      for ty = -5, 5 do
+        tiles[#tiles + 1] = { x = tx, y = ty }
+      end
+    end
+    return tiles
+  end
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  local provider = entity("jatz-provider-depot", 40.5, 0.5)
+  stocked(provider, "a", 20)
+  local home = stocked(request)
+  logistics.add(request)
+  logistics.add(provider)
+  assert(logistics.set_request(request, "a", 10))
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+  local portals = {}
+  if with_portals then
+    local tunnels = require("scripts.tunnels")
+    -- Each one tile wide and two deep: centred between its two tiles, its mouth on the road.
+    local west = entity("jatz-road-tunnel", 22, 0.5)
+    west.direction = defines.direction.west
+    local east = entity("jatz-road-tunnel", 29, 0.5)
+    east.direction = defines.direction.east
+    west.fluidbox_neighbours = { { east } }
+    east.fluidbox_neighbours = { { west } }
+    tunnels.add(west)
+    tunnels.add(east)
+    logistics.on_roads_changed(1, true, true)
+    portals = { west = west, east = east }
+  end
+  return request, provider, portals, home
+end
+
+do -- Without tunnels, a provider on another road network is out of reach.
+  local logistics = reset()
+  local request = tunnelled(logistics, false)
+  logistics.on_tick()
+  answer(logistics, 1, "none")
+  check("a provider across the gap has no road", not has_trip(request))
+end
+
+do -- Through a tunnel to a provider on another road network, and back.
+  local logistics = reset()
+  local request, provider, _, home = tunnelled(logistics, true)
+  logistics.on_tick()
+  answer(logistics, 1, "none")
+  local trip = trip_of(request)
+  check("a provider across the gap is reached through the tunnel", trip and trip.provider == provider.unit_number)
+  -- The way: 20 tiles to the west mouth, 10 through, 10 on to the provider's zone (straight lines).
+  check(
+    "the road length counts the tunnel",
+    trip and math.abs(trip.leg - (math.sqrt(20 ^ 2 + 2 ^ 2) + 10 + math.sqrt(10 ^ 2 + 2 ^ 2))) < 1e-6
+  )
+  local drive = trip.drone.commands[#trip.drone.commands]
+  check("it drives to the west mouth first", drive.destination.x == 20.5 and drive.destination.y == 0.5)
+  arrive(logistics, trip)
+  check("at the mouth it goes under, unseen", trip.drone.name == "jatz-freighter-drone-underground")
+  local wait = trip.drone.commands[#trip.drone.commands]
+  check(
+    "standing as long as the tunnel takes to drive",
+    wait.type == defines.command.stop and wait.ticks_to_wait == math.ceil(10 / trip.drone.speed)
+  )
+  -- The unseen freighter has one direction: the game turns it north.
+  trip.drone.orientation = 0
+  local commands = #trip.drone.commands
+  logistics.on_roads_changed(1, false, true)
+  check("re-planning waits until it is out", #trip.drone.commands == commands)
+  local sprites = #surface.sprites
+  arrive(logistics, trip)
+  check(
+    "it comes out just inside the east mouth, seen again",
+    trip.drone.name == "jatz-freighter-drone"
+      and math.abs(trip.drone.position.x - 30.2) < 1e-9
+      and trip.drone.position.y == 0.5
+      and trip.tunnel == nil
+  )
+  check(
+    "facing out of the east mouth, not north, made facing that way",
+    trip.drone.orientation == 0.25 and trip.drone.parameters.direction == defines.direction.east
+  )
+  drive = trip.drone.commands[#trip.drone.commands]
+  check(
+    "it drives straight out of the mouth first, a tile on along the road",
+    drive.type == defines.command.go_to_location and drive.destination.x == 31.5 and drive.destination.y == 0.5
+  )
+  arrive(logistics, trip)
+  drive = trip.drone.commands[#trip.drone.commands]
+  check(
+    "then on to the provider",
+    drive.destination.x == 40.5 and drive.destination.y == 2.5 and not trip.coming_out and trip.origin.x == 30.5
+  )
+  check("drawing nothing while empty", #surface.sprites == sprites)
+  arrive(logistics, trip)
+  check("it loads there", trip.cargo.get_item_count("a") == 10)
+  drive = trip.drone.commands[#trip.drone.commands]
+  check(
+    "and heads home through the same tunnel, from the east mouth",
+    trip.tunnel and drive.destination.x == 30.5 and trip.tunnel.exit.x == 20.5
+  )
+  arrive(logistics, trip)
+  check("under ground, its cargo shows nothing", trip.drone.name == "jatz-freighter-drone-underground")
+  arrive(logistics, trip)
+  check(
+    "out at the west mouth in its cargo's paint, facing west",
+    trip.drone.name == "jatz-freighter-drone-500" and trip.drone.orientation == 0.75
+  )
+  check("with its cargo shown again", sprites_on(trip.drone) ~= "")
+  check("out of the mouth westward first", trip.drone.commands[#trip.drone.commands].destination.x == 19.5)
+  arrive(logistics, trip)
+  arrive(logistics, trip)
+  check("the load arrives", home.get_item_count("a") == 10 and not has_trip(request))
+end
+
+do -- A tunnel closed before the freighter goes in: it plans afresh from the mouth.
+  local logistics = reset()
+  local request, _, portals = tunnelled(logistics, true)
+  logistics.on_tick()
+  answer(logistics, 1, "none")
+  local trip = trip_of(request)
+  portals.east.valid = false
+  local surface_index = require("scripts.tunnels").removed(portals.east.unit_number)
+  check("a removed portal is known by its surface", surface_index == 1)
+  arrive(logistics, trip)
+  check("it doesn't go under", trip.drone.name == "jatz-freighter-drone" and trip.tunnel == nil)
+  local drive = trip.drone.commands[#trip.drone.commands]
+  check("and drives for the provider directly, the pathfinder's to answer", drive.destination.x == 40.5)
+end
+
+do -- A portal removed while a freighter is under ground: it still comes out at the other end.
+  local logistics = reset()
+  local request, _, portals = tunnelled(logistics, true)
+  logistics.on_tick()
+  answer(logistics, 1, "none")
+  local trip = trip_of(request)
+  arrive(logistics, trip)
+  portals.west.valid = false
+  require("scripts.tunnels").removed(portals.west.unit_number)
+  logistics.on_roads_changed(1, false, true)
+  arrive(logistics, trip)
+  check(
+    "out at the far end",
+    trip.drone.valid and math.abs(trip.drone.position.x - 30.2) < 1e-9 and trip.drone.name == "jatz-freighter-drone"
+  )
+end
+
+do -- Killed at the mouth while under ground: lost, never brought out at the other end.
+  local logistics = reset()
+  local request = tunnelled(logistics, true)
+  logistics.on_tick()
+  answer(logistics, 1, "none")
+  local trip = trip_of(request)
+  arrive(logistics, trip)
+  local unseen = trip.drone
+  unseen.health = 0
+  logistics.on_ai_command_completed({ unit_number = unseen.unit_number, result = defines.behavior_result.fail })
+  check(
+    "a freighter dying under ground isn't brought out",
+    trip.drone == unseen and unseen.name == "jatz-freighter-drone-underground"
+  )
+  unseen.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = unseen.unit_number })
+  check("it is lost", not has_trip(request))
+end
+
+do -- Something stuck to it at the mouth: it waits there until that wears off.
+  local logistics = reset()
+  local request = tunnelled(logistics, true)
+  logistics.on_tick()
+  answer(logistics, 1, "none")
+  local trip = trip_of(request)
+  trip.drone.stickers = { {} }
+  arrive(logistics, trip)
+  local wait = trip.drone.commands[#trip.drone.commands]
+  check(
+    "a burning freighter waits at the mouth",
+    trip.drone.name == "jatz-freighter-drone" and wait.type == defines.command.stop and not trip.tunnel.under
+  )
+  trip.drone.stickers = nil
+  arrive(logistics, trip)
+  check("and goes under once nothing is stuck to it", trip.drone.name == "jatz-freighter-drone-underground")
+end
+
+do -- Killed by a script under ground (its health still shows as its wait fails): lost, not brought out.
+  local logistics = reset()
+  local request = tunnelled(logistics, true)
+  logistics.on_tick()
+  answer(logistics, 1, "none")
+  local trip = trip_of(request)
+  arrive(logistics, trip)
+  local unseen = trip.drone
+  logistics.on_ai_command_completed({ unit_number = unseen.unit_number, result = defines.behavior_result.fail })
+  check("a script's kill under ground doesn't bring it out", trip.drone == unseen)
+  unseen.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = unseen.unit_number })
+  logistics.failed_commands()
+  check("it is lost", not has_trip(request))
+end
+
+do -- Its provider removed while under ground: the reroute search it starts is still its own outside.
+  local logistics = reset()
+  local request, provider = tunnelled(logistics, true)
+  local other = entity("jatz-provider-depot", 50.5, 0.5)
+  stocked(other, "a", 20)
+  logistics.add(other)
+  logistics.on_tick()
+  answer(logistics, 1, "none")
+  local trip = trip_of(request)
+  -- At the west mouth, where it goes under (the fake freighter doesn't move by itself).
+  trip.drone.position = { x = 20.5, y = 0.5 }
+  arrive(logistics, trip)
+  -- The unseen freighter has one direction: the game turns it north.
+  trip.drone.orientation = 0
+  provider.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = provider.unit_number })
+  check("a reroute under ground searches", trip.searching ~= nil)
+  local searching = trip.id
+  arrive(logistics, trip)
+  check(
+    "it comes out to wait for the answer, the same unit, facing out of the east mouth",
+    trip.id == searching and trip.drone.position.x == 30.5 and trip.tunnel == nil and trip.drone.orientation == 0.25
+  )
+  -- Asked from the west mouth, under ground: no road joins it to the other provider, which is on
+  -- the east side. The answer comes after the freighter is out at the east mouth.
+  check("the reroute asked from where it went under", requests[#requests].start.x == 20.5)
+  answer(logistics, #requests, "none")
+  check(
+    "and the answer sends it to the other provider, reached from there through the tunnel",
+    trip.searching == nil
+      and trip.provider == other.unit_number
+      and not storage.depots[request.unit_number].cooldowns[other.unit_number]
+      and trip.drone.commands[#trip.drone.commands].destination.x == 50.5
+  )
+end
+
+do -- A road network keeps its number however many freighter positions on it are asked about.
+  local logistics = reset()
+  tunnelled(logistics, true)
+  local tunnels = require("scripts.tunnels")
+  local provider_zone = { x = 40.5, y = 2.5 }
+  local routed = true
+  for _, x in ipairs({ 0.5, 5.5, 6.5, 5.5, 12.5, 0.5 }) do
+    game.tick = game.tick + 1
+    routed = routed and tunnels.route(1, { x = x, y = 2.5 }, provider_zone) ~= nil
+  end
+  check("routes from positions asked about on earlier ticks still go through the tunnel", routed)
+end
+
+do -- Road laid joining two networks before their numbers are forgotten: they become one.
+  local logistics = reset()
+  tunnelled(logistics, true)
+  local tunnels = require("scripts.tunnels")
+  -- West, then east, positions remembered (east's number is the higher).
+  tunnels.route(1, { x = 5.5, y = 2.5 }, { x = 35.5, y = 2.5 })
+  local split = surface.get_connected_tiles
+  function surface.get_connected_tiles(position)
+    local x, y = position[1], position[2]
+    if y < -5 or y > 5 or x < -5 or x > 60 then
+      return {}
+    end
+    local tiles = {}
+    for tx = -5, 60 do
+      for ty = -5, 5 do
+        tiles[#tiles + 1] = { x = tx, y = ty }
+      end
+    end
+    return tiles
+  end
+  tunnels.changed(1)
+  game.tick = game.tick + 1
+  -- Asked about within a second of the change, a new position floods the joined network.
+  tunnels.route(1, { x = 25.5, y = 2.5 }, { x = 0.5, y = 2.5 })
+  local points = storage.tunnel_nets[1].points
+  check(
+    "every point remembered on either joins the one network",
+    points["5,2"] == points["35,2"] and points["35,2"] == points["25,2"] and points["20,0"] == points["30,0"]
+  )
+  surface.get_connected_tiles = split
+end
+
+do -- Road cut behind a freighter on its way home: it plans from where it stands, not from where it loaded.
+  local logistics = reset()
+  local request, _, _, home = tunnelled(logistics, true)
+  local split = surface.get_connected_tiles
+  -- One network at first: a road also joins west and east, so the tunnel isn't used.
+  function surface.get_connected_tiles(position)
+    local x, y = position[1], position[2]
+    if y < -5 or y > 5 or x < -5 or x > 60 then
+      return {}
+    end
+    local tiles = {}
+    for tx = -5, 60 do
+      for ty = -5, 5 do
+        tiles[#tiles + 1] = { x = tx, y = ty }
+      end
+    end
+    return tiles
+  end
+  logistics.on_roads_changed(1, true, true)
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  local trip = trip_of(request)
+  check("joined by road, it drives to the provider directly", trip.tunnel == nil)
+  arrive(logistics, trip)
+  -- Home past x 25, where the road is then cut, leaving it on its home's network.
+  trip.drone.position = { x = 10.5, y = 2.5 }
+  surface.get_connected_tiles = split
+  logistics.on_roads_changed(1, false, true)
+  local drive = trip.drone.commands[#trip.drone.commands]
+  check(
+    "it drives on home, not to the tunnel on the provider's side",
+    trip.tunnel == nil and drive.destination.x == 0.5
+  )
+  arrive(logistics, trip)
+  check("and unloads", home.get_item_count("a") == 10)
+end
+
+do -- Tunnel mouths off road join nothing: no route through a chain still missing its middle road.
+  local logistics = reset()
+  tunnelled(logistics, false)
+  local tunnels = require("scripts.tunnels")
+  -- West (x up to 20) to a mouth off road at x 25, then from one off road at x 26 to east (x from 30).
+  local function portal(x, facing)
+    local made = entity("jatz-road-tunnel", x, 0.5)
+    made.direction = facing
+    return made
+  end
+  local a, b = portal(22, defines.direction.west), portal(24, defines.direction.east)
+  local c, d = portal(27, defines.direction.west), portal(29, defines.direction.east)
+  a.fluidbox_neighbours, b.fluidbox_neighbours = { { b } }, { { a } }
+  c.fluidbox_neighbours, d.fluidbox_neighbours = { { d } }, { { c } }
+  for _, made in ipairs({ a, b, c, d }) do
+    tunnels.add(made)
+  end
+  check("no way through mouths off road", tunnels.route(1, { x = 0.5, y = 2.5 }, { x = 40.5, y = 2.5 }) == nil)
+end
+
+do -- Out of a mouth onto a one-tile road: the first stretch ends on the entry tile itself.
+  local logistics = reset()
+  local _, _, portals = tunnelled(logistics, true)
+  local road_tile = surface.get_tile
+  -- Off road a tile beyond the east mouth (x 31).
+  function surface.get_tile(x)
+    return { valid = true, name = x == 31 and "grass-1" or "jatz-road" }
+  end
+  local start, out, facing = require("scripts.tunnels").way_out(portals.east.unit_number, { x = 30.5, y = 0.5 })
+  check(
+    "it appears inside the mouth and drives only to the entry tile's centre",
+    math.abs(start.x - 30.2) < 1e-9 and out.x == 30.5 and out.y == 0.5 and facing == 0.25
+  )
+  surface.get_tile = road_tile
+end
+
+do -- Road cut behind a freighter with a reroute under way: the restarted search asks from where it stands.
+  local logistics = reset()
+  local request, provider = tunnelled(logistics, true)
+  local other = entity("jatz-provider-depot", 50.5, 0.5)
+  stocked(other, "a", 20)
+  logistics.add(other)
+  logistics.on_tick()
+  answer(logistics, 1, "none")
+  local trip = trip_of(request)
+  -- On its way to the west mouth (x 20.5), at x 10.5, when its provider goes: a reroute starts.
+  trip.drone.position = { x = 10.5, y = 0.5 }
+  provider.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = provider.unit_number })
+  check("setup: a reroute is under way", trip.searching ~= nil)
+  -- Road cut at x 5: home (x 0.5) is cut off from the freighter and the west mouth.
+  local whole = surface.get_connected_tiles
+  function surface.get_connected_tiles(position)
+    local x, y = position[1], position[2]
+    local from, to
+    if y < -5 or y > 5 then
+      return {}
+    elseif x >= -5 and x <= 4 then
+      from, to = -5, 4
+    elseif x >= 5 and x <= 20 then
+      from, to = 5, 20
+    elseif x >= 30 and x <= 60 then
+      from, to = 30, 60
+    else
+      return {}
+    end
+    local tiles = {}
+    for tx = from, to do
+      for ty = -5, 5 do
+        tiles[#tiles + 1] = { x = tx, y = ty }
+      end
+    end
+    return tiles
+  end
+  logistics.on_roads_changed(1, false, true)
+  answer(logistics, #requests, "none")
+  check(
+    "the provider across the tunnel is still found from where the freighter stands",
+    trip.provider == other.unit_number
+      and not storage.depots[request.unit_number].cooldowns[other.unit_number]
+      and trip.state == "to-provider"
+  )
+  surface.get_connected_tiles = whole
+end
+
+-- Fuel burned through tunnels with no once-a-second check between: the way to the mouth, each
+-- tunnel's length and the way out, not one straight line across them all.
+local function burned(trip, energy)
+  return (energy - trip.energy) / 10000
+end
+
+do -- One short tunnel.
+  local logistics = reset()
+  local request = tunnelled(logistics, true)
+  logistics.on_tick()
+  answer(logistics, 1, "none")
+  local trip = trip_of(request)
+  -- Sampled a tile short of the west mouth, then on to it.
+  trip.at, trip.drone.position = { x = 20.5, y = 1.5 }, { x = 20.5, y = 0.5 }
+  local energy = trip.energy
+  arrive(logistics, trip)
+  arrive(logistics, trip)
+  -- Out at x 30.2, then straight out to x 31.5.
+  trip.drone.position = { x = 31.5, y = 0.5 }
+  arrive(logistics, trip)
+  check("a tile in, the tunnel's 10, then 1.3 out", math.abs(burned(trip, energy) - 12.3) < 1e-9)
+end
+
+do -- Two tunnels one after another, through a one-tile road between them.
+  local logistics = reset()
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  local provider = entity("jatz-provider-depot", 40.5, 0.5)
+  stocked(provider, "a", 20)
+  stocked(request)
+  logistics.add(request)
+  logistics.add(provider)
+  assert(logistics.set_request(request, "a", 10))
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+  -- West road to x 19, the one tile x 25 between the tunnels, east road from x 31.
+  function surface.get_connected_tiles(position)
+    local x, y = position[1], position[2]
+    local from, to
+    if y < -5 or y > 5 then
+      return {}
+    elseif x >= -5 and x <= 19 then
+      from, to = -5, 19
+    elseif x == 25 then
+      from, to = 25, 25
+    elseif x >= 31 and x <= 60 then
+      from, to = 31, 60
+    else
+      return {}
+    end
+    local tiles = {}
+    for tx = from, to do
+      for ty = -5, 5 do
+        tiles[#tiles + 1] = { x = tx, y = ty }
+      end
+    end
+    return tiles
+  end
+  -- Beyond the first exit (x 26) is the second tunnel, not road.
+  local road_tile = surface.get_tile
+  function surface.get_tile(x)
+    return { valid = true, name = x == 26 and "grass-1" or "jatz-road" }
+  end
+  local tunnels = require("scripts.tunnels")
+  local function portal(x, facing)
+    local made = entity("jatz-road-tunnel", x, 0.5)
+    made.direction = defines.direction[facing]
+    return made
+  end
+  local a, b, c, d = portal(21, "west"), portal(24, "east"), portal(27, "west"), portal(30, "east")
+  a.fluidbox_neighbours, b.fluidbox_neighbours = { { b } }, { { a } }
+  c.fluidbox_neighbours, d.fluidbox_neighbours = { { d } }, { { c } }
+  for _, made in ipairs({ a, b, c, d }) do
+    tunnels.add(made)
+  end
+  logistics.on_roads_changed(1, true, true)
+  logistics.on_tick()
+  answer(logistics, 1, "none")
+  local trip = trip_of(request)
+  check("setup: the way goes through both tunnels", trip and trip.tunnel and trip.tunnel.exit.x == 25.5)
+  trip.at, trip.drone.position = { x = 19.5, y = 1.5 }, { x = 19.5, y = 0.5 }
+  local energy = trip.energy
+  arrive(logistics, trip)
+  arrive(logistics, trip)
+  -- Out of the first at x 25.2, to the tile's centre, then straight into the second.
+  trip.drone.position = { x = 25.5, y = 0.5 }
+  arrive(logistics, trip)
+  arrive(logistics, trip)
+  arrive(logistics, trip)
+  trip.drone.position = { x = 32.5, y = 0.5 }
+  arrive(logistics, trip)
+  check(
+    "a tile in, 6 through, 0.3 across, 6 through, then 1.3 out",
+    math.abs(burned(trip, energy) - 14.6) < 1e-9 and trip.drone.commands[#trip.drone.commands].destination.x == 40.5
+  )
+  surface.get_tile = road_tile
+end
+
+do -- Routes within one road network never use tunnels.
+  local logistics = reset()
+  local request = tunnelled(logistics, true)
+  local nearby = entity("jatz-provider-depot", 10.5, 0.5, { a = 20 })
+  logistics.add(nearby)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  local drive = trip.drone.commands[#trip.drone.commands]
+  check("a provider on the same network is driven to directly", trip.tunnel == nil and drive.destination.x == 10.5)
 end
 
 print("all logistics checks passed")

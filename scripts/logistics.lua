@@ -54,11 +54,19 @@
 -- A request or buffer depot's freighters already on their way finish their trips; those on their
 -- way to fetch from a depot that switches off, or that no longer has their load (an inserter or a
 -- player took it out), go to another one once, then home (logistics.keep_promises).
+--
+-- Road tunnels (scripts/tunnels.lua) join road networks under whatever stands between their two
+-- portals. A depot whose provider (or Fuel depot, or home) is on another network the tunnels join
+-- sends its freighter through them: it drives to a portal's mouth, goes under (swapped for an
+-- unseen freighter that stands there for as long as the tunnel takes to drive, `into_tunnel`),
+-- comes out at the other end (`out_of_tunnel`) and drives on. Routes within one network never use
+-- them.
 local loading_zone = require("scripts.loading-zone")
 local paint = require("scripts.freighter-paint")
 local depot_circuit = require("scripts.depot-circuit")
 local research = require("scripts.research")
 local impact = require("scripts.impact")
+local tunnels = require("scripts.tunnels")
 
 local logistics = {}
 
@@ -595,6 +603,18 @@ function logistics.add(entity)
   fuel_tank(entity)
 end
 
+-- Every depot's loading zone on a surface: the points tunnels note on each road network they flood
+-- (scripts/tunnels.lua), so a depot's network is known without a flood of its own.
+tunnels.zones = function(surface_index)
+  local zones = {}
+  for _, depot in pairs(storage.depots or {}) do
+    if depot.surface_index == surface_index and depot.entity.valid then
+      zones[#zones + 1] = (loading_tile(depot.entity))
+    end
+  end
+  return zones
+end
+
 -- An item's stack size, read from its prototype once (prototypes don't change while the game runs;
 -- reading one makes a new object every time).
 local stack_sizes = {}
@@ -681,6 +701,10 @@ end
 
 -- The paint for what a trip's freighter carries.
 local function paint_of(trip)
+  if trip.tunnel and trip.tunnel.under then
+    -- In a tunnel: unseen.
+    return paint.underground
+  end
   return cargo_empty(trip) and DRONE or paint.drone_for_cargo(trip.fluid ~= nil, trip.item)
 end
 
@@ -743,7 +767,13 @@ local function show_fuel(trip, per_tile, capacity)
   drone.custom_status = FUEL_STATUS
 end
 
-local function repaint(id, trip)
+-- `position`: where the new one stands instead (coming out of a tunnel at its other end).
+-- `orientation`: the way the new one faces instead (out of a tunnel's mouth).
+-- The new unit is made facing that way (its nearest of the 16 directions, then exactly): a unit
+-- made without one is drawn facing north and turns round at its rotation speed, whatever its
+-- orientation is set to after (the owner's video, November 8, 2026: freighters coming out of a
+-- tunnel and swapped for their cargo's paint showed north for a few ticks first).
+local function repaint(id, trip, position, orientation)
   local old = trip.drone
   local name = paint_of(trip)
   if not old.valid or old.name == name then
@@ -752,11 +782,17 @@ local function repaint(id, trip)
   if next(old.stickers or {}) then
     return false
   end
-  local drone = old.surface.create_entity({ name = name, position = old.position, force = old.force })
+  orientation = orientation or old.orientation or 0
+  local drone = old.surface.create_entity({
+    name = name,
+    position = position or old.position,
+    force = old.force,
+    direction = math.floor(orientation * 16 + 0.5) % 16,
+  })
   if not drone then
     return false
   end
-  drone.orientation = old.orientation
+  drone.orientation = orientation
   drone.health = old.health
   -- A dry freighter crawls (DRY_SPEED): the new one must too.
   drone.speed = old.speed
@@ -781,7 +817,7 @@ end
 -- move with it and go when it leaves the map, or is swapped for another paint (`repaint`): call
 -- this after repainting. An empty freighter shows nothing.
 local function show_cargo(trip)
-  if cargo_empty(trip) or not trip.drone.valid then
+  if cargo_empty(trip) or not trip.drone.valid or (trip.tunnel and trip.tunnel.under) then
     return
   end
   for _, sprite in ipairs({ "utility/entity_info_dark_background", (trip.fluid and "fluid/" or "item/") .. trip.item }) do
@@ -1666,6 +1702,12 @@ end
 -- Every command a freighter gets goes through here. (A field, not a local: this file has as many
 -- locals as Lua allows.)
 function logistics.command(trip, command)
+  local tunnel = trip.tunnel
+  if tunnel and tunnel.started then
+    -- Under ground: it comes out at the other end first (out_of_tunnel), which then drives it on
+    -- to where it is going by then, or stops it for a search under way.
+    return
+  end
   trip.command_id = (trip.command_id or 0) + 1
   trip.drone.commandable.set_command(command)
 end
@@ -1678,17 +1720,34 @@ end
 -- command failed, before the check in it. Only one that never left home, `departing`, is skipped.)
 -- `sampled`: the caller burned it just now (set_off does, before deciding whether the leg needs a
 -- Fuel depot first).
+--
+-- A destination on another road network that tunnels join is reached through them: the freighter
+-- drives to the first tunnel's mouth (`trip.tunnel`), and on from where it comes out
+-- (logistics.out_of_tunnel). Under ground, it only notes where it is going.
 local function drive(trip, destination, sampled)
+  local tunnel = trip.tunnel
+  if tunnel and tunnel.under then
+    trip.destination, trip.loading, trip.departing = destination, nil, nil
+    return
+  end
   if not (sampled or trip.departing) then
     burn(trip)
   end
   trip.destination = destination
-  trip.loading = nil
+  trip.loading, trip.coming_out = nil, nil
   -- On the road now: no longer standing at home deciding whether it can go.
   trip.departing = nil
+  -- From the last place it arrived at (its road network is known there), or where it stands. (Not
+  -- even asked in a game without tunnels: every leg of every freighter starts here.)
+  local hop
+  local tunnelled = storage.tunnel_surfaces
+  if tunnelled and next(tunnelled) then
+    hop = select(2, tunnels.route(trip.drone.surface_index, trip.origin or trip.drone.position, destination))
+  end
+  trip.tunnel = hop
   logistics.command(trip, {
     type = defines.command.go_to_location,
-    destination = destination,
+    destination = hop and hop.entry or destination,
     radius = ARRIVAL_RADIUS,
     distraction = defines.distraction.none,
     pathfind_flags = { no_break = true },
@@ -1735,6 +1794,8 @@ local function start_trip(depot, provider, from, planned, length)
     -- Fuel in joules; where it stood when last burned; the road length to its provider.
     energy = energy,
     at = from,
+    -- Where it last arrived (or set off from): the road network it is on, for tunnels.
+    origin = from,
     leg = length,
     departing = true,
     -- Where it is going, should the provider go before it sets off (see target).
@@ -1882,6 +1943,10 @@ local function search_providers(depot, from, trip)
     request = depot.entity.unit_number,
     item = depot.request.item,
     from = from,
+    -- Where tunnels are looked for from (route_answered), fixed with `from`: a freighter's own
+    -- origin changes as it comes out of a tunnel, and an answer about `from` must not be read
+    -- from there (Pullfrog's review of 4d4f64a).
+    origin = rerouted and rerouted.origin or from,
     candidates = found,
     index = 1,
     trip = trip,
@@ -2207,6 +2272,8 @@ local function seek_fuel(id, trip)
     request = trip.request,
     item = trip.item,
     from = from,
+    -- (See search_providers.)
+    origin = trip.origin or from,
     candidates = found,
     index = 1,
     trip = id,
@@ -2986,12 +3053,128 @@ local function fuel_route_failed(id, trip, depot)
   look_for_fuel(id, trip)
 end
 
+-- The road's speed bonus (prototypes/roads.lua), read once: a freighter goes through a tunnel as
+-- fast as it drives on road. (A field, not a local: this file has few locals to spare.)
+function logistics.road_speed()
+  if not logistics.road_speed_bonus then
+    local tile = prototypes.tile and prototypes.tile["jatz-road"]
+    logistics.road_speed_bonus = tile and tile.walking_speed_modifier or 1
+  end
+  return logistics.road_speed_bonus
+end
+
+-- At a tunnel's mouth: it goes under, swapped for the unseen freighter (`paint.underground`),
+-- which stands there for as long as driving the tunnel's length on road takes, then comes out at
+-- the other end (out_of_tunnel). Commands wait meanwhile (logistics.command). A tunnel closed
+-- since (a portal removed or turned) is no way through: it plans afresh from here. Something stuck
+-- to it (fire, acid) is its own entity, stuck to this unit for good (see repaint): it waits at the
+-- mouth until that wears off.
+function logistics.into_tunnel(id, trip)
+  local tunnel = trip.tunnel
+  trip.origin = tunnel.entry
+  -- Fuel is burned by the straight line since the last sample (`burn`), and going through moves it
+  -- from one mouth to the other at once: the way here is burned now, the tunnel's length when it
+  -- comes out (out_of_tunnel), so neither is measured as part of one line across both (Pullfrog's
+  -- review of fa62744).
+  burn(trip)
+  if not tunnels.open(tunnel) then
+    trip.tunnel = nil
+    return drive(trip, trip.destination or target(trip))
+  end
+  tunnel.under = true
+  -- The unseen freighter has one direction, so the game turns it north: remember which way it went in.
+  tunnel.orientation = trip.drone.orientation
+  if not repaint(id, trip) then
+    tunnel.under = nil
+    return logistics.command(trip, {
+      type = defines.command.stop,
+      distraction = defines.distraction.none,
+      ticks_to_wait = 60,
+    })
+  end
+  -- Where it goes in isn't where it comes out: it runs nothing over in between (scripts/impact.lua).
+  trip.last_position = nil
+  local speed = trip.drone.speed * logistics.road_speed()
+  logistics.command(trip, {
+    type = defines.command.stop,
+    distraction = defines.distraction.none,
+    ticks_to_wait = math.max(1, math.ceil(tunnel.length / math.max(speed, 0.001))),
+  })
+  tunnel.started = true
+end
+
+-- Out of a tunnel, where it now stands at the far mouth: the fuel for the tunnel's length on road,
+-- exactly, and the next sample measured from here (into_tunnel burned the way to the mouth).
+function logistics.through_tunnel(trip, tunnel)
+  local per_tile = fuel_per_tile()
+  if per_tile > 0 then
+    trip.energy = math.max(0, (trip.energy or fuel_capacity()) - tunnel.length * per_tile)
+  end
+  trip.at, trip.at_tick = trip.drone.position, game.tick
+  show_fuel(trip)
+end
+
+-- Through a tunnel: it comes out at the other end, seen again in its cargo's paint, and drives on
+-- to where it is going (trip.destination, which a re-plan or reroute while it was under ground
+-- changed), or waits there for a search still under way.
+function logistics.out_of_tunnel(id, trip)
+  local tunnel = trip.tunnel
+  trip.tunnel = nil
+  trip.origin = tunnel.exit
+  trip.last_position = nil
+  -- Facing out of the far mouth (or as it went in, should that portal be gone), not as the unseen
+  -- freighter stood: north, which it then turned from at once. However it comes out.
+  local facing = tunnels.facing(tunnel.to) or tunnel.orientation
+  if trip.searching then
+    -- A search under way belongs to this unit (its id): it comes out unseen, waits for the answer,
+    -- and is painted once that is in (check_trip), as repainting would make the search stale.
+    -- Painting keeps its facing, so it is turned now. (A stop keeps a unit's facing; an idle one
+    -- drifts round, probed on 2.1.24.)
+    trip.drone.teleport(tunnel.exit)
+    trip.drone.orientation = facing or trip.drone.orientation
+    logistics.through_tunnel(trip, tunnel)
+    return logistics.command(trip, { type = defines.command.stop, distraction = defines.distraction.none })
+  end
+  -- Just inside the mouth, facing out, then straight out of it before its route (tunnels.way_out).
+  local start, out = tunnels.way_out(tunnel.to, tunnel.exit)
+  if not repaint(id, trip, start or tunnel.exit, facing) then
+    -- Something got stuck to it under ground: it comes out unseen, and is painted once that wears off
+    -- (check_trip).
+    trip.drone.teleport(start or tunnel.exit)
+  end
+  trip.drone.orientation = facing or trip.drone.orientation
+  logistics.through_tunnel(trip, tunnel)
+  show_cargo(trip)
+  if out then
+    -- On to where it is going once out (on_ai_command_completed; a re-plan meanwhile drives it there).
+    trip.coming_out, trip.loading = true, nil
+    return logistics.command(trip, {
+      type = defines.command.go_to_location,
+      destination = out,
+      radius = 0.2,
+      distraction = defines.distraction.none,
+      pathfind_flags = { no_break = true },
+    })
+  end
+  drive(trip, trip.destination or target(trip))
+end
+
 function logistics.on_ai_command_completed(event)
   local id = event.unit_number
   local trip = storage.trips and storage.trips[id]
+  if not trip or event.result == defines.behavior_result.deleted then
+    return
+  end
+  local tunnel = trip.tunnel
+  if tunnel and tunnel.started and event.result == defines.behavior_result.success and trip.drone.valid then
+    -- Through the tunnel (a search under way waits for it to come out). A failure under ground is
+    -- a freighter dying at the mouth (enemies, or a script: see below), acted on as any failure.
+    return logistics.out_of_tunnel(id, trip)
+  end
   -- A command replaced by a newer one (see replan) is not the end of anything, and a freighter
-  -- waiting for a reroute search has nowhere to arrive.
-  if not trip or event.result == defines.behavior_result.deleted or trip.searching then
+  -- waiting for a reroute search has nowhere to arrive (unless under ground, whose failed wait is
+  -- acted on below).
+  if trip.searching and not (tunnel and tunnel.started) then
     return
   end
   upgrade(trip)
@@ -3003,6 +3186,10 @@ function logistics.on_ai_command_completed(event)
     return
   end
   local depot = storage.depots[trip.request]
+  if event.result == defines.behavior_result.success and not (tunnel or trip.coming_out) then
+    -- Where it is now (a depot's loading zone): its road network is known there.
+    trip.origin = trip.destination or trip.origin
+  end
   if event.result ~= defines.behavior_result.success then
     -- One killed by a script (LuaEntity::die: the console, the editor, another mod) fails its
     -- command as it dies with its health still showing, so a failure is acted on next tick
@@ -3013,6 +3200,12 @@ function logistics.on_ai_command_completed(event)
     trip.id = id
     failed[#failed + 1] = { trip = trip, command_id = trip.command_id }
     storage.failed_trips = failed
+  elseif tunnel then
+    -- At a tunnel's mouth (or waiting there for something stuck to it to wear off).
+    logistics.into_tunnel(id, trip)
+  elseif trip.coming_out then
+    -- Out of a tunnel's mouth: on to where it is going.
+    drive(trip, trip.destination or target(trip))
   elseif trip.refuel and not trip.loading then
     -- At the Fuel depot: it stands there LOADING_TICKS to fill up too.
     trip.loading = true
@@ -3056,6 +3249,12 @@ function logistics.failed_commands()
     if storage.trips[id] == trip then
       if not trip.drone.valid then
         lose(id, trip)
+      elseif trip.tunnel and trip.tunnel.started then
+        -- Its wait under ground failed, yet it lives: it comes out at the other end all the same.
+        logistics.out_of_tunnel(id, trip)
+      elseif trip.coming_out and trip.command_id == failure.command_id then
+        -- Its short stretch out of a mouth failed (road removed there, say): its route decides.
+        drive(trip, trip.destination or target(trip))
       elseif trip.command_id == failure.command_id and not trip.searching then
         if trip.refuel then
           fuel_route_failed(id, trip, storage.depots[trip.request])
@@ -3141,6 +3340,19 @@ function logistics.on_roads_changed(surface_index, added, removed)
   end
   storage.road_versions = storage.road_versions or {}
   storage.road_versions[surface_index] = (storage.road_versions[surface_index] or 0) + 1
+  -- Which road networks tunnels join may have changed too: at once if road was removed, which can
+  -- split one.
+  tunnels.changed(surface_index, removed)
+  if removed then
+    -- Where a freighter last arrived may be on another road network than where it stands now: it
+    -- plans from where it stands. First, before anything reads it: the searches restarted below fix
+    -- their origin from it (Pullfrog's review of fa62744).
+    for _, trip in pairs(storage.trips) do
+      if trip.drone.valid and trip.drone.surface_index == surface_index then
+        trip.origin = nil
+      end
+    end
+  end
   restart_searches(surface_index)
   if added then
     retry_now(surface_index)
@@ -3308,6 +3520,11 @@ local function route_answered(search, length)
     return
   end
   local candidate = search.candidates[search.index]
+  if not length then
+    -- No road: through tunnels, perhaps, from the origin the search started with (for a rerouted
+    -- freighter, where it had last arrived when it started; searches from before have none).
+    length = tunnels.route(depot.entity.surface_index, search.origin or search.from, candidate.position)
+  end
   if length then
     if length < (search.best_length or math.huge) then
       search.best, search.best_length, search.best_rank = candidate.id, length, candidate.rank

@@ -18,7 +18,9 @@ local ROAD = "jatz-road"
 -- The delivering freighter, empty; loaded ones are its painted twins (scripts/freighter-paint.lua),
 -- so finding freighters looks for every one of them.
 local DRONE = "jatz-freighter-drone"
-local DRONES = { DRONE, DRONE .. "-loaded" }
+-- In a road tunnel, it is the same freighter, unseen (scripts/logistics.lua: into_tunnel).
+local UNDERGROUND = DRONE .. "-underground"
+local DRONES = { DRONE, DRONE .. "-loaded", UNDERGROUND }
 for r = 0, 5 do
   for g = 0, 5 do
     for b = 0, 5 do
@@ -32,6 +34,7 @@ local IRON_PAINT, WATER_PAINT = DRONE .. "-233", DRONE .. "-023"
 -- wears off a little after loading, on the way home.
 local STICKER, STICKER_TICKS = "jatz-check-sticker", 90
 local MONITOR = "jatz-road-monitor"
+local TUNNEL = "jatz-road-tunnel"
 -- Deliveries have this long to finish; tools/test_mod.py runs a little longer. The dry freighter
 -- sets the pace: it waits out the 10-second retry after coal arrives at tick 300, then crawls to
 -- the Fuel depot at a tenth of the drone's 0.066 tiles a tick before its round trip.
@@ -150,7 +153,10 @@ local FUEL_TANK = "jatz-fuel-depot-tank"
 local function check_research(result)
   local force = game.forces.player
   result.research_unlocks = {}
-  for _, name in ipairs(research.unlocks) do
+  -- Road tunnels came after research, so they aren't among the unlocks of saves from before it.
+  local unlocking = { table.unpack(research.unlocks) }
+  unlocking[#unlocking + 1] = research.tunnels
+  for _, name in ipairs(unlocking) do
     local technology = prototypes.technology[name]
     local unlocks = { prerequisites = {}, recipes = {}, locked = 0, unlocked = 0 }
     for prerequisite in pairs(technology.prerequisites) do
@@ -420,6 +426,8 @@ local function check_road_placement(surface, result)
   -- The road network monitor is a building like any other: beside road, never on it (freighters
   -- would drive through it).
   result.on_road[MONITOR] = can_place(MONITOR, { 66.5, 66.5 })
+  -- So is a road tunnel's portal: it stands at the end of a road, its mouth to it.
+  result.on_road[TUNNEL] = can_place(TUNNEL, { 66.5, 66.5 })
   result.monitor_beside_road = can_place(MONITOR, { 66.5, 67.5 })
   -- Road can't be laid under them either, a gate included while it stands open (an open gate
   -- uses its opened collision mask): an open gate, a closed one and a pole on grass, where
@@ -685,6 +693,39 @@ local function setup_deliveries(surface, result)
   -- between a provider and a request depot, beside a player: the freighter runs the biter over
   -- and drives on, and the player is unhurt.
   deliveries.runover = pair(-9, 64, 20, "iron-ore", 10, 10)
+  -- Two road networks that no road joins, with stone walls between them: a road tunnel's two
+  -- portals, one at the end of each road, mouths to it, join them under the walls. The request
+  -- depot's freighter goes under (unseen) to fetch radars from the provider on the other network,
+  -- and back.
+  local tunnel = {
+    provider = depot(surface, "provider", free(surface, 42.5, -66.5)[1], -66.5),
+    request = depot(surface, "request", free(surface, 68.5, -66.5)[1], -66.5),
+  }
+  lay_road(surface, 42, -65, 50, -65)
+  lay_road(surface, 59, -65, 68, -65)
+  for x = 53, 56 do
+    for y = -67, -63 do
+      surface.create_entity({ name = "stone-wall", position = { x + 0.5, y + 0.5 }, force = "player" })
+    end
+  end
+  -- Each one tile wide and two deep (tiles 51-52 and 57-58), its mouth on the road.
+  tunnel.west = surface.create_entity({
+    name = TUNNEL,
+    position = { 52, -64.5 },
+    direction = defines.direction.west,
+    force = "player",
+    raise_built = true,
+  })
+  tunnel.east = surface.create_entity({
+    name = TUNNEL,
+    position = { 58, -64.5 },
+    direction = defines.direction.east,
+    force = "player",
+    raise_built = true,
+  })
+  assert(tunnel.provider.insert({ name = "radar", count = 10 }) == 10, "radar: cannot stock")
+  assert(remote.call("jatz-distribution", "set_request", tunnel.request, "radar", 10), "radar: request refused")
+  deliveries.tunnel = tunnel
   local biter = surface.create_entity({ name = "medium-biter", position = { 1.5, 66.5 }, force = "enemy" })
   biter.commandable.set_command({ type = defines.command.stop, distraction = defines.distraction.none })
   deliveries.runover.biter_id = biter.unit_number
@@ -1765,6 +1806,9 @@ local function check_freighters_on_road(surface)
       )
     end
     deliveries.road_samples = deliveries.road_samples + 1
+    if drone.name == UNDERGROUND then
+      deliveries.tunnel_under = true
+    end
     -- The connected pair's U (its bottom row at y 57), not the fuel checks' road at y 66.
     if drone.position.x < -30 and drone.position.y > 40 and drone.position.y < 62 then
       deliveries.deepest = math.max(deliveries.deepest, drone.position.y)
@@ -2216,6 +2260,7 @@ local function deliveries_finished(surface, tick, result)
     and count(deliveries.rerouted.request, "stone-brick") == 10
     and deliveries.orphaned.left
     and count(deliveries.shortest.request, "coal") == 10
+    and count(deliveries.tunnel.request, "radar") == 10
     and count(storage.depot_roads.request, "small-electric-pole") == 5
     and count(deliveries.multi.request, "iron-stick") == 60
     and count(deliveries.minimum.first, "iron-chest") + count(deliveries.minimum.second, "iron-chest") >= 10
@@ -2406,6 +2451,11 @@ local function deliveries_finished(surface, tick, result)
   result.orphaned_provider_left = count(deliveries.orphaned.provider, "wooden-chest")
   result.shortest_from_far = 10 - count(deliveries.shortest.far, "coal")
   result.shortest_from_near = 10 - count(deliveries.shortest.near, "coal")
+  local tunnel = deliveries.tunnel
+  local paired = tunnel.west.fluidbox_neighbours[1] or {}
+  result.tunnel_paired = paired[1] ~= nil and paired[1].unit_number == tunnel.east.unit_number
+  result.tunnel_received = count(tunnel.request, "radar")
+  result.tunnel_went_under = deliveries.tunnel_under == true
   result.island_freighter_sent = deliveries.island_sent == true
   local roads = storage.depot_roads
   result.connected_by_depot_roads = count(roads.request, "small-electric-pole")
@@ -2653,6 +2703,7 @@ script.on_init(function()
   result.freighter_box = { box.right_bottom.x - box.left_top.x, box.right_bottom.y - box.left_top.y }
   check_road(result)
   check_recipe(MONITOR, result)
+  check_recipe(TUNNEL, result)
   -- With Space Age, the freighter fuelled with carbon.
   if prototypes.recipe[FREIGHTER_CARBON] then
     record_recipe(FREIGHTER_CARBON, FREIGHTER, result)

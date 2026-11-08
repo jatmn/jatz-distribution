@@ -102,5 +102,18 @@
     "sha256": "9979a9192d94745dd36df7ee2b3c104a8fe474b5d681428328ba338c47dabdb5",
     "icon_size": 64,
     "mipmaps": 4
+  },
+  "road-tunnel.png": {
+    "source": "assets/depots/road-tunnel/1/sheets/preview.png",
+    "source_frame": [
+      1024,
+      0,
+      1536,
+      512
+    ],
+    "source_sha256": "6ed3b642510ab60db1ced913b1b51cc589819d15786b9c324eb4f9f5c9a5675c",
+    "sha256": "58d87a197592c3cc6072ac7f24156b4769c785e054500e61715db288eb204352",
+    "icon_size": 64,
+    "mipmaps": 4
   }
 }

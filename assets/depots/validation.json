@@ -1,10 +1,10 @@
 {
   "status": "passed",
-  "variants": 8,
-  "direction_sets": 32,
-  "frame_layers_checked": 192,
-  "master_layers_checked": 192,
-  "atlas_cells_checked": 192,
+  "variants": 9,
+  "direction_sets": 36,
+  "frame_layers_checked": 216,
+  "master_layers_checked": 216,
+  "atlas_cells_checked": 216,
   "master_resolutions": [
     2048
   ],
@@ -1564,6 +1564,201 @@
                 "cab": 1032,
                 "trim": 288,
                 "cargo": 12685
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "role": "road-tunnel",
+      "size": 1,
+      "source_sha256": "674b3fe4bfb3468437cb35cc46adee86fbbf21f7556623470aebda4f5b740d64",
+      "directions": [
+        {
+          "direction": 0,
+          "sizes": {
+            "2048": {
+              "alpha_max_error": 0.0,
+              "neutral_rgb_mean_error": 0.0019285424331067066,
+              "body_bbox": [
+                738,
+                217,
+                1310,
+                1595
+              ],
+              "shadow_bbox": [
+                749,
+                290,
+                1477,
+                1600
+              ],
+              "mask_pixels": {
+                "cab": 21748,
+                "trim": 4396,
+                "cargo": 310123
+              }
+            },
+            "512": {
+              "alpha_max_error": 7.43308005146659e-08,
+              "neutral_rgb_mean_error": 0.0018276207120059163,
+              "body_bbox": [
+                182,
+                52,
+                330,
+                401
+              ],
+              "shadow_bbox": [
+                187,
+                72,
+                370,
+                401
+              ],
+              "mask_pixels": {
+                "cab": 1700,
+                "trim": 364,
+                "cargo": 20452
+              }
+            }
+          }
+        },
+        {
+          "direction": 1,
+          "sizes": {
+            "2048": {
+              "alpha_max_error": 2.7939677238464355e-09,
+              "neutral_rgb_mean_error": 0.002334332615269912,
+              "body_bbox": [
+                443,
+                504,
+                1605,
+                1289
+              ],
+              "shadow_bbox": [
+                448,
+                581,
+                1767,
+                1299
+              ],
+              "mask_pixels": {
+                "cab": 38919,
+                "trim": 4126,
+                "cargo": 370402
+              }
+            },
+            "512": {
+              "alpha_max_error": 7.419135228392548e-08,
+              "neutral_rgb_mean_error": 0.0021521311524780695,
+              "body_bbox": [
+                109,
+                124,
+                403,
+                324
+              ],
+              "shadow_bbox": [
+                111,
+                144,
+                442,
+                325
+              ],
+              "mask_pixels": {
+                "cab": 3440,
+                "trim": 338,
+                "cargo": 25506
+              }
+            }
+          }
+        },
+        {
+          "direction": 2,
+          "sizes": {
+            "2048": {
+              "alpha_max_error": 0.0,
+              "neutral_rgb_mean_error": 0.0019621821227100394,
+              "body_bbox": [
+                738,
+                394,
+                1310,
+                1595
+              ],
+              "shadow_bbox": [
+                749,
+                405,
+                1477,
+                1600
+              ],
+              "mask_pixels": {
+                "cab": 17224,
+                "trim": 5671,
+                "cargo": 241551
+              }
+            },
+            "512": {
+              "alpha_max_error": 7.860866768627517e-08,
+              "neutral_rgb_mean_error": 0.0017891887696684222,
+              "body_bbox": [
+                182,
+                96,
+                330,
+                401
+              ],
+              "shadow_bbox": [
+                187,
+                100,
+                370,
+                401
+              ],
+              "mask_pixels": {
+                "cab": 1483,
+                "trim": 494,
+                "cargo": 16186
+              }
+            }
+          }
+        },
+        {
+          "direction": 3,
+          "sizes": {
+            "2048": {
+              "alpha_max_error": 3.725290298461914e-09,
+              "neutral_rgb_mean_error": 0.0024968140613409527,
+              "body_bbox": [
+                443,
+                504,
+                1605,
+                1288
+              ],
+              "shadow_bbox": [
+                448,
+                581,
+                1645,
+                1299
+              ],
+              "mask_pixels": {
+                "cab": 38876,
+                "trim": 4136,
+                "cargo": 370472
+              }
+            },
+            "512": {
+              "alpha_max_error": 6.985288358851705e-08,
+              "neutral_rgb_mean_error": 0.0022803199334651184,
+              "body_bbox": [
+                109,
+                124,
+                403,
+                324
+              ],
+              "shadow_bbox": [
+                111,
+                144,
+                412,
+                325
+              ],
+              "mask_pixels": {
+                "cab": 3423,
+                "trim": 337,
+                "cargo": 25496
               }
             }
           }

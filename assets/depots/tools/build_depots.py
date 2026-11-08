@@ -29,6 +29,16 @@ MONITOR_PALETTE = {'cab':[.36,.26,.17], 'trim':[.80,.38,.12], 'cargo':[.43,.43,.
 # points and activity LED are these, projected for each direction (monitor_points).
 MONITOR_POSTS = {'red':(-.46,.42,1.60), 'green':(.46,.42,1.60)}
 MONITOR_LENS = (.60,-.40,1.28)
+# The road tunnel portal (prototypes/road-tunnel.lua): one tile wide and two deep, built like the
+# item depots' loading side at its mouth (north, +Y), in their dark steel with the monitor's grey
+# housing and brown band, its roof sloping down to the ground at the back, a ramp going under ground
+# (the owner, November 8, 2026). Build it alone: --role road-tunnel --size 1 (its width).
+TUNNEL = 'road-tunnel'
+TUNNEL_PALETTE = MONITOR_PALETTE
+# The top of its walls at the mouth, in model units (three to a tile), and the camera's view, in
+# tiles: two tiles deep, it needs more than the monitor's 2.5.
+TUNNEL_HEIGHT = 1.45
+TUNNEL_VIEW = 3.5
 
 
 def finish(obj, name, mat, bevel=0):
@@ -780,6 +790,112 @@ def monitor_body():
     box('Monitor road plate',(.55,-.735,.92),(.40,.02,.20),brass,.008)
 
 
+def prism(name,x,width,profile,mat,bevel=.02):
+    """A solid `width` across X, centred on `x`, whose side is the (y, z) polygon `profile`."""
+    verts=[(x+side*width/2,y,z) for y,z in profile for side in (-1,1)]
+    count=len(profile)
+    faces=[tuple(2*i for i in range(count)),tuple(2*i+1 for i in reversed(range(count)))]
+    faces += [(2*i,2*((i+1)%count),2*((i+1)%count)+1,2*i+1) for i in range(count)]
+    mesh=bpy.data.meshes.new(name);mesh.from_pydata(verts,[],faces);mesh.update();mesh.validate()
+    solid=bmesh.new();solid.from_mesh(mesh)
+    bmesh.ops.recalc_face_normals(solid,faces=solid.faces)
+    solid.to_mesh(mesh);solid.free()
+    obj=bpy.data.objects.new(name,mesh);scene.collection.objects.link(obj)
+    return finish(obj,name,mat,bevel)
+
+
+def tunnel_body():
+    """The road tunnel portal, at depot scale (3 units to a tile) for the 1-tile build to scale: two
+    tiles deep (Y), built like an item depot's loading side at its mouth (north, +Y), its roof and
+    walls sloping down to the ground at the back, so it reads as a ramp going under ground. Every
+    part on the slope follows it: nothing stands proud of the walls where they are low."""
+    top,front,back=TUNNEL_HEIGHT,2.95,-2.95
+    flat=front-.50
+    base=.14
+    def line(y,high,low):
+        # Full height `high` from the mouth back to `flat`, then straight down to `low` at the back.
+        return high if y>=flat else low+(y-back)/(flat-back)*(high-low)
+    def roof(y):
+        return line(y,top,.20)
+    def wall(y):
+        # The walls stand a little above the roof, as a curb.
+        return line(y,top+.10,.30)
+    # A low steel pan under the whole ramp, with cast shoes under the mouth's corner castings only.
+    taper('Low steel foundation pan',(0,0,base/2),(2.62,5.85),(2.56,5.78),base,steel,.12)
+    for x in [-1.19,1.19]:
+        taper('Cast octagonal corner shoe',(x,front-.29,.30),(.50,.44),(.44,.40),.36,steel,.08)
+    # The sloping roof between the walls, and a raised grey plate along it with the brown band near
+    # the mouth, bolts and a brass road plate.
+    prism('Tunnel sloping roof slab',0,2.00,[(front,top-.14),(front,top),(flat,top),(back,.20),(back,base),(flat,top-.14)],steel,.02)
+    def on_roof(name,x,width,y1,y2,lift,thick,mat):
+        return prism(name,x,width,[(y1,roof(y1)+lift),(y1,roof(y1)+lift+thick),(y2,roof(y2)+lift+thick),(y2,roof(y2)+lift)],mat,.01)
+    on_roof('Tunnel raised slope plate',0,1.70,2.20,-2.30,0,.08,housing)
+    on_roof('Tunnel slope identification band',0,1.50,2.00,1.70,.08,.014,rolepaint)
+    on_roof('Tunnel road plate',0,.60,-.40,-1.10,.08,.014,brass)
+    for x in [-.75,.75]:
+        for y in [1.90,.50,-.90,-2.05]:bolt((x,y,roof(y)+.09))
+    # At the back the slope meets the ground: a worn steel threshold across it, and two orange clamps
+    # bolted down on the slope.
+    box('Tunnel slope threshold',(0,back+.06,base+.04),(2.50,.14,.08),edge,.012)
+    for x in [-.62,.62]:
+        on_roof('Tunnel orange slope clamp',x,.18,-2.45,-2.72,.0,.07,trim)
+        bolt((x,-2.58,roof(-2.58)+.08),radius=.025)
+    # Armoured side walls following the slope: a steel coping along their top, the brown band
+    # parallel to it, panel seams below the band, and a vent grille where the wall is tall.
+    for side in [-1,1]:
+        x=side*1.12;face=x+side*.131
+        prism('Tunnel sloping side wall',x,.26,[(front,base),(front,top+.10),(flat,top+.10),(back,.30),(back,base)],housing,.03)
+        prism('Tunnel side wall coping',x,.32,[(front+.02,top+.10),(front+.02,top+.17),(flat,top+.17),(back-.02,.37),(back-.02,.30),(flat,top+.10)],steel,.015)
+        for y in [2.20,1.00,-.20,-1.40,-2.50]:bolt((x,y,wall(y)+.075),radius=.03)
+        y1,y2=2.38,-1.60
+        prism('Tunnel side identification belt',face,.012,[(y1,wall(y1)-.18),(y2,wall(y2)-.18),(y2,wall(y2)-.34),(y1,wall(y1)-.34)],rolepaint,.003)
+        for y in [.75,-.45]:
+            height=wall(y)-.40-(base+.08)
+            if height>.10:
+                box('Tunnel side panel seam',(face,y,base+.08+height/2),(.014,.026,height),black,.002)
+        box('Tunnel side vent recess',(face,1.75,.52),(.016,1.10,.20),black,.004)
+        for y in [1.27+i*.12 for i in range(9)]:
+            box('Tunnel side vent slat',(face+side*.008,y,.52),(.02,.026,.17),edge,.003)
+    # Corner castings at the mouth, with sloped shoulders and caps, painted belts and orange locks,
+    # as on the depots.
+    mid=(.30+top)/2;tall=top-.30
+    for x in [-1.19,1.19]:
+        y=front-.29
+        taper('Tunnel corner casting',(x,y,mid+.05),(.50,.44),(.50,.44),tall+.10,steel,.075)
+        taper('Tunnel sloped armored shoulder',(x,y,top+.20),(.54,.54),(.40,.40),.30,steel,.09)
+        cylinder('Tunnel recessed corner cap',(x,y,top+.363),.106,.045,edge)
+        cylinder('Tunnel corner cap center',(x,y,top+.392),.071,.018,steel)
+        box('Tunnel corner painted belt',(x,y,mid+.12),(.505,.445,.30),rolepaint,.03)
+        box('Tunnel orange vertical lock',(x,y+.22,mid-.18),(.07,.08,.23),trim,.012)
+        bolt((x,y+.195,.55),'Y',.04)
+    # The mouth: guides with orange wear shoes, a lintel, and a retracted shutter with its band and
+    # an inward chevron above.
+    width=1.62;opening=top-.36;face=front-.35
+    for side in [-1,1]:
+        xx=side*(width/2+.06)
+        box('Tunnel mouth vertical guide',(xx,face,(.16+opening)/2),(.12,.20,opening-.16),steel,.015)
+        box('Tunnel guide orange wear shoe',(xx,face+.115,.38),(.13,.04,.34),trim,.009)
+        for z in [.25,.52,opening-.12]:bolt((xx,face+.145,z),'Y',.025)
+    box('Tunnel mouth lintel',(0,face+.02,opening+.05),(width+.20,.24,.10),steel,.012)
+    box('Tunnel retracted shutter',(0,face-.02,opening+.24),(width,.17,.30),housing,.022)
+    box('Tunnel shutter identity band',(0,face+.072,opening+.25),(width-.06,.022,.15),rolepaint,.004)
+    chevron(0,face+.088,opening+.24,width*.40,edge,False,double=False)
+    panel_fasteners(0,face+.085,opening+.33,width-.13,.06)
+    lens(width/2+.06,face+.15,opening+.24)
+    # Dark inside: lined walls and ceiling, and a ramp going down out of sight.
+    inner=face-1.10
+    box('Tunnel throat ceiling lining',(0,(face+inner)/2,opening-.02),(width,face-inner+.10,.035),black,0)
+    for side in [-1,1]:
+        box('Tunnel throat side lining',(side*width/2,(face+inner)/2,(.16+opening)/2),(.035,face-inner+.10,opening-.16),black,0)
+    box('Tunnel throat rear lining',(0,inner,(.16+opening)/2),(width,.035,opening-.16),black,0)
+    ramp=box('Tunnel ramp going down',(0,(front-.09+inner)/2,.10),(width,front-.09-inner,.035),black,0)
+    ramp.rotation_euler.x=-math.atan2(.15,front-.09-inner)
+    for y in [face-.10,face-.45,face-.80]:
+        for side in [-1,1]:
+            beam('Tunnel ramp painted chevron',(side*width*.24,y+.025,.16-(face+.26-y)*.12),(0,y-.035,.16-(face+.26-y)*.12),.026,.006,rolepaint)
+    box('Tunnel ramp wear lip',(0,front-.09,.17),(width,.065,.04),edge,.008)
+
+
 def monitor_points(size):
     """Screen offsets, in tiles, of the posts and lens for each direction (north, east, south, west):
     the camera's projection (rotate, then x stays, up is y + z/sqrt(2)) and the ground shadow's
@@ -1273,7 +1389,7 @@ def build(role,size):
     rust=bpy.data.materials['BASE | old oxide and seam deposits']
     rolepaint=bpy.data.materials['PAINT | cab'];trim=bpy.data.materials['PAINT | trim'];housing=bpy.data.materials['PAINT | cargo']
     key=role.removeprefix('liquid-')
-    palette=MONITOR_PALETTE if role==MONITOR else {'cab':ROLE_COLORS[key], 'trim':[.80,.38,.12], 'cargo':[.43,.43,.40]}
+    palette=MONITOR_PALETTE if role==MONITOR else TUNNEL_PALETTE if role==TUNNEL else {'cab':ROLE_COLORS[key], 'trim':[.80,.38,.12], 'cargo':[.43,.43,.40]}
     for mat,channel in [(rolepaint,'cab'),(trim,'trim'),(housing,'cargo')]:
         color=[((v+.055)/1.055)**2.4 if v>.04045 else v/12.92 for v in palette[channel]]
         ramp=mat.node_tree.nodes['Surface pigment'].color_ramp
@@ -1290,9 +1406,11 @@ def build(role,size):
     root['role']=role;root['tile_size']=size
     if role==MONITOR:
         monitor_body()
+    elif role==TUNNEL:
+        tunnel_body()
     else:
         foundation(role)
-    if role==MONITOR:
+    if role in (MONITOR,TUNNEL):
         pass
     elif role in ['provider','request','buffer']:
         before=set(root.children)
@@ -1313,7 +1431,7 @@ def build(role,size):
         # the automated transfer assembly at image right. +Y faces the opposite world axis.
         mirror=Matrix.Diagonal((-1,1,1,1))
         for obj in set(root.children)-before:obj.matrix_basis=mirror@obj.matrix_basis
-    if role!=MONITOR:surface_wear(role)
+    if role not in (MONITOR,TUNNEL):surface_wear(role)
     if size==1:
         for obj in root.children:
             obj.location *= 1/3
@@ -1346,7 +1464,7 @@ def build(role,size):
     camera.name='CAMERA | fixed 45 degree tile projection'
     camera.rotation_euler=(Vector((0,0,0))-camera.location).to_track_quat('-Z','Y').to_euler()
     camera.data.type='ORTHO'
-    camera.data.ortho_scale=7.5 if size==3 else 2.5
+    camera.data.ortho_scale=7.5 if size==3 else TUNNEL_VIEW if role==TUNNEL else 2.5
     scene.camera=camera
     bpy.ops.object.light_add(type='SUN',location=(-6,-8,12))
     sun=bpy.context.object
@@ -1375,7 +1493,7 @@ def build(role,size):
     scene['layer_mapping']='cab=role, trim=clamps, cargo=housing'
     scene['direction_count']=4
     scene['fidelity_pass']=18
-    scene['concept']='liquid-provider palette (no concept art)' if role==MONITOR else f'concepts/depots/images/{role}.png'
+    scene['concept']='liquid-provider palette (no concept art)' if role in (MONITOR,TUNNEL) else f'concepts/depots/images/{role}.png'
     shadow=bpy.data.scenes.new('Ground shadow')
     shadow.render.engine='CYCLES';shadow.cycles.samples=1;shadow.cycles.use_denoising=False
     shadow.render.film_transparent=True;shadow.camera=camera;shadow.collection.objects.link(camera)
