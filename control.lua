@@ -50,7 +50,7 @@ local function on_built(event)
   then
     -- A blueprint's depot request settings: the request and freighters, which parametrisation may
     -- have changed, go to the depot.
-    depot_settings.built(entity)
+    depot_settings.built(entity, event.tags)
   elseif entity and entity.valid then
     if loading_zone.depots[entity.name] then
       settle(entity)

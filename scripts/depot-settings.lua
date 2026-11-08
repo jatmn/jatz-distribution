@@ -15,7 +15,8 @@ local depot_settings = {}
 local NAME = "jatz-depot-settings"
 depot_settings.name = NAME
 -- A condition's constant is an int32 (DeciderCombinatorCondition.constant); a request above it
--- stays in its tag only, so the blueprint can still be made.
+-- can't be a condition, so the settings hold it as a tag instead (not parametrisable), and the
+-- blueprint can still be made.
 local COUNT_MAX = 2147483647
 
 local function key(position)
@@ -24,7 +25,9 @@ end
 
 -- A blueprint's entries (`entities`) with request settings for the depots in `requests`
 -- (entry -> { request = depot.request, fluid = depot.fluid, freighters = n }): any from setting it
--- up before at those depots go, and each depot with a request or freighters gets one.
+-- up before at those depots go, and each depot gets one. They always hold the freighters, none
+-- included, so pasting over a depot matches them as Copy and Paste settings does (cancelling
+-- requests for more), and none can be parametrised into some.
 function depot_settings.plan(entities, requests)
   local at, last = {}, 0
   for planned, depot in pairs(requests) do
@@ -38,7 +41,7 @@ function depot_settings.plan(entities, requests)
     end
   end
   for planned, depot in pairs(requests) do
-    local conditions = {}
+    local conditions, tags = {}, nil
     local request = depot.request
     if request and request.count <= COUNT_MAX then
       conditions[#conditions + 1] = {
@@ -46,27 +49,27 @@ function depot_settings.plan(entities, requests)
         comparator = "=",
         constant = request.count,
       }
+    elseif request then
+      tags = { [logistics.request_tag] = request }
     end
-    if depot.freighters > 0 then
-      conditions[#conditions + 1] = { comparator = "=", constant = math.min(depot.freighters, COUNT_MAX) }
-    end
-    if #conditions > 0 then
-      last = last + 1
-      kept[#kept + 1] = {
-        entity_number = last,
-        name = NAME,
-        position = planned.position,
-        control_behavior = { decider_conditions = { conditions = conditions, outputs = {} } },
-      }
-    end
+    conditions[#conditions + 1] = { comparator = "=", constant = math.min(depot.freighters, COUNT_MAX) }
+    last = last + 1
+    kept[#kept + 1] = {
+      entity_number = last,
+      name = NAME,
+      position = planned.position,
+      tags = tags,
+      control_behavior = { decider_conditions = { conditions = conditions, outputs = {} } },
+    }
   end
   return kept
 end
 
--- What request settings (or their ghost) hold: the request ({ item = name, count = n }), from the
--- condition with a signal, and the freighters (a number), from the one with only a constant;
--- either nil without its condition.
-local function settings_of(entity)
+-- What request settings (or their ghost, with its blueprint `tags`) hold: the request
+-- ({ item = name, count = n }), from the condition with a signal, or else from their tag (one too
+-- large for a condition), and the freighters (a number), from the one with only a constant; either
+-- nil without it (settings from before always hold the freighters).
+local function settings_of(entity, tags)
   local behavior = entity.get_control_behavior()
   local parameters = behavior and behavior.parameters
   local request, freighters
@@ -77,6 +80,10 @@ local function settings_of(entity)
     elseif not condition.second_signal and condition.constant then
       freighters = freighters or math.max(0, condition.constant)
     end
+  end
+  local tagged = not request and tags and tags[logistics.request_tag]
+  if type(tagged) == "table" and type(tagged.item) == "string" and type(tagged.count) == "number" then
+    request = { item = tagged.item, count = tagged.count }
   end
   return request, freighters
 end
@@ -107,19 +114,19 @@ function depot_settings.take(entity)
     end
     return nil, nil
   end
-  local request, freighters = settings_of(found)
+  local request, freighters = settings_of(found, found.type == "entity-ghost" and found.tags or nil)
   found.destroy()
   return request, freighters
 end
 
 -- Request settings built from a blueprint (their ghost, or themselves if built at once, as in the
--- editor): the request and freighters go to the request or buffer depot's ghost of their force at
--- their position, as its tags, or to such a depot already there, and they go. A blueprint's ghosts
--- are all placed before their build events (probed on 2.1.24), so the depot's ghost is there
--- already; with no depot to take them, they just go.
-function depot_settings.built(entity)
+-- editor; `tags`, the build event's): the request and freighters go to the request or buffer
+-- depot's ghost of their force at their position, as its tags, or to such a depot already there,
+-- and they go. A blueprint's ghosts are all placed before their build events (probed on 2.1.24),
+-- so the depot's ghost is there already; with no depot to take them, they just go.
+function depot_settings.built(entity, tags)
   local surface, position, force = entity.surface, entity.position, entity.force
-  local request, freighters = settings_of(entity)
+  local request, freighters = settings_of(entity, tags or entity.type == "entity-ghost" and entity.tags or nil)
   entity.destroy()
   if not (request or freighters) then
     return
@@ -128,10 +135,10 @@ function depot_settings.built(entity)
   for _, found in pairs(surface.find_entities_filtered({ position = position, force = force })) do
     if key(found.position) == here then
       if found.type == "entity-ghost" and logistics.requesting[found.ghost_name] then
-        local tags = found.tags or {}
-        tags[logistics.request_tag] = request or tags[logistics.request_tag]
-        tags[logistics.freighters_tag] = freighters or tags[logistics.freighters_tag]
-        found.tags = tags
+        local ghost_tags = found.tags or {}
+        ghost_tags[logistics.request_tag] = request or ghost_tags[logistics.request_tag]
+        ghost_tags[logistics.freighters_tag] = freighters or ghost_tags[logistics.freighters_tag]
+        found.tags = ghost_tags
         return
       elseif logistics.requesting[found.name] then
         if request then

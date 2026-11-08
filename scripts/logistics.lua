@@ -3617,10 +3617,11 @@ function logistics.trim_freighter_requests(entity)
   end
 end
 
--- Blueprints (and copy and paste) of request depots keep their request, as a tag, and their
--- freighters (in the slot, out and coming), as an insert plan into the chest: the ghost asks for
--- them, and the depot built from it asks robots for them into its truck chest instead (see
--- trim_freighter_requests), or a player brings them, and they move into the slot.
+-- Blueprints (and copy and paste) of request depots keep their request and their freighters (in
+-- the slot, out and coming) as tags: the depot built from the ghost asks robots for the freighters
+-- into its truck chest (apply_tags), and they move into the slot. Blueprints from before also hold
+-- them as an insert plan into the chest, which the depot built asks of its truck chest instead
+-- (see trim_freighter_requests).
 local REQUEST_TAG = "jatz_request"
 local FREIGHTERS_TAG = "jatz_freighters"
 local FROM_BUFFERS_TAG = "jatz_from_buffers"
@@ -3644,8 +3645,8 @@ local function circuit_tag(depot)
   }
 end
 
--- Put an entity's settings on its blueprint entry (`planned`), as tags and its freighters' insert
--- plan: a delivery depot's, or a road network monitor's. Returns whether it has any to keep.
+-- Put an entity's settings on its blueprint entry (`planned`), as tags: a delivery depot's, or a
+-- road network monitor's. Returns whether it has any to keep.
 local function plan_settings(planned, entity)
   local depot = entity and entity.valid and request_depot(entity)
   local supplying = entity and entity.valid and supplying_depot(entity)
@@ -3688,28 +3689,16 @@ local function plan_settings(planned, entity)
     if next(planned.tags) == nil then
       planned.tags = nil
     end
-    local items, used = {}, {}
+    -- Its freighters go by their tag (and the blueprint's request settings,
+    -- scripts/depot-settings.lua), which the depot built asks robots for (apply_tags), never as
+    -- an insert plan: blueprint parametrisation offers an insert plan's item to swap, and robots
+    -- would then bring the item chosen as cargo, which trimming can't tell from anything else
+    -- (Copilot's review of db40d7c). A freighter plan from before goes; other items' are kept.
+    local items = {}
     for _, plan in pairs(planned.items or {}) do
       if item_name(plan.id.name) ~= FREIGHTER then
         items[#items + 1] = plan
-        for _, position in pairs(plan.items.in_inventory or {}) do
-          if position.inventory == defines.inventory.chest then
-            used[position.stack] = true
-          end
-        end
       end
-    end
-    if freighters > 0 and not depot.fluid then
-      -- Chest stacks the other plans don't use, a stack of freighters at a time. (A liquid
-      -- depot has no chest: its freighters are asked for when it is built, see apply_tags.)
-      local stacks = {}
-      for index = 0, #inventory(entity) - 1 do
-        if not used[index] then
-          stacks[#stacks + 1] = index
-        end
-      end
-      local _, positions = spread(freighters, stacks)
-      items[#items + 1] = { id = { name = FREIGHTER, quality = QUALITY }, items = { in_inventory = positions } }
     end
     planned.items = #items > 0 and items or nil
     changed = true
@@ -3837,8 +3826,8 @@ function logistics.apply_tags(entity, tags)
   end
   freighters = freighters or tags[FREIGHTERS_TAG]
   if type(freighters) == "number" and freighters >= 0 then
-    -- An item depot's ghost asked for them by its insert plan too: trimming above made that its
-    -- target, so they aren't asked for twice.
+    -- An item depot's ghost from a blueprint from before asked for them by its insert plan too:
+    -- trimming above made that its target, so they aren't asked for twice.
     logistics.match_freighters(entity, freighters)
   end
 end

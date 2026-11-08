@@ -469,6 +469,14 @@ local function depot(surface, role, x, y, trucks, force)
   return entity
 end
 
+-- A spot with nothing on it yet for a 3x3 depot and its loading zone (create_entity doesn't check
+-- collisions, so a test could stack depots unseen). Returns the position.
+local function free(surface, x, y)
+  local found = surface.count_entities_filtered({ area = { { x - 1.5, y - 1.5 }, { x + 1.5, y + 2.5 } } })
+  assert(found == 0, string.format("%d entities at %g,%g", found, x, y))
+  return { x, y }
+end
+
 -- Freighters lying on the ground in an area, and other items there.
 local function on_ground(surface, area)
   local freighters, other = 0, 0
@@ -1130,7 +1138,9 @@ local function setup_deliveries(surface, result)
   result.blueprinted = remote.call("jatz-distribution", "setup_blueprint", blueprint, mapping)
   local planned = blueprint.get_blueprint_entities()[1]
   result.blueprint_tag = planned.tags and planned.tags.jatz_request and planned.tags.jatz_request.item
-  result.blueprint_freighters = planned.items and planned.items[1].items.in_inventory[1].count
+  -- Freighters go by their tag, not an insert plan (whose item parametrising would offer to swap).
+  result.blueprint_freighters = planned.tags and planned.tags.jatz_freighters
+  result.blueprint_freighter_plan = planned.items ~= nil
   local revived
   for _, ghost in pairs(blueprint.build_blueprint({ surface = surface, force = "player", position = { -56.5, -66.5 } })) do
     -- (The depot built takes its request settings' ghost with it.)
@@ -1178,7 +1188,7 @@ local function setup_deliveries(surface, result)
       pairs(blueprint.build_blueprint({
         surface = surface,
         force = "player",
-        position = { -46.5, -66.5 },
+        position = free(surface, -46.5, -70.5),
         raise_built = true,
       }))
     do
@@ -1192,10 +1202,12 @@ local function setup_deliveries(surface, result)
     result.parametrised_freighters = parametrised
       and remote.call("jatz-distribution", "requested_freighters", parametrised)
     remote.call("jatz-distribution", "set_request", parametrised, nil)
+    remote.call("jatz-distribution", "cancel_freighter_requests", parametrised)
   end
   -- Request settings standing beside a depot built at once with no tags (a script's
   -- create_entity): the depot takes them, read through the real control behavior, and they go.
-  local beside = surface.create_entity({ name = "jatz-depot-settings", position = { -36.5, -66.5 }, force = "player" })
+  local beside =
+    surface.create_entity({ name = "jatz-depot-settings", position = free(surface, -36.5, -70.5), force = "player" })
   beside.get_control_behavior().parameters = {
     conditions = {
       { comparator = "=", constant = 2 },
@@ -1206,7 +1218,7 @@ local function setup_deliveries(surface, result)
   }
   local script_built = surface.create_entity({
     name = "jatz-request-depot",
-    position = { -36.5, -66.5 },
+    position = { -36.5, -70.5 },
     force = "player",
     raise_built = true,
   })
@@ -1247,6 +1259,70 @@ local function setup_deliveries(surface, result)
       in_settings
     )
   end
+  -- That last blueprint pasted over a depot already standing there: the depot has no build event
+  -- to read its own tag, so the oversized request comes from the settings' ghost's tag.
+  free(surface, -16.5, -70.5)
+  local pasted_over = depot(surface, "request", -16.5, -70.5, 0)
+  for _, ghost in
+    pairs(limit_print.build_blueprint({
+      surface = surface,
+      force = "player",
+      position = { -16.5, -70.5 },
+      raise_built = true,
+    }))
+  do
+    if ghost.valid then
+      ghost.destroy()
+    end
+  end
+  local over_request = remote.call("jatz-distribution", "get_request", pasted_over)
+  result.pasted_over_oversized = over_request and string.format("%s x%d", over_request.item, over_request.count)
+    or "none"
+  result.pasted_over_freighters = remote.call("jatz-distribution", "requested_freighters", pasted_over)
+  remote.call("jatz-distribution", "set_request", pasted_over, nil)
+  remote.call("jatz-distribution", "cancel_freighter_requests", pasted_over)
+  -- A depot requesting freighter items as cargo, with 3 freighters of its own: its blueprint
+  -- settings hold both (in a logistic section the game kept one entry per signal and dropped the
+  -- request; Pullfrog's review of db40d7c), and the depot built from them asks for both.
+  remote.call("jatz-distribution", "set_request", source, FREIGHTER, 30)
+  local cargo_mapping =
+    limit_print.create_blueprint({ surface = surface, force = "player", area = { { -68, -68 }, { -65, -65 } } })
+  remote.call("jatz-distribution", "setup_blueprint", limit_print, cargo_mapping)
+  local cargo_settings = "none"
+  for _, entry in pairs(limit_print.get_blueprint_entities()) do
+    if entry.name == "jatz-depot-settings" then
+      local parts = {}
+      for _, condition in ipairs(entry.control_behavior.decider_conditions.conditions) do
+        parts[#parts + 1] = (condition.first_signal and condition.first_signal.name or "no signal")
+          .. " x"
+          .. condition.constant
+      end
+      cargo_settings = table.concat(parts, ", ")
+    end
+  end
+  result.freighter_cargo_settings = cargo_settings
+  local cargo_built
+  for _, ghost in
+    pairs(limit_print.build_blueprint({
+      surface = surface,
+      force = "player",
+      position = free(surface, -26.5, -70.5),
+      raise_built = true,
+    }))
+  do
+    if ghost.valid then
+      local _, entity = ghost.revive({ raise_revive = true })
+      cargo_built = entity or cargo_built
+    end
+  end
+  local cargo_request = cargo_built and remote.call("jatz-distribution", "get_request", cargo_built)
+  result.freighter_cargo_request = cargo_request and (cargo_request.item .. " x" .. cargo_request.count) or "none"
+  result.freighter_cargo_freighters = cargo_built
+    and remote.call("jatz-distribution", "requested_freighters", cargo_built)
+  if cargo_built then
+    remote.call("jatz-distribution", "set_request", cargo_built, nil)
+    remote.call("jatz-distribution", "cancel_freighter_requests", cargo_built)
+  end
   limits.destroy()
   remote.call("jatz-distribution", "set_request", source, "wood", 7)
   result.settings_left = #surface.find_entities_filtered({ name = "jatz-depot-settings" })
@@ -1254,28 +1330,30 @@ local function setup_deliveries(surface, result)
   -- Then filled by hand: the ghost's request for them goes away.
   remote.call("jatz-distribution", "add_freighters", revived, 3)
   deliveries.built = revived
-  -- Setting a blueprint up keeps other items' insert plans, stays off their chest stacks, and drops
-  -- settings the depot no longer has. Here the blueprint already asks for 5 iron plates in chest
-  -- stack 0.
+  -- Setting a blueprint up keeps other items' insert plans, drops a freighter plan from before (the
+  -- freighters go by their tag), and drops settings the depot no longer has. Here the blueprint
+  -- already asks for 5 iron plates in chest stack 0, and 3 freighters in stack 1.
   local entities = blueprint.get_blueprint_entities()
   entities[1].items = {
     {
       id = { name = "iron-plate", quality = "normal" },
       items = { in_inventory = { { inventory = defines.inventory.chest, stack = 0, count = 5 } } },
     },
+    {
+      id = { name = FREIGHTER, quality = "normal" },
+      items = { in_inventory = { { inventory = defines.inventory.chest, stack = 1, count = 3 } } },
+    },
   }
   blueprint.set_blueprint_entities(entities)
   remote.call("jatz-distribution", "setup_blueprint", blueprint, mapping)
-  local kept_iron, freighter_stack = false, nil
+  local kept_iron, freighter_plan = false, false
   for _, plan in pairs(blueprint.get_blueprint_entities()[1].items) do
     local name = type(plan.id.name) == "string" and plan.id.name or plan.id.name.name
     kept_iron = kept_iron or name == "iron-plate"
-    if name == FREIGHTER then
-      freighter_stack = plan.items.in_inventory[1].stack
-    end
+    freighter_plan = freighter_plan or name == FREIGHTER
   end
   result.blueprint_kept_other_items = kept_iron
-  result.blueprint_freighters_first_stack = freighter_stack
+  result.blueprint_dropped_freighter_plan = not freighter_plan
   -- The same blueprint set up from a depot with no request and no freighters drops both.
   local plain = depot(surface, "request", -66.5, -56.5, 0)
   remote.call("jatz-distribution", "setup_blueprint", blueprint, { [1] = plain })
@@ -1287,12 +1365,25 @@ local function setup_deliveries(surface, result)
   remote.call("jatz-distribution", "setup_blueprint", blueprint, { [1] = chested })
   local counted = blueprint.get_blueprint_entities()[1]
   result.blueprint_counts_chest = counted.tags and counted.tags.jatz_freighters
-  -- A depot built over a blueprint ghost by hand gets no tags (the game passes none on), only the
-  -- ghost's request for 5 freighters: it must still remember those 5 when a player fills it partly.
+  -- A depot built over a ghost of a blueprint from before (which held the freighters as an insert
+  -- plan) without its tags (another mod's script, say) gets only the ghost's request for 5
+  -- freighters: it must still remember those 5 when a player fills it partly.
   depot(surface, "request", -6.5, -46.5, 5)
   local five_mapping =
     blueprint.create_blueprint({ surface = surface, force = "player", area = { { -8, -48 }, { -5, -45 } } })
   remote.call("jatz-distribution", "setup_blueprint", blueprint, five_mapping)
+  local from_before = blueprint.get_blueprint_entities()
+  for _, entry in pairs(from_before) do
+    if entry.name == "jatz-request-depot" then
+      entry.items = {
+        {
+          id = { name = FREIGHTER, quality = "normal" },
+          items = { in_inventory = { { inventory = defines.inventory.chest, stack = 0, count = 5 } } },
+        },
+      }
+    end
+  end
+  blueprint.set_blueprint_entities(from_before)
   for _, ghost in pairs(blueprint.build_blueprint({ surface = surface, force = "player", position = { -66.5, -36.5 } })) do
     if ghost.valid and ghost.ghost_name ~= "jatz-depot-settings" then
       ghost.tags = nil

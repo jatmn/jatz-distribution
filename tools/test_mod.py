@@ -251,14 +251,22 @@ EXPECTED = {'recipes': RECIPES,
             'at_once_request': 'iron-plate x13', 'at_once_freighters': 2, 'at_once_settings_left': False,
             'blueprint_count_limit': ['2147483647: made, tag 2147483647, settings 2147483647',
                                       '2147483648: made, tag 2147483648, settings freighters only'],
-            'blueprinted': 1, 'blueprint_tag': 'wood', 'blueprint_freighters': 3, 'built_request': 'wood x7',
+            # Pasted over a depot standing there, that blueprint sets its request from the
+            # settings' tag, and asks for its 3 freighters.
+            'pasted_over_oversized': 'wood x2147483648', 'pasted_over_freighters': 3,
+            # Freighters ride in the tag, not an insert plan. A depot requesting freighter items as
+            # cargo with 3 freighters keeps both in its settings, and the depot built asks for both.
+            'freighter_cargo_settings': 'jatz-quinityn-freighter x30, no signal x3',
+            'freighter_cargo_request': 'jatz-quinityn-freighter x30', 'freighter_cargo_freighters': 3,
+            'blueprinted': 1, 'blueprint_tag': 'wood', 'blueprint_freighters': 3, 'blueprint_freighter_plan': False,
+            'built_request': 'wood x7',
             'built_freighters_requested': 3, 'matched': 2, 'trimmed_requests': 0, 'filled_by_hand_requests': 0,
             'partly_filled_requests': 3, 'built_filled_requests': 0,
-            # Blueprint setup keeps other items' plans and their chest stacks, drops settings the
-            # depot no longer has, counts freighters still in the chest; malformed tags build
+            # Blueprint setup keeps other items' plans, drops a freighter plan from before and
+            # settings the depot no longer has, counts freighters still in the chest; malformed tags build
             # harmlessly; pasting a smaller count cancels the excess requests; filling by hand
             # trims at once.
-            'blueprint_kept_other_items': True, 'blueprint_freighters_first_stack': 1, 'blueprint_cleared': True,
+            'blueprint_kept_other_items': True, 'blueprint_dropped_freighter_plan': True, 'blueprint_cleared': True,
             'blueprint_counts_chest': 5, 'malformed_tags_built': True, 'matched_down': 3, 'trimmed_at_once': 0,
             # Ctrl+click of freighters into a depot's window fills the slot (95 -> 100) and gives
             # the rest back (10), leaving none in the chest.
@@ -274,7 +282,8 @@ EXPECTED = {'recipes': RECIPES,
             # A request Factorio dropped when part of it was filled by hand (5 asked, 1 put in) is
             # asked again for the rest (4); taking freighters away stops topping up (3 stay).
             'dropped_requested_again': 4, 'dropped_slot': 1, 'sent_away_requested': 3,
-            # The same for a depot built over a blueprint ghost without its tags (as by hand).
+            # The same for a depot built without its tags over a ghost of a blueprint from before,
+            # which held the freighters as an insert plan.
             'untagged_requested_again': 4,
             # /jatz-freighters describes a depot's freighter slot from the real request proxies.
             'described': True,

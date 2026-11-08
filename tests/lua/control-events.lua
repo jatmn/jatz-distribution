@@ -771,10 +771,8 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
   })
   local planned = saved and saved[1]
   check("a blueprint keeps the request as a tag", planned and planned.tags.jatz_request.item == "wood")
-  check(
-    "and the freighters as an insert plan into the chest",
-    planned.items[1].id.name == "jatz-quinityn-freighter" and planned.items[1].items.in_inventory[1].count == 3
-  )
+  check("and the freighters as a tag", planned.tags.jatz_freighters == 3)
+  check("not as an insert plan, whose item parametrising would offer to swap", planned.items == nil)
 
   -- A depot built from that ghost takes the request from its tags.
   local built = depot(100)
@@ -850,26 +848,45 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
   end
   check("setting it up again replaces them", #saved == 2 and count == 1 and again == 9)
 
-  -- A request above a condition's int32 constant (the panel and set_request take any) stays in its
-  -- tag only: the blueprint is still made, its settings holding the freighters.
+  -- A request above a condition's int32 constant (the panel and set_request take any) can't be a
+  -- condition: the blueprint is still made, the request in the depot's tag and the settings' tag
+  -- (so pasting over a depot sets it too), the settings' condition holding the freighters.
   assert(logistics.set_request(source, "wood", 9999999999))
   local made = pcall(logistics.setup_blueprint, blueprint, { [1] = source })
-  local huge_conditions = conditions_of(settings_entry(saved))
+  local huge = settings_entry(saved)
+  local huge_conditions = conditions_of(huge)
   check(
-    "a request too large for a condition still blueprints, in its tag",
+    "a request too large for a condition still blueprints, in tags",
     made
       and saved[1].tags.jatz_request.count == 9999999999
+      and huge.tags.jatz_request.item == "wood"
+      and huge.tags.jatz_request.count == 9999999999
       and #huge_conditions == 1
       and huge_conditions[1].first_signal == nil
       and huge_conditions[1].constant == 3
   )
   assert(logistics.set_request(source, "wood", 9))
 
+  -- Every requesting depot gets settings holding its freighters, none included: a depot with no
+  -- request and no freighters too, so pasting over a depot always matches them.
+  local bare = request_depot(105)
+  logistics.setup_blueprint(blueprint, { [1] = bare })
+  local bare_settings = settings_entry(saved)
+  local bare_conditions = conditions_of(bare_settings)
+  check(
+    "a depot with no request and no freighters gets settings holding none",
+    bare_settings
+      and #bare_conditions == 1
+      and bare_conditions[1].first_signal == nil
+      and bare_conditions[1].constant == 0
+      and bare_settings.tags == nil
+  )
+
   -- Request settings as built: a ghost (or, at once, the combinator itself) whose decider
   -- parameters read the request and the freighters, either missing, in either order. Strict: only
   -- `parameters` reads them, as LuaDeciderCombinatorControlBehavior gives them.
   prototypes.item["iron-plate"] = { name = "iron-plate" }
-  local function placed_settings(x, item, count_, freighters, force)
+  local function placed_settings(x, item, count_, freighters, force, tags)
     local conditions = {}
     if freighters then
       conditions[#conditions + 1] = { comparator = "=", constant = freighters, compare_type = "or" }
@@ -890,6 +907,7 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
       position = { x = x, y = 0.5 },
       surface = surface,
       force = force or "player",
+      tags = tags,
       get_control_behavior = function()
         return { parameters = { conditions = conditions, outputs = {}, else_outputs = {} } }
       end,
@@ -1029,6 +1047,32 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
   check(
     "and a depot built beside them doesn't take them",
     request and request.item == "wood" and request.count == 9 and foreign_beside.valid
+  )
+
+  -- Pasted over a depot already built: a blueprint with no freighters matches none (cancelling
+  -- requests for more, as Copy and Paste settings does), and a request too large for a condition
+  -- comes from the settings' tag.
+  local pasted_over = depot(180)
+  pasted_over.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = pasted_over })
+  local none = placed_settings(180.5, "iron-plate", 20, 0)
+  standing(180, { pasted_over, none })
+  matched = nil
+  fire("on_built_entity", { entity = none, player_index = 3 })
+  request = logistics.get_request(pasted_over)
+  check(
+    "settings with no freighters, pasted over a depot, match none",
+    request and request.item == "iron-plate" and matched and matched.entity == pasted_over and matched.total == 0
+  )
+  local oversized = placed_settings(180.5, nil, nil, 3, nil, { jatz_request = { item = "wood", count = 9999999999 } })
+  standing(180, { pasted_over, oversized })
+  matched = nil
+  fire("on_built_entity", { entity = oversized, player_index = 3 })
+  surface.find_entities_filtered = search
+  request = logistics.get_request(pasted_over)
+  check(
+    "and a request too large for a condition comes from their tag",
+    request and request.item == "wood" and request.count == 9999999999 and matched and matched.total == 3
   )
 end
 
