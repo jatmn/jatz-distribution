@@ -26,7 +26,7 @@ local ORDER = {
   "liquid-buffer",
   "fuel",
 }
--- What each depot is made of, in 5 seconds: item depots from a steel chest (their 48 slots) and the
+-- What each depot is made of, in 5 seconds: item depots from a steel chest (48 slots by default) and the
 -- belt their artwork shows (each belt in place of a gear), liquid depots from a storage tank, the
 -- ones fetching fluid with pumps; the Fuel depot from a steel chest, a belt and an engine unit, not
 -- a pump: pumps come with Fluid handling, which the Freight system doesn't need. Everything here is
@@ -108,10 +108,18 @@ local PILLAR_CONNECTOR = {
   shadow_offset = util.by_pixel(48, 37),
   show_shadow = true,
 }
--- Tank sizes players can set (settings.lua); every other depot with ports holds 25,000.
+-- Tank sizes players can set (settings.lua); the liquid request depot holds 25,000.
 local CAPACITY_SETTINGS = {
   ["liquid-provider"] = "jatz-liquid-provider-depot-capacity",
   ["liquid-buffer"] = "jatz-liquid-buffer-depot-capacity",
+  fuel = "jatz-fuel-depot-capacity",
+}
+-- Chest slots players can set (settings.lua), 48 by default like the steel chest.
+local SLOT_SETTINGS = {
+  provider = "jatz-provider-depot-slots",
+  request = "jatz-request-depot-slots",
+  buffer = "jatz-buffer-depot-slots",
+  fuel = "jatz-fuel-depot-slots",
 }
 
 -- A depot's storage tank: its ports, drawing their connectors, and the given artwork.
@@ -158,7 +166,7 @@ for index, role in ipairs(ORDER) do
     entity = table.deepcopy(data.raw.container["steel-chest"])
     entity.direction_count = 4
     entity.picture = artwork
-    entity.inventory_size = 48
+    entity.inventory_size = settings.startup[SLOT_SETTINGS[role]].value
   else
     entity = tank(role, definition, artwork)
   end

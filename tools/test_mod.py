@@ -337,9 +337,10 @@ EXPECTED = {'recipes': RECIPES,
             # A hand-placed freighter lowers the same request proxy (5 -> 4) instead of replacing
             # it, so an open window keeps showing the request.
             'hand_fill_same_proxy': True, 'hand_fill_requested': 4,
-            # Tank sizes: the check mod sets the liquid provider and liquid buffer settings to
-            # 40,000 and 15,000 (settings-updates.lua); the other tanks keep 25,000.
-            'tank_sizes': {'fuel': 25000, 'liquid-provider': 40000, 'liquid-request': 25000,
+            # Slots and tank sizes: the check mod sets the depots' settings to these
+            # (settings-updates.lua); the liquid request depot's tank keeps 25,000.
+            'slot_counts': {'provider': 60, 'request': 52, 'buffer': 56, 'fuel': 24},
+            'tank_sizes': {'fuel': 30000, 'liquid-provider': 40000, 'liquid-request': 25000,
                            'liquid-buffer': 15000},
             # Fuel: a freighter short of fuel for the leg fills up at a Fuel depot first (5 of 10
             # coal, 20 MJ) and still delivers, parking with 19 MJ left; with liquid fuel it takes
