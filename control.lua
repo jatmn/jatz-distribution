@@ -48,8 +48,8 @@ local function on_built(event)
     and entity.valid
     and (entity.name == settings or (entity.type == "entity-ghost" and entity.ghost_name == settings))
   then
-    -- A blueprint's depot request settings: the request, which parametrisation may have changed,
-    -- goes to the depot.
+    -- A blueprint's depot request settings: the request and freighters, which parametrisation may
+    -- have changed, go to the depot.
     depot_settings.built(entity)
   elseif entity and entity.valid then
     if loading_zone.depots[entity.name] then

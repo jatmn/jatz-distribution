@@ -3628,6 +3628,7 @@ local PRIORITY_TAG = "jatz_priority"
 -- { enabled = true or nil, condition = CircuitCondition, mode = "contents" or nil }, when any is set.
 local CIRCUIT_TAG = "jatz_circuit"
 logistics.request_tag = REQUEST_TAG
+logistics.freighters_tag = FREIGHTERS_TAG
 
 -- A delivery depot's circuit settings as a blueprint tag, or nil if it has none.
 local function circuit_tag(depot)
@@ -3731,7 +3732,8 @@ function logistics.setup_blueprint(blueprint, mapping)
     return 0
   end
   local changed = 0
-  -- Request depots' requests by blueprint entry, for parametrisation (scripts/depot-settings.lua).
+  -- Request depots' requests and freighters by blueprint entry, as their tags now hold them, for
+  -- parametrisation (scripts/depot-settings.lua).
   local requests = {}
   for _, planned in pairs(entities) do
     local entity = mapping[planned.entity_number]
@@ -3739,7 +3741,8 @@ function logistics.setup_blueprint(blueprint, mapping)
       changed = changed + 1
       local depot = request_depot(entity)
       if depot then
-        requests[planned] = { request = depot.request, fluid = depot.fluid }
+        local tags = planned.tags or {}
+        requests[planned] = { request = tags[REQUEST_TAG], fluid = depot.fluid, freighters = tags[FREIGHTERS_TAG] or 0 }
       end
     end
   end
@@ -3789,14 +3792,22 @@ end
 -- depot its circuit condition, a provider or buffer depot its priority, a request or buffer depot
 -- its request and freighters. Called for every depot built, tags or not.
 function logistics.apply_tags(entity, tags)
+  local request, freighters
   if request_depot(entity) then
     -- The ghost's insert plan for freighters, into an item depot's own chest: asked of its truck
     -- chest instead at once, before robots bring any (a ghost built without its tags too).
     logistics.trim_freighter_requests(entity)
+    -- Built at once with the blueprint's request settings (scripts/depot-settings.lua) beside it,
+    -- as in the editor, or after they set it up: what they hold, which parametrisation may have
+    -- changed, comes before the tags'. Taken with or without tags, so they never stay.
+    if logistics.take_request_settings then
+      request, freighters = logistics.take_request_settings(entity)
+    end
   end
-  if not tags then
+  if not (tags or request or freighters) then
     return
   end
+  tags = tags or {}
   -- Tags can come from anywhere (other mods, edited blueprint strings): use them only if well formed.
   if type(tags[PRIORITY_TAG]) == "number" then
     logistics.set_priority(entity, tags[PRIORITY_TAG])
@@ -3814,9 +3825,7 @@ function logistics.apply_tags(entity, tags)
   if not depot then
     return
   end
-  -- Built at once with the blueprint's request settings still beside it (as in the editor): their
-  -- request, which parametrisation may have changed, comes before the tag's.
-  local request = logistics.take_request_settings and logistics.take_request_settings(entity) or tags[REQUEST_TAG]
+  request = request or tags[REQUEST_TAG]
   if type(request) == "table" and type(request.item) == "string" and type(request.count) == "number" then
     logistics.set_request(entity, request.item, request.count)
   end
@@ -3826,7 +3835,7 @@ function logistics.apply_tags(entity, tags)
   if type(tags["jatz_full_loads"]) == "boolean" then
     logistics.set_full_loads(entity, tags["jatz_full_loads"])
   end
-  local freighters = tags[FREIGHTERS_TAG]
+  freighters = freighters or tags[FREIGHTERS_TAG]
   if type(freighters) == "number" and freighters >= 0 then
     -- An item depot's ghost asked for them by its insert plan too: trimming above made that its
     -- target, so they aren't asked for twice.
@@ -4141,9 +4150,9 @@ end
 logistics.remote_extra = {}
 -- Set by scripts/road-monitor.lua: the blueprint tag (name and value) of a road network monitor.
 logistics.monitor_tag = nil
--- Set by scripts/depot-settings.lua: a blueprint's entries with request depots' requests added as
--- request settings, for parametrisation (plan), and the request of the settings beside a depot
--- built at once, removing them (take).
+-- Set by scripts/depot-settings.lua: a blueprint's entries with request depots' requests and
+-- freighters added as request settings, for parametrisation (plan), and the request and freighters
+-- of the settings beside a depot built at once, removing them, or that they gave it (take).
 logistics.plan_request_settings = nil
 logistics.take_request_settings = nil
 

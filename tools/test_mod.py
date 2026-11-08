@@ -238,10 +238,18 @@ EXPECTED = {'recipes': RECIPES,
             # settings has robots bring what the destination lacks (1 -> 3). Freighters put in by
             # hand count towards what was requested: requests beyond it go (6 asked, 7 put in ->
             # 0; 5 asked, 5 put in -> 0; 5 asked, 2 put in -> 3; the blueprint's 3, put in -> 0).
-            # Parametrisation: the blueprint also holds the request as request settings (7 wood);
-            # changed to 11 iron plates as parametrising would and pasted, the depot built asks
-            # for 11 iron plates, and no settings stay in the world.
-            'blueprint_settings': 'wood x7', 'parametrised_request': 'iron-plate x11', 'settings_left': 0,
+            # Parametrisation: the blueprint also holds the request and freighters as request
+            # settings (7 wood, 3 freighters); changed to 11 iron plates and 5 freighters as
+            # parametrising would and pasted, the depot built asks for 11 iron plates and 5
+            # freighters, and no settings stay in the world. Settings beside a depot a script
+            # builds at once, untagged, give it their request (13 iron plates, 2 freighters) and
+            # go. A request at a slot's int32 limit goes in the settings; one above stays in its
+            # tag only, the blueprint still made.
+            'blueprint_settings': 'wood x7', 'blueprint_freighter_settings': 'jatz-quinityn-freighter x3',
+            'parametrised_request': 'iron-plate x11', 'parametrised_freighters': 5, 'settings_left': 0,
+            'at_once_request': 'iron-plate x13', 'at_once_freighters': 2, 'at_once_settings_left': False,
+            'blueprint_count_limit': ['2147483647: made, tag 2147483647, settings 2147483647',
+                                      '2147483648: made, tag 2147483648, settings freighters only'],
             'blueprinted': 1, 'blueprint_tag': 'wood', 'blueprint_freighters': 3, 'built_request': 'wood x7',
             'built_freighters_requested': 3, 'matched': 2, 'trimmed_requests': 0, 'filled_by_hand_requests': 0,
             'partly_filled_requests': 3, 'built_filled_requests': 0,

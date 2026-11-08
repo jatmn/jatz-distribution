@@ -1142,10 +1142,10 @@ local function setup_deliveries(surface, result)
   local copied = revived and remote.call("jatz-distribution", "get_request", revived)
   result.built_request = copied and (copied.item .. " x" .. copied.count) or "none"
   result.built_freighters_requested = revived and remote.call("jatz-distribution", "requested_freighters", revived)
-  -- Blueprint parametrisation: the blueprint also holds the request as request settings, which
-  -- the game can parametrise. Changed as parametrising it to 11 iron plates would, and pasted (the
-  -- settings' ghost hands the request to the depot's ghost and goes), robots build a depot asking
-  -- for 11 iron plates.
+  -- Blueprint parametrisation: the blueprint also holds the request and the freighters as request
+  -- settings, which the game can parametrise. Changed as parametrising them to 11 iron plates and
+  -- 5 freighters would, and pasted (the settings' ghost hands them to the depot's ghost and goes),
+  -- robots build a depot asking for 11 iron plates, and for 5 freighters.
   local settings
   for _, entry in pairs(blueprint.get_blueprint_entities()) do
     if entry.name == "jatz-depot-settings" then
@@ -1154,12 +1154,16 @@ local function setup_deliveries(surface, result)
   end
   local slot = settings and settings.control_behavior.sections.sections[1].filters[1]
   result.blueprint_settings = slot and (slot.name .. " x" .. slot.count) or "none"
-  if slot then
+  local freighter_slot = settings and settings.control_behavior.sections.sections[1].filters[2]
+  result.blueprint_freighter_settings = freighter_slot and (freighter_slot.name .. " x" .. freighter_slot.count)
+    or "none"
+  if slot and freighter_slot then
     local entities = blueprint.get_blueprint_entities()
     for _, entry in pairs(entities) do
       if entry.name == "jatz-depot-settings" then
         entry.control_behavior.sections.sections[1].filters[1].name = "iron-plate"
         entry.control_behavior.sections.sections[1].filters[1].count = 11
+        entry.control_behavior.sections.sections[1].filters[2].count = 5
       end
     end
     blueprint.set_blueprint_entities(entities)
@@ -1179,8 +1183,61 @@ local function setup_deliveries(surface, result)
     end
     local asked = parametrised and remote.call("jatz-distribution", "get_request", parametrised)
     result.parametrised_request = asked and (asked.item .. " x" .. asked.count) or "none"
+    result.parametrised_freighters = parametrised
+      and remote.call("jatz-distribution", "requested_freighters", parametrised)
     remote.call("jatz-distribution", "set_request", parametrised, nil)
   end
+  -- Request settings standing beside a depot built at once with no tags (a script's
+  -- create_entity): the depot takes them, read through the real control behavior, and they go.
+  local beside = surface.create_entity({ name = "jatz-depot-settings", position = { -36.5, -66.5 }, force = "player" })
+  local section = beside.get_control_behavior().get_section(1)
+  section.set_slot(1, { value = { type = "item", name = "iron-plate", quality = "normal" }, min = 13 })
+  section.set_slot(2, { value = { type = "item", name = "jatz-quinityn-freighter", quality = "normal" }, min = 2 })
+  local script_built = surface.create_entity({
+    name = "jatz-request-depot",
+    position = { -36.5, -66.5 },
+    force = "player",
+    raise_built = true,
+  })
+  local at_once_taken = script_built and remote.call("jatz-distribution", "get_request", script_built)
+  result.at_once_request = at_once_taken and (at_once_taken.item .. " x" .. at_once_taken.count) or "none"
+  result.at_once_freighters = script_built and remote.call("jatz-distribution", "requested_freighters", script_built)
+  result.at_once_settings_left = beside.valid
+  if script_built then
+    remote.call("jatz-distribution", "set_request", script_built, nil)
+    remote.call("jatz-distribution", "cancel_freighter_requests", script_built)
+  end
+  -- A blueprint slot's count is an int32: a request at that limit goes in the settings, and one
+  -- above it (the panel takes any) stays in its tag only, the blueprint still made.
+  local limits = game.create_inventory(1)
+  limits.insert({ name = "blueprint" })
+  local limit_print = limits[1]
+  result.blueprint_count_limit = {}
+  for _, count in ipairs({ 2147483647, 2147483648 }) do
+    remote.call("jatz-distribution", "set_request", source, "wood", count)
+    local limit_mapping =
+      limit_print.create_blueprint({ surface = surface, force = "player", area = { { -68, -68 }, { -65, -65 } } })
+    local made = pcall(remote.call, "jatz-distribution", "setup_blueprint", limit_print, limit_mapping)
+    local tagged, in_settings = "none", "none"
+    for _, entry in pairs(limit_print.get_blueprint_entities() or {}) do
+      if entry.tags and entry.tags.jatz_request then
+        tagged = string.format("%d", entry.tags.jatz_request.count)
+      end
+      if entry.name == "jatz-depot-settings" then
+        local first = entry.control_behavior.sections.sections[1].filters[1]
+        in_settings = first.index == 1 and string.format("%d", first.count) or "freighters only"
+      end
+    end
+    result.blueprint_count_limit[#result.blueprint_count_limit + 1] = string.format(
+      "%s: %s, tag %s, settings %s",
+      string.format("%d", count),
+      made and "made" or "failed",
+      tagged,
+      in_settings
+    )
+  end
+  limits.destroy()
+  remote.call("jatz-distribution", "set_request", source, "wood", 7)
   result.settings_left = #surface.find_entities_filtered({ name = "jatz-depot-settings" })
     + #surface.find_entities_filtered({ ghost_name = "jatz-depot-settings" })
   -- Then filled by hand: the ghost's request for them goes away.
