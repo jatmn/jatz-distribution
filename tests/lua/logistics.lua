@@ -516,6 +516,34 @@ local function coming_filed()
       return false, id .. " not filed"
     end
   end
+  -- The promises' kept totals (storage.promise_totals) must be their sum, each rounded up to a
+  -- whole unit, with no total left where nothing is promised.
+  if storage.promised and storage.promise_totals then
+    local sums = {}
+    for provider, items in pairs(storage.promised) do
+      for item, trips in pairs(items) do
+        local sum = 0
+        for _, amount in pairs(trips) do
+          sum = sum + math.ceil(amount)
+        end
+        sums[provider .. " " .. item] = sum
+      end
+    end
+    for provider, items in pairs(storage.promise_totals) do
+      for item, total in pairs(items) do
+        local id = provider .. " " .. item
+        if sums[id] ~= total then
+          return false, "promises at " .. id .. " total " .. tostring(sums[id]) .. ", kept " .. total
+        end
+        sums[id] = nil
+      end
+    end
+    for id, sum in pairs(sums) do
+      if sum ~= 0 then
+        return false, "promises at " .. id .. " total " .. sum .. ", none kept"
+      end
+    end
+  end
   return true
 end
 
@@ -3476,6 +3504,120 @@ do -- A provider's check walks its promises once: hundreds of freighters coming 
   check("four times the promises cost well under sixteen times as much", large < small * 8)
 end
 
+do -- Freighters arriving to load at a busy provider cost about in proportion too, counting only the
+  -- mod's own work: while the provider's stock covers every promise there, an arrival doesn't ask
+  -- which are ahead of its own (Pullfrog's review of feca8c7: 800 arrivals in one tick took 320,400
+  -- order comparisons, 7.75 million instructions).
+  local function cost(count)
+    local logistics = reset()
+    local provider = entity("jatz-provider-depot", 10.5, 0.5)
+    -- 2,400 in stacks a freighter can load from.
+    local stock = script_inventory(48)
+    for index = 1, 48 do
+      stock[index].name, stock[index].count, stock[index].valid_for_read = "a", 50, true
+      stock[index].quality = { name = "normal" }
+    end
+    function stock.get_contents()
+      return { { name = "a", quality = "normal", count = stock.get_item_count("a") } }
+    end
+    provider.get_inventory = function()
+      return stock
+    end
+    logistics.add(provider)
+    local a = { type = "item", name = "a" }
+    logistics.set_circuit(provider, true, { first_signal = a, comparator = ">", constant = 25 }, "contents")
+    for index = 1, count do
+      local request = entity("jatz-request-depot", 0.5, 0.5 + index * 4)
+      logistics.add(request)
+      assert(logistics.set_request(request, "a", 1))
+      assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+    end
+    logistics.on_tick()
+    for id = 1, #requests do
+      answer(logistics, id, "route")
+    end
+    local trips = {}
+    for _, trip in pairs(storage.trips) do
+      trip.loading = true
+      trips[#trips + 1] = trip
+    end
+    local steps = 0
+    debug.sethook(function()
+      if debug.getinfo(2, "S").source:find("scripts/", 1, true) then
+        steps = steps + 1
+      end
+    end, "", 1)
+    for _, trip in ipairs(trips) do
+      logistics.on_ai_command_completed({
+        unit_number = trip.drone.unit_number,
+        result = defines.behavior_result.success,
+      })
+    end
+    debug.sethook()
+    local loaded = 0
+    for _, trip in ipairs(trips) do
+      loaded = loaded + trip.cargo.get_item_count("a")
+    end
+    return steps, loaded
+  end
+  local small = cost(100)
+  local large, loaded = cost(400)
+  check("setup: 400 freighters each load their 1", loaded == 400)
+  -- (Adding up the promises ahead for each made it 9.5 times as much.)
+  check("four times the arrivals cost about four times as much", large < small * 6)
+end
+
+do -- Arriving where the stock covers every promise, but the condition (reading the provider's
+  -- contents) fails with every other promise taken: the promises ahead are added up after all, so
+  -- the first promised still loads and the last, which the condition no longer covers, doesn't
+  -- (with no other provider, it goes home).
+  local logistics = reset()
+  local provider = entity("jatz-provider-depot", 10.5, 0.5)
+  local stock = script_inventory(1)
+  stock[1].name, stock[1].count, stock[1].valid_for_read = "a", 30, true
+  stock[1].quality = { name = "normal" }
+  function stock.get_contents()
+    return { { name = "a", quality = "normal", count = stock.get_item_count("a") } }
+  end
+  provider.get_inventory = function()
+    return stock
+  end
+  logistics.add(provider)
+  local a = { type = "item", name = "a" }
+  local trips = {}
+  for index = 1, 3 do
+    local request = entity("jatz-request-depot", 0.5, 0.5 + index * 4)
+    logistics.add(request)
+    assert(logistics.set_request(request, "a", 10))
+    assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+    logistics.on_tick()
+    answer(logistics, #requests, "route")
+    trips[index] = trip_of(request)
+  end
+  check(
+    "setup: three promises of 10, the stock covering them",
+    trips[1].planned == 10 and trips[2].planned == 10 and trips[3].planned == 10
+  )
+  -- Now kept above 12: 30 less the 20 promised before the first doesn't hold, 30 does.
+  logistics.set_circuit(provider, true, { first_signal = a, comparator = ">", constant = 12 }, "contents")
+  for _, trip in ipairs(trips) do
+    trip.loading = true
+  end
+  logistics.on_ai_command_completed({
+    unit_number = trips[1].drone.unit_number,
+    result = defines.behavior_result.success,
+  })
+  check("the first promised loads its 10", trips[1].cargo.get_item_count("a") == 10)
+  logistics.on_ai_command_completed({
+    unit_number = trips[3].drone.unit_number,
+    result = defines.behavior_result.success,
+  })
+  check(
+    "the last (20 left, less the 10 ahead of it, isn't above 12) loads nothing there",
+    trips[3].cargo.get_item_count("a") == 0 and trips[3].state == "to-request" and stock.get_item_count("a") == 20
+  )
+end
+
 -- A freighter heading for the near provider, a far one holding the item too; its request depot is
 -- then filled some other way (by hand, say), so it needs nothing more.
 local function filled_meanwhile(logistics)
@@ -3661,6 +3803,98 @@ do -- A depot filled some other way lets its freighters' promises go at once, ra
   logistics.on_tick()
   check("filled by hand, its promise goes", storage.promised[provider.unit_number] == nil)
   check("and its freighter, with nothing to fetch, goes home", trip.state == "to-request" and #requests == asked)
+end
+
+do -- A pickup cancelled on the road burns the way out and the way back, though it turns without
+  -- standing anywhere and parks before any once-a-second check: `drive` burns what was driven
+  -- since the last sample as each leg starts, and `end_trip` as it parks (Copilot's review of
+  -- feca8c7: it parked with a full tank).
+  local logistics = reset()
+  local request = fuelled(logistics, 20 * MJ)
+  local trip = trips_from(request)[1]
+  local home = { x = trip.drone.position.x, y = trip.drone.position.y }
+  check("setup: it sets off with a full tank", trip.energy == 20 * MJ)
+  trip.drone.position = { x = home.x + 5, y = home.y }
+  -- Filled by hand meanwhile: its dispatch lets the whole promise go.
+  request.chest.contents.a = 10
+  logistics.release_excess(storage.depots[request.unit_number], 10)
+  check("setup: it turns home with nothing to fetch", trip.state == "to-request" and not trip.planned)
+  check("the 5 tiles out are burned as it turns", math.abs(trip.energy - (20 * MJ - 5 * 10000)) < 1)
+  trip.drone.position = { x = home.x, y = home.y }
+  arrive(logistics, trip)
+  local parked = logistics.freighter_fuel(request).home
+  check(
+    "and the 5 back as it parks",
+    not has_trip(request) and math.abs(trip.energy - (20 * MJ - 10 * 10000)) < 1 and parked[#parked] == trip.energy
+  )
+end
+
+do -- A stand cut short burns the way there too: its provider removed while it stands (before the
+  -- check in the stand), it goes home empty, and the way out and the way back are both burned
+  -- (independent review of the fix for Copilot's review of feca8c7).
+  local logistics = reset()
+  local request, provider = fuelled(logistics, 20 * MJ)
+  local trip = trips_from(request)[1]
+  local home = { x = trip.drone.position.x, y = trip.drone.position.y }
+  trip.drone.position = { x = provider.position.x, y = provider.position.y }
+  logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = defines.behavior_result.success })
+  check("setup: it stands at the provider", trip.loading == true and trip.energy == 20 * MJ)
+  provider.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = provider.unit_number })
+  check("setup: with no other provider, it turns home", trip.state == "to-request")
+  trip.drone.position = { x = home.x, y = home.y }
+  arrive(logistics, trip)
+  local tiles = 2 * math.sqrt((provider.position.x - home.x) ^ 2 + (provider.position.y - home.y) ^ 2)
+  check("both ways are burned", not has_trip(request) and math.abs(trip.energy - (20 * MJ - tiles * 10000)) < 1)
+end
+
+do -- A save from before the promises' totals were kept: a freighter finishing its stand at the
+  -- provider before anything else files them loads as before (independent review of the fix for
+  -- Pullfrog's review of feca8c7: it crashed reading the totals).
+  for _, lost in ipairs({ "promise_totals", "promised", "both" }) do
+    local logistics = reset()
+    local request, provider = setup(logistics)
+    local stock = script_inventory(1)
+    stock[1].name, stock[1].count, stock[1].valid_for_read = "a", 20, true
+    stock[1].quality = { name = "normal" }
+    provider.get_inventory = function()
+      return stock
+    end
+    logistics.on_tick()
+    answer(logistics, 1, "route")
+    local trip = trip_of(request)
+    if lost ~= "promised" then
+      storage.promise_totals = nil
+    end
+    if lost ~= "promise_totals" then
+      storage.promised = nil
+    end
+    arrive(logistics, trip)
+    check(
+      "without " .. lost .. ", it loads its 10",
+      trip.state == "to-request"
+        and trip.cargo.get_item_count("a") == 10
+        and stock.get_item_count("a") == 10
+        and storage.promise_totals ~= nil
+    )
+  end
+end
+
+do -- Sent on to another provider from the road (its own emptied by an inserter): the way it came is
+  -- burned as it turns, not measured against the way on.
+  local logistics = reset()
+  local request, near = fuelled(logistics, 20 * MJ)
+  local far = entity("jatz-provider-depot", -40.5, 0.5, { a = 20 })
+  logistics.add(far)
+  local trip = trips_from(request)[1]
+  local home = { x = trip.drone.position.x, y = trip.drone.position.y }
+  trip.drone.position = { x = home.x + 5, y = home.y }
+  near.chest.contents.a = 0
+  logistics.keep_promises(near.unit_number, storage.depots[near.unit_number])
+  check("setup: it looks for another provider", trip.searching ~= nil)
+  answer(logistics, #requests, "route")
+  check("setup: it sets off for the far one", trip.provider == far.unit_number and trip.destination.x == far.position.x)
+  check("the 5 tiles it came are burned as it turns", math.abs(trip.energy - (20 * MJ - 5 * 10000)) < 1)
 end
 
 do -- Filled in part: the last freighter sent gives up what isn't needed first.

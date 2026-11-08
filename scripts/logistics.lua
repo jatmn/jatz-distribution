@@ -963,13 +963,17 @@ end
 -- (`trip.passed`, logistics.give_up): that stock is free again at once. Each trip records where its
 -- promise is filed (`trip.promise`), and `promise` files it again whenever its provider, state,
 -- promise or `passed` changes, so a provider's
--- unpromised stock is read without looking at every trip in the game. A trip's key is the
+-- unpromised stock is read without looking at every trip in the game. Their total by provider and
+-- item is kept with them (storage.promise_totals[provider unit_number][item], each promise rounded
+-- up to a whole unit, so it is exact for items and never less than the promises for fluid): an item
+-- provider's unpromised stock, and whether a provider's stock covers every promise there, are then
+-- read without looking at each promise (Pullfrog's review of feca8c7). A trip's key is the
 -- unit_number of the freighter it set off with (`trip.key`), which stays the same when it is
 -- repainted. With `ended`, the trip is over and its promise goes. What it is bringing its request
 -- depot is filed again too (`file_coming`), so call it whenever that may have changed: its state,
 -- promise or cargo.
 local function promise(trip, ended)
-  if not (storage.promised and storage.coming and storage.spoiling and trip.key) then
+  if not (storage.promised and storage.promise_totals and storage.coming and storage.spoiling and trip.key) then
     -- A save from before promises were filed: file every trip's (this one's too, if still out).
     return file_promises()
   end
@@ -979,16 +983,20 @@ local function promise(trip, ended)
   if filed and filed.provider == trip.provider and filed.amount == amount then
     return
   end
-  local promised = storage.promised
+  local promised, totals = storage.promised, storage.promise_totals
   if filed then
     local items = promised[filed.provider]
     local trips = items and items[trip.item]
     if trips then
       trips[trip.key] = nil
+      local sums = totals[filed.provider]
+      local total = sums[trip.item] - math.ceil(filed.amount)
+      sums[trip.item] = total ~= 0 and total or nil
       if next(trips) == nil then
         items[trip.item] = nil
         if next(items) == nil then
           promised[filed.provider] = nil
+          totals[filed.provider] = nil
         end
       end
     end
@@ -1000,6 +1008,9 @@ local function promise(trip, ended)
     local trips = items[trip.item] or {}
     items[trip.item] = trips
     trips[trip.key] = amount
+    local sums = totals[trip.provider] or {}
+    totals[trip.provider] = sums
+    sums[trip.item] = (sums[trip.item] or 0) + math.ceil(amount)
     trip.promise = { provider = trip.provider, amount = amount }
   end
 end
@@ -1007,7 +1018,7 @@ end
 -- File every trip's promise, and what it is bringing, afresh: on first use in a save from before
 -- they were filed, and after trips were checked against the game as loaded (add_all).
 function file_promises()
-  storage.promised, storage.coming, storage.spoiling = {}, {}, {}
+  storage.promised, storage.promise_totals, storage.coming, storage.spoiling = {}, {}, {}, {}
   for id, trip in pairs(storage.trips) do
     trip.key = trip.key or id
     trip.promise, trip.coming = nil, nil
@@ -1019,8 +1030,9 @@ end
 -- Providers' bound get_item_count, by their inventory: Lua only, built again after a load.
 local stock_counters = setmetatable({}, { __mode = "k" })
 
--- How much of `item` a provider has that no freighter on its way there has promised to load.
-local function available(provider, item)
+-- How much of `item` a provider has that no freighter on its way there has promised to load, or with
+-- `gross`, how much it has.
+local function available(provider, item, gross)
   local count
   if provider.fluid then
     count = provider.entity.get_fluid_count(item)
@@ -1039,10 +1051,20 @@ local function available(provider, item)
     end
     count = counter(item)
   end
-  if not storage.promised then
+  if gross then
+    return count
+  end
+  if not (storage.promised and storage.promise_totals) then
     file_promises()
   end
-  local items = storage.promised[provider.entity.unit_number]
+  local unit_number = provider.entity.unit_number
+  if not provider.fluid then
+    -- Whole items: their kept total is exact.
+    local totals = storage.promise_totals[unit_number]
+    return count - (totals and totals[item] or 0)
+  end
+  -- Fluid promises can be fractions: added up afresh, as exact as they are.
+  local items = storage.promised[unit_number]
   for _, amount in pairs(items and items[item] or {}) do
     count = count - amount
   end
@@ -1626,7 +1648,16 @@ function logistics.command(trip, command)
   trip.drone.commandable.set_command(command)
 end
 
+-- Every leg starts here, so the fuel driven so far is burned here first: `burn` measures the
+-- straight line since its last sample, and a freighter turned on the road without standing
+-- anywhere (its pickup given up or cancelled, sent to another provider, its road cut) would
+-- otherwise have the way out and the way back measured as one leg, which cancels out (Copilot's
+-- review of feca8c7). (Even after a stand: one can be cut short, its provider removed or its
+-- command failed, before the check in it. Only one that never left home, `departing`, is skipped.)
 local function drive(trip, destination)
+  if not trip.departing then
+    burn(trip)
+  end
   trip.destination = destination
   trip.loading = nil
   -- On the road now: no longer standing at home deciding whether it can go.
@@ -1903,22 +1934,64 @@ end
 -- first, and the stock left after earlier promises is all a later freighter may take, even
 -- arriving first. For one freighter (arriving to load); keep_promises works the same out for all of
 -- a provider's in one pass. (A field, not a local: this file has as many locals as Lua allows.)
+--
+-- Many freighters can arrive at a busy provider in one tick, and asking which promises are ahead
+-- of each one's walks all of the provider's promises of its item: arrivals cost the square of them
+-- (Pullfrog's review of feca8c7: 800 arrivals in one tick, 320,400 order comparisons). So while the
+-- provider's stock covers every promise there (their kept total, promise_totals), the order is not
+-- asked: this freighter may load all it promised, and the answer is at least that. Its condition,
+-- read from its contents, is then decided without the order too where one comparison of its item's
+-- signal with a constant reads it ("<", ">", "≥", "≤": each only ever turns one way as stock goes):
+-- holding now and with every other promise taken (more than those ahead), it holds with those
+-- ahead taken. Otherwise (stock short of the promises, "=" or "≠", a condition reading more signals,
+-- or one not holding with every other promise taken) the promises ahead are added up as before.
 function logistics.honoured(trip)
   local provider = storage.depots[trip.provider]
   if not (provider and provider.entity.valid) then
     return false
   end
-  -- Its stock less every promise, with those made after its own (and its own) given back; and what
-  -- the promises ahead of its own add up to, of its item.
-  local left, ahead = available(provider, trip.item), 0
-  local items = storage.promised[trip.provider]
-  for key, amount in pairs(items and items[trip.item] or {}) do
-    if logistics.ahead(key, trip) then
-      ahead = ahead + amount
-    else
-      left = left + amount
+  if not (storage.promised and storage.promise_totals) then
+    -- A save from before their totals were kept (or before promises were filed): filed afresh.
+    file_promises()
+  end
+  local item = trip.item
+  local contents = provider.circuit_enabled and provider.circuit_mode == depot_circuit.contents
+  -- What it holds, read once: each read builds a signal for every item in it.
+  local held = contents and own_signals(provider) or nil
+  if not enabled(provider, nil, held) then
+    -- Switched off now: nothing for anyone, whatever the promises.
+    return false
+  end
+  local stock = available(provider, item, true)
+  local filed = trip.promise
+  local own = filed and filed.provider == trip.provider and filed.amount == trip.planned and filed.amount or nil
+  local sums = own and storage.promise_totals[trip.provider]
+  local total = sums and sums[item] or 0
+  if own and stock >= total then
+    local spare = stock - total + own
+    if not contents then
+      return spare
+    end
+    local condition = provider.circuit_condition
+    local signal = depot_circuit.key({ type = provider.fluid and "fluid" or "item", name = item })
+    if
+      depot_circuit.reads(condition) == signal
+      and condition.comparator ~= "="
+      and condition.comparator ~= "≠"
+      and logistics.holds_less(provider, { [item] = total - math.ceil(own) }, held)
+    then
+      return spare
     end
   end
+  -- What the promises ahead of its own add up to, of its item, and its stock less those.
+  local ahead = 0
+  local items = storage.promised[trip.provider]
+  for key, amount in pairs(items and items[item] or {}) do
+    if logistics.ahead(key, trip) then
+      ahead = ahead + amount
+    end
+  end
+  local left = stock - ahead
   if left <= 0 then
     return false
   end
@@ -1927,15 +2000,19 @@ function logistics.honoured(trip)
   -- scanning every item's again for each freighter made many arriving at a busy provider together
   -- cost the square of its promises (Sourcery's review of 2559152). Any other reads them all.
   local claims
-  if provider.circuit_enabled and provider.circuit_mode == depot_circuit.contents then
-    local own = depot_circuit.key({ type = provider.fluid and "fluid" or "item", name = trip.item })
-    if depot_circuit.reads(provider.circuit_condition) == own then
-      claims = { [trip.item] = ahead }
+  if contents then
+    local signal = depot_circuit.key({ type = provider.fluid and "fluid" or "item", name = item })
+    if depot_circuit.reads(provider.circuit_condition) == signal then
+      claims = { [item] = ahead }
     else
       claims = logistics.claims_ahead(trip.provider, trip)
     end
   end
-  return enabled(provider, claims) and left or false
+  -- (Its condition holds now, as read at the start.)
+  if claims and not logistics.holds_less(provider, claims, held) then
+    return false
+  end
+  return left
 end
 
 -- Look for another provider for a freighter its provider no longer has a load for, leaving that
@@ -2693,8 +2770,13 @@ end
 
 -- End a trip: its freighter leaves the map and goes back into its depot's slot as an item, unless
 -- it was `lost` (destroyed on the way). If the depot is gone it has already handed its freighters
--- over; one somehow still aboard is left where the freighter stands.
+-- over; one somehow still aboard is left where the freighter stands. What it drove since its last
+-- fuel sample is burned first: one coming home empty parks at once, with no stand (and so no
+-- once-a-second check) at the end of its last leg (see drive).
 function end_trip(id, trip, lost)
+  if not trip.departing then
+    burn(trip)
+  end
   storage.trips[id] = nil
   promise(trip, true)
   local depot = storage.depots[trip.request]
