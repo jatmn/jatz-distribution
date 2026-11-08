@@ -68,8 +68,22 @@ local research = require("scripts.research")
 local impact = require("scripts.impact")
 local tunnels = require("scripts.tunnels")
 local robot_access = require("scripts.robot-access")
+local robot_requests = require("scripts.freighter-requests")
+local blueprints = require("scripts.blueprints")
+local fueling = require("scripts.fuel")
+local routes = require("scripts.routes")
+local transfer = require("scripts.cargo")
+local switching = require("scripts.circuit-switch")
+local ledger = require("scripts.promises")
 
 local logistics = {}
+
+-- Shown at every freighter's once-a-second check (check_trip), so a local, not a field read each time.
+local show_fuel = fueling.show_fuel
+-- Asked of every provider a search looks at, so a local too.
+local enabled = switching.enabled
+-- Filed whenever a trip changes, and asked of every provider a search looks at: locals too.
+local promise, available = ledger.promise, ledger.available
 
 local PROVIDER = "jatz-provider-depot"
 local REQUEST = "jatz-request-depot"
@@ -143,53 +157,8 @@ local DISPATCH_INTERVAL = 60
 logistics.dispatch_interval = DISPATCH_INTERVAL
 -- A request depot sends at most one freighter this often, so they leave one after another.
 local SEND_SPACING = 60
--- A freighter carries at most this many stacks, or this much fluid (Transport Drones' default
--- drone fluid capacity), before capacity research (scripts/research.lua).
-local CAPACITY_STACKS = 10
-local FLUID_CAPACITY = 500
-logistics.fluid_capacity = FLUID_CAPACITY
-
--- A force's research for freighters, kept (storage.research_levels[force index]): working it out
--- reads every level's technology and prototype, objects for Lua to collect, and freighters set off
--- many times a second. Forgotten when the force's research changes (on_research_changed), when
--- forces are reset, made or merged (a merged force's index can be given to a new one), on
--- configuration changes, and after a minute, in case a script changed a level without an event.
-local RESEARCH_MEMORY_TICKS = 60 * 60
-local function research_of(force)
-  storage.research_levels = storage.research_levels or {}
-  local index = force.index
-  local known = storage.research_levels[index]
-  if not (known and game.tick - known.tick < RESEARCH_MEMORY_TICKS) then
-    known = {
-      stacks = research.extra_stacks(force),
-      fluid = research.extra_fluid(force),
-      speed = research.speed_multiplier(force),
-      tick = game.tick,
-    }
-    storage.research_levels[index] = known
-  end
-  return known
-end
-
--- The freighter's own speed, read from its prototype once (prototypes don't change while the game
--- runs; reading one makes a new object every time).
-local drone_speed
-
--- What a force's freighters carry and how fast they drive, with its research. A trip keeps the
--- cargo size it set off with; speed research also reaches freighters already on the road
--- (logistics.on_research_changed).
-local function cargo_stacks(force)
-  return CAPACITY_STACKS + research_of(force).stacks
-end
-
-local function fluid_capacity(force)
-  return FLUID_CAPACITY + research_of(force).fluid
-end
-
-local function freighter_speed(force)
-  drone_speed = drone_speed or prototypes.entity[DRONE].speed
-  return drone_speed * research_of(force).speed
-end
+-- A freighter's fluid capacity before research (scripts/research.lua).
+logistics.fluid_capacity = research.base_fluid
 
 -- After a provider can't be reached, a request depot ignores it for this long; after a freighter
 -- can't be created, the depot waits this long before trying again. Laying road, or building or
@@ -207,10 +176,6 @@ local SEARCH_TIMEOUT = 10 * 60
 local QUALITY = "normal"
 -- Pollution each freighter out makes a second: Transport Drones' default for its drones.
 local POLLUTION_PER_SECOND = 0.005
--- A freighter fills up before a leg unless its tank holds what the leg's road length takes, times
--- this (its path may differ from the road measured), plus this share of a full tank in reserve.
-local FUEL_MARGIN = 1.25
-local FUEL_RESERVE = 0.1
 -- A freighter whose tank is dry crawls at this share of its speed.
 local DRY_SPEED = 0.1
 
@@ -245,7 +210,7 @@ logistics.status = {
 local TO_PROVIDER, TO_REQUEST, RETURNING = "to-provider", "to-request", "returning"
 
 -- Defined further down; dispatch, the search and on_tick need them first.
-local end_trip, load, freighter_requests, load_fluid, unload_fluid, set_off, target, upgrade, burn
+local end_trip, set_off, target, upgrade, burn
 
 local function init_storage()
   storage.depots = storage.depots or {}
@@ -393,57 +358,7 @@ local function fuel_tank(entity)
   return tank
 end
 logistics.fuel_tank_of = fuel_tank
-
--- Fuel: a full tank and what a tile of driving burns, in joules (runtime settings, settings.lua).
-local function fuel_capacity()
-  return settings.global["jatz-freighter-fuel-capacity"].value * 1000000
-end
-
--- Below this share of a full tank, a freighter's fuel shows yellow on hover.
-local LOW_FUEL = 0.25
-
--- An amount of fuel (joules) as text: MJ, or GJ from 1,000 MJ (a mod's item can hold far more
--- than a tank).
-local function energy_text(joules)
-  if joules >= 1e9 then
-    return "jatz-gui.energy-gj", string.format("%.1f", joules / 1e9)
-  end
-  return "jatz-gui.energy-mj", string.format("%.1f", joules / 1e6)
-end
-function logistics.energy_caption(joules)
-  local key, amount = energy_text(joules)
-  return { key, amount }
-end
-
-local function fuel_per_tile()
-  return settings.global["jatz-freighter-fuel-per-tile"].value * 1000
-end
-
--- What an item or fluid that burns gives, from game data (any mod's), or nil: its `fuel_value` and
--- the name of what it `burnt` into, if anything. Read from its prototype once per kind and name
--- (prototypes don't change while the game runs; reading one makes a new object every time).
-local burnables = { item = {}, fluid = {} }
-local function burnable(kind, name)
-  local known = burnables[kind][name]
-  if known == nil then
-    local prototype = prototypes[kind][name]
-    known = false
-    if prototype and prototype.fuel_value > 0 then
-      local burnt = kind == "item" and prototype.burnt_result
-      known = { fuel_value = prototype.fuel_value, burnt = burnt and burnt.name or nil }
-    end
-    burnables[kind][name] = known
-  end
-  return known or nil
-end
-
-local function burnable_item(name)
-  return burnable("item", name)
-end
-
-local function burnable_fluid(name)
-  return burnable("fluid", name)
-end
+logistics.energy_caption = fueling.energy_caption
 
 -- Whether an item (or, for a liquid depot, a fluid) of this name exists, from game data, read once
 -- per name.
@@ -456,68 +371,6 @@ local function exists(fluid, name)
     existing[fluid][name] = known
   end
   return known
-end
-
--- Whether a Fuel depot holds anything a freighter can fill up with: a burnable fluid in its tank,
--- or a burnable item in its chest.
-local function has_fuel(depot)
-  local tank = fuel_tank(depot.entity)
-  local held = tank and tank.get_fluid(1)
-  if held and held.amount > 0 and burnable_fluid(held.name) then
-    return true
-  end
-  local chest = inventory(depot.entity)
-  for _, item in pairs(chest.get_contents()) do
-    local fuel = burnable_item(item.name)
-    -- One that burns into another counts only while the depot has room for what it leaves.
-    local burnt = fuel and fuel.burnt
-    if fuel and (not burnt or chest.get_insertable_count({ name = burnt, quality = item.quality }) > 0) then
-      return true
-    end
-  end
-  return false
-end
-
--- Fill a freighter's tank at a Fuel depot: burnable fluid first, then burnable items, a whole item
--- at a time (the last may fill it past full, as a burner holds the item it is burning). An item
--- that burns into another (a fuel cell into a used one) leaves that in the depot, so only as many
--- are taken as the depot has room for what they leave.
-local function refuel(trip, depot)
-  local capacity = fuel_capacity()
-  local tank = fuel_tank(depot.entity)
-  local held = tank and tank.get_fluid(1)
-  local fluid = held and burnable_fluid(held.name)
-  if fluid and trip.energy < capacity then
-    local removed = tank.remove_fluid(1, math.min(held.amount, (capacity - trip.energy) / fluid.fuel_value))
-    trip.energy = trip.energy + (removed and removed.amount or 0) * fluid.fuel_value
-  end
-  local chest = inventory(depot.entity)
-  for index = 1, #chest do
-    if trip.energy >= capacity then
-      break
-    end
-    local stack = chest[index]
-    local item = stack.valid_for_read and burnable_item(stack.name)
-    if item then
-      local quality = stack.quality.name
-      local count = math.min(stack.count, math.ceil((capacity - trip.energy) / item.fuel_value))
-      local burnt = item.burnt
-      if burnt then
-        count = math.min(count, chest.get_insertable_count({ name = burnt, quality = quality }))
-      end
-      if count > 0 then
-        if count >= stack.count then
-          stack.clear()
-        else
-          stack.count = stack.count - count
-        end
-        if burnt then
-          chest.insert({ name = burnt, count = count, quality = quality })
-        end
-        trip.energy = trip.energy + count * item.fuel_value
-      end
-    end
-  end
 end
 
 -- Freighters of every quality in an inventory: any freighter can be sent out. One call: an item
@@ -618,17 +471,8 @@ tunnels.zones = function(surface_index)
   return zones
 end
 
--- An item's stack size, read from its prototype once (prototypes don't change while the game runs;
--- reading one makes a new object every time).
-local stack_sizes = {}
-local function stack_size_of(item)
-  local size = stack_sizes[item]
-  if not size then
-    size = prototypes.item[item].stack_size
-    stack_sizes[item] = size
-  end
-  return size
-end
+-- Moving cargo (scripts/cargo.lua).
+transfer.install(logistics, { quality = QUALITY })
 
 -- The freighter item's stack size.
 local freighter_stack
@@ -686,15 +530,6 @@ local function trips_of(depot)
   return depot.trips
 end
 
--- A trip's cargo: item stacks in a script inventory (`trip.cargo`), or for a liquid depot's trip a
--- fluid (`trip.fluid`: { amount, temperature }; fluids have no item data to keep).
-local function cargo_amount(trip)
-  if trip.fluid then
-    return trip.fluid.amount
-  end
-  return trip.cargo and trip.cargo.valid and trip.cargo.get_item_count(trip.item) or 0
-end
-
 local function cargo_empty(trip)
   if trip.fluid then
     return trip.fluid.amount <= 0
@@ -719,57 +554,6 @@ end
 -- stuck to this unit for good, and one made anew on another unit would restart its damage cycle,
 -- adding or skipping a hit. A paint is only a look, so the freighter keeps its old one until they
 -- wear off, and its once-a-second check paints it then (`check_trip`, `repaint_now`).
--- Show a freighter's fuel on hover, as its status: green, yellow below LOW_FUEL of a tank, red
--- once dry. Nothing while fuel is turned off.
--- Written only when what it shows changes (`trip.fuel_shown`, which names the freighter too, since
--- a repainted one is a new entity with no status yet).
--- `per_tile` and `capacity` are fuel_per_tile() and fuel_capacity(), given when the caller has read
--- them already (reading a setting makes a table each time).
-local FUEL_STATUS = { label = { "jatz-gui.freighter-fuel", {}, {} } }
-local function show_fuel(trip, per_tile, capacity)
-  local drone = trip.drone
-  if not drone.valid then
-    return
-  end
-  local unit = drone.unit_number
-  local shown = trip.fuel_shown
-  if (per_tile or fuel_per_tile()) <= 0 then
-    if not (shown and shown.unit == unit and shown.off) then
-      drone.custom_status = nil
-      shown = shown or {}
-      trip.fuel_shown = shown
-      shown.unit, shown.off, shown.diode = unit, true, nil
-    end
-    return
-  end
-  capacity = capacity or fuel_capacity()
-  local energy = trip.energy or capacity
-  local diode = energy <= 0 and "red" or energy < capacity * LOW_FUEL and "yellow" or "green"
-  local held_key, held = energy_text(energy)
-  local full_key, full = energy_text(capacity)
-  if
-    shown
-    and shown.unit == unit
-    and shown.diode == diode
-    and shown.held_key == held_key
-    and shown.held == held
-    and shown.full_key == full_key
-    and shown.full == full
-  then
-    return
-  end
-  -- The same tables again, filled in: what is shown changes every second or two for every freighter
-  -- driving, and the game copies a status when it is written.
-  shown = shown or {}
-  trip.fuel_shown = shown
-  shown.unit, shown.diode, shown.off = unit, diode, nil
-  shown.held_key, shown.held, shown.full_key, shown.full = held_key, held, full_key, full
-  local label = FUEL_STATUS.label
-  FUEL_STATUS.diode = defines.entity_status_diode[diode]
-  label[2][1], label[2][2], label[3][1], label[3][2] = held_key, held, full_key, full
-  drone.custom_status = FUEL_STATUS
-end
-
 -- `position`: where the new one stands instead (coming out of a tunnel at its other end).
 -- `orientation`: the way the new one faces instead (out of a tunnel's mouth).
 -- The new unit is made facing that way (its nearest of the 16 directions, then exactly): a unit
@@ -834,280 +618,6 @@ local function show_cargo(trip)
       y_scale = 0.6,
     })
   end
-end
-
--- What a trip will bring: what it promised to load while on its way out, its cargo on the way back.
-local function bringing(trip)
-  if trip.state == TO_PROVIDER then
-    return trip.planned or 0
-  elseif trip.state == TO_REQUEST then
-    return cargo_amount(trip)
-  end
-  return 0
-end
-
--- The tick from which a returning trip's cargo of its item may have spoiled: its stacks' earliest
--- spoil_tick, or nil if none can. The game spoils a whole stack at once, just after that tick,
--- inside the cargo inventory and with no event.
-local spoils_at
-do
-  -- Whether an item spoils, by name (prototype data: Lua only, built again after a load).
-  local spoils = {}
-  function spoils_at(trip)
-    if trip.state ~= TO_REQUEST or trip.fluid then
-      return nil
-    end
-    local item = trip.item
-    if spoils[item] == nil then
-      local prototype = prototypes.item[item]
-      spoils[item] = prototype ~= nil and prototype.get_spoil_ticks() > 0
-    end
-    if not spoils[item] then
-      return nil
-    end
-    local cargo = trip.cargo
-    if not (cargo and cargo.valid) then
-      return nil
-    end
-    local first
-    for index = 1, #cargo do
-      local stack = cargo[index]
-      if stack.valid_for_read and stack.name == item then
-        local tick = stack.spoil_tick
-        if tick > 0 and (not first or tick < first) then
-          first = tick
-        end
-      end
-    end
-    return first
-  end
-end
-
--- What a request depot's freighters are bringing, filed by `promise` as their state, promise or
--- cargo changes: storage.coming[request depot unit_number][item][trip key] = amount (only
--- amounts above 0), and each trip records the amount it has filed (`trip.coming`; a trip's depot
--- and item never change). So a depot's need is read without looking at each of its trips and
--- their cargo. Cargo that spoils changes with no trip change, so the earliest tick a depot's
--- filed cargo of an item may spoil is filed too (storage.spoiling[request depot][item] = tick),
--- and `committed` files that depot's trips for the item again once it comes (`file_spoiled`).
-local file_promises
-local function file_coming(trip, ended)
-  local amount = not ended and bringing(trip) or 0
-  local spoil_tick = amount ~= 0 and spoils_at(trip)
-  if spoil_tick then
-    local spoiling = storage.spoiling
-    local items = spoiling[trip.request]
-    if not items then
-      items = {}
-      spoiling[trip.request] = items
-    end
-    local due = items[trip.item]
-    if not due or spoil_tick < due then
-      items[trip.item] = spoil_tick
-    end
-  end
-  if (trip.coming or 0) == amount then
-    return
-  end
-  local coming = storage.coming
-  local items = coming[trip.request]
-  if amount ~= 0 then
-    if not items then
-      items = {}
-      coming[trip.request] = items
-    end
-    local trips = items[trip.item]
-    if not trips then
-      trips = {}
-      items[trip.item] = trips
-    end
-    trips[trip.key] = amount
-    trip.coming = amount
-    return
-  end
-  local trips = items and items[trip.item]
-  if trips then
-    trips[trip.key] = nil
-    if next(trips) == nil then
-      items[trip.item] = nil
-      if next(items) == nil then
-        coming[trip.request] = nil
-      end
-      -- Nothing of the item is coming: no cargo of it left to spoil.
-      local spoiling = storage.spoiling[trip.request]
-      if spoiling then
-        spoiling[trip.item] = nil
-        if next(spoiling) == nil then
-          storage.spoiling[trip.request] = nil
-        end
-      end
-    end
-  end
-  trip.coming = nil
-end
-
--- What a request depot's freighters, except trip `except` (by id), are bringing of the item it
--- requests. Trips for an item the depot no longer asks for bring nothing it needs.
-local committed
-do
-  -- File a request depot's trips bringing `item` again from their cargo, as some of it may have
-  -- spoiled: from the tick storage.spoiling holds for it (a stack is still there on its
-  -- spoil_tick and gone the tick after, so it may be filed again on both). Each trip files its
-  -- next spoil tick.
-  local function file_spoiled(depot, item)
-    local unit = depot.entity.unit_number
-    local items = storage.spoiling[unit]
-    items[item] = nil
-    if next(items) == nil then
-      storage.spoiling[unit] = nil
-    end
-    for id in pairs(trips_of(depot)) do
-      local trip = storage.trips[id]
-      if trip and trip.item == item then
-        file_coming(trip)
-      end
-    end
-  end
-
-  function committed(depot, except)
-    if not (storage.coming and storage.spoiling) then
-      file_promises()
-    end
-    local item = depot.request and depot.request.item
-    local spoiling = item and storage.spoiling[depot.entity.unit_number]
-    local due = spoiling and spoiling[item]
-    if due and game.tick >= due then
-      file_spoiled(depot, item)
-    end
-    local items = item and storage.coming[depot.entity.unit_number]
-    local trips = items and items[item]
-    if not trips then
-      return 0
-    end
-    local skipped = except and storage.trips[except]
-    skipped = skipped and skipped.key
-    local total = 0
-    for key, amount in pairs(trips) do
-      if key ~= skipped then
-        total = total + amount
-      end
-    end
-    return total
-  end
-end
-
--- What freighters on their way to a provider have promised to load there:
--- storage.promised[provider unit_number][item][trip key] = amount, for every trip driving out
--- (TO_PROVIDER) with a promise, except one that gave up on its provider and is looking for another
--- (`trip.passed`, logistics.give_up): that stock is free again at once. Each trip records where its
--- promise is filed (`trip.promise`), and `promise` files it again whenever its provider, state,
--- promise or `passed` changes, so a provider's
--- unpromised stock is read without looking at every trip in the game. Their total by provider and
--- item is kept with them (storage.promise_totals[provider unit_number][item], each promise rounded
--- up to a whole unit, so it is exact for items and never less than the promises for fluid): an item
--- provider's unpromised stock, and whether a provider's stock covers every promise there, are then
--- read without looking at each promise (Pullfrog's review of feca8c7). A trip's key is the
--- unit_number of the freighter it set off with (`trip.key`), which stays the same when it is
--- repainted. With `ended`, the trip is over and its promise goes. What it is bringing its request
--- depot is filed again too (`file_coming`), so call it whenever that may have changed: its state,
--- promise or cargo.
-local function promise(trip, ended)
-  if not (storage.promised and storage.promise_totals and storage.coming and storage.spoiling and trip.key) then
-    -- A save from before promises were filed: file every trip's (this one's too, if still out).
-    return file_promises()
-  end
-  file_coming(trip, ended)
-  local filed = trip.promise
-  local amount = not ended and trip.state == TO_PROVIDER and not trip.passed and trip.planned or 0
-  if filed and filed.provider == trip.provider and filed.amount == amount then
-    return
-  end
-  local promised, totals = storage.promised, storage.promise_totals
-  if filed then
-    local items = promised[filed.provider]
-    local trips = items and items[trip.item]
-    if trips then
-      trips[trip.key] = nil
-      local sums = totals[filed.provider]
-      local total = sums[trip.item] - math.ceil(filed.amount)
-      sums[trip.item] = total ~= 0 and total or nil
-      if next(trips) == nil then
-        items[trip.item] = nil
-        if next(items) == nil then
-          promised[filed.provider] = nil
-          totals[filed.provider] = nil
-        end
-      end
-    end
-  end
-  trip.promise = nil
-  if amount ~= 0 and trip.provider then
-    local items = promised[trip.provider] or {}
-    promised[trip.provider] = items
-    local trips = items[trip.item] or {}
-    items[trip.item] = trips
-    trips[trip.key] = amount
-    local sums = totals[trip.provider] or {}
-    totals[trip.provider] = sums
-    sums[trip.item] = (sums[trip.item] or 0) + math.ceil(amount)
-    trip.promise = { provider = trip.provider, amount = amount }
-  end
-end
-
--- File every trip's promise, and what it is bringing, afresh: on first use in a save from before
--- they were filed, and after trips were checked against the game as loaded (add_all).
-function file_promises()
-  storage.promised, storage.promise_totals, storage.coming, storage.spoiling = {}, {}, {}, {}
-  for id, trip in pairs(storage.trips) do
-    trip.key = trip.key or id
-    trip.promise, trip.coming = nil, nil
-    -- (Its cargo is read: one from the first version carried a plain count.)
-    promise(upgrade(trip))
-  end
-end
-
--- Providers' bound get_item_count, by their inventory: Lua only, built again after a load.
-local stock_counters = setmetatable({}, { __mode = "k" })
-
--- How much of `item` a provider has that no freighter on its way there has promised to load, or with
--- `gross`, how much it has.
-local function available(provider, item, gross)
-  local count
-  if provider.fluid then
-    count = provider.entity.get_fluid_count(item)
-  else
-    -- Its item inventory, kept (reading it from the entity makes a new object every time), and its
-    -- get_item_count bound once (a method read off an object is a new function every time).
-    local held = provider.stock_inventory
-    if not (held and held.valid) then
-      held = inventory(provider.entity)
-      provider.stock_inventory = held
-    end
-    local counter = stock_counters[held]
-    if not counter then
-      counter = held.get_item_count
-      stock_counters[held] = counter
-    end
-    count = counter(item)
-  end
-  if gross then
-    return count
-  end
-  if not (storage.promised and storage.promise_totals) then
-    file_promises()
-  end
-  local unit_number = provider.entity.unit_number
-  if not provider.fluid then
-    -- Whole items: their kept total is exact.
-    local totals = storage.promise_totals[unit_number]
-    return count - (totals and totals[item] or 0)
-  end
-  -- Fluid promises can be fractions: added up afresh, as exact as they are.
-  local items = storage.promised[unit_number]
-  for _, amount in pairs(items and items[item] or {}) do
-    count = count - amount
-  end
-  return count
 end
 
 local function request_depot(entity)
@@ -1187,64 +697,14 @@ function logistics.get_priority(entity)
   return depot and (depot.priority or PRIORITY_DEFAULT) or nil
 end
 
--- What a depot holds, as circuit signal counts by key (depot_circuit.key): its items by quality,
--- or its fluids in whole units, as a container or storage tank sends them.
-local function own_signals(depot)
-  local counts = {}
-  local entity = depot.entity
-  if depot.fluid then
-    for name, amount in pairs(entity.get_fluid_contents()) do
-      local key = depot_circuit.key({ type = "fluid", name = name })
-      counts[key] = (counts[key] or 0) + math.floor(amount)
-    end
-    return counts
-  end
-  local contents = inventory(entity)
-  for _, item in ipairs(contents and contents.get_contents() or {}) do
-    local key = depot_circuit.key({ type = "item", name = item.name, quality = item.quality })
-    counts[key] = (counts[key] or 0) + item.count
-  end
-  return counts
-end
-
--- A storage tank's whole pipe segment's fluid, in whole units, as it sends it in that mode.
-local function segment_signals(depot)
-  local fluid = depot.fluid and depot.entity.get_fluid_segment_fluid(1)
-  return fluid and { [depot_circuit.key({ type = "fluid", name = fluid.name })] = math.floor(fluid.amount) } or {}
-end
-
--- A depot whose condition reads the circuit network takes its own contents back out of what the
--- wires carry. Their signals are what each entity sent at the previous tick's circuit update, and
--- its contents can change before it is read this tick (inserters, robots, freighters, scripts:
--- 700 wood taken out of 1000 still left 1000 on the wire, probed on 2.1.24). So its contents are
--- sampled at the start of every tick, before anything moves (control.lua's on_tick, which the game
--- raises before on_nth_tick and the entity updates), and that sample is what it takes out all tick
--- (`circuit_sample`). Only depots reading the network are sampled (`storage.circuit_watch`, kept
--- by set_circuit and on load). Changes the game applies before any mod's on_tick (a player's own
--- transfers) and those of mods running earlier in the tick can't be told apart: for that one tick
--- the sample already holds them.
-local function watch(depot)
-  storage.circuit_watch = storage.circuit_watch or {}
-  storage.circuit_watch[depot.entity.unit_number] = (depot.circuit_enabled and not depot.circuit_mode) or nil
-  if not storage.circuit_watch[depot.entity.unit_number] then
-    depot.circuit_sample = nil
-  end
-end
-
-function logistics.sample_circuits()
-  local watched = storage.circuit_watch
-  if not watched then
-    return
-  end
-  for unit_number in pairs(watched) do
-    local depot = storage.depots[unit_number]
-    if depot and depot.entity.valid and depot.circuit_enabled and not depot.circuit_mode then
-      depot.circuit_sample = { tick = game.tick, sent = own_signals(depot), segment = segment_signals(depot) }
-    else
-      watched[unit_number] = nil
-    end
-  end
-end
+-- Depots switched by their circuit condition (scripts/circuit-switch.lua).
+switching.install(logistics, { inventory = inventory, file_promises = ledger.file_promises })
+logistics.sample_circuits = switching.sample_circuits
+logistics.enabled = switching.enabled
+logistics.holds_less = switching.holds_less
+logistics.claims_ahead = switching.claims_ahead
+logistics.get_circuit = switching.get_circuit
+logistics.set_circuit = switching.set_circuit
 
 -- Set by scripts/road-monitor.lua: what the road network monitors on a circuit network counted for
 -- a depot (counted(unit_number, network) gives a list of counts by key), for its condition to
@@ -1274,172 +734,6 @@ function logistics.queue_place()
   return storage.promise_order
 end
 
--- Whether a depot takes part in deliveries now: its circuit condition holds, or isn't in effect.
--- With `claims`, a depot reading its own contents must also still hold it once freighters on their
--- way there have loaded what they promised: `true` for every promise filed there (whether to send
--- it another freighter, so once those already sent would take it below its condition no more go),
--- or a table of amounts by item (logistics.claims_ahead: the promises made before a freighter's,
--- for whether that one still gets its load). Both, not the second instead of the first: a
--- condition that taking items switches on (only while below some amount) can hold with promises
--- taken and not now, and a switched-off depot gives nothing. Without it, what it holds now: its
--- status, its panel, road network monitors. `held`: its own_signals, if the caller has read them
--- already this tick (check_depot reads them once for its status and its promises).
-local function enabled(depot, claims, held)
-  if not depot.circuit_enabled then
-    -- No condition in effect (most depots): nothing to read.
-    return true
-  end
-  local counted = logistics.monitor_counts
-  -- What it put on its wires: this tick's sample, or (not sampled this tick: its condition was set
-  -- since) what it holds now.
-  local sample = depot.circuit_sample
-  sample = sample and sample.tick == game.tick and sample or nil
-  local live = held
-  if
-    not depot_circuit.allows(depot.entity, depot.circuit_enabled, depot.circuit_condition, depot.circuit_mode, {
-      held = function()
-        live = live or own_signals(depot)
-        return live
-      end,
-      sent = function()
-        return sample and sample.sent or own_signals(depot)
-      end,
-      segment = function()
-        return sample and sample.segment or segment_signals(depot)
-      end,
-    }, counted and function(network)
-      return counted(depot.entity.unit_number, network)
-    end)
-  then
-    return false
-  end
-  if not claims or depot.circuit_mode ~= depot_circuit.contents then
-    -- Read from the network, the condition leaves the depot's own contents out: promises don't
-    -- change it.
-    return true
-  end
-  if claims == true then
-    claims = logistics.claims_ahead(depot.entity.unit_number)
-  end
-  return logistics.holds_less(depot, claims, live or own_signals(depot))
-end
-logistics.enabled = enabled
-
--- Whether a depot's condition, reading its own contents, holds with `claims` (amounts by item)
--- taken out of `live` (own_signals, read once by the caller; not changed). Freighters load the
--- normal quality. Promises of fluid can be fractions: taken from the exact amount, then floored
--- once, as the tank would send what is left (own_signals has floored it already). (A field, not a
--- local: this file has as many locals as Lua allows.)
-function logistics.holds_less(depot, claims, live)
-  if next(claims) == nil then
-    return true
-  end
-  local counts = {}
-  for signal, count in pairs(live) do
-    counts[signal] = count
-  end
-  for item, claimed in pairs(claims) do
-    local signal = depot_circuit.key({ type = depot.fluid and "fluid" or "item", name = item })
-    if depot.fluid then
-      counts[signal] = math.floor(depot.entity.get_fluid_count(item) - claimed)
-    else
-      counts[signal] = (counts[signal] or 0) - claimed
-    end
-  end
-  return depot_circuit.allows(depot.entity, true, depot.circuit_condition, depot.circuit_mode, {
-    held = function()
-      return counts
-    end,
-  })
-end
-
--- The promises filed at a provider (unit number) made before `trip`'s (logistics.ahead), or all of
--- them without one: amounts by item. All of an item depot's are their kept totals
--- (storage.promise_totals, exact for items; not to be changed): `enabled(depot, true)` asks for
--- them whenever a search looks at a provider or ends there, and adding them up afresh each time
--- made many searches ending at one busy provider cost the square of its promises (Copilot's review
--- of be24d17). Fluid's are added up afresh, as fractions.
-function logistics.claims_ahead(unit_number, trip)
-  local provider = not trip and storage.depots[unit_number]
-  if provider and not provider.fluid then
-    if not (storage.promised and storage.promise_totals) then
-      file_promises()
-    end
-    return storage.promise_totals[unit_number] or {}
-  end
-  local claims = {}
-  for item, trips in pairs(storage.promised and storage.promised[unit_number] or {}) do
-    local claimed = 0
-    for key, amount in pairs(trips) do
-      if not trip or logistics.ahead(key, trip) then
-        claimed = claimed + amount
-      end
-    end
-    claims[item] = claimed
-  end
-  return claims
-end
-
--- The entity info panel (hover) shows a depot's own status, "Normal" for a chest. While its
--- circuit condition switches it off, it shows that instead (LuaEntity.custom_status, a red light),
--- as the game shows an entity its circuit condition disabled; switched on, its own status again.
--- Written only when it changes (`depot.shown_off`): once a second, and when the setting changes.
-local SWITCHED_OFF = { diode = defines.entity_status_diode.red, label = { "jatz-circuit-status.entity-off" } }
-local function show_switched(depot, held)
-  local off = (depot.circuit_enabled and not enabled(depot, nil, held)) or nil
-  if depot.shown_off ~= off and depot.entity.valid then
-    depot.entity.custom_status = off and SWITCHED_OFF or nil
-    depot.shown_off = off
-  end
-end
-
--- A provider, request or buffer depot (item or liquid) by its entity, or nil: the depots that have
--- a circuit condition. Fuel depots are registered too, but freighters refuel there whatever its
--- wires say, so they have none.
-local function delivery_depot(entity)
-  local depot = entity and entity.valid and entity.unit_number and storage.depots and storage.depots[entity.unit_number]
-  return depot and depot.role ~= "fuel" and depot or nil
-end
-
--- A delivery depot's circuit settings: { enabled, condition, mode, connected, fulfilled }, where
--- `enabled` says the condition is ticked, `mode` what it reads ("network" or "contents"),
--- `connected` that a red or green wire reaches the depot, and `fulfilled` that it takes part in
--- deliveries now. Nil for anything else.
-function logistics.get_circuit(entity)
-  local depot = delivery_depot(entity)
-  if not depot then
-    return nil
-  end
-  return {
-    enabled = depot.circuit_enabled == true,
-    condition = depot_circuit.condition(depot.circuit_condition or {}),
-    mode = depot.circuit_mode or depot_circuit.network,
-    connected = depot_circuit.connected(entity),
-    fulfilled = enabled(depot),
-  }
-end
-
--- Set whether a delivery depot's circuit condition is in effect, and (unless nil) the condition
--- and what it reads ("network" or "contents"). Returns false, changing nothing, for anything else,
--- a condition that isn't a table or another mode.
-function logistics.set_circuit(entity, enable, condition, mode)
-  local depot = delivery_depot(entity)
-  local stored = depot_circuit.mode(mode)
-  if not depot or (condition ~= nil and type(condition) ~= "table") or stored == false then
-    return false
-  end
-  depot.circuit_enabled = enable == true
-  if condition ~= nil then
-    depot.circuit_condition = depot_circuit.condition(condition)
-  end
-  if mode ~= nil then
-    depot.circuit_mode = stored
-  end
-  watch(depot)
-  show_switched(depot)
-  return true
-end
-
 -- Set a request depot's request, or clear it with a nil item. Returns false, changing nothing,
 -- for anything but a request depot, an item that doesn't exist, or a count that isn't a number.
 -- A request is at most what the depot holds: its tank's size for a liquid depot, and for an item
@@ -1465,7 +759,7 @@ function logistics.set_request(entity, item, count)
       count = math.min(count, depot.entity.get_fluid_capacity(1))
     else
       -- The chest's slots, not a constant, each a stack of this item.
-      count = math.min(count, #inventory(depot.entity) * stack_size_of(item))
+      count = math.min(count, #inventory(depot.entity) * transfer.stack_size_of(item))
     end
     depot.request = { item = item, count = count }
   end
@@ -1501,7 +795,7 @@ local function need(depot, except)
   end
   if depot.fluid then
     local tank = depot.entity
-    local coming = committed(depot, except)
+    local coming = ledger.committed(depot, except)
     local wanted = request.count - tank.get_fluid_count(request.item) - coming
     if wanted <= 0 then
       return 0, 0, nil, -wanted
@@ -1518,7 +812,7 @@ local function need(depot, except)
   end
   -- (An item's name alone means normal quality.)
   local chest, id = inventory(depot.entity), request.item
-  local coming = committed(depot, except)
+  local coming = ledger.committed(depot, except)
   local wanted = request.count - chest.get_item_count(id) - coming
   if wanted <= 0 then
     return 0, 0, nil, -wanted
@@ -1594,10 +888,10 @@ function logistics.full_load(depot, trip)
   local force = depot.entity.force
   local capacity
   if depot.fluid then
-    capacity = fluid_capacity(force)
+    capacity = research.fluid_capacity_of(force)
   else
-    local stacks = trip and trip.cargo and #trip.cargo or cargo_stacks(force)
-    capacity = stacks * stack_size_of(request.item)
+    local stacks = trip and trip.cargo and #trip.cargo or research.cargo_stacks(force)
+    capacity = stacks * transfer.stack_size_of(request.item)
   end
   return math.min(capacity, request.count), capacity
 end
@@ -1775,20 +1069,20 @@ local function start_trip(depot, provider, from, planned, length)
   end
   local parked = parked_fuel(depot)
   local energy
-  if #parked > 0 and (trucks_of(depot).get_item_count() <= #parked or parked[#parked] > fuel_capacity()) then
+  if #parked > 0 and (trucks_of(depot).get_item_count() <= #parked or parked[#parked] > fueling.fuel_capacity()) then
     -- The fullest parked one: more than a tank, or (with none full) the most short of one.
     energy = table.remove(parked)
   else
     -- One with a full tank.
-    energy = fuel_capacity()
+    energy = fueling.fuel_capacity()
   end
-  drone.speed = freighter_speed(drone.force)
+  drone.speed = research.freighter_speed(drone.force)
   local trip = {
     drone = drone,
     request = depot.entity.unit_number,
     provider = provider.entity.unit_number,
     item = depot.request.item,
-    cargo = not depot.fluid and game.create_inventory(cargo_stacks(drone.force)) or nil,
+    cargo = not depot.fluid and game.create_inventory(research.cargo_stacks(drone.force)) or nil,
     fluid = depot.fluid and { amount = 0 } or nil,
     -- The freighter item it was, taken from the depot's slot; it goes back there afterwards.
     truck = game.create_inventory(1),
@@ -1816,9 +1110,9 @@ local function start_trip(depot, provider, from, planned, length)
   script.register_on_object_destroyed(drone)
   trips_of(depot)[drone.unit_number] = true
   depot.next_send = game.tick + SEND_SPACING
-  if energy <= 0 and fuel_per_tile() > 0 then
+  if energy <= 0 and fueling.fuel_per_tile() > 0 then
     trip.dry = true
-    drone.speed = freighter_speed(drone.force) * DRY_SPEED
+    drone.speed = research.freighter_speed(drone.force) * DRY_SPEED
   end
   show_fuel(trip)
   -- set_off may send it straight back into the slot (too little fuel, nowhere to fill up), which
@@ -1848,89 +1142,6 @@ local function owner_of(search)
   return depot and depot.search_token == search.token and depot or nil
 end
 
--- The freighter's box and collision mask, read from its prototype once (prototypes don't change
--- while the game runs; reading them makes new tables every time).
-local drone_shape
-
--- Road lengths the pathfinder found, so the same question isn't asked again and again (a depot
--- asks about the same providers every time it sends a freighter, and every answer carries the
--- whole route, a table per tile, for Lua to collect): storage.road_lengths[surface index] =
--- { lengths = { [key] = tiles, or false for no road }, ticks = { [key] = tick found } }. A
--- surface's are forgotten whenever its road changes (on_roads_changed) and on configuration
--- changes, and each after ROAD_MEMORY_TICKS in case another mod changed tiles without an event.
--- An answer is remembered only if the surface's road hasn't changed since it was asked
--- (storage.road_versions[surface index], counted up by each change): it would be about old road.
--- Whether a tick's depot checks are under way (they are when a depot's search asks first).
-local checking_depots = false
--- The search answer_remembered is giving its remembered answers to, and the next of them, taken at
--- once (ask_route) rather than queued: Lua only, set and used within one call.
-local answering, chained, chained_length = nil, false, nil
-
-local function road_key(from, to)
-  return from.x .. " " .. from.y .. " " .. to.x .. " " .. to.y
-end
-
--- Remembered answers wait in storage.road_answers and are given when the pathfinder's own would
--- come: after the tick's depot checks for a question one of them asked (the pathfinder answers
--- those in the same tick, after every depot has decided), the next tick for any other. Given
--- during the checks, a depot's freighter would promise stock before the others of its group had
--- looked (check_phase).
-local function remember_road(search, length)
-  if not search.road_key or search.road_version ~= (storage.road_versions or {})[search.surface_index] then
-    return
-  end
-  storage.road_lengths = storage.road_lengths or {}
-  local known = storage.road_lengths[search.surface_index]
-  if not known then
-    known = { lengths = {}, ticks = {} }
-    storage.road_lengths[search.surface_index] = known
-  end
-  known.lengths[search.road_key] = length or false
-  known.ticks[search.road_key] = game.tick
-end
-
--- Ask the pathfinder for the road route from the search's start to its current candidate, as the
--- freighter would drive it, unless its length is known. Only a depot's searches are remembered:
--- they start from its loading zone, while a freighter's start wherever it stands.
-local function ask_route(search, surface, force)
-  local goal = search.candidates[search.index].position
-  if not search.trip then
-    local key = road_key(search.from, goal)
-    local surface_index = surface.index
-    local known = storage.road_lengths and storage.road_lengths[surface_index]
-    local length = known and known.lengths[key]
-    if length ~= nil and game.tick - known.ticks[key] < ROAD_MEMORY_TICKS then
-      if answering == search then
-        chained, chained_length = true, length or nil
-        return
-      end
-      storage.road_answers = storage.road_answers or {}
-      local answers = storage.road_answers
-      answers[#answers + 1] =
-        { search = search, length = length or nil, tick = checking_depots and game.tick or game.tick + 1 }
-      return
-    end
-    search.road_key, search.surface_index = key, surface_index
-    search.road_version = (storage.road_versions or {})[surface_index]
-  end
-  if not drone_shape then
-    local drone = prototypes.entity[DRONE]
-    drone_shape = { box = drone.collision_box, mask = drone.collision_mask }
-  end
-  local id = surface.request_path({
-    bounding_box = drone_shape.box,
-    collision_mask = drone_shape.mask,
-    start = search.from,
-    goal = goal,
-    force = force,
-    radius = ARRIVAL_RADIUS,
-    pathfind_flags = { no_break = true },
-  })
-  -- Saves from before searches existed have no table yet, and their mod version is the same.
-  storage.searches = storage.searches or {}
-  storage.searches[id] = search
-end
-
 -- Start looking for the provider nearest by road. With `trip`, the search is for a freighter
 -- already out (its provider was removed) and starts where it stands. Returns false, with whether
 -- a provider was skipped for cooldown, if there is nothing to look for.
@@ -1957,7 +1168,7 @@ local function search_providers(depot, from, trip)
   local owner = trip and storage.trips[trip] or depot
   owner.search_token = search.token
   owner.searching = game.tick
-  ask_route(search, depot.entity.surface, depot.entity.force)
+  routes.ask_route(search, depot.entity.surface, depot.entity.force)
   return true
 end
 
@@ -2044,12 +1255,12 @@ function logistics.honoured(trip)
   end
   if not (storage.promised and storage.promise_totals) then
     -- A save from before their totals were kept (or before promises were filed): filed afresh.
-    file_promises()
+    ledger.file_promises()
   end
   local item = trip.item
   local contents = provider.circuit_enabled and provider.circuit_mode == depot_circuit.contents
   -- What it holds, read once: each read builds a signal for every item in it.
-  local held = contents and own_signals(provider) or nil
+  local held = contents and switching.own_signals(provider) or nil
   if not enabled(provider, nil, held) then
     -- Switched off now: nothing for anyone, whatever the promises.
     return false
@@ -2167,7 +1378,7 @@ function logistics.keep_promises(id, depot, held)
     return first < second or (first == second and a.key < b.key)
   end)
   -- What it holds, for the condition (only reading its contents do promises matter).
-  local live = on and contents and (held or own_signals(depot)) or nil
+  local live = on and contents and (held or switching.own_signals(depot)) or nil
   -- Every freighter is decided first, and those it no longer has a load for give up only after:
   -- each give-up starts a search, which reads the providers (`suppliers`), so they must see this
   -- provider's promises as they end up, not some still to be let go (Sourcery's review of ac9ab0a).
@@ -2215,121 +1426,6 @@ function logistics.keep_promises(id, depot, held)
   end
 end
 
--- Fuel depots a freighter of `depot` could fill up at: same surface and force, road at the loading
--- zone, holding fuel, not on cooldown for this depot (no road route lately), nearest first in a
--- straight line from `from`. With `empty`, Fuel depots without fuel come too, ranked after all
--- those with fuel (rank 1): a search reaches one only when none with fuel has a road, and tells a
--- freighter at home that its road has Fuel depots, empty ones, from none at all.
-local function fuel_candidates(depot, from, empty)
-  local entity = depot.entity
-  local found = {}
-  local surface_index, force_index = entity.surface_index, entity.force_index
-  local depots = storage.depots
-  for unit_number in pairs(depots_at(surface_index, "fuel")) do
-    local fuel = depots[unit_number]
-    local candidate = fuel and fuel.entity
-    if
-      fuel
-      and (depot.cooldowns[unit_number] or 0) <= game.tick
-      and candidate.valid
-      and candidate.force_index == force_index
-    then
-      local stocked = has_fuel(fuel)
-      local position, on_road = loading_tile(candidate)
-      if on_road and (stocked or empty) then
-        local dx, dy = position.x - from.x, position.y - from.y
-        found[#found + 1] = {
-          id = unit_number,
-          position = position,
-          distance = math.sqrt(dx * dx + dy * dy),
-          rank = stocked and 0 or 1,
-        }
-      end
-    end
-  end
-  table.sort(found, function(a, b)
-    if a.rank ~= b.rank then
-      return a.rank < b.rank
-    end
-    return a.distance < b.distance or (a.distance == b.distance and a.id < b.id)
-  end)
-  return found
-end
-
--- Start looking for the Fuel depot nearest by road from where a freighter stands; it waits while
--- the search runs. Returns false if there is none to look for.
-local function seek_fuel(id, trip)
-  trip.search_token, trip.searching, trip.fuel_search, trip.refuel = nil, nil, nil, nil
-  local depot = storage.depots[trip.request]
-  if not (trip.drone.valid and depot and depot.entity.valid) then
-    return false
-  end
-  local from = trip.drone.position
-  -- One still at home also looks for empty ones, so its depot can say which it is waiting for.
-  local found = fuel_candidates(depot, from, trip.departing)
-  if #found == 0 then
-    return false
-  end
-  local search = {
-    token = new_token(),
-    request = trip.request,
-    item = trip.item,
-    from = from,
-    -- (See search_providers.)
-    origin = trip.origin or from,
-    candidates = found,
-    index = 1,
-    trip = id,
-    fuel = true,
-  }
-  trip.search_token, trip.searching, trip.fuel_search = search.token, game.tick, true
-  logistics.command(trip, { type = defines.command.stop, distraction = defines.distraction.none })
-  ask_route(search, depot.entity.surface, depot.entity.force)
-  return true
-end
-
--- Nowhere to fill up for this leg: go on where it was going on what it has. One that hasn't left
--- home yet and can't reach the provider on that stays home, never sent to wait at an empty Fuel
--- depot. Its depot waits for fuel in one if a road reaches an empty one (`empty_reachable`;
--- dispatch looks every second), and otherwise shows red, no Fuel depot connected by road, until
--- one is built or connected (or RETRY_TICKS pass).
-local function go_without_fuel(id, trip, empty_reachable)
-  trip.fuel_search, trip.refueled = nil, true
-  if not trip.drone.valid then
-    return end_trip(id, trip)
-  end
-  if trip.departing and trip.energy < (trip.leg or 0) * fuel_per_tile() then
-    local depot = storage.depots[trip.request]
-    if depot then
-      local status = empty_reachable and logistics.status.no_fuel or logistics.status.no_fuel_depot
-      depot.retry_at = game.tick + RETRY_TICKS
-      depot.retry_status = status
-      depot.status = status
-    end
-    return end_trip(id, trip)
-  end
-  drive(trip, target(trip))
-end
-
--- Find a Fuel depot to fill up at, or go on without.
-local function look_for_fuel(id, trip)
-  if not seek_fuel(id, trip) then
-    go_without_fuel(id, trip)
-  end
-end
-
--- Whether a freighter should fill up before a leg `length` tiles long by road: its tank holds
--- less than the leg takes (with FUEL_MARGIN) plus FUEL_RESERVE, or than a full tank if that is
--- less. Once a leg: after filling up, or finding nowhere to, it goes.
-local function short_of_fuel(trip, length)
-  local per_tile = fuel_per_tile()
-  if trip.refueled or not length or per_tile <= 0 then
-    return false
-  end
-  local capacity = fuel_capacity()
-  return trip.energy < math.min(length * per_tile * FUEL_MARGIN + capacity * FUEL_RESERVE, capacity)
-end
-
 -- Set off on a leg of `length` tiles by road towards the trip's target, by way of a Fuel depot if
 -- the tank is short for it. The way here is burned first (see drive), so the tank is read as it is:
 -- a freighter turned on the road between its checks was otherwise judged on the fuel it had at the
@@ -2341,8 +1437,8 @@ function set_off(id, trip, length)
   end
   upgrade(trip)
   trip.refueled = nil
-  if short_of_fuel(trip, length) then
-    return look_for_fuel(id, trip)
+  if fueling.short_of_fuel(trip, length) then
+    return fueling.look_for_fuel(id, trip)
   end
   drive(trip, target(trip), true)
 end
@@ -2350,20 +1446,10 @@ end
 -- Drop a trip's search and start again: for fuel, or for a new provider.
 local function search_again(id, trip)
   if trip.fuel_search then
-    look_for_fuel(id, trip)
+    fueling.look_for_fuel(id, trip)
   else
     reroute(id, trip)
   end
-end
-
-local function path_length(from, path)
-  local length, x, y = 0, from.x, from.y
-  for _, waypoint in ipairs(path) do
-    local position = waypoint.position
-    length = length + math.sqrt((position.x - x) ^ 2 + (position.y - y) ^ 2)
-    x, y = position.x, position.y
-  end
-  return length
 end
 
 -- Freighters robots brought into a request depot's truck chest, and those put into an item depot's
@@ -2390,9 +1476,10 @@ local function absorb_freighters(depot)
   local room = FREIGHTER_CAPACITY - slot.get_item_count() - out
   if room > 0 then
     -- Freighters waiting in the truck chest for robots to take them away stay there.
-    local moved = in_truck_chest > 0 and load(chest, slot, FREIGHTER, room, logistics.leaving(entity), true) or 0
+    local moved = in_truck_chest > 0 and transfer.load(chest, slot, FREIGHTER, room, logistics.leaving(entity), true)
+      or 0
     if in_own > 0 and moved < room then
-      moved = moved + load(own, slot, FREIGHTER, room - moved, nil, true)
+      moved = moved + transfer.load(own, slot, FREIGHTER, room - moved, nil, true)
     end
     -- (A buffer depot's freighters could be another depot's cargo: the depots checked with it look
     -- again.)
@@ -2474,7 +1561,7 @@ local function dispatch(depot)
   end
   -- "On its way" only while a freighter is bringing some of the requested item: not one taking
   -- cargo back to its provider, nor one driving home empty.
-  local out = committed(depot) > 0
+  local out = ledger.committed(depot) > 0
   if wanted <= 0 then
     depot.status = out and logistics.status.delivering
       or (depot.request and logistics.status.satisfied or logistics.status.none)
@@ -2499,7 +1586,7 @@ local function dispatch(depot)
   if
     (depot.retry_at or 0) > game.tick
     and (depot.retry_status == logistics.status.no_fuel or depot.retry_status == logistics.status.no_fuel_depot)
-    and #fuel_candidates(depot, from) > 0
+    and #fueling.fuel_candidates(depot, from) > 0
   then
     -- Its freighters were waiting for fuel, and a Fuel depot has some now: they go at once.
     depot.retry_at = 0
@@ -2532,7 +1619,7 @@ local function dispatch(depot)
 end
 
 -- Burn the fuel a freighter used driving since last time: what the tiles it covered take.
--- (`per_tile`: fuel_per_tile(), if the caller has read it already.)
+-- (`per_tile`: fueling.fuel_per_tile(), if the caller has read it already.)
 function burn(trip, per_tile)
   local drone = trip.drone
   if not drone.valid then
@@ -2542,13 +1629,13 @@ function burn(trip, per_tile)
   local last = trip.at or position
   trip.at, trip.at_tick = position, game.tick
   upgrade(trip)
-  per_tile = per_tile or fuel_per_tile()
+  per_tile = per_tile or fueling.fuel_per_tile()
   local dx, dy = position.x - last.x, position.y - last.y
   trip.energy = math.max(0, trip.energy - math.sqrt(dx * dx + dy * dy) * per_tile)
   if trip.dry and per_tile <= 0 then
     -- Fuel was turned off: nothing to crawl for.
     trip.dry = nil
-    drone.speed = freighter_speed(drone.force)
+    drone.speed = research.freighter_speed(drone.force)
   end
 end
 
@@ -2578,9 +1665,9 @@ local function check_trip(id, trip, per_tile, capacity, polluters)
     search_again(id, trip)
   elseif trip.drone.valid and trip.energy <= 0 and not trip.dry and per_tile > 0 then
     trip.dry = true
-    trip.drone.speed = freighter_speed(trip.drone.force) * DRY_SPEED
+    trip.drone.speed = research.freighter_speed(trip.drone.force) * DRY_SPEED
     if not (trip.refuel or trip.searching or trip.loading) then
-      look_for_fuel(id, trip)
+      fueling.look_for_fuel(id, trip)
     end
   elseif
     trip.drone.valid
@@ -2622,9 +1709,10 @@ local function check_depot(id, depot)
   end
   -- A condition reading the depot's own contents reads them once for its status and its promises
   -- (nothing in between changes them): each read builds a signal for every item it holds.
-  local held = depot.circuit_enabled and depot.circuit_mode == depot_circuit.contents and own_signals(depot) or nil
+  local held = depot.circuit_enabled and depot.circuit_mode == depot_circuit.contents and switching.own_signals(depot)
+    or nil
   if depot.circuit_enabled or depot.shown_off then
-    show_switched(depot, held)
+    switching.show_switched(depot, held)
   end
   if depot.role == "provider" or depot.role == "buffer" then
     logistics.keep_promises(id, depot, held)
@@ -2639,7 +1727,7 @@ end
 -- Every trip's and every depot's check at once.
 function logistics.on_tick()
   local pending = {}
-  local per_tile, capacity, polluters = fuel_per_tile(), fuel_capacity(), {}
+  local per_tile, capacity, polluters = fueling.fuel_per_tile(), fueling.fuel_capacity(), {}
   for id, trip in pairs(storage.trips) do
     if check_trip(id, trip, per_tile, capacity, polluters) then
       pending[#pending + 1] = id
@@ -2647,12 +1735,12 @@ function logistics.on_tick()
   end
   repaint_now(pending)
   suppliers_cache = {}
-  checking_depots = true
+  routes.checking_depots = true
   for id, depot in pairs(storage.depots) do
     check_depot(id, depot)
   end
   suppliers_cache = nil
-  checking_depots = false
+  routes.checking_depots = false
   logistics.answer_remembered()
 end
 
@@ -2714,7 +1802,7 @@ function logistics.on_tick_share(tick)
   local pending, kept = {}, 0
   local per_tile, capacity, polluters
   if #list > 0 then
-    per_tile, capacity, polluters = fuel_per_tile(), fuel_capacity(), {}
+    per_tile, capacity, polluters = fueling.fuel_per_tile(), fueling.fuel_capacity(), {}
   end
   for index = 1, #list do
     local trip = list[index]
@@ -2731,7 +1819,7 @@ function logistics.on_tick_share(tick)
   repaint_now(pending)
   local depots = storage.depots
   suppliers_cache = {}
-  checking_depots = true
+  routes.checking_depots = true
   for _, id in ipairs(depots_due(tick)) do
     local depot = depots[id]
     if depot then
@@ -2739,128 +1827,18 @@ function logistics.on_tick_share(tick)
     end
   end
   suppliers_cache = nil
-  checking_depots = false
+  routes.checking_depots = false
   logistics.answer_remembered()
-end
-
--- Move up to `limit` items of `item` (normal quality) from one inventory into another, stack by
--- stack, keeping each stack's data. Returns how many moved.
--- `leave`, if given, maps `from` stack indices to how many items to leave in that stack. With
--- `any_quality`, items of every quality move (freighters do), not only normal quality (cargo).
-function load(from, to, item, limit, leave, any_quality)
-  local moved = 0
-  local size = stack_size_of(item)
-  -- Each `to` stack looked at is an object for Lua to collect, so later stacks start after the
-  -- leading ones that can take nothing more: full, or holding another item. A stack of `item` with
-  -- room is looked at again, though it refused one stack: stacks merge only when their quality and
-  -- data (health, tags, durability...) match, so it can still take a later one.
-  local first = 1
-  for index = 1, #from do
-    if moved >= limit then
-      break
-    end
-    local stack = from[index]
-    if stack.valid_for_read and stack.name == item and (any_quality or stack.quality.name == QUALITY) then
-      local kept = leave and leave[index] or 0
-      for slot = first, #to do
-        local movable = (stack.valid_for_read and stack.count or 0) - kept
-        if moved >= limit or movable <= 0 then
-          break
-        end
-        local into = to[slot]
-        if not into.valid_for_read or into.name == item then
-          local before = stack.count
-          into.transfer_stack(stack, math.min(movable, limit - moved))
-          moved = moved + before - (stack.valid_for_read and stack.count or 0)
-        end
-        if slot == first and into.valid_for_read and (into.name ~= item or into.count >= size) then
-          first = slot + 1
-        end
-      end
-    end
-  end
-  return moved
-end
-
--- Insert all cargo into an inventory, keeping each stack's data; what doesn't fit stays aboard.
-local function unload(cargo, into)
-  for index = 1, #cargo do
-    local stack = cargo[index]
-    if stack.valid_for_read then
-      local inserted = into.insert(stack)
-      if inserted >= stack.count then
-        stack.clear()
-      elseif inserted > 0 then
-        stack.count = stack.count - inserted
-      end
-    end
-  end
-end
-
--- Pump up to `limit` of a fluid trip's fluid out of a liquid depot's tank (its one fluid storage),
--- at the tank's temperature.
-function load_fluid(entity, trip, limit)
-  local held = entity.get_fluid(1)
-  if limit <= 0 or not held or held.name ~= trip.item then
-    return 0
-  end
-  local removed = entity.remove_fluid(1, limit)
-  local taken = removed and removed.amount or 0
-  if taken > 0 then
-    local had = trip.fluid.amount
-    local temperature = trip.fluid.temperature or removed.temperature
-    trip.fluid.temperature = (temperature * had + removed.temperature * taken) / (had + taken)
-    trip.fluid.amount = had + taken
-  end
-  return taken
-end
-
--- Pump a fluid trip's fluid into a liquid depot's tank, as far as it fits; the rest stays aboard.
-function unload_fluid(trip, entity)
-  if trip.fluid.amount <= 0 then
-    return 0
-  end
-  local put =
-    entity.insert_fluid({ name = trip.item, amount = trip.fluid.amount, temperature = trip.fluid.temperature })
-  trip.fluid.amount = trip.fluid.amount - put
-  return put
-end
-
--- Leave anything still aboard on the ground, marked for deconstruction so construction robots
--- can collect it.
-local function spill(trip, position)
-  if trip.fluid then
-    -- Fluid can't be left on the ground: it is lost.
-    trip.fluid.amount = 0
-    return
-  end
-  if not (trip.cargo and trip.cargo.valid) then
-    return
-  end
-  local surface, force = trip.drone.surface, trip.drone.force
-  for index = 1, #trip.cargo do
-    local stack = trip.cargo[index]
-    if stack.valid_for_read then
-      surface.spill_item_stack({
-        position = position or trip.drone.position,
-        stack = stack,
-        enable_looted = true,
-        force = force,
-        allow_belts = false,
-      })
-      stack.clear()
-    end
-  end
 end
 
 -- Saves from this PR's first version carried cargo as a plain count, and the mod version didn't
 -- change, so no configuration change converts them: carry such cargo as stacks from here on.
 function upgrade(trip)
   -- Trips from before fuel set off with a full tank.
-  trip.energy = trip.energy or fuel_capacity()
+  trip.energy = trip.energy or fueling.fuel_capacity()
   if type(trip.cargo) == "number" then
     local count = trip.cargo
-    trip.cargo = game.create_inventory(CAPACITY_STACKS)
+    trip.cargo = game.create_inventory(research.base_stacks)
     if count > 0 and prototypes.item[trip.item] then
       trip.cargo.insert({ name = trip.item, count = count })
     end
@@ -2893,7 +1871,7 @@ function end_trip(id, trip, lost)
         truck.count = truck.count - inserted
       end
       -- It parks with what is left in its tank, more than a tank's worth too.
-      if inserted > 0 and trip.energy and trip.energy ~= fuel_capacity() then
+      if inserted > 0 and trip.energy and trip.energy ~= fueling.fuel_capacity() then
         local parked = depot.fuel or {}
         parked[#parked + 1] = trip.energy
         depot.fuel = parked
@@ -2958,9 +1936,9 @@ local function arrived_at_provider(id, trip, depot)
     -- No more than is left after the promises made before its own, which are their freighters'.
     local limit = math.min(trip.planned or room, room, left or room)
     if trip.fluid then
-      load_fluid(provider, trip, math.min(limit, fluid_capacity(depot.entity.force)))
+      transfer.load_fluid(provider, trip, math.min(limit, research.fluid_capacity_of(depot.entity.force)))
     else
-      load(inventory(provider), trip.cargo, trip.item, limit)
+      transfer.load(inventory(provider), trip.cargo, trip.item, limit)
     end
   end
   trip.planned = nil
@@ -2984,11 +1962,11 @@ local function arrived_at_fuel(id, trip)
   local fuel = storage.depots[trip.refuel]
   trip.refuel, trip.refueled = nil, true
   if fuel and fuel.entity.valid then
-    refuel(trip, fuel)
+    fueling.refuel(trip, fuel)
   end
   if trip.dry and trip.energy > 0 then
     trip.dry = nil
-    trip.drone.speed = freighter_speed(trip.drone.force)
+    trip.drone.speed = research.freighter_speed(trip.drone.force)
   end
   show_fuel(trip)
   if storage.trips[id] then
@@ -3000,7 +1978,7 @@ local function arrived_at_request(id, trip, depot)
   local entity = depot and depot.entity.valid and depot.entity
   if trip.fluid then
     if entity then
-      unload_fluid(trip, entity)
+      transfer.unload_fluid(trip, entity)
     end
     -- Fluid that didn't fit (another fluid got into the tank meanwhile, say) goes back.
     local provider = depot_entity(trip.provider)
@@ -3012,9 +1990,9 @@ local function arrived_at_request(id, trip, depot)
     return end_trip(id, trip)
   end
   if entity then
-    unload(trip.cargo, inventory(entity))
+    transfer.unload(trip.cargo, inventory(entity))
   end
-  spill(trip, entity and (loading_tile(entity)) or nil)
+  transfer.spill(trip, entity and (loading_tile(entity)) or nil)
   end_trip(id, trip)
 end
 
@@ -3022,12 +2000,12 @@ local function returned_to_provider(id, trip)
   local provider = depot_entity(trip.provider)
   if provider then
     if trip.fluid then
-      unload_fluid(trip, provider)
+      transfer.unload_fluid(trip, provider)
     else
-      unload(trip.cargo, inventory(provider))
+      transfer.unload(trip.cargo, inventory(provider))
     end
   end
-  spill(trip, provider and (loading_tile(provider)) or nil)
+  transfer.spill(trip, provider and (loading_tile(provider)) or nil)
   end_trip(id, trip)
 end
 
@@ -3043,7 +2021,7 @@ local function route_failed(id, trip, depot)
     promise(trip)
     return drive(trip, (loading_tile(provider)))
   end
-  spill(trip)
+  transfer.spill(trip)
   end_trip(id, trip)
 end
 
@@ -3053,7 +2031,7 @@ local function fuel_route_failed(id, trip, depot)
   if depot then
     depot.cooldowns[trip.refuel] = game.tick + RETRY_TICKS
   end
-  look_for_fuel(id, trip)
+  fueling.look_for_fuel(id, trip)
 end
 
 -- The road's speed bonus (prototypes/roads.lua), read once: a freighter goes through a tunnel as
@@ -3109,9 +2087,9 @@ end
 -- Out of a tunnel, where it now stands at the far mouth: the fuel for the tunnel's length on road,
 -- exactly, and the next sample measured from here (into_tunnel burned the way to the mouth).
 function logistics.through_tunnel(trip, tunnel)
-  local per_tile = fuel_per_tile()
+  local per_tile = fueling.fuel_per_tile()
   if per_tile > 0 then
-    trip.energy = math.max(0, (trip.energy or fuel_capacity()) - tunnel.length * per_tile)
+    trip.energy = math.max(0, (trip.energy or fueling.fuel_capacity()) - tunnel.length * per_tile)
   end
   trip.at, trip.at_tick = trip.drone.position, game.tick
   show_fuel(trip)
@@ -3412,7 +2390,7 @@ local function depot_removed(id)
         promise(trip)
         replan(trip)
       else
-        spill(trip)
+        transfer.spill(trip)
         end_trip(trip_id, trip)
       end
     elseif trip.provider == id and trip.state == TO_PROVIDER then
@@ -3420,7 +2398,7 @@ local function depot_removed(id)
     elseif trip.refuel == id then
       -- The Fuel depot it was heading for is gone (one standing there leaves at once): another.
       trip.refuel, trip.loading = nil, nil
-      look_for_fuel(trip_id, trip)
+      fueling.look_for_fuel(trip_id, trip)
     end
   end
 end
@@ -3432,15 +2410,15 @@ local function finish_search(depot, search, owner)
     -- A freighter's search for a Fuel depot: fill up at the nearest by road, if it still has fuel.
     owner.search_token, owner.searching, owner.fuel_search = nil, nil, nil
     local fuel = search.best and storage.depots[search.best]
-    if fuel and fuel.entity.valid and has_fuel(fuel) then
+    if fuel and fuel.entity.valid and fueling.has_fuel(fuel) then
       owner.refuel = search.best
       drive(owner, (loading_tile(fuel.entity)))
     elseif search.best and search.best_rank == 0 then
       -- The one found was emptied or removed meanwhile: look again among the rest.
-      look_for_fuel(search.trip, owner)
+      fueling.look_for_fuel(search.trip, owner)
     else
       -- None with fuel has a road; one without fuel may (rank 1).
-      go_without_fuel(search.trip, owner, search.best ~= nil)
+      fueling.go_without_fuel(search.trip, owner, search.best ~= nil)
     end
     return
   end
@@ -3502,7 +2480,8 @@ local function finish_search(depot, search, owner)
   -- This freighter promises to load what the depot still needs, as far as the provider has it
   -- unpromised and it can carry; the next freighter covers the rest, from here or elsewhere.
   local force = depot.entity.force
-  local capacity = depot.fluid and fluid_capacity(force) or cargo_stacks(force) * stack_size_of(search.item)
+  local capacity = depot.fluid and research.fluid_capacity_of(force)
+    or research.cargo_stacks(force) * transfer.stack_size_of(search.item)
   local planned = math.min(room, available(provider, search.item), capacity)
   depot.retry_status = nil
   if start_trip(depot, provider, from, planned, search.best_length) then
@@ -3546,88 +2525,24 @@ local function route_answered(search, length)
     next_candidate
     and (not search.best or (next_candidate.rank == search.best_rank and next_candidate.distance < search.best_length))
   then
-    return ask_route(search, depot.entity.surface, depot.entity.force)
+    return routes.ask_route(search, depot.entity.surface, depot.entity.force)
   end
   finish_search(depot, search, owner)
 end
 
-function logistics.on_script_path_request_finished(event)
-  local search = storage.searches and storage.searches[event.id]
-  if not search then
-    return
-  end
-  storage.searches[event.id] = nil
-  if event.try_again_later then
-    -- The pathfinder is busy: this search ends, and a new one starts at the next dispatch (or, for
-    -- a freighter, the next once-a-second check), so a busy pathfinder is asked at most once a
-    -- second per owner.
-    local owner = owner_of(search)
-    local depot = storage.depots[search.request]
-    if owner and depot and depot.entity.valid then
-      if search.trip then
-        owner.search_token, owner.searching = nil, game.tick - SEARCH_TIMEOUT
-      else
-        cancel_search(depot)
-      end
-    end
-    return
-  end
-  local length = event.path and path_length(search.from, event.path) or nil
-  remember_road(search, length)
-  route_answered(search, length)
-end
-
--- Searches given their remembered answers in a tick, at least: a group of depots checked together
--- asks together, and each search that ends sends a freighter off (a new unit, its inventories and
--- its command), so they are spread over the next ticks, as the pathfinder's answers come. With
--- more waiting, as many as clear them all, evenly, within DISPATCH_INTERVAL of the oldest's
--- question: each depot sends at most one freighter a second anyway, and a search kept waiting
--- longer than SEARCH_TIMEOUT would be dropped and start again (Pullfrog's review of 5832360: limiting answers rather than searches,
--- a large group's searches each took one answer in turn and none finished before its timeout).
-local REMEMBERED_PER_TICK = 3
-
--- Give a search its remembered answer, and then each next one it has (ask_route) at once, until
--- it ends or asks the pathfinder.
-local function give_remembered(search, length)
-  answering = search
-  repeat
-    chained = false
-    route_answered(search, length)
-    length = chained_length
-  until not chained
-  answering, chained_length = nil, nil
-end
-
--- Give the searches whose remembered answers are due (ask_route) those answers, in the order
--- asked, up to the tick's share; the rest wait for the next tick. A search made stale meanwhile (its
--- owner holds another token, or is gone) is dropped and takes no one's turn.
-local function answer_remembered()
-  local answers = storage.road_answers
-  if not answers or #answers == 0 then
-    return
-  end
-  -- Questions asked while answering (other searches') go after those already waiting.
-  storage.road_answers = {}
-  local left = math.max(1, DISPATCH_INTERVAL - (game.tick - answers[1].tick))
-  local share = math.max(REMEMBERED_PER_TICK, math.ceil(#answers / left))
-  local waiting, given = {}, 0
-  for _, answer in ipairs(answers) do
-    -- A stale one is dropped.
-    if owner_of(answer.search) then
-      if answer.tick <= game.tick and given < share then
-        given = given + 1
-        give_remembered(answer.search, answer.length)
-      else
-        waiting[#waiting + 1] = answer
-      end
-    end
-  end
-  for _, answer in ipairs(storage.road_answers) do
-    waiting[#waiting + 1] = answer
-  end
-  storage.road_answers = waiting
-end
-logistics.answer_remembered = answer_remembered
+-- Road routes for searches (scripts/routes.lua), once route_answered is defined.
+routes.install(logistics, {
+  owner_of = owner_of,
+  cancel_search = cancel_search,
+  route_answered = route_answered,
+  drone = DRONE,
+  arrival_radius = ARRIVAL_RADIUS,
+  road_memory_ticks = ROAD_MEMORY_TICKS,
+  dispatch_interval = DISPATCH_INTERVAL,
+  search_timeout = SEARCH_TIMEOUT,
+})
+logistics.on_script_path_request_finished = routes.on_script_path_request_finished
+logistics.answer_remembered = routes.answer_remembered
 
 -- Hand over every freighter a request depot holds, in its slot and out on trips: into `buffer`
 -- (what a player or robot receives for mining it), or, without one or past its room, onto the
@@ -3744,52 +2659,6 @@ function logistics.on_impact_share(tick)
   end
 end
 
--- Copy one depot's settings onto another (Copy and Paste settings, and clones): any delivery
--- depot's circuit condition, a request depot's request, and a provider or buffer depot's priority.
-local function copy_request(source, destination)
-  local from = delivery_depot(source)
-  if from and delivery_depot(destination) then
-    logistics.set_circuit(
-      destination,
-      from.circuit_enabled,
-      from.circuit_condition or {},
-      from.circuit_mode or depot_circuit.network
-    )
-  end
-  -- Items and fluids don't mix: nothing else is copied between an item depot and a liquid depot.
-  if (LIQUID[source.name] or false) ~= (LIQUID[destination.name] or false) then
-    return
-  end
-  if request_depot(source) and request_depot(destination) then
-    local request = logistics.get_request(source)
-    logistics.set_request(destination, request and request.item, request and request.count)
-    logistics.set_from_buffers(destination, logistics.get_from_buffers(source))
-    logistics.set_full_loads(destination, logistics.get_full_loads(source))
-  end
-  if supplying_depot(source) and supplying_depot(destination) then
-    logistics.set_priority(destination, logistics.get_priority(source))
-    local access = robot_access.get(source)
-    if access ~= nil then
-      robot_access.set(destination, access)
-    end
-  end
-end
-
--- Copy and Paste settings: the request, and the freighters. The destination asks robots for as
--- many more freighters as it takes to match the source's (in its slot, out and coming); a player
--- can fill them in by hand instead.
-function logistics.on_entity_settings_pasted(event)
-  copy_request(event.source, event.destination)
-  if
-    request_depot(event.source)
-    and request_depot(event.destination)
-    and (LIQUID[event.source.name] or false) == (LIQUID[event.destination.name] or false)
-  then
-    -- All the source has or will have: slot, out, chest (not leaving) and coming.
-    logistics.match_freighters(event.destination, logistics.freighter_total(event.source))
-  end
-end
-
 -- A cloned depot is a new depot with the original's request; a cloned freighter has no trip.
 -- Whether a cloned Fuel depot tank belongs to a Fuel depot cloned with it: one that owns it
 -- already, or one standing on it whose own clone event hasn't come yet (fuel_tank adopts it then).
@@ -3830,7 +2699,7 @@ function logistics.on_cloned(source, destination)
       tank.set_fluid(1, held)
     end
   end
-  copy_request(source, destination)
+  blueprints.copy_request(source, destination)
 end
 
 -- A depot the game knew as `old_id` is now `entity`, a new entity of the same depot standing where
@@ -3913,7 +2782,7 @@ function logistics.add_all()
         depot.circuit_condition = depot_circuit.condition(depot.circuit_condition)
       end
       depot.circuit_mode = depot_circuit.mode(depot.circuit_mode) or nil
-      watch(depot)
+      switching.watch(depot)
       if REQUESTING[depot.role] then
         truck_chest(depot.entity)
       end
@@ -3931,7 +2800,7 @@ function logistics.add_all()
     end
     if not kept then
       if trip.drone.valid and (trip.fluid or trip.cargo.valid) then
-        spill(trip)
+        transfer.spill(trip)
       end
       end_trip(id, trip)
     end
@@ -3959,7 +2828,7 @@ function logistics.add_all()
     depot.position = depot.position or (depot.entity.valid and depot.entity.position)
     depot.surface_index = depot.surface_index or (depot.entity.valid and depot.entity.surface_index)
   end
-  file_promises()
+  ledger.file_promises()
   -- Mods changed: roads, freighters and research may have too. The depot index is built afresh.
   storage.road_lengths, storage.road_answers, storage.research_levels = nil, nil, nil
   storage.depot_index = nil
@@ -3982,619 +2851,50 @@ function logistics.freighter_counts(entity)
   return trucks_of(depot).get_item_count(), out, FREIGHTER_CAPACITY
 end
 
--- Freighters can also be requested, like modules or fuel: an item request proxy asks construction
--- robots to deliver them into the depot's truck chest, from where they move into the slot. This is how a
--- player in remote view (or anywhere without freighters in hand) stocks a depot.
-local PROXY = "item-request-proxy"
+-- Freighters asked of construction robots, as from remote view (scripts/freighter-robot_requests.lua).
+robot_requests.install(logistics, {
+  request_depot = request_depot,
+  truck_chest = truck_chest,
+  freighter_chest = freighter_chest,
+  trucks_of = trucks_of,
+  a_freighter = a_freighter,
+  parked_fuel = parked_fuel,
+  freighter_stack_size = freighter_stack_size,
+  freighter = FREIGHTER,
+  quality = QUALITY,
+})
+logistics.requested_freighters = robot_requests.requested_freighters
+logistics.request_freighters = robot_requests.request_freighters
+logistics.remove_freighters = robot_requests.remove_freighters
+logistics.freighter_total = robot_requests.freighter_total
+logistics.match_freighters = robot_requests.match_freighters
+logistics.trim_freighter_requests = robot_requests.trim_freighter_requests
 
-local function item_name(id)
-  return type(id) == "string" and id or id.name
-end
-
--- The item request proxies targeting a request depot; how many freighters they still ask robots to
--- bring, and to take away; and the chest stacks (0-based) freighters are to be taken from.
-function freighter_requests(entity)
-  local proxies, requested, removing, marked = {}, 0, 0, {}
-  -- Its requests are on its truck chest.
-  entity = truck_chest(entity)
-  -- Usually none at all: then the ground needn't be searched for them.
-  if not entity.item_request_proxy then
-    return proxies, requested, removing, marked
-  end
-  local x, y = entity.position.x, entity.position.y
-  for _, proxy in
-    pairs(entity.surface.find_entities_filtered({
-      name = PROXY,
-      area = { { x - 0.5, y - 0.5 }, { x + 0.5, y + 0.5 } },
-    }))
-  do
-    if proxy.proxy_target == entity then
-      proxies[#proxies + 1] = proxy
-      for _, request in pairs(proxy.item_requests) do
-        if item_name(request.name) == FREIGHTER then
-          requested = requested + request.count
-        end
-      end
-      for _, plan in pairs(proxy.removal_plan) do
-        if item_name(plan.id.name) == FREIGHTER then
-          for _, position in pairs(plan.items.in_inventory or {}) do
-            removing = removing + (position.count or 1)
-            marked[position.stack] = (marked[position.stack] or 0) + (position.count or 1)
-          end
-        end
-      end
-    end
-  end
-  return proxies, requested, removing, marked
-end
-
--- How many freighters a request depot has asked robots to bring, and to take away.
-function logistics.requested_freighters(entity)
-  if not request_depot(entity) then
-    return 0, 0
-  end
-  local _, requested, removing = freighter_requests(entity)
-  return requested, removing
-end
-
--- Chest stacks (0-based) that are empty and in no request's plan, as a list.
-local function free_chest_stacks(chest, proxies)
-  local taken = {}
-  for _, proxy in ipairs(proxies) do
-    for _, plans in ipairs({ proxy.insert_plan, proxy.removal_plan }) do
-      for _, plan in pairs(plans) do
-        for _, position in pairs(plan.items.in_inventory or {}) do
-          taken[position.stack] = true
-        end
-      end
-    end
-  end
-  local free = {}
-  for index = 1, #chest do
-    if not chest[index].valid_for_read and not taken[index - 1] then
-      free[#free + 1] = index - 1
-    end
-  end
-  return free
-end
-
--- Positions for `amount` freighters, a stack at a time, in the given chest stacks (0-based); the
--- amount that fits, and the positions.
-local function spread(amount, stacks)
-  local stack_size = freighter_stack_size()
-  local positions, placed = {}, 0
-  for _, stack in ipairs(stacks) do
-    if placed >= amount then
-      break
-    end
-    local count = math.min(stack_size, amount - placed)
-    positions[#positions + 1] = { inventory = defines.inventory.chest, stack = stack, count = count }
-    placed = placed + count
-  end
-  return placed, positions
-end
-
--- Add an insert or removal plan to a depot's request proxy, making one if it has none.
-local function add_plan(entity, proxies, plan, removal)
-  entity = truck_chest(entity)
-  local proxy = proxies[1]
-  if proxy then
-    local plans = removal and proxy.removal_plan or proxy.insert_plan
-    plans[#plans + 1] = plan
-    if removal then
-      proxy.removal_plan = plans
-    else
-      proxy.insert_plan = plans
-    end
-  else
-    entity.surface.create_entity({
-      name = PROXY,
-      position = entity.position,
-      force = entity.force,
-      target = entity,
-      modules = removal and {} or { plan },
-      removal_plan = removal and { plan } or nil,
-    })
-  end
-end
-
--- Ask construction robots to bring freighters into a request depot's chest until it has `goal`
--- (within its slot's limit), counting freighters in its slot, out, in its chest (except those
--- waiting to be taken away) and already requested. `goal` becomes the depot's target, what the
--- requests are for: freighters arriving some other way (put in by hand) count towards it, and
--- requests beyond it are cancelled. It is kept even when the chest has no free stacks for some or
--- all of them yet (it also holds the depot's cargo): trim_freighter_requests asks for the rest as
--- stacks free up. Returns how many were requested now.
-local function request_up_to(entity, goal)
-  local in_slot, out, capacity = logistics.freighter_counts(entity)
-  if not in_slot then
-    return 0
-  end
-  local chest = freighter_chest(entity)
-  local proxies, requested, removing = freighter_requests(entity)
-  local have = in_slot + out + logistics.waiting_freighters(entity) - removing + requested
-  goal = math.min(goal, capacity)
-  if goal <= have then
-    return 0
-  end
-  request_depot(entity).freighter_target = goal
-  -- A stack at a time, into chest stacks that are empty and in no other plan.
-  local amount, positions = spread(goal - have, free_chest_stacks(chest, proxies))
-  if amount <= 0 then
-    return 0
-  end
-  add_plan(entity, proxies, {
-    id = { name = FREIGHTER, quality = QUALITY },
-    items = { in_inventory = positions },
-  })
-  return amount
-end
-
--- Ask construction robots to bring `count` more freighters (or as many as the slot has room for)
--- into a request depot's chest: more than it has and has already asked for, including freighters
--- still waiting for a free chest stack (its target). Returns how many were requested now.
-function logistics.request_freighters(entity, count)
-  local depot = request_depot(entity)
-  if not depot then
-    return 0
-  end
-  local have, capacity = logistics.freighter_total(entity)
-  local asked = math.max(have, depot.freighter_target or 0)
-  local room = capacity - asked
-  local amount = math.min(math.floor(tonumber(count) or room), room)
-  if amount <= 0 then
-    return 0
-  end
-  return request_up_to(entity, asked + amount)
-end
-
--- Have construction robots take `count` freighters (or all) out of a request depot's slot, as
--- from remote view: they move into an empty chest stack marked for removal, and robots carry them
--- to storage. Returns how many were marked.
-function logistics.remove_freighters(entity, count)
-  local depot = request_depot(entity)
-  if not depot then
-    return 0
-  end
-  -- Taking freighters away on purpose: no longer top the depot up to an earlier target.
-  depot.freighter_target = nil
-  local slot = trucks_of(depot)
-  local wanted = math.min(math.floor(tonumber(count) or slot.get_item_count()), slot.get_item_count())
-  if wanted <= 0 then
-    return 0
-  end
-  local chest = freighter_chest(entity)
-  local proxies = freighter_requests(entity)
-  -- A stack at a time from the slot into empty chest stacks, each marked for removal.
-  local positions, moved = {}, 0
-  for _, index in ipairs(free_chest_stacks(chest, proxies)) do
-    local from = a_freighter(depot)
-    if moved >= wanted or not from then
-      break
-    end
-    local into = chest[index + 1]
-    into.transfer_stack(from, math.min(from.count, wanted - moved))
-    if into.valid_for_read then
-      positions[#positions + 1] = { inventory = defines.inventory.chest, stack = index, count = into.count }
-      moved = moved + into.count
-    end
-  end
-  if moved > 0 then
-    add_plan(
-      entity,
-      proxies,
-      { id = { name = FREIGHTER, quality = QUALITY }, items = { in_inventory = positions } },
-      true
-    )
-  end
-  -- The freighters leaving take their fuel entries, as in take_freighters.
-  parked_fuel(depot)
-  return moved
-end
-
--- Cancel the robots' removal of a request depot's freighters; they go back into its slot at the
--- next dispatch. Returns how many were waiting to be taken.
--- Freighters a request depot has or will have: in its slot, out on trips, in its chest (except
--- those being taken away) and coming. Also the slot's limit and how many are coming.
-local function freighter_total(entity)
-  local in_slot, out, capacity = logistics.freighter_counts(entity)
-  local _, coming, removing = freighter_requests(entity)
-  local in_chest = logistics.waiting_freighters(entity) - removing
-  return in_slot + out + in_chest + coming, capacity, coming
-end
-logistics.freighter_total = freighter_total
-
--- Ask robots for as many freighters as it takes for a request depot to have `total` (within its
--- slot's limit). Returns how many were requested.
-function logistics.match_freighters(entity, total)
-  local depot = request_depot(entity)
-  if not depot then
-    return 0
-  end
-  total = math.max(0, math.floor(tonumber(total) or 0))
-  local have = freighter_total(entity)
-  if total > have then
-    return request_up_to(entity, total)
-  end
-  -- Already as many or more: freighter requests beyond `total` are cancelled. Freighters already
-  -- in the depot stay; they are the player's, and taking them away is the player's call.
-  depot.freighter_target = total
-  logistics.trim_freighter_requests(entity)
-  return 0
-end
-
--- Lower a depot's freighter requests by `excess`, editing its request proxies' plans in place,
--- from the last position back, rather than replacing them. An open container window keeps showing
--- the requests of the proxy it opened with: replacing the proxy (cancel, then request anew) left
--- the chest slot's ghost hidden until the window was reopened.
-local function reduce_freighter_requests(entity, excess)
-  local proxies = freighter_requests(entity)
-  for index = #proxies, 1, -1 do
-    if excess <= 0 then
-      break
-    end
-    local proxy = proxies[index]
-    local plans = proxy.insert_plan
-    for plan_index = #plans, 1, -1 do
-      local plan = plans[plan_index]
-      if excess > 0 and item_name(plan.id.name) == FREIGHTER then
-        local positions = plan.items.in_inventory or {}
-        for position_index = #positions, 1, -1 do
-          if excess <= 0 then
-            break
-          end
-          local count = positions[position_index].count or 1
-          local cut = math.min(count, excess)
-          excess = excess - cut
-          if cut >= count then
-            table.remove(positions, position_index)
-          else
-            positions[position_index].count = count - cut
-          end
-        end
-        if #positions == 0 then
-          table.remove(plans, plan_index)
-        else
-          plan.items.in_inventory = positions
-        end
-      end
-    end
-    if #plans == 0 and #proxy.removal_plan == 0 then
-      proxy.destroy()
-    else
-      proxy.insert_plan = plans
-    end
-  end
-end
-
--- Keep a request depot's freighter requests to what they are for (`depot.freighter_target`: the
--- total the depot should end up with), until it has them:
--- * beyond the target (freighters arrived some other way, put in by hand, say): the excess
---   requests are cancelled, so robots never bring more, nor overfill the slot;
--- * short of it with nothing requested to cover it: the shortfall is requested again. Factorio
---   drops an item request a player fills by hand even when they only put in part of it; the
---   target is what remembers the rest;
--- * once the depot has them all: the target is forgotten.
--- Without a target, requests are only kept within the slot's limit. Runs with every dispatch and
--- whenever freighters are put in by hand.
-function logistics.trim_freighter_requests(entity)
-  local depot = request_depot(entity)
-  -- Freighters asked of an item depot's own chest, by an item request proxy targeting the depot: a
-  -- blueprint ghost's insert plan, a request from a save from before the truck chest, or another
-  -- mod's. Inserters unloading the depot could take them before they reach the slot, so they are
-  -- asked of its truck chest instead: dropped here, and requested again below as part of its
-  -- target, which they become if it has none. Robots taking freighters away from its own chest (a
-  -- save from before) stop; those stay in the depot.
-  -- Several proxies can target it, and `item_request_proxy` names only the first found (another
-  -- item's, say), so it only says whether to look: every one targeting the depot is looked at, and
-  -- their freighters are added up before any becomes the target.
-  if not depot.fluid and entity.item_request_proxy then
-    local x, y = entity.position.x, entity.position.y
-    local moved = 0
-    for _, proxy in
-      pairs(entity.surface.find_entities_filtered({
-        name = PROXY,
-        area = { { x - 0.5, y - 0.5 }, { x + 0.5, y + 0.5 } },
-      }))
-    do
-      -- Not its truck chest's, at the same spot.
-      if proxy.proxy_target == entity then
-        local changed = false
-        local inserts, removals = {}, {}
-        for _, plan in pairs(proxy.insert_plan) do
-          if item_name(plan.id.name) == FREIGHTER then
-            for _, position in pairs(plan.items.in_inventory or {}) do
-              moved = moved + (position.count or 1)
-            end
-            changed = true
-          else
-            inserts[#inserts + 1] = plan
-          end
-        end
-        for _, plan in pairs(proxy.removal_plan) do
-          if item_name(plan.id.name) == FREIGHTER then
-            changed = true
-          else
-            removals[#removals + 1] = plan
-          end
-        end
-        if changed then
-          if #inserts == 0 and #removals == 0 then
-            proxy.destroy()
-          else
-            proxy.insert_plan = inserts
-            proxy.removal_plan = removals
-          end
-        end
-      end
-    end
-    if moved > 0 and not depot.freighter_target then
-      depot.freighter_target = freighter_total(entity) + moved
-    end
-  end
-  if not depot.freighter_target and not truck_chest(entity).item_request_proxy then
-    -- No target and no requests: nothing to keep.
-    return
-  end
-  local total, capacity, coming = freighter_total(entity)
-  if not depot.freighter_target and coming > 0 then
-    -- Freighters requested without a target: Factorio's own request from a blueprint ghost (a
-    -- player building over a ghost doesn't pass its tags on), or one set by another mod. What the
-    -- depot has and is asking for is what it should end up with.
-    depot.freighter_target = total
-  end
-  local wanted = depot.freighter_target and math.min(depot.freighter_target, capacity)
-  if not wanted then
-    return
-  end
-  if total - coming >= wanted then
-    -- All there, without the requests: they are done.
-    if coming > 0 then
-      logistics.cancel_freighter_requests(entity)
-    end
-    depot.freighter_target = nil
-  elseif total > wanted then
-    -- More coming than still needed: lower the requests by the excess, in place.
-    reduce_freighter_requests(entity, total - wanted)
-  elseif total < wanted then
-    -- Short, with nothing requested to cover it: ask again for the rest.
-    request_up_to(entity, wanted)
-  end
-end
-
--- Blueprints (and copy and paste) of request depots keep their request and their freighters (in
--- the slot, out and coming) as tags: the depot built from the ghost asks robots for the freighters
--- into its truck chest (apply_tags), and they move into the slot. Blueprints from before also hold
--- them as an insert plan into the chest, which the depot built asks of its truck chest instead
--- (see trim_freighter_requests).
-local REQUEST_TAG = "jatz_request"
-local FREIGHTERS_TAG = "jatz_freighters"
-local FROM_BUFFERS_TAG = "jatz_from_buffers"
-local PRIORITY_TAG = "jatz_priority"
--- { enabled = true or nil, condition = CircuitCondition, mode = "contents" or nil }, when any is set.
-local CIRCUIT_TAG = "jatz_circuit"
-logistics.request_tag = REQUEST_TAG
-logistics.freighters_tag = FREIGHTERS_TAG
-
--- A delivery depot's circuit settings as a blueprint tag, or nil if it has none.
-local function circuit_tag(depot)
-  local condition = depot.circuit_condition
-  if not depot.circuit_enabled and not (condition and condition.first_signal) and not depot.circuit_mode then
-    return nil
-  end
-  -- Always with a condition, so a ticked checkbox without one yet is kept too.
-  return {
-    enabled = depot.circuit_enabled or nil,
-    condition = depot_circuit.condition(condition or {}),
-    mode = depot.circuit_mode,
-  }
-end
-
--- Put an entity's settings on its blueprint entry (`planned`), as tags: a delivery depot's, or a
--- road network monitor's. Returns whether it has any to keep.
-local function plan_settings(planned, entity)
-  local depot = entity and entity.valid and request_depot(entity)
-  local supplying = entity and entity.valid and supplying_depot(entity)
-  local changed = false
-  -- A road network monitor (scripts/road-monitor.lua): its reading.
-  local tag, value
-  if entity and entity.valid and not (depot or supplying) and logistics.monitor_tag then
-    tag, value = logistics.monitor_tag(entity)
-  end
-  if tag then
-    planned.tags = planned.tags or {}
-    planned.tags[tag] = value
-    if next(planned.tags) == nil then
-      planned.tags = nil
-    end
-    changed = true
-  end
-  if supplying and not depot then
-    -- A provider depot: its priority, unless it's the one every new depot has.
-    planned.tags = planned.tags or {}
-    planned.tags[PRIORITY_TAG] = supplying.priority ~= PRIORITY_DEFAULT and supplying.priority or nil
-    planned.tags[robot_access.tag] = robot_access.get(entity) or nil
-    planned.tags[CIRCUIT_TAG] = circuit_tag(supplying)
-    if next(planned.tags) == nil then
-      planned.tags = nil
-    end
-    changed = true
-  end
-  if depot then
-    -- The depot's settings as they are now, replacing any from setting this blueprint up
-    -- before; other tags and other items' insert plans are kept.
-    planned.tags = planned.tags or {}
-    planned.tags[PRIORITY_TAG] = supplying and supplying.priority ~= PRIORITY_DEFAULT and supplying.priority or nil
-    planned.tags[robot_access.tag] = robot_access.get(entity) or nil
-    planned.tags[REQUEST_TAG] = depot.request and { item = depot.request.item, count = depot.request.count } or nil
-    -- Its own tag, so it's kept even with no item requested.
-    planned.tags[FROM_BUFFERS_TAG] = depot.from_buffers or nil
-    planned.tags["jatz_full_loads"] = depot.full_loads or nil
-    local freighters = freighter_total(entity)
-    planned.tags[FREIGHTERS_TAG] = freighters > 0 and freighters or nil
-    planned.tags[CIRCUIT_TAG] = circuit_tag(depot)
-    if next(planned.tags) == nil then
-      planned.tags = nil
-    end
-    -- Its freighters go by their tag (and the blueprint's request settings,
-    -- scripts/depot-settings.lua), which the depot built asks robots for (apply_tags), never as
-    -- an insert plan: blueprint parametrisation offers an insert plan's item to swap, and robots
-    -- would then bring the item chosen as cargo, which trimming can't tell from anything else
-    -- (Copilot's review of db40d7c). A freighter plan from before goes; other items' are kept.
-    local items = {}
-    for _, plan in pairs(planned.items or {}) do
-      if item_name(plan.id.name) ~= FREIGHTER then
-        items[#items + 1] = plan
-      end
-    end
-    planned.items = #items > 0 and items or nil
-    changed = true
-  end
-  return changed
-end
-
--- An entity's settings as a blueprint keeps them in its tags, or nil if it has none to keep: for
--- its undo action when a player removes it (scripts/undo.lua). Its freighters are the
--- `jatz_freighters` tag, which a depot built from a ghost asks robots for (apply_tags).
-function logistics.settings_tags(entity)
-  local planned = {}
-  plan_settings(planned, entity)
-  return planned.tags
-end
-
-function logistics.setup_blueprint(blueprint, mapping)
-  local entities = blueprint and mapping and blueprint.get_blueprint_entities()
-  if not entities then
-    return 0
-  end
-  local changed = 0
-  -- Request depots' requests and freighters by blueprint entry, as their tags now hold them, for
-  -- parametrisation (scripts/depot-settings.lua).
-  local requests = {}
-  for _, planned in pairs(entities) do
-    local entity = mapping[planned.entity_number]
-    if plan_settings(planned, entity) then
-      changed = changed + 1
-      local depot = request_depot(entity)
-      if depot then
-        local tags = planned.tags or {}
-        requests[planned] = { request = tags[REQUEST_TAG], fluid = depot.fluid, freighters = tags[FREIGHTERS_TAG] or 0 }
-      end
-    end
-  end
-  if changed > 0 then
-    -- (logistics.plan_request_settings is scripts/depot-settings.lua's, set when it loads.)
-    blueprint.set_blueprint_entities(
-      logistics.plan_request_settings and logistics.plan_request_settings(entities, requests) or entities
-    )
-  end
-  return changed
-end
-
--- The blueprint being set up: a library record, the stack the event names, the one being set up,
--- or the cursor (copy and paste), whichever holds the blueprint's entities.
-local function blueprint_of(candidate)
-  if not (candidate and candidate.valid) then
-    return nil
-  end
-  if candidate.object_name == "LuaItemStack" then
-    if not (candidate.valid_for_read and candidate.is_blueprint) then
-      return nil
-    end
-  elseif candidate.type ~= "blueprint" then
-    return nil
-  end
-  local entities = candidate.get_blueprint_entities()
-  return entities and #entities > 0 and candidate or nil
-end
-
-function logistics.on_player_setup_blueprint(event)
-  local player = game.get_player(event.player_index)
-  local mapping = event.mapping and event.mapping.valid and event.mapping.get()
-  if not (player and mapping) then
-    return
-  end
-  -- Any of these may be nil, so not ipairs (it stops at the first nil).
-  local sources = { event.record, event.stack, player.blueprint_to_setup, player.cursor_stack }
-  for index = 1, 4 do
-    local blueprint = blueprint_of(sources[index])
-    if blueprint then
-      return logistics.setup_blueprint(blueprint, mapping)
-    end
-  end
-end
-
--- A depot built from a blueprint ghost takes its settings from the ghost's tags: any delivery
--- depot its circuit condition, a provider or buffer depot its priority, a request or buffer depot
--- its request and freighters. Called for every depot built, tags or not.
-function logistics.apply_tags(entity, tags)
-  local request, freighters
-  if request_depot(entity) then
-    -- The ghost's insert plan for freighters, into an item depot's own chest: asked of its truck
-    -- chest instead at once, before robots bring any (a ghost built without its tags too).
-    logistics.trim_freighter_requests(entity)
-    -- Built from a blueprint with its request settings (scripts/depot-settings.lua): what they
-    -- hold, which parametrisation may have changed, comes before the tags' (a request of false:
-    -- the blueprint's depot had none). Taken with or without tags, so they never stay.
-    if logistics.take_request_settings then
-      request, freighters = logistics.take_request_settings(entity)
-    end
-  end
-  if not (tags or request ~= nil or freighters) then
-    return
-  end
-  tags = tags or {}
-  -- Tags can come from anywhere (other mods, edited blueprint strings): use them only if well formed.
-  if type(tags[PRIORITY_TAG]) == "number" then
-    logistics.set_priority(entity, tags[PRIORITY_TAG])
-  end
-  if tags[robot_access.tag] == true then
-    robot_access.set(entity, true)
-  end
-  local circuit = tags[CIRCUIT_TAG]
-  if type(circuit) == "table" and type(circuit.condition) == "table" then
-    logistics.set_circuit(
-      entity,
-      circuit.enabled == true,
-      circuit.condition,
-      depot_circuit.mode(circuit.mode) or depot_circuit.network
-    )
-  end
-  local depot = request_depot(entity)
-  if not depot then
-    return
-  end
-  if request == nil then
-    request = tags[REQUEST_TAG]
-  end
-  if request == false then
-    logistics.set_request(entity, nil)
-  elseif type(request) == "table" and type(request.item) == "string" and type(request.count) == "number" then
-    logistics.set_request(entity, request.item, request.count)
-  end
-  if type(tags[FROM_BUFFERS_TAG]) == "boolean" then
-    logistics.set_from_buffers(entity, tags[FROM_BUFFERS_TAG])
-  end
-  if type(tags["jatz_full_loads"]) == "boolean" then
-    logistics.set_full_loads(entity, tags["jatz_full_loads"])
-  end
-  freighters = freighters or tags[FREIGHTERS_TAG]
-  if type(freighters) == "number" and freighters >= 0 then
-    -- An item depot's ghost from a blueprint from before asked for them by its insert plan too:
-    -- trimming above made that its target, so they aren't asked for twice.
-    logistics.match_freighters(entity, freighters)
-  end
-end
+-- Depot settings in blueprints, copy and paste and undo (scripts/blueprints.lua).
+blueprints.install(logistics, {
+  request_depot = request_depot,
+  supplying_depot = supplying_depot,
+  priority_default = PRIORITY_DEFAULT,
+  freighter = FREIGHTER,
+  liquid = LIQUID,
+})
+logistics.request_tag = blueprints.request_tag
+logistics.freighters_tag = blueprints.freighters_tag
+logistics.settings_tags = blueprints.settings_tags
+logistics.setup_blueprint = blueprints.setup_blueprint
+logistics.on_player_setup_blueprint = blueprints.on_player_setup_blueprint
+logistics.apply_tags = blueprints.apply_tags
+logistics.on_entity_settings_pasted = blueprints.on_entity_settings_pasted
 
 function logistics.cancel_freighter_removal(entity)
   if not request_depot(entity) then
     return 0
   end
-  local proxies, _, removing = freighter_requests(entity)
+  local proxies, _, removing = robot_requests.freighter_requests(entity)
   for _, proxy in ipairs(proxies) do
     local kept = {}
     for _, plan in pairs(proxy.removal_plan) do
-      if item_name(plan.id.name) ~= FREIGHTER then
+      if robot_requests.item_name(plan.id.name) ~= FREIGHTER then
         kept[#kept + 1] = plan
       end
     end
@@ -4614,11 +2914,11 @@ function logistics.cancel_freighter_requests(entity)
     return 0
   end
   depot.freighter_target = nil
-  local proxies, requested = freighter_requests(entity)
+  local proxies, requested = robot_requests.freighter_requests(entity)
   for _, proxy in ipairs(proxies) do
     local kept = {}
     for _, plan in pairs(proxy.insert_plan) do
-      if item_name(plan.id.name) ~= FREIGHTER then
+      if robot_requests.item_name(plan.id.name) ~= FREIGHTER then
         kept[#kept + 1] = plan
       end
     end
@@ -4634,7 +2934,7 @@ end
 -- Chest stacks (1-based) with freighters waiting for robots to take them away, and how many of
 -- each stack's freighters are waiting: those stay; any more merged into the stack don't.
 function logistics.leaving(entity)
-  local _, _, _, marked = freighter_requests(entity)
+  local _, _, _, marked = robot_requests.freighter_requests(entity)
   local leave = {}
   for stack, count in pairs(marked) do
     leave[stack + 1] = count
@@ -4668,7 +2968,7 @@ function logistics.take_in_freighters(entity, give_back, moved)
   local in_slot, out, capacity = logistics.freighter_counts(entity)
   -- Robots take freighters away from the truck chest only (a liquid depot's is its hand chest).
   local leave = depot.fluid and logistics.leaving(entity) or {}
-  local taken = load(chest, slot, FREIGHTER, math.min(new, math.max(0, capacity - in_slot - out)), leave, true)
+  local taken = transfer.load(chest, slot, FREIGHTER, math.min(new, math.max(0, capacity - in_slot - out)), leave, true)
   local returned = 0
   if give_back then
     for index = 1, #chest do
@@ -4780,7 +3080,7 @@ function logistics.describe_freighters(entity)
     return nil
   end
   local in_slot, out, capacity = logistics.freighter_counts(entity)
-  local proxies, coming, removing = freighter_requests(entity)
+  local proxies, coming, removing = robot_requests.freighter_requests(entity)
   local plans = {}
   for _, proxy in ipairs(proxies) do
     for _, kind in ipairs({ "insert", "removal" }) do
@@ -4789,7 +3089,12 @@ function logistics.describe_freighters(entity)
         for _, position in pairs(plan.items.in_inventory or {}) do
           positions[#positions + 1] = position.stack .. ":" .. (position.count or 1)
         end
-        plans[#plans + 1] = kind .. " " .. item_name(plan.id.name) .. " [" .. table.concat(positions, " ") .. "]"
+        plans[#plans + 1] = kind
+          .. " "
+          .. robot_requests.item_name(plan.id.name)
+          .. " ["
+          .. table.concat(positions, " ")
+          .. "]"
       end
     end
   end
@@ -4803,7 +3108,7 @@ function logistics.describe_freighters(entity)
     coming,
     removing,
     tostring(depot.freighter_target),
-    freighter_total(entity),
+    robot_requests.freighter_total(entity),
     capacity,
     #proxies,
     #plans > 0 and table.concat(plans, "; ") or "none"
@@ -4817,7 +3122,7 @@ function logistics.freighter_fuel(entity)
   if not depot then
     return nil
   end
-  local capacity = fuel_capacity()
+  local capacity = fueling.fuel_capacity()
   local parked = parked_fuel(depot)
   local home, out = {}, {}
   for _ = 1, trucks_of(depot).get_item_count() - #parked do
@@ -4835,7 +3140,7 @@ function logistics.freighter_fuel(entity)
       out[#out + 1] = trip.energy or capacity
     end
   end
-  return { home = home, out = out, capacity = capacity, used = fuel_per_tile() > 0 }
+  return { home = home, out = out, capacity = capacity, used = fueling.fuel_per_tile() > 0 }
 end
 
 -- Give every freighter in a requesting depot's slot `energy` joules of fuel (other mods, tests).
@@ -4847,7 +3152,7 @@ function logistics.set_freighter_fuel(entity, energy)
   end
   local count = trucks_of(depot).get_item_count()
   local parked = {}
-  if energy ~= fuel_capacity() then
+  if energy ~= fueling.fuel_capacity() then
     for index = 1, count do
       parked[index] = math.max(0, energy)
     end
@@ -4868,7 +3173,7 @@ function logistics.fuel_contents(entity)
     fluid = held and held.name,
     amount = held and held.amount or 0,
     capacity = tank.get_fluid_capacity(1),
-    burnable = held and burnable_fluid(held.name) ~= nil or false,
+    burnable = held and fueling.burnable_fluid(held.name) ~= nil or false,
   }
 end
 
@@ -4909,7 +3214,7 @@ function logistics.on_research_changed(event)
     return
   end
   local force = technology.force
-  local speed = freighter_speed(force)
+  local speed = research.freighter_speed(force)
   for _, trip in pairs(storage.trips or {}) do
     local drone = trip.drone
     if drone.valid and drone.force.index == force.index then
@@ -4919,7 +3224,7 @@ function logistics.on_research_changed(event)
   end
 end
 
--- Forces reset, made or merged: forget every force's research (research_of).
+-- Forces reset, made or merged: forget every force's research (scripts/research.lua's research_of).
 function logistics.on_forces_changed()
   storage.research_levels = nil
 end
@@ -4989,5 +3294,28 @@ function logistics.register()
   end
   remote.add_interface("jatz-distribution", interface)
 end
+
+-- Freighter fuel (scripts/fuel.lua), once end_trip and target are defined.
+fueling.install(logistics, {
+  fuel_tank = fuel_tank,
+  inventory = inventory,
+  depots_at = depots_at,
+  loading_tile = loading_tile,
+  new_token = new_token,
+  ask_route = routes.ask_route,
+  drive = drive,
+  end_trip = end_trip,
+  target = target,
+  retry_ticks = RETRY_TICKS,
+})
+
+-- What trips promised and are bringing (scripts/promises.lua), once upgrade is defined.
+ledger.install(logistics, {
+  inventory = inventory,
+  trips_of = trips_of,
+  upgrade = upgrade,
+  to_provider = TO_PROVIDER,
+  to_request = TO_REQUEST,
+})
 
 return logistics
