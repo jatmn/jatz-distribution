@@ -522,6 +522,15 @@ local function on_gui_closed(event)
   end
 end
 
+-- After a request is set from the panel: a liquid depot's request stops at its tank's size, so
+-- show that rather than the larger amount typed.
+local function show_count(field, entity, amount)
+  local request = logistics.get_request(entity)
+  if request and request.count < amount then
+    field.text = tostring(request.count)
+  end
+end
+
 local function on_gui_elem_changed(event)
   local name = event.element.name
   if name == CIRCUIT_FIRST or name == CIRCUIT_SECOND then
@@ -549,6 +558,7 @@ local function on_gui_elem_changed(event)
     field.text = tostring(amount)
   end
   logistics.set_request(entity, item, amount)
+  show_count(field, entity, amount)
 end
 
 local function on_gui_text_changed(event)
@@ -575,7 +585,9 @@ local function on_gui_text_changed(event)
   local entity = opened_depot(player)
   local request = entity and logistics.get_request(entity)
   if request then
-    logistics.set_request(entity, request.item, tonumber(event.text) or 0)
+    local amount = tonumber(event.text) or 0
+    logistics.set_request(entity, request.item, amount)
+    show_count(event.element, entity, amount)
   end
 end
 
