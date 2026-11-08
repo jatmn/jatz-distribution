@@ -961,6 +961,57 @@ do -- "Request from buffer depots" survives a blueprint even with no item reques
   check("and restored on the depot built from it", logistics.get_from_buffers(built))
 end
 
+do -- The "full loads only" checkbox, on buffer and request depots alike, carried by Copy and Paste
+  -- settings and blueprints.
+  local logistics = require("scripts.logistics")
+  local function requesting(x, name)
+    local entity = depot(x)
+    entity.name = name
+    fire("on_built_entity", { entity = entity })
+    return entity
+  end
+  local source, destination = requesting(210, "jatz-buffer-depot"), requesting(220, "jatz-request-depot")
+  check("off on a new depot", not logistics.get_full_loads(source))
+  local player = { index = 11, valid = true }
+  game.get_player = function()
+    return player
+  end
+  storage.request_gui = { [11] = source }
+  fire("on_gui_checked_state_changed", {
+    player_index = 11,
+    element = { name = "jatz_request_full_loads", state = true },
+  })
+  check("ticking the checkbox has a buffer depot send full loads only", logistics.get_full_loads(source))
+  fire("on_entity_settings_pasted", { source = source, destination = destination, player_index = 11 })
+  check("Copy and Paste settings carries it to a request depot", logistics.get_full_loads(destination))
+  local saved
+  local blueprint = {
+    valid = true,
+    object_name = "LuaItemStack",
+    valid_for_read = true,
+    is_blueprint = true,
+    get_blueprint_entities = function()
+      return { { entity_number = 1, name = "jatz-request-depot", position = { x = 0, y = 0 } } }
+    end,
+    set_blueprint_entities = function(entities)
+      saved = entities
+    end,
+  }
+  logistics.setup_blueprint(blueprint, { [1] = destination })
+  check("a blueprint keeps it", saved[1].tags and saved[1].tags.jatz_full_loads == true)
+  local built = requesting(230, "jatz-request-depot")
+  fire("on_robot_built_entity", { entity = built, tags = saved[1].tags })
+  check("and the depot built from it sends full loads only", logistics.get_full_loads(built))
+  storage.request_gui = { [11] = built }
+  fire("on_gui_checked_state_changed", {
+    player_index = 11,
+    element = { name = "jatz_request_full_loads", state = false },
+  })
+  check("unticking it turns it off", not logistics.get_full_loads(built))
+  local provider = requesting(240, "jatz-provider-depot")
+  check("provider depots have no such setting", not logistics.set_full_loads(provider, true))
+end
+
 do -- The priority slider: provider depots get a panel with it and their circuit condition; buffer
   -- depots have it above their request; request depots have none.
   local logistics = require("scripts.logistics")
@@ -1024,6 +1075,33 @@ do -- The priority slider: provider depots get a panel with it and their circuit
   check("a request depot's panel has no priority", inner.request_row and not inner.priority_row)
   nth[30]()
   check("and isn't rebuilt for lacking one", relative.jatz_request_frame.children[1] == inner)
+  local full_loads = inner.jatz_request_full_loads
+  check("it has the full-loads-only checkbox, unticked", full_loads and full_loads.state == false)
+  logistics.set_full_loads(request, true)
+  nth[30]()
+  check(
+    "which follows the setting changed elsewhere (another player, a paste, a mod)",
+    relative.jatz_request_frame.children[1] == inner and full_loads.state == true
+  )
+  local from_buffers = inner.jatz_request_from_buffers
+  check("it has the request-from-buffers checkbox, unticked", from_buffers and from_buffers.state == false)
+  logistics.set_from_buffers(request, true)
+  nth[30]()
+  check(
+    "which follows the setting changed elsewhere too",
+    relative.jatz_request_frame.children[1] == inner and from_buffers.state == true
+  )
+  logistics.set_from_buffers(request, false)
+  nth[30]()
+  check("and back off", from_buffers.state == false)
+  -- A panel left open across the update that added the checkbox: rebuilt with it.
+  full_loads.destroy()
+  nth[30]()
+  inner = relative.jatz_request_frame.children[1]
+  check(
+    "a panel from before the checkbox is rebuilt with it, ticked as the depot is",
+    inner.jatz_request_full_loads and inner.jatz_request_full_loads.state == true
+  )
 end
 
 do -- Priority in blueprints: kept for provider and buffer depots, and restored when built.
@@ -1123,6 +1201,7 @@ do -- Liquid depots: the same panels, beside the storage tank window, choosing a
   check("with only filters fluids have", valid)
   check("leaving out blueprint parameter fluids", parameters_hidden)
   check("with the request-from-buffers checkbox", inner.jatz_request_from_buffers ~= nil)
+  check("and the full-loads-only checkbox", inner.jatz_request_full_loads ~= nil)
   check("and no priority", inner.priority_row == nil)
   check("and a freighter slot", inner.freighter_row and inner.freighter_row.jatz_request_freighters)
   check(

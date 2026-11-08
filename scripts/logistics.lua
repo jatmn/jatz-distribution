@@ -56,6 +56,7 @@ local loading_zone = require("scripts.loading-zone")
 local paint = require("scripts.freighter-paint")
 local depot_circuit = require("scripts.depot-circuit")
 local research = require("scripts.research")
+local impact = require("scripts.impact")
 
 local logistics = {}
 
@@ -195,21 +196,6 @@ local SEARCH_TIMEOUT = 10 * 60
 local QUALITY = "normal"
 -- Pollution each freighter out makes a second: Transport Drones' default for its drones.
 local POLLUTION_PER_SECOND = 0.005
--- How often moving freighters look for enemy units they are driving through, and the impact
--- damage each one hit takes, at most once a second from the same freighter. Freighters never
--- attack; this is them running enemies over, as trains do. 200 kills small and medium biters
--- outright and hurts bigger ones.
--- (Every 20 ticks, not 10: the position each look reads makes a table for Lua to collect, for every
--- freighter; the ground a look searches is all the freighter crossed since the last.)
-local IMPACT_INTERVAL = 20
-local IMPACT_DAMAGE = 200
--- How far either side of its centre a freighter hits, in tiles: 0.8 tiles across, the width its
--- collision box had before it was narrowed so it turns corners freely (prototypes/freighter-drone.lua).
-local IMPACT_REACH = 0.4
-local IMPACT_COOLDOWN = 60
--- What a freighter runs over: enemy units only, never players (characters), buildings or other
--- freighters.
-local IMPACT_TYPES = { "unit", "spider-unit", "segmented-unit" }
 -- A freighter fills up before a leg unless its tank holds what the leg's road length takes, times
 -- this (its path may differ from the road measured), plus this share of a full tank in reserve.
 local FUEL_MARGIN = 1.25
@@ -239,6 +225,8 @@ logistics.status = {
   no_fuel_depot = "no-fuel-depot",
   -- Its circuit condition doesn't hold.
   disabled = "disabled",
+  -- Set to send full loads only: it lacks room for one, or no depot it fetches from has one.
+  full_load = "full-load",
 }
 
 -- Trip states: driving out to the provider, bringing cargo to the request depot, or taking cargo
@@ -1102,6 +1090,26 @@ function logistics.set_from_buffers(entity, from_buffers)
   return true
 end
 
+-- Whether a request or buffer depot sends only freighters that can load a full load (see
+-- full_load), rather than one for whatever little a provider has or the depot has room for.
+function logistics.get_full_loads(entity)
+  local depot = request_depot(entity)
+  return depot and depot.full_loads == true or false
+end
+
+-- Returns false, changing nothing, for anything but a request or buffer depot.
+function logistics.set_full_loads(entity, full_loads)
+  local depot = request_depot(entity)
+  if not depot then
+    return false
+  end
+  depot.full_loads = full_loads == true
+  depot.cooldowns = {}
+  depot.retry_at = 0
+  restart_depot_searches(depot)
+  return true
+end
+
 -- The depots with a priority: provider and buffer depots, which freighters fetch from.
 local function supplying_depot(entity)
   local depot = entity and entity.valid and entity.unit_number and storage.depots[entity.unit_number]
@@ -1385,16 +1393,48 @@ local function suppliers(surface_index, force_index, fluid, item)
   return found
 end
 
+-- For a depot set to send full loads only, the least a freighter of it may set off (or be rerouted)
+-- to load: a full load, or the whole request if that is less (so a request smaller than a load
+-- still comes, in one trip); and what the freighter carries. A new freighter (no `trip`) carries
+-- the force's cargo stacks of the item or its fluid capacity, both with research; one already out
+-- carries what its cargo inventory holds, sized when it set off, or for fluid the force's fluid
+-- capacity, which arrived_at_provider reads as it loads. nil for other depots, which send a
+-- freighter for any amount. (On the module table, as `missing` is, to spare this file's main
+-- chunk a local: Lua allows 200, and it is close; see issue #69.)
+--
+-- Intentional: the threshold is the whole request, not what is still missing. A depot whose
+-- request is smaller than one load, with some of it already in stock, has less room than the
+-- request and so waits until it is empty enough to take all of it in one trip, rather than send
+-- freighters to top it up a few at a time, which is the small trip this setting exists to stop.
+-- Players who want topping up leave the setting off.
+function logistics.full_load(depot, trip)
+  local request = depot.request
+  if not depot.full_loads or not request or request.count <= 0 then
+    return nil
+  end
+  local force = depot.entity.force
+  local capacity
+  if depot.fluid then
+    capacity = fluid_capacity(force)
+  else
+    local stacks = trip and trip.cargo and #trip.cargo or cargo_stacks(force)
+    capacity = stacks * stack_size_of(request.item)
+  end
+  return math.min(capacity, request.count), capacity
+end
+
 -- Every depot that could serve a requesting depot: provider depots, and for a request depot,
 -- buffer depots too (a buffer depot itself fetches only from providers). A request depot set to
 -- request from buffer depots ranks buffers first, however near a provider is; one not set to ranks
 -- them last, so it falls back to a buffer only for what no provider can supply. All on the same
 -- surface and force, with road at its loading zone, holding the item and not on cooldown for this
 -- request. Within each kind, the highest priority first; within each priority, nearest first in a
--- straight line from `from`. Also says whether one was skipped for cooldown.
-local function candidates(depot, from)
+-- straight line from `from`. With `full` (the least the freighter may load, for a depot sending
+-- full loads only), only those holding that much unpromised. Also says whether one was skipped for
+-- cooldown, and whether one was skipped for holding less than `full`.
+local function candidates(depot, from, full)
   local entity = depot.entity
-  local found, waiting = {}, false
+  local found, waiting, short = {}, false, false
   local buffers = depot.role == "request"
   -- The kind of depot asked about first.
   local first = buffers and depot.from_buffers and "buffer" or "provider"
@@ -1402,7 +1442,9 @@ local function candidates(depot, from)
   for _, supplier in ipairs(suppliers(entity.surface_index, entity.force_index, depot.fluid, depot.request.item)) do
     local provider = supplier.depot
     if provider.role == "provider" or (buffers and supplier.id ~= own) then
-      if (depot.cooldowns[supplier.id] or 0) > game.tick then
+      if full and available(provider, depot.request.item) < full then
+        short = true
+      elseif (depot.cooldowns[supplier.id] or 0) > game.tick then
         waiting = true
       else
         local position = supplier.position
@@ -1427,7 +1469,7 @@ local function candidates(depot, from)
     end
     return a.distance < b.distance or (a.distance == b.distance and a.id < b.id)
   end)
-  return found, waiting
+  return found, waiting, short
 end
 
 -- Every trip out has its own tick of the second, its phase: storage.trip_phases[phase + 1] lists
@@ -1673,9 +1715,9 @@ end
 -- already out (its provider was removed) and starts where it stands. Returns false, with whether
 -- a provider was skipped for cooldown, if there is nothing to look for.
 local function search_providers(depot, from, trip)
-  local found, waiting = candidates(depot, from)
+  local found, waiting, short = candidates(depot, from, logistics.full_load(depot, trip and storage.trips[trip]))
   if #found == 0 then
-    return false, waiting
+    return false, waiting, short
   end
   local search = {
     token = new_token(),
@@ -1700,10 +1742,14 @@ local function reroute(id, trip)
   local request = depot and depot.entity.valid and depot.request
   -- A Fuel depot it was heading for, or looking for, waits: set_off decides again for the new leg.
   trip.search_token, trip.searching, trip.fuel_search, trip.refuel = nil, nil, nil, nil
+  -- A depot sending full loads only sends this one on only while the depot has room for its full
+  -- load, besides what its other freighters are bringing, as when it was sent.
+  local full = request and logistics.full_load(depot, trip)
   if
     trip.drone.valid
     and request
     and request.item == trip.item
+    and (not full or select(2, need(depot, id)) >= full)
     and search_providers(depot, trip.drone.position, id)
   then
     logistics.command(trip, { type = defines.command.stop, distraction = defines.distraction.none })
@@ -1922,6 +1968,12 @@ local function dispatch(depot)
       or (other_fluid and logistics.status.other_fluid or logistics.status.full)
     return
   end
+  local full = logistics.full_load(depot)
+  if full and room < full then
+    -- Sending full loads only, and a full load wouldn't fit: it waits until one does.
+    depot.status = out and logistics.status.delivering or logistics.status.full_load
+    return
+  end
   local from, on_road = loading_tile(depot.entity)
   if not on_road then
     depot.status = logistics.status.no_road
@@ -1950,13 +2002,15 @@ local function dispatch(depot)
   if depot.searching and game.tick - depot.searching < SEARCH_TIMEOUT then
     return
   end
-  local started, waiting = search_providers(depot, from)
+  local started, waiting, short = search_providers(depot, from)
   if started then
     depot.status = out and logistics.status.delivering or logistics.status.searching
   else
     cancel_search(depot)
     depot.status = out and logistics.status.delivering
-      or (waiting and logistics.status.unreachable or logistics.status.no_provider)
+      or (waiting and logistics.status.unreachable)
+      or (short and logistics.status.full_load)
+      or logistics.status.no_provider
   end
 end
 
@@ -2361,7 +2415,9 @@ local function arrived_at_provider(id, trip, depot)
   local provider = depot_entity(trip.provider)
   local request = depot and depot.entity.valid and depot.request
   -- Load only what the request depot still asks for, and has room for: the request may have
-  -- changed to another item, or been filled some other way, since the freighter set off.
+  -- changed to another item, or been filled some other way, since the freighter set off. This holds
+  -- with Full loads only too: that rule decides when a freighter sets off (dispatch, reroute), and
+  -- once it is here, bringing what fits beats driving home empty for the same trip.
   if provider and request and request.item == trip.item then
     -- What it promised, as far as the depot (counting its other freighters) still needs it.
     local _, room = need(depot, id)
@@ -2709,24 +2765,33 @@ local function finish_search(depot, search, owner)
     return
   end
   local provider = search.best and storage.depots[search.best]
+  -- Sending full loads only: the provider must still have one, and the depot room for one (for a
+  -- rerouted freighter, the full load its cargo holds).
+  local full, carries = logistics.full_load(depot, search.trip and owner)
   local still = depot.request
     and depot.request.item == search.item
     and provider
     and provider.entity.valid
     and available(provider, search.item) > 0
+    and (not full or available(provider, search.item) >= full)
     and enabled(provider)
   if search.trip then
-    if still then
+    -- Room for this freighter's load, besides what the depot's other freighters are bringing.
+    local room = full and select(2, need(depot, search.trip))
+    if still and (not full or room >= full) then
       owner.search_token, owner.searching = nil, nil
       -- Promise only what the new provider has unpromised (this trip's old promise was at the
-      -- removed provider, so `available` doesn't count it).
-      owner.planned = math.min(owner.planned or 0, available(provider, search.item))
+      -- removed provider, so `available` doesn't count it). Sending full loads only, a full load:
+      -- planned afresh, as a freighter sent off now would be, whatever it set off for.
+      local unpromised = available(provider, search.item)
+      owner.planned = full and math.min(room, unpromised, carries) or math.min(owner.planned or 0, unpromised)
       owner.provider = search.best
       promise(owner)
       owner.leg = search.best_length
       set_off(search.trip, owner, search.best_length)
     else
-      -- The provider found was emptied or removed meanwhile: look again among the rest.
+      -- The provider found was emptied or removed meanwhile: look again among the rest. (Or the
+      -- depot no longer has room for a full load: reroute sends it home.)
       reroute(search.trip, owner)
     end
     return
@@ -2742,7 +2807,7 @@ local function finish_search(depot, search, owner)
   end
   local from, on_road = loading_tile(depot.entity)
   local _, room = need(depot)
-  if not still or not on_road or room <= 0 then
+  if not still or not on_road or room <= 0 or (full and room < full) then
     -- Something changed while searching; the next dispatch looks again.
     return
   end
@@ -2967,159 +3032,22 @@ function logistics.on_object_destroyed(event)
   end
 end
 
--- Moving freighters run over the enemy units they drive through, as trains do: each takes
--- IMPACT_DAMAGE as impact damage, at most once a second from the same freighter. The search
--- covers the ground the freighter crossed since the last look, so a fast one misses nothing in
--- between. A standing freighter (loading, or waiting for a route) hits nothing, players and other
--- freighters are never hit, and nothing makes the freighter stop or turn: it drives on.
-
--- The names of every entity prototype a freighter can run over (IMPACT_TYPES), from game data:
--- not the freighters themselves, which are units too but never hit.
-local impact_names
--- Whether any force has a unit to run over: the game keeps each force's entity counts, so this is
--- a few lookups, not a search. Without any (a map without enemies), no freighter needs looking at.
-local function units_exist()
-  if not impact_names then
-    impact_names = {}
-    for name in pairs(prototypes.get_entity_filtered({ { filter = "type", type = IMPACT_TYPES } })) do
-      if not paint.is_drone(name) then
-        impact_names[#impact_names + 1] = name
-      end
-    end
-  end
-  for _, force in pairs(game.forces) do
-    for _, name in ipairs(impact_names) do
-      if force.get_entity_count(name) > 0 then
-        return true
-      end
-    end
-  end
-  return false
-end
-
--- One search filter for every look, filled in before each call (the game reads it during the
--- call): thousands of freighters look every IMPACT_INTERVAL ticks, and every table made for them is
--- garbage for Lua to collect.
-local impact_filter = { area = { { 0, 0 }, { 0, 0 } }, type = IMPACT_TYPES }
-
--- Look at the freighters of the trips trips[from..to] still out: each that moved since its last
--- look runs over the enemy units in the ground it crossed. The ground is counted first, so a
--- freighter with none in its way (nearly always) makes no list of what it found.
-local function run_over(trips, from, to, fresh)
-  -- By force index: the force, and its enemies. By surface index: its count_entities_filtered.
-  local forces, surfaces = {}, {}
-  local reach = IMPACT_REACH
-  local area = impact_filter.area
-  for index = from, to do
-    local trip = trips[index]
-    local drone = storage.trips[trip.id] == trip and trip.drone
-    if drone and drone.valid then
-      -- Where its once-a-second check found it, if that was this tick (a read makes a new table).
-      local here = trip.at_tick == game.tick and trip.at or drone.position
-      local last = not fresh and trip.last_position
-      trip.last_position = here
-      -- Enemies hit in the last second, by unit_number, aren't hit again yet.
-      local hits = trip.hits
-      if hits then
-        for unit_number, tick in pairs(hits) do
-          if game.tick - tick >= IMPACT_COOLDOWN then
-            hits[unit_number] = nil
-          end
-        end
-      end
-      local force_index = drone.force_index
-      local side = forces[force_index]
-      if not side then
-        local force, enemies = drone.force, {}
-        for _, other in pairs(game.forces) do
-          if force.is_enemy(other) then
-            enemies[#enemies + 1] = other
-          end
-        end
-        side = { force = force, enemies = enemies }
-        forces[force_index] = side
-      end
-      if last and (here.x ~= last.x or here.y ~= last.y) and #side.enemies > 0 then
-        -- The surface's count, bound once (a method read off an object is a new function each time).
-        local surface_index = drone.surface_index
-        local count = surfaces[surface_index]
-        if not count then
-          count = drone.surface.count_entities_filtered
-          surfaces[surface_index] = count
-        end
-        area[1][1], area[1][2] = math.min(here.x, last.x) - reach, math.min(here.y, last.y) - reach
-        area[2][1], area[2][2] = math.max(here.x, last.x) + reach, math.max(here.y, last.y) + reach
-        impact_filter.force = side.enemies
-        if count(impact_filter) > 0 then
-          local force = side.force
-          for _, enemy in pairs(drone.surface.find_entities_filtered(impact_filter)) do
-            -- Damage sets off other mods' handlers there and then, and they can remove the
-            -- freighter or an enemy further down this list: check both are still there before
-            -- reading either.
-            if drone.valid and enemy.valid and not paint.is_drone(enemy.name) then
-              local key = enemy.unit_number
-              if not (key and hits and hits[key]) then
-                if key then
-                  hits = hits or {}
-                  hits[key] = game.tick
-                end
-                enemy.damage(IMPACT_DAMAGE, force, "impact", drone, drone)
-              end
-            end
-          end
-        end
-      end
-      trip.hits = hits and next(hits) and hits or nil
-    end
-  end
-end
-
--- Whether impact checks are paused (no units in the game), and so whether this look is the first
--- since they were: where freighters were at the last look is out of date once units turn up, so
--- that look only notes where they are.
-local function impact_pause()
-  if not units_exist() then
-    storage.impact_paused = true
-    return true
-  end
-  local fresh = storage.impact_paused
-  storage.impact_paused = nil
-  return false, fresh
-end
-
--- Every freighter looked at at once.
-function logistics.on_impact_tick()
-  local paused, fresh = impact_pause()
-  if paused then
-    return
-  end
-  local trips = {}
-  for id, trip in pairs(storage.trips) do
-    trip.id = id
-    trips[#trips + 1] = trip
-  end
-  run_over(trips, 1, #trips, fresh)
-end
-
--- Every freighter looked at every IMPACT_INTERVAL ticks, at the ticks of its phase (trip_phases),
--- so thousands of freighters don't all search the ground in the same tick. Whether there are units
--- at all is asked at the start of each round.
+-- Every freighter looked at every IMPACT_INTERVAL ticks (scripts/impact.lua), at the ticks of its
+-- phase (trip_phases), so thousands of freighters don't all search the ground in the same tick.
+-- Whether there are units at all is asked at the start of each round.
+logistics.on_impact_tick = impact.on_tick
 function logistics.on_impact_share(tick)
   if not storage.trips then
     return
   end
-  if tick % IMPACT_INTERVAL == 0 or storage.impact_open == nil then
-    local paused, fresh = impact_pause()
-    storage.impact_open = not paused
-    storage.impact_fresh = fresh
-  end
-  if not storage.impact_open then
+  if not impact.open(tick) then
     return
   end
+  local interval = impact.INTERVAL
   local phases = trip_phases()
-  for phase = tick % IMPACT_INTERVAL, DISPATCH_INTERVAL - 1, IMPACT_INTERVAL do
+  for phase = tick % interval, DISPATCH_INTERVAL - 1, interval do
     local list = phases[phase + 1]
-    run_over(list, 1, #list, storage.impact_fresh)
+    impact.run_over(list, 1, #list, storage.impact_fresh)
   end
 end
 
@@ -3143,6 +3071,7 @@ local function copy_request(source, destination)
     local request = logistics.get_request(source)
     logistics.set_request(destination, request and request.item, request and request.count)
     logistics.set_from_buffers(destination, logistics.get_from_buffers(source))
+    logistics.set_full_loads(destination, logistics.get_full_loads(source))
   end
   if supplying_depot(source) and supplying_depot(destination) then
     logistics.set_priority(destination, logistics.get_priority(source))
@@ -3751,6 +3680,7 @@ local function plan_settings(planned, entity)
     planned.tags[REQUEST_TAG] = depot.request and { item = depot.request.item, count = depot.request.count } or nil
     -- Its own tag, so it's kept even with no item requested.
     planned.tags[FROM_BUFFERS_TAG] = depot.from_buffers or nil
+    planned.tags["jatz_full_loads"] = depot.full_loads or nil
     local freighters = freighter_total(entity)
     planned.tags[FREIGHTERS_TAG] = freighters > 0 and freighters or nil
     planned.tags[CIRCUIT_TAG] = circuit_tag(depot)
@@ -3880,6 +3810,9 @@ function logistics.apply_tags(entity, tags)
   end
   if type(tags[FROM_BUFFERS_TAG]) == "boolean" then
     logistics.set_from_buffers(entity, tags[FROM_BUFFERS_TAG])
+  end
+  if type(tags["jatz_full_loads"]) == "boolean" then
+    logistics.set_full_loads(entity, tags["jatz_full_loads"])
   end
   local freighters = tags[FREIGHTERS_TAG]
   if type(freighters) == "number" and freighters >= 0 then
@@ -4238,6 +4171,9 @@ function logistics.register()
     get_status = logistics.get_status,
     set_from_buffers = logistics.set_from_buffers,
     get_from_buffers = logistics.get_from_buffers,
+    -- A request or buffer depot sending only freighters that can load a full load.
+    set_full_loads = logistics.set_full_loads,
+    get_full_loads = logistics.get_full_loads,
     -- A provider or buffer depot's priority, 1 to 10.
     set_priority = logistics.set_priority,
     get_priority = logistics.get_priority,
