@@ -3567,6 +3567,46 @@ do -- Freighters arriving to load at a busy provider cost about in proportion to
   check("four times the arrivals cost about four times as much", large < small * 6)
 end
 
+do -- Searches ending at one busy provider whose condition reads its contents cost about in
+  -- proportion too: each asks whether the provider holds with every promise there taken, from their
+  -- kept totals, not by adding them up again (Copilot's review of be24d17: 800 searches added up
+  -- 319,600 promises).
+  local function cost(count)
+    local logistics = reset()
+    local provider = entity("jatz-provider-depot", 10.5, 0.5, { a = 100000 })
+    logistics.add(provider)
+    local a = { type = "item", name = "a" }
+    logistics.set_circuit(provider, true, { first_signal = a, comparator = ">", constant = 25 }, "contents")
+    for index = 1, count do
+      local request = entity("jatz-request-depot", 0.5, 0.5 + index * 4)
+      logistics.add(request)
+      assert(logistics.set_request(request, "a", 1))
+      assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+    end
+    logistics.on_tick()
+    local steps = 0
+    debug.sethook(function()
+      if debug.getinfo(2, "S").source:find("scripts/", 1, true) then
+        steps = steps + 1
+      end
+    end, "", 1)
+    for id = 1, #requests do
+      answer(logistics, id, "route")
+    end
+    debug.sethook()
+    local promised = 0
+    for _ in pairs(storage.trips) do
+      promised = promised + 1
+    end
+    return steps, promised
+  end
+  local small = cost(100)
+  local large, promised = cost(400)
+  check("setup: 400 freighters sent to the one provider", promised == 400)
+  -- (Deterministic counts: 4.00 times now; adding the promises up again made it 4.92 times.)
+  check("four times the searches cost about four times as much", large < small * 4.5)
+end
+
 do -- Arriving where the stock covers every promise, but the condition (reading the provider's
   -- contents) fails with every other promise taken: the promises ahead are added up after all, so
   -- the first promised still loads and the last, which the condition no longer covers, doesn't
@@ -3827,6 +3867,24 @@ do -- A pickup cancelled on the road burns the way out and the way back, though 
     "and the 5 back as it parks",
     not has_trip(request) and math.abs(trip.energy - (20 * MJ - 10 * 10000)) < 1 and parked[#parked] == trip.energy
   )
+end
+
+do -- Turned on the road, a freighter decides whether the way home needs a Fuel depot on the fuel it
+  -- has, not on what it had at its last check: with 2.13 MJ, enough for the 10 tiles out (2.125 MJ
+  -- with the margin and reserve), it has 2.08 MJ 5 tiles out, short of the 2.125 MJ the 10 tiles
+  -- home need (Copilot's review of be24d17: it set off home without filling up).
+  local logistics = reset()
+  local request = fuelled(logistics, 2.13 * MJ, function()
+    return fuel_depot(logistics, -10.5, 0.5, { { "coal", 20 } })
+  end)
+  local trip = trips_from(request)[1]
+  check("setup: enough for the way out, it drives to the provider", not trip.fuel_search and trip.leg == 10)
+  trip.drone.position = { x = trip.drone.position.x + 5, y = trip.drone.position.y }
+  request.chest.contents.a = 10
+  logistics.release_excess(storage.depots[request.unit_number], 10)
+  check("setup: it turns home", trip.state == "to-request")
+  check("short for the way home, it looks for a Fuel depot first", trip.fuel_search and trip.searching ~= nil)
+  check("on what it has now", math.abs(trip.energy - (2.13 * MJ - 5 * 10000)) < 1)
 end
 
 do -- A stand cut short burns the way there too: its provider removed while it stands (before the

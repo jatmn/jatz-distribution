@@ -1315,8 +1315,19 @@ function logistics.holds_less(depot, claims, live)
 end
 
 -- The promises filed at a provider (unit number) made before `trip`'s (logistics.ahead), or all of
--- them without one: amounts by item.
+-- them without one: amounts by item. All of an item depot's are their kept totals
+-- (storage.promise_totals, exact for items; not to be changed): `enabled(depot, true)` asks for
+-- them whenever a search looks at a provider or ends there, and adding them up afresh each time
+-- made many searches ending at one busy provider cost the square of its promises (Copilot's review
+-- of be24d17). Fluid's are added up afresh, as fractions.
 function logistics.claims_ahead(unit_number, trip)
+  local provider = not trip and storage.depots[unit_number]
+  if provider and not provider.fluid then
+    if not (storage.promised and storage.promise_totals) then
+      file_promises()
+    end
+    return storage.promise_totals[unit_number] or {}
+  end
   local claims = {}
   for item, trips in pairs(storage.promised and storage.promised[unit_number] or {}) do
     local claimed = 0
@@ -1654,8 +1665,10 @@ end
 -- otherwise have the way out and the way back measured as one leg, which cancels out (Copilot's
 -- review of feca8c7). (Even after a stand: one can be cut short, its provider removed or its
 -- command failed, before the check in it. Only one that never left home, `departing`, is skipped.)
-local function drive(trip, destination)
-  if not trip.departing then
+-- `sampled`: the caller burned it just now (set_off does, before deciding whether the leg needs a
+-- Fuel depot first).
+local function drive(trip, destination, sampled)
+  if not (sampled or trip.departing) then
     burn(trip)
   end
   trip.destination = destination
@@ -2237,14 +2250,20 @@ local function short_of_fuel(trip, length)
 end
 
 -- Set off on a leg of `length` tiles by road towards the trip's target, by way of a Fuel depot if
--- the tank is short for it.
+-- the tank is short for it. The way here is burned first (see drive), so the tank is read as it is:
+-- a freighter turned on the road between its checks was otherwise judged on the fuel it had at the
+-- last one, and could set off for home without the Fuel depot it needed (Copilot's review of
+-- be24d17).
 function set_off(id, trip, length)
+  if not trip.departing then
+    burn(trip)
+  end
   upgrade(trip)
   trip.refueled = nil
   if short_of_fuel(trip, length) then
     return look_for_fuel(id, trip)
   end
-  drive(trip, target(trip))
+  drive(trip, target(trip), true)
 end
 
 -- Drop a trip's search and start again: for fuel, or for a new provider.
