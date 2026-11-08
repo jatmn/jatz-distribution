@@ -110,7 +110,6 @@ local function spread(amount, stacks)
   end
   return placed, positions
 end
-requests.spread = spread
 
 -- Add an insert or removal plan to a depot's request proxy, making one if it has none.
 local function add_plan(entity, proxies, plan, removal)
