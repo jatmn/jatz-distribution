@@ -40,4 +40,7 @@ return {
   fuel_tank = "jatz-fuel-depot-tank",
   -- The combinator that reads what the depots on its road network hold (prototypes/road-monitor.lua).
   road_monitor = "jatz-road-monitor",
+  -- A blueprint's copy of a request or buffer depot's request, for parametrisation
+  -- (prototypes/depot-settings.lua).
+  depot_settings = "jatz-depot-settings",
 }

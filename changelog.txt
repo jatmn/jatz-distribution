@@ -2,6 +2,7 @@
 Version: Unreleased
   Features:
     - Request and buffer depots, item and liquid, have a "Full loads only" checkbox. Ticked, a freighter sets off only when it can come back full: a provider (or buffer) depot has a whole load for it, and the depot has room for one. Freighters no longer drive out for a single ore while they could carry ten stacks. A request smaller than one load is fetched whole. Copy and Paste settings and blueprints carry it; it's off by default.
+    - Blueprint parametrisation works with request and buffer depots, item and liquid: a blueprint of a depot with a request now offers its item or fluid and its amount as parameters, and one with freighters how many, and the depots built from it request what you fill in and ask for that many freighters. Pasting such a blueprint over the same kind of depot already built now sets its request and freighters too. Blueprints made before this update still keep their requests and freighters, but need setting up again (select new contents) to offer them.
   Bugfixes:
     - Construction robots now repair damaged freighters on the road, as they do your other vehicles. Freighters still drive faster than robots fly, so robots mostly catch up with them while they stop to load or unload.
     - Fixed a freighter killed by a script (from the console, the map editor or another mod) going straight back into its request depot as if it had come home: it is now lost, and the depot asks construction robots for a replacement, which they must bring from storage.
