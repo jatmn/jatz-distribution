@@ -227,7 +227,7 @@ class CheckerTests(unittest.TestCase):
         return depot, truck
 
     def test_remnants_follow_their_master_record_and_tools(self):
-        depot, truck = self.add_both_wrecks()
+        self.add_both_wrecks()
         self.assertEqual(self.errors(), [])
         # The shared builder and renderer: each area checks its own wrecks against them.
         for tool in ('assets/depots/tools/build_remnants.py', 'assets/quinityn-freighter/tools/render_directions.py'):
@@ -238,17 +238,17 @@ class CheckerTests(unittest.TestCase):
             self.assertOneError(self.errors('freighter'), 'remnants/freighter', 'render_remnants.py')
         # Each wreck follows its own master and asset.json (a turned sheet_order, say).
         build(self.root)
-        depot, truck = self.add_both_wrecks()
+        self.add_both_wrecks()
         write(self.root / 'assets/depots/source/fuel-3.blend', BLEND_HEADER + b'edited fuel model')
         self.assertTrue(any('remnants/fuel' in error and 'master_sha256' in error for error in self.errors('depots')))
         build(self.root)
-        depot, truck = self.add_both_wrecks()
+        _, truck = self.add_both_wrecks()
         record(truck / 'asset.json', {'name': 'freighter', 'seed': 8,
                                       'master': 'assets/quinityn-freighter/source/quinityn-freighter.blend'})
         self.assertOneError(self.errors('freighter'), 'remnants/freighter', 'asset_sha256')
         self.assertEqual(self.errors('depots'), [])
         build(self.root)
-        depot, truck = self.add_both_wrecks()
+        depot, _ = self.add_both_wrecks()
         (depot / 'sheets/mask-trim.png').unlink()
         self.assertOneError(self.errors('depots'), 'mask-trim.png', 'missing')
 
