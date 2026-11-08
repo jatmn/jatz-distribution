@@ -1,0 +1,390 @@
+{
+  "name": "freighter",
+  "asset_sha256": "bdfc09529c0f99bb700835a54396fece0782306947de493c62ff42af9e692832",
+  "master": "assets/quinityn-freighter/source/quinityn-freighter.blend",
+  "master_sha256": "2ee3b273ea7b84552537abe88fea851550420ad7b4953aa46f527447fb934299",
+  "builder_sha256": "74a72455b8e2a0980d358d05694b8498f94aeea3f23f936c33a2902a7b532bee",
+  "renderer_sha256": "c9c49e6a420aa03274bff6a3426ea163497dbd4bc0753406c6b14fc373ebe6dd",
+  "profile": "freighter",
+  "seed": 17,
+  "resolution": 1024,
+  "samples": 64,
+  "directions": [
+    {
+      "direction": 0,
+      "sizes": {
+        "1024": {
+          "alpha_max_error": 2.7939677238464355e-08,
+          "neutral_rgb_mean_error": 0.0010743267716744579,
+          "body_bbox": [
+            235,
+            183,
+            790,
+            813
+          ],
+          "shadow_bbox": [
+            305,
+            207,
+            744,
+            816
+          ],
+          "mask_pixels": {
+            "cab": 7596,
+            "trim": 11761,
+            "cargo": 45678
+          }
+        },
+        "512": {
+          "alpha_max_error": 8.192973943721427e-08,
+          "neutral_rgb_mean_error": 0.0010720875249628703,
+          "body_bbox": [
+            117,
+            90,
+            395,
+            408
+          ],
+          "shadow_bbox": [
+            152,
+            103,
+            373,
+            409
+          ],
+          "mask_pixels": {
+            "cab": 2196,
+            "trim": 3575,
+            "cargo": 12073
+          }
+        }
+      }
+    },
+    {
+      "direction": 1,
+      "sizes": {
+        "1024": {
+          "alpha_max_error": 2.8870999813079834e-08,
+          "neutral_rgb_mean_error": 0.0011414338393707993,
+          "body_bbox": [
+            114,
+            215,
+            847,
+            770
+          ],
+          "shadow_bbox": [
+            115,
+            237,
+            892,
+            772
+          ],
+          "mask_pixels": {
+            "cab": 7945,
+            "trim": 13352,
+            "cargo": 52441
+          }
+        },
+        "512": {
+          "alpha_max_error": 8.638579096498233e-08,
+          "neutral_rgb_mean_error": 0.001143353848697217,
+          "body_bbox": [
+            55,
+            105,
+            426,
+            387
+          ],
+          "shadow_bbox": [
+            57,
+            118,
+            447,
+            387
+          ],
+          "mask_pixels": {
+            "cab": 2384,
+            "trim": 3974,
+            "cargo": 13715
+          }
+        }
+      }
+    },
+    {
+      "direction": 2,
+      "sizes": {
+        "1024": {
+          "alpha_max_error": 2.8870999813079834e-08,
+          "neutral_rgb_mean_error": 0.0011734402667160147,
+          "body_bbox": [
+            82,
+            318,
+            894,
+            709
+          ],
+          "shadow_bbox": [
+            83,
+            352,
+            925,
+            672
+          ],
+          "mask_pixels": {
+            "cab": 7406,
+            "trim": 13943,
+            "cargo": 53943
+          }
+        },
+        "512": {
+          "alpha_max_error": 8.436712539694469e-08,
+          "neutral_rgb_mean_error": 0.001179241202044923,
+          "body_bbox": [
+            39,
+            159,
+            449,
+            355
+          ],
+          "shadow_bbox": [
+            41,
+            175,
+            463,
+            337
+          ],
+          "mask_pixels": {
+            "cab": 2273,
+            "trim": 4176,
+            "cargo": 14213
+          }
+        }
+      }
+    },
+    {
+      "direction": 3,
+      "sizes": {
+        "1024": {
+          "alpha_max_error": 2.8870999813079834e-08,
+          "neutral_rgb_mean_error": 0.0010813788500266858,
+          "body_bbox": [
+            146,
+            173,
+            834,
+            744
+          ],
+          "shadow_bbox": [
+            145,
+            207,
+            884,
+            748
+          ],
+          "mask_pixels": {
+            "cab": 6230,
+            "trim": 14908,
+            "cargo": 48002
+          }
+        },
+        "512": {
+          "alpha_max_error": 8.168850662571003e-08,
+          "neutral_rgb_mean_error": 0.0010882665298122109,
+          "body_bbox": [
+            71,
+            84,
+            419,
+            374
+          ],
+          "shadow_bbox": [
+            72,
+            103,
+            443,
+            375
+          ],
+          "mask_pixels": {
+            "cab": 1873,
+            "trim": 4389,
+            "cargo": 12511
+          }
+        }
+      }
+    },
+    {
+      "direction": 4,
+      "sizes": {
+        "1024": {
+          "alpha_max_error": 2.8870999813079834e-08,
+          "neutral_rgb_mean_error": 0.0010002217872166648,
+          "body_bbox": [
+            235,
+            136,
+            790,
+            782
+          ],
+          "shadow_bbox": [
+            285,
+            172,
+            734,
+            783
+          ],
+          "mask_pixels": {
+            "cab": 5640,
+            "trim": 14318,
+            "cargo": 41457
+          }
+        },
+        "512": {
+          "alpha_max_error": 7.873840623950912e-08,
+          "neutral_rgb_mean_error": 0.001004291358535022,
+          "body_bbox": [
+            117,
+            66,
+            395,
+            392
+          ],
+          "shadow_bbox": [
+            142,
+            85,
+            368,
+            392
+          ],
+          "mask_pixels": {
+            "cab": 1719,
+            "trim": 4279,
+            "cargo": 10910
+          }
+        }
+      }
+    },
+    {
+      "direction": 5,
+      "sizes": {
+        "1024": {
+          "alpha_max_error": 2.8870999813079834e-08,
+          "neutral_rgb_mean_error": 0.001009038619259934,
+          "body_bbox": [
+            177,
+            166,
+            910,
+            724
+          ],
+          "shadow_bbox": [
+            178,
+            202,
+            917,
+            728
+          ],
+          "mask_pixels": {
+            "cab": 7020,
+            "trim": 11329,
+            "cargo": 49220
+          }
+        },
+        "512": {
+          "alpha_max_error": 8.300280551765127e-08,
+          "neutral_rgb_mean_error": 0.0010143712791300245,
+          "body_bbox": [
+            86,
+            81,
+            457,
+            364
+          ],
+          "shadow_bbox": [
+            89,
+            100,
+            459,
+            365
+          ],
+          "mask_pixels": {
+            "cab": 2040,
+            "trim": 3380,
+            "cargo": 12719
+          }
+        }
+      }
+    },
+    {
+      "direction": 6,
+      "sizes": {
+        "1024": {
+          "alpha_max_error": 2.8870999813079834e-08,
+          "neutral_rgb_mean_error": 0.00111971621512549,
+          "body_bbox": [
+            131,
+            318,
+            942,
+            709
+          ],
+          "shadow_bbox": [
+            132,
+            346,
+            965,
+            658
+          ],
+          "mask_pixels": {
+            "cab": 8160,
+            "trim": 9984,
+            "cargo": 54223
+          }
+        },
+        "512": {
+          "alpha_max_error": 8.282594943231913e-08,
+          "neutral_rgb_mean_error": 0.0011241131780604736,
+          "body_bbox": [
+            65,
+            159,
+            473,
+            355
+          ],
+          "shadow_bbox": [
+            65,
+            172,
+            483,
+            330
+          ],
+          "mask_pixels": {
+            "cab": 2383,
+            "trim": 3085,
+            "cargo": 14287
+          }
+        }
+      }
+    },
+    {
+      "direction": 7,
+      "sizes": {
+        "1024": {
+          "alpha_max_error": 2.8870999813079834e-08,
+          "neutral_rgb_mean_error": 0.0011417763760894443,
+          "body_bbox": [
+            189,
+            207,
+            877,
+            790
+          ],
+          "shadow_bbox": [
+            207,
+            230,
+            922,
+            793
+          ],
+          "mask_pixels": {
+            "cab": 9338,
+            "trim": 9641,
+            "cargo": 51854
+          }
+        },
+        "512": {
+          "alpha_max_error": 8.767725212521782e-08,
+          "neutral_rgb_mean_error": 0.0011459693531368118,
+          "body_bbox": [
+            93,
+            102,
+            441,
+            397
+          ],
+          "shadow_bbox": [
+            103,
+            114,
+            462,
+            397
+          ],
+          "mask_pixels": {
+            "cab": 2620,
+            "trim": 2914,
+            "cargo": 13601
+          }
+        }
+      }
+    }
+  ]
+}

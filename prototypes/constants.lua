@@ -9,6 +9,10 @@ return {
   -- string.format pattern taking (role, size), relative to the mod root.
   depot_sheets = "assets/depots/%s/%d/sheets/",
   connector_sheets = "assets/depots/connectors/sheets/",
+  -- What destroyed depots and freighters leave (prototypes/remnants.lua): a string.format pattern
+  -- taking a depot wreck's name, and the freighter's wreck.
+  depot_remnant_sheets = "assets/depots/remnants/%s/sheets/",
+  freighter_remnant_sheets = "assets/quinityn-freighter/remnants/freighter/sheets/",
   -- 64 px icons with custom mipmaps, made by tools/make_icons.py from the game sprites.
   freighter_icon = "__jatz-distribution__/assets/quinityn-freighter/icons/quinityn-freighter.png",
   -- string.format pattern taking the depot role.

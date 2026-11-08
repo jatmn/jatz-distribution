@@ -29,7 +29,9 @@ class Releases(unittest.TestCase):
             target = self.root / original.relative_to(REPO)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(b'sprite fixture' if original.suffix == '.png' else original.read_bytes())
-        for original in list((REPO / 'assets/depots').glob('*/3/asset.json')) + [
+        # The wrecks' records too, so packaging finds their sheets (assets/*/remnants/).
+        for original in list((REPO / 'assets/depots').glob('*/3/asset.json')) + list(
+                (REPO / 'assets').glob('*/remnants/*/asset.json')) + [
             REPO / '.github/version.txt', REPO / '.github/release-please-manifest.json',
         ]:
             target = self.root / original.relative_to(REPO)

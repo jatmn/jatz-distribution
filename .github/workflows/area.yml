@@ -149,7 +149,8 @@ jobs:
         if: inputs.area == 'mod'
         run: python3 tools/test_mod_setup.py
 
-      # The art check needs this area's models and images, so fetch only those.
+      # The art check needs this area's models and images, so fetch only those, and the other
+      # area's tools: the wrecks record the depots' wreck builder and the freighter's renderer.
       - name: Check out this area's art
         if: inputs.art
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -157,7 +158,9 @@ jobs:
           path: .art
           persist-credentials: false
           filter: blob:none
-          sparse-checkout: assets/${{ inputs.area == 'freighter' && 'quinityn-freighter' || inputs.area }}
+          sparse-checkout: |
+            assets/${{ inputs.area == 'freighter' && 'quinityn-freighter' || inputs.area }}
+            assets/${{ inputs.area == 'freighter' && 'depots' || 'quinityn-freighter' }}/tools
       - name: Check Blender sources against their render and inspection records
         if: inputs.art
         env:

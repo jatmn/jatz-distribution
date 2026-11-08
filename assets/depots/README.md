@@ -24,6 +24,7 @@ Seven 3×3 depot buildings: Provider, Request, Buffer, Fuel, Liquid Provider, Li
 | `factorio/` | Lua helpers for depot pictures and pipe pictures, plus generated definitions |
 | `previews/` | All depots in a grid, all depots at in-game scale, and `recolor.html`, a recoloring viewer you open in a browser |
 | `tools/` | Builders, renderers, packagers, geometry inspectors, preview generator and `lower_depots.py`, which lowered the masters (see below) |
+| `remnants/<name>/` | What destroyed depots and the freighter leave; see [Remnants](#remnants) |
 | `archive/1x1/` | Retired 1×1 versions of all seven depots; see its [README](archive/1x1/README.md) |
 | `*validation.json` | Results from the most recent geometry, junction and packaging checks |
 
@@ -146,6 +147,31 @@ python3 $T/check_connector_registration.py
 - Optional quick check before a full render: `render_mask_probe.py` (in Blender) followed by `check_mask_probe.py` makes low-resolution renders of all 28 views to catch hidden paint areas.
 
 Afterwards, test in game; see [docs/testing.md](../../docs/testing.md).
+
+## Remnants
+
+What a destroyed depot or freighter leaves: a wreck of the building or vehicle itself, as the game's own machines leave theirs (base Factorio's destroyed assembling machine, chemical plant and storage tank were the reference, looked at, never copied). Five wrecks serve the seven depots, plus one for the freighter, which lives with the freighter's art so each art area holds its own wrecks:
+
+| `remnants/<name>/` | Wrecked from | Left by |
+| --- | --- | --- |
+| `cargo` | `source/provider-3.blend` | Provider and Request depots |
+| `buffer` | `source/buffer-3.blend` | Buffer depot |
+| `fuel` | `source/fuel-3.blend` | Fuel depot |
+| `liquid` | `source/liquid-provider-3.blend` | Liquid Provider and Liquid Request depots |
+| `liquid-buffer` | `source/liquid-buffer-3.blend` | Liquid Buffer depot |
+| `../quinityn-freighter/remnants/freighter` | `../quinityn-freighter/source/quinityn-freighter.blend` | The freighter, delivering or driven |
+
+The masters and `tools/build_remnants.py` are the wrecks' source; no wrecked `.blend` is committed. The builder opens a master and wrecks it with the seed in the wreck's `asset.json`, so the same master and seed always make the same wreck: everything above the lower body is crushed down and crumpled, a blast from one side caves it in and tears ragged holes over a burnt-out inside, loose fittings are thrown off and lie tumbled around it with bent shards of its own plating and paint, everything is sooted with paint burnt off, and the ground under it is scorched. Pipe stubs (the shape-keyed pipe adapters) stay whole. Thrown parts and shards land no farther from the centre than the profile's `reach`; `package_remnants.py` refuses any frame with something on its edge, so nothing is cut off.
+
+The wrecks keep the depots' three paint masks, so each depot's corpse (`prototypes/remnants.lua`, one per depot) draws its shared wreck in its own colours: a red Provider leaves a red wreck, a blue Request a blue one. Each `sheets/<layer>.png` is one row of 512 px frames in the order the game turns the entity (north, then clockwise): four for depots, eight for the freighter. A corpse takes the direction of what died, so for the depots the mod shows half a turn from their artwork (Provider, Request, Buffer, Fuel), `sheet_order` in `asset.json` puts the artwork's south frame first. `previews/directions.png` shows every frame.
+
+```sh
+python3 assets/depots/tools/render_remnants.py      # add --name cargo for one; builds masters/wreck.blend, then renders
+                                                    # (every wreck, the freighter's too)
+(cd assets/depots/tools && ../../../.venv/bin/python package_remnants.py)
+```
+
+Rendering takes about a minute a frame. Like `render_depots.py`, it stops if that wreck's local renders came from other inputs: delete its `masters/` contents and `frames/`, then run it again. `validation.json` records the hashes of the wreck's `asset.json` (seed, directions, `sheet_order`), its master, the builder and the renderer, which `tools/check_blender_sources.py` compares with the committed files, so changing any of them needs the wreck rendered again. Each area's art check covers its own wrecks; CI's art checkout of an area also fetches the other area's `tools/`, and a change to the builder or renderer runs both art checks.
 
 ## Not yet implemented
 

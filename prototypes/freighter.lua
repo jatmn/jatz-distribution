@@ -5,6 +5,7 @@
 -- stays defined but hidden, so cars already placed in a save keep driving and mine back to items.
 local constants = require("prototypes.constants")
 local art = require("prototypes.freighter-art")
+local remnants = require("prototypes.remnants")
 
 local name = "jatz-quinityn-freighter"
 local drivable = settings.startup["jatz-freighter-drivable"].value
@@ -15,6 +16,8 @@ freighter.icon = constants.freighter_icon
 freighter.icon_size = constants.icon_size
 freighter.minable = { mining_time = 0.5, result = name }
 freighter.animation = art.animation()
+-- Destroyed, it leaves its own wreck rather than the car's (prototypes/remnants.lua).
+freighter.corpse = remnants.freighter
 -- No gun turret, and the car's lamp sprite doesn't fit this body.
 freighter.turret_animation = nil
 freighter.light_animation = nil

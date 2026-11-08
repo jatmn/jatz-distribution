@@ -15,6 +15,7 @@
 local constants = require("prototypes.constants")
 local art = require("prototypes.freighter-art")
 local paint = require("scripts.freighter-paint")
+local remnants = require("prototypes.remnants")
 
 -- Headlights at night: the car's light cones (the drivable freighter keeps them as they are),
 -- scaled to the small freighter. The car's cones are centred 14 tiles ahead and, on many
@@ -68,10 +69,11 @@ local function drone(name, cargo)
     hidden = true,
     flags = { "placeable-player", "placeable-off-grid", "not-blueprintable", "not-deconstructable" },
     max_health = 500,
-    -- Dies like the drivable freighter, a copy of the base car (prototypes/freighter.lua): it
-    -- explodes and leaves the car's wreck, which the game removes after 15 minutes.
+    -- Dies like the drivable freighter (prototypes/freighter.lua): it explodes as the base car
+    -- does and leaves the freighter's own wreck (prototypes/remnants.lua), which the game
+    -- removes after 15 minutes.
     dying_explosion = data.raw.car.car.dying_explosion,
-    corpse = data.raw.car.car.corpse,
+    corpse = remnants.freighter,
     -- Headlights at night (HEADLIGHTS above). Transport Drones' trucks (Factorio 1.1) lit the
     -- road ahead the same way.
     light = HEADLIGHTS,

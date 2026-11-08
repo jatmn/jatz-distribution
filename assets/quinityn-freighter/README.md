@@ -20,6 +20,7 @@ An armored eight-wheel freight truck with three cargo bays and an exposed power 
 | `technology/quinityn-freighter.png` | Technology icon (Freight system, speed, item and fluid capacity research): the same frame at 256 px, no mipmaps, made by `tools/make_icons.py`; `technology/icons.json` records its source |
 | `previews/` | 64-direction contact sheet, turntable animation, per-layer compass sheets, fan clearance check and `recolor.html`, a recoloring viewer you open in a browser |
 | `asset.json` | Default palette, scale and render settings |
+| `remnants/freighter/` | The wreck a destroyed freighter leaves, made from this model by `assets/depots/tools/build_remnants.py`; see [Remnants](../depots/README.md#remnants) |
 | `tools/` | Model builder, render driver and renderer, packager, preview generator and validators |
 | `*-validation.json`, `checksums.json` | Results from the most recent validation run |
 

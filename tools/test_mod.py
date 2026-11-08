@@ -86,6 +86,10 @@ EXPECTED = {'recipes': RECIPES,
             'researched_speed': 2.2, 'researched_speed_reversed': 1.6, 'researched_first_load': 1200,
             'researched_received': 2000,
             'ghosts': 28, 'placed': 28, 'rotations': 112, 'pipe_connections': 20,
+            # Each depot destroyed facing east, south and west leaves its own wreck, facing as it did.
+            'wrecks': {f'jatz-{role}-depot-remnants/{heading}': True for role in (
+                'provider', 'request', 'buffer', 'fuel', 'liquid-provider', 'liquid-request', 'liquid-buffer')
+                for heading in (4, 8, 12)},
             'cleared_zones': 28,
             # Deliveries (tests/factorio/jatz-distribution-check_0.1.0/control.lua): 30 of the
             # provider's 50 iron plates reach the request over the road; the request on an
@@ -177,11 +181,12 @@ EXPECTED = {'recipes': RECIPES,
             'two_proxies_requested': 5,
             # Enemies: a freighter runs over a biter on the road (impact damage) and delivers
             # anyway, leaving the player beside it unhurt; biters destroy another freighter, which
-            # explodes and leaves the car's wreck where it died. Its depot asks robots for a
+            # explodes and leaves the freighter's own wreck where it died, facing as it drove. Its depot asks robots for a
             # replacement at once, is filled by its other freighters, and the robots bring the
             # replacement (3 again). Freighters out show up in the pollution statistics.
             'runover_received': 10, 'runover_biter': 'jatz-freighter-drone/impact', 'bystander_unhurt': True,
             'ambush_killed_by': 'behemoth-biter/physical', 'ambush_exploded': True, 'ambush_wrecks': 1,
+            'ambush_wreck_faces_freighter': True,
             'ambush_replacement_requested': 1, 'ambush_received': 10,
             'ambush_freighters_home': 3, 'freighters_polluted': True,
             # The request panel's status light: the game's four status indicator sprites exist.
