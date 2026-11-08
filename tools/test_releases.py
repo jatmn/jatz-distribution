@@ -13,7 +13,7 @@ import zipfile
 
 from package_mod import REPO, build, mod_files
 import publish_mod
-from release_metadata import PENDING, finalize, package_metadata, split_notes
+from release_metadata import SEPARATOR, finalize, package_metadata, split_notes
 from validate_package import validate
 
 
@@ -69,24 +69,65 @@ class Releases(unittest.TestCase):
                 self.assertEqual(zipped.read(f'{info["name"]}_{self.version}/{name}'), (self.root / name).read_bytes())
             self.assertFalse(any('/tools/' in name or '/masters/' in name for name in zipped.namelist()))
 
+    def note_source(self, fragment):
+        """Main's changelog and note files, as the release workflow copies them."""
+        source = self.root / 'main-notes'
+        if source.exists():
+            for path in source.rglob('*'):
+                if path.is_file():
+                    path.unlink()
+        unreleased = source / 'changelog' / 'unreleased'
+        unreleased.mkdir(parents=True)
+        (source / 'changelog.txt').write_text(self.history)
+        (unreleased / 'cargo.txt').write_text(fragment)
+        unreleased = self.root / 'changelog' / 'unreleased'
+        unreleased.mkdir(parents=True, exist_ok=True)
+        (unreleased / 'cargo.txt').write_text(fragment)
+        return source
+
+    def test_separate_note_files_merge_without_editing_changelog(self):
+        changelog = (self.root / 'changelog.txt').read_text()
+        notes = self.root / 'changelog' / 'unreleased'
+        notes.mkdir(parents=True)
+        (notes / 'a-bug.txt').write_text('  Bugfixes:\n    - First fix.\n')
+        (notes / 'b-feature.txt').write_text('  Features:\n    - New depot.\n  Bugfixes:\n    - Second fix.\n')
+        info, text = package_metadata(self.root)
+        self.assertEqual((self.root / 'changelog.txt').read_text(), changelog)
+        self.assertTrue((notes / 'a-bug.txt').is_file())
+        self.assertIn('Version: ' + info['version'], text)
+        self.assertLess(text.index('  Features:'), text.index('  Bugfixes:'))
+        self.assertLess(text.index('First fix.'), text.index('Second fix.'))
+        self.assertIn('Development snapshot.', text)
+
+    def test_shared_changelog_section_is_rejected(self):
+        (self.root / 'changelog.txt').write_text(
+            SEPARATOR + 'Version: Unreleased\n  Bugfixes:\n    - Old shared section.\n' + self.history)
+        with self.assertRaisesRegex(ValueError, 'changelog/unreleased'):
+            package_metadata(self.root)
+
     def test_pending_notes_build_as_numeric_snapshot_then_finalize_and_refresh(self):
-        pending = PENDING + '  Bugfixes:\n    - Keep delivered cargo.\n' + self.history
-        (self.root / 'changelog.txt').write_text(pending)
+        fragment = '  Bugfixes:\n    - Keep delivered cargo.\n'
+        source = self.note_source(fragment)
+        kept = (self.root / 'changelog.txt').read_text()
         source_info = (self.root / 'info.json').read_bytes()
         build(self.output, self.root)
         info, _ = validate(self.output, root=self.root)
         self.assertNotEqual(info['version'], self.version)
         self.assertEqual((self.root / 'info.json').read_bytes(), source_info)
+        self.assertEqual((self.root / 'changelog.txt').read_text(), kept)
         with self.assertRaisesRegex(ValueError, 'Finalize'):
             validate(self.output, 'v' + info['version'], self.root)
         version = self.bump()
-        finalize(self.root, '2026-11-04', pending)
+        finalize(self.root, '2026-11-04', source)
         first = (self.root / 'changelog.txt').read_text()
         self.assertIn('Version: ' + version, first)
         self.assertNotIn('Unreleased', first)
-        finalize(self.root, '2026-11-05', pending)
+        self.assertFalse((self.root / 'changelog' / 'unreleased' / 'cargo.txt').exists())
+        finalize(self.root, '2026-11-05', source)
         self.assertEqual(first, (self.root / 'changelog.txt').read_text())
-        finalize(self.root, '2026-11-05', pending.replace('Keep delivered cargo.', 'Keep all delivered cargo.'))
+        (source / 'changelog' / 'unreleased' / 'cargo.txt').write_text(
+            fragment.replace('Keep delivered cargo.', 'Keep all delivered cargo.'))
+        finalize(self.root, '2026-11-05', source)
         updated = (self.root / 'changelog.txt').read_text()
         self.assertIn('Date: 2026-11-04', updated)
         self.assertIn('Keep all delivered cargo.', updated)
@@ -119,9 +160,11 @@ class Releases(unittest.TestCase):
             validate(self.output, self.tag, self.root)
 
     def test_invalid_player_notes_are_rejected(self):
+        notes = self.root / 'changelog' / 'unreleased'
+        notes.mkdir(parents=True)
         for body in ('\tBugfixes:\n', '  Bugfixes:\n    - trailing \n', '    - No category.\n'):
             with self.subTest(body=body):
-                (self.root / 'changelog.txt').write_text(PENDING + body + self.history)
+                (notes / 'bad.txt').write_text(body)
                 with self.assertRaises(ValueError):
                     build(self.output, self.root)
 
@@ -188,7 +231,7 @@ class ReleaseBranchGuard(unittest.TestCase):
         start = workflow.index('          branch=release-please--branches--main')
         end = workflow.index('          python3 tools/release_metadata.py', start)
         guard = '\n'.join(line[10:] for line in workflow[start:end].splitlines())
-        for scenario in ('valid', 'code change', 'metadata symlink', 'stale head'):
+        for scenario in ('valid', 'code change', 'metadata symlink', 'note symlink', 'stale head'):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as folder:
                 root = Path(folder)
                 repo = root / 'repo'
@@ -203,6 +246,10 @@ class ReleaseBranchGuard(unittest.TestCase):
                 (repo / 'info.json').write_text('{"version":"0.1.0"}')
                 (repo / 'changelog.txt').write_text('main notes')
                 (repo / 'tool.py').write_text('trusted code')
+                if scenario == 'note symlink':
+                    notes = repo / 'changelog' / 'unreleased'
+                    notes.mkdir(parents=True)
+                    (notes / 'bad.txt').symlink_to('tool.py')
                 git('add', '.')
                 git('commit', '-m', 'base')
                 base = git('rev-parse', 'HEAD')
@@ -230,7 +277,7 @@ class ReleaseBranchGuard(unittest.TestCase):
                 if scenario == 'valid':
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(git('rev-parse', 'HEAD'), head)
-                    self.assertEqual((root / 'player-notes.txt').read_text(), 'main notes')
+                    self.assertEqual((root / 'player-notes' / 'changelog.txt').read_text(), 'main notes')
                 else:
                     self.assertNotEqual(result.returncode, 0)
                     self.assertEqual(git('rev-parse', 'HEAD'), base)

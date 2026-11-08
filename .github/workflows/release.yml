@@ -79,15 +79,38 @@ jobs:
               exit 1
             fi
           done
-          git show "$GITHUB_SHA:changelog.txt" > "$RUNNER_TEMP/player-notes.txt"
+          # Copy main's notes as ordinary files. Never check out or run the release branch's copies.
+          test -n "$RUNNER_TEMP"
+          notes="$RUNNER_TEMP/player-notes"
+          rm -rf "$notes"
+          mkdir -p "$notes"
+          git show "$GITHUB_SHA:changelog.txt" > "$notes/changelog.txt"
+          while IFS= read -r entry; do
+            [ -n "$entry" ] || continue
+            mode="${entry%%$'\t'*}"
+            path="${entry#*$'\t'}"
+            case "$path" in
+              changelog/unreleased/*.txt) ;;
+              *) echo "::error::Unexpected player-note path: $path"; exit 1 ;;
+            esac
+            case "$mode" in
+              '100644 blob '*) ;;
+              *) echo "::error::Player notes must be a regular file: $path"; exit 1 ;;
+            esac
+            mkdir -p "$notes/$(dirname "$path")"
+            git show "$GITHUB_SHA:$path" > "$notes/$path"
+          done < <(git ls-tree -r "$GITHUB_SHA" -- changelog/unreleased)
           git checkout -B "$branch" FETCH_HEAD
-          python3 tools/release_metadata.py --date "$(date -u +%F)" --notes-from "$RUNNER_TEMP/player-notes.txt"
+          python3 tools/release_metadata.py --date "$(date -u +%F)" --notes-from "$notes"
           python3 tools/package_mod.py
           python3 tools/validate_package.py
-          if git diff --quiet -- changelog.txt; then exit 0; fi
+          if git diff --quiet -- changelog.txt changelog/unreleased; then exit 0; fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add changelog.txt
+          git add -- changelog.txt
+          if git ls-files -- changelog/unreleased | grep -q .; then
+            git add -A -- changelog/unreleased
+          fi
           git commit -m 'chore: finalize player release notes'
           git push origin "HEAD:refs/heads/$branch"
 

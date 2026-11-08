@@ -8,14 +8,14 @@ from pathlib import Path
 import zipfile
 
 from package_mod import REPO, mod_files
-from release_metadata import package_metadata, split_notes, validate_notes
+from release_metadata import has_pending_notes, package_metadata, validate_notes
 
 
 def validate(output, tag=None, root=REPO):
     info, notes = package_metadata(root)
     source_info = json.loads((root / 'info.json').read_text())
     if tag is not None:
-        if split_notes((root / 'changelog.txt').read_text())[0] is not None:
+        if has_pending_notes(root):
             raise ValueError('Finalize Unreleased notes before stable publication')
         if tag != 'v' + info['version']:
             raise ValueError('Stable tag must match the package version')
