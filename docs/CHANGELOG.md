@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.1.5](https://github.com/jatmn/jatz-distribution/compare/v0.1.4...v0.1.5) (2026-11-08)
+
+
+### Features
+
+* give destroyed depots and freighters their own wrecks ([#80](https://github.com/jatmn/jatz-distribution/issues/80)) ([c47c78e](https://github.com/jatmn/jatz-distribution/commit/c47c78e4aacb7e0eed02aa7d72be8c86999617a7))
+* let logistic robots use provider and buffer depots ([#79](https://github.com/jatmn/jatz-distribution/issues/79)) ([65e2b35](https://github.com/jatmn/jatz-distribution/commit/65e2b356efdea635cd737a90a28b807537230e9c))
+* let players set item and fuel depot slots and the fuel depot's tank size ([#78](https://github.com/jatmn/jatz-distribution/issues/78)) ([c90a080](https://github.com/jatmn/jatz-distribution/commit/c90a0800ae1db9b7d26fd20d6b4da5b9fa28afc0))
+* road tunnels that freighters drive through under the factory ([#81](https://github.com/jatmn/jatz-distribution/issues/81)) ([19e7e69](https://github.com/jatmn/jatz-distribution/commit/19e7e6954962ab0de22815c772edf10e7bd6bef3))
+
+
+### Bug Fixes
+
+* cap item depot requests at what their chest holds ([#77](https://github.com/jatmn/jatz-distribution/issues/77)) ([542cdca](https://github.com/jatmn/jatz-distribution/commit/542cdca555431c81fa5b419dc76707112dfadba7))
+
+
+### Refactoring
+
+* split scripts/logistics.lua into modules, and guard the 200-local limit ([#75](https://github.com/jatmn/jatz-distribution/issues/75)) ([9a20dc3](https://github.com/jatmn/jatz-distribution/commit/9a20dc38657888b347a9c271ab9494b8d7a3b498))
+
 ## [0.1.4](https://github.com/jatmn/jatz-distribution/compare/v0.1.3...v0.1.4) (2026-11-08)
 
 
