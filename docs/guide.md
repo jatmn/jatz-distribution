@@ -113,7 +113,7 @@ A light beside the request shows at a glance whether it can be filled. Hover it 
 | Light | Meaning |
 | --- | --- |
 | 🟢 Green | Stocked, a freighter is on its way, or it's finding a provider (or, for a request depot, a buffer depot) by road |
-| 🟡 Yellow | Waiting on something in the way: no room in the depot, waiting for a full load (with **Full loads only** ticked), its loading zone isn't on road, no road route to a provider (or, for a request depot, a buffer depot) that has it, no freighters (or none could be sent), freighters too low on fuel while the fuel depots are empty, or a liquid depot's tank holds another fluid |
+| 🟡 Yellow | Waiting on something in the way: no room in the depot, waiting for a full load (with **Full loads only** ticked) or, for a liquid depot, for at least 100, its loading zone isn't on road, no road route to a provider (or, for a request depot, a buffer depot) that has it, no freighters (or none could be sent), freighters too low on fuel while the fuel depots are empty, or a liquid depot's tank holds another fluid |
 | 🔴 Red | No provider depot with road at its loading zone has it (nor, for a request depot, any buffer depot), its freighters need fuel and no fuel depot is connected by road, or the depot is switched off by its circuit condition |
 | ⚪ Grey | Nothing requested |
 
@@ -150,6 +150,7 @@ Liquid depots work the same way for fluids. Research **Liquid freight** to unloc
 - Every liquid depot's tank holds 25,000 by default. You can change the tank size of liquid provider depots and of liquid buffer depots separately under **Settings → Mod settings → Startup**. Making a tank smaller on an existing save can lose the fluid above the new size. A liquid request or buffer depot can't request more than its tank holds: a larger amount is set to the tank's size.
 - Fluids keep their temperature on the way.
 - A liquid depot whose tank holds a different fluid waits until it is emptied.
+- Freighters never set off for less than **100** of a fluid, so the last drops pumps leave in a tank, or a little drained out of the requesting tank by pipes, don't keep them driving back and forth. The requesting depot waits until it has room for 100 and a depot it fetches from has 100 to give. A request below 100 is fetched whole once there is room for all of it. **Full loads only** still raises this to a whole load.
 - Items and fluids never mix: item depots only deal with item depots, liquid depots with liquid depots.
 
 ## Mining Drones
