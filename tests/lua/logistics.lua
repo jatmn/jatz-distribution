@@ -4817,14 +4817,16 @@ do -- Its provider removed while under ground: the reroute search it starts is s
   answer(logistics, 1, "none")
   local trip = trip_of(request)
   arrive(logistics, trip)
+  -- The unseen freighter has one direction: the game turns it north.
+  trip.drone.orientation = 0
   provider.valid = false
   logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = provider.unit_number })
   check("a reroute under ground searches", trip.searching ~= nil)
   local searching = trip.id
   arrive(logistics, trip)
   check(
-    "it comes out to wait for the answer, the same unit",
-    trip.id == searching and trip.drone.position.x == 30.5 and trip.tunnel == nil
+    "it comes out to wait for the answer, the same unit, facing out of the east mouth",
+    trip.id == searching and trip.drone.position.x == 30.5 and trip.tunnel == nil and trip.drone.orientation == 0.25
   )
   answer(logistics, #requests, "route")
   check(

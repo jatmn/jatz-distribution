@@ -3084,10 +3084,16 @@ function logistics.out_of_tunnel(id, trip)
   trip.tunnel = nil
   trip.origin = tunnel.exit
   trip.last_position = nil
+  -- Facing out of the far mouth (or as it went in, should that portal be gone), not as the unseen
+  -- freighter stood: north, which it then turned from at once. However it comes out.
+  local facing = tunnels.facing(tunnel.to) or tunnel.orientation
   if trip.searching then
     -- A search under way belongs to this unit (its id): it comes out unseen, waits for the answer,
     -- and is painted once that is in (check_trip), as repainting would make the search stale.
+    -- Painting keeps its facing, so it is turned now. (A stop keeps a unit's facing; an idle one
+    -- drifts round, probed on 2.1.24.)
     trip.drone.teleport(tunnel.exit)
+    trip.drone.orientation = facing or trip.drone.orientation
     return logistics.command(trip, { type = defines.command.stop, distraction = defines.distraction.none })
   end
   if not repaint(id, trip, tunnel.exit) then
@@ -3095,9 +3101,7 @@ function logistics.out_of_tunnel(id, trip)
     -- (check_trip).
     trip.drone.teleport(tunnel.exit)
   end
-  -- Facing out of the far mouth (or as it went in, should that portal be gone), not as the unseen
-  -- freighter stood: north, which it then turned from at once.
-  trip.drone.orientation = tunnels.facing(tunnel.to) or tunnel.orientation or trip.drone.orientation
+  trip.drone.orientation = facing or trip.drone.orientation
   show_cargo(trip)
   drive(trip, trip.destination or target(trip))
 end
