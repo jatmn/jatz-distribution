@@ -4,16 +4,16 @@ Release Please follows the same workflow as [yuoki-quinityn](https://github.com/
 
 ## Prepare a release
 
-Use Conventional Commit PR titles (`feat:`, `fix:`, `ci:`, etc.). Release Please generates `docs/CHANGELOG.md` for GitHub from merged commits. Player-facing notes belong in the separate Factorio `changelog.txt`. Add an entry above the existing numbered history, using exactly 99 dashes for each separator:
+Use Conventional Commit PR titles (`feat:`, `fix:`, `ci:`, etc.). Release Please generates `docs/CHANGELOG.md` for GitHub from merged commits. Player-facing notes belong in the separate Factorio `changelog.txt`. Ordinary pull requests do not edit that file, because every one of them would then conflict with the others. Each pull request adds its own file under `changelog/unreleased/`, named for the change, and the release workflow assembles those files. The file holds Factorio categories and entries only:
 
 ```text
----------------------------------------------------------------------------------------------------
-Version: Unreleased
   Bugfixes:
     - Describe the change players will notice.
 ```
 
-Do not change `info.json`, `.github/version.txt` or `.github/release-please-manifest.json` in ordinary feature PRs. Release Please updates all three together. The workflow finalizes player notes on its verified same-repository release branch with the new version and UTC preparation date. Updated main-branch player notes refresh the release PR while preserving its first preparation date. A release with no player-facing notes gets an explicit entry saying so.
+Do not add `Version:` or `Date:` lines, and do not edit `changelog.txt` or another pull request's note file. Different files merge independently.
+
+Do not change `info.json`, `.github/version.txt` or `.github/release-please-manifest.json` in ordinary feature PRs. Release Please updates all three together. The workflow reads the note files on main, writes them into `changelog.txt` on its verified same-repository release branch with the new version and UTC preparation date, and removes those files so the same note is not published again. Updated notes on main refresh the release PR while preserving its first preparation date. A release with no player-facing notes gets an explicit entry saying so.
 
 Review both changelogs and the successful `CI result` before merging the release PR. Merging it authorizes the stable `vX.Y.Z` tag, GitHub release, ZIP and `SHA256SUMS`, and the optional portal upload if connected. The release workflow calls publishing directly; it does not depend on a tag-triggered workflow.
 

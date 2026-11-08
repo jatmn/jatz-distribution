@@ -12,7 +12,7 @@ import textwrap
 import unittest
 
 from ci_changes import classify
-from release_metadata import PENDING, SEPARATOR, finalize, package_metadata
+from release_metadata import SEPARATOR, finalize, package_metadata
 
 ROUTER = Path(__file__).with_name('ci_changes.py').resolve()
 REPO = ROUTER.parents[1]
@@ -273,7 +273,7 @@ class ReleaseNotesHoldTests(unittest.TestCase):
         release = {'info.json': '{"name": "jatz-distribution", "version": "0.1.1"}\n', '.github/version.txt': '0.1.1\n',
                    '.github/release-please-manifest.json': '{".": "0.1.1"}\n', 'docs/CHANGELOG.md': '# Changelog\n'}
         # With pending player notes, and without any: the finalizer then adds "No player-facing changes."
-        for notes in (PENDING + '  Bugfixes:\n    - Keep delivered cargo.\n', ''):
+        for notes in ('  Bugfixes:\n    - Keep delivered cargo.\n', ''):
             for scenario, changes, finalized, expected in (
                 ('Release Please bumped the version', release, False, True),
                 ('notes finalized', release, True, False),
@@ -288,7 +288,9 @@ class ReleaseNotesHoldTests(unittest.TestCase):
                     repo.write('info.json', '{"name": "jatz-distribution", "version": "0.1.0"}\n')
                     repo.write('.github/version.txt', '0.1.0\n')
                     repo.write('.github/release-please-manifest.json', '{".": "0.1.0"}\n')
-                    repo.write('changelog.txt', notes + history)
+                    repo.write('changelog.txt', history)
+                    if notes:
+                        repo.write('changelog/unreleased/cargo.txt', notes)
                     repo.write('control.lua')
                     base = repo.commit('base')
                     for name, text in changes.items():
