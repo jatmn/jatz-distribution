@@ -43,9 +43,11 @@ def mod_files(root=REPO):
         # One icon per depot, named from the depot itself, so a missing icon stops the build.
         files += [depots / f'icons/{json.loads(metadata.read_text())["role"]}-depot.png']
     # The road network monitor draws its default-colour preview and shadow (prototypes/road-monitor.lua).
-    files += [depots / f'road-monitor/1/sheets/{layer}.png' for layer in ('preview', 'shadow')]
-    files += [depots / 'icons/road-monitor.png']
-    files += [depots / f'technology/{name}.png' for name in ('liquid-provider-depot', 'road-monitor')]
+    # So does the road tunnel's portal (prototypes/road-tunnel.lua).
+    for small in ('road-monitor', 'road-tunnel'):
+        files += [depots / f'{small}/1/sheets/{layer}.png' for layer in ('preview', 'shadow')]
+        files += [depots / f'icons/{small}.png']
+    files += [depots / f'technology/{name}.png' for name in ('liquid-provider-depot', 'road-monitor', 'road-tunnel')]
     files += [depots / f'connectors/sheets/{layer}.png' for layer in ('base', 'shadow')]
     files += [depots / 'loading-zone/loading-zone.png']
     # What destroyed depots and freighters leave (prototypes/remnants.lua).

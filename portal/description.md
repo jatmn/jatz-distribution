@@ -40,6 +40,7 @@ You'll feel at home: roads, provider and request depots, buffers, fluids and fue
 - **Cargo you can read at a glance.** A freighter's cargo bays are light grey while empty, then take the color of what it picked up: copper orange, sulfur yellow, water blue. In alt mode, loaded freighters show their cargo's icon.
 - **Cargo stays intact.** Armor keeps its equipment and food keeps track of its spoilage on the way.
 - **You choose who supplies whom.** Rank provider and buffer depots from 1 to 10, and decide per depot whether buffers or providers come first.
+- **Road tunnels.** Like underground belts for your roads: freighters drive in at one end and come out at the other, under whatever stands between.
 - **Circuit control built in.** Switch provider, request and buffer depots on or off with a circuit condition that reads the network or just the depot's own contents. The **road network monitor** reads what a whole road network holds, or what its request depots still need.
 - **Losses replace themselves.** A request depot that loses a freighter asks construction robots for a new one.
 - **Blueprint everything.** Copy and paste and blueprints keep requests, priorities, circuit conditions and freighter counts, and construction robots bring the trucks.
@@ -92,6 +93,8 @@ Every recipe uses things you can already make when its research finishes. Click 
 
 [![Factoriopedia recipes for the Quinityn freighter, its Space Age carbon version, road and the road network monitor](images/recipes-freighter-road-monitor.jpg)](images/recipes-freighter-road-monitor.jpg)
 
+**Road tunnels** (Road tunnels research): 20 stone brick, 10 steel plate and 10 iron gear wheels make a pair.
+
 The 5 coal in a freighter is its first full tank. With **Space Age**, you can make freighters with 10 carbon instead, for planets without coal. Road is cheap slag: 5 stone and 5 iron ore make 10 tiles.
 
 **Liquid depots** (Liquid freight)
@@ -107,6 +110,7 @@ The 5 coal in a freighter is its first full tank. With **Space Age**, you can ma
 | **Freight system** | Engine | 200 × red and green, 30 s | Provider, request, buffer and fuel depots, the freighter and road |
 | **Liquid freight** | Freight system, Fluid handling | 200 × red and green, 30 s | The three liquid depots |
 | **Road network monitor** | Freight system, Circuit network | 500 × red and green, 30 s | The road network monitor |
+| **Road tunnels** | Freight system, Logistics | 300 × red and green, 30 s | Road tunnels |
 | **Freighter speed** 1–4, then infinite | Freight system | From 200 × red and green | +20% freighter speed per level, freighters already on the road included |
 | **Freighter item capacity** 1–5 | Freight system | From 200 × red and green | +1 stack per trip per level |
 | **Freighter fluid capacity** 1–5 | Liquid freight | From 200 × red and green | +50 fluid per trip per level |

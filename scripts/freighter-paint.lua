@@ -18,6 +18,8 @@ paint.empty = "jatz-freighter-drone"
 paint.empty_color = { r = 0.8, g = 0.8, b = 0.8, a = 1 }
 -- Loaded with something no rule gives a color to: the artwork's default cargo paint.
 paint.unknown = paint.empty .. "-loaded"
+-- Driving through a road tunnel (scripts/tunnels.lua): the same freighter, unseen.
+paint.underground = paint.empty .. "-underground"
 -- The mod-data prototype holding each item's and fluid's paint (prototypes/freighter-colors.lua).
 paint.colors = "jatz-freighter-colors"
 
@@ -71,9 +73,9 @@ function paint.palette()
   return list
 end
 
--- Every delivering freighter's prototype name: empty, unknown and painted.
+-- Every delivering freighter's prototype name: empty, unknown, painted and under ground.
 function paint.names()
-  local names = { paint.empty, paint.unknown }
+  local names = { paint.empty, paint.unknown, paint.underground }
   for _, entry in ipairs(paint.palette()) do
     names[#names + 1] = entry.name
   end

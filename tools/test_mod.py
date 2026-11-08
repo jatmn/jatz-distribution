@@ -57,6 +57,9 @@ RECIPES = {
     'jatz-road': {'time': 1, 'made': 10, 'ingredients': {'stone': 5, 'iron-ore': 5}},
     'jatz-road-monitor': {'time': 5, 'made': 1, 'ingredients': {
         'constant-combinator': 1, 'electronic-circuit': 5, 'copper-cable': 5}},
+    # Proposed with road tunnels (November 8, 2026), for the owner's approval: a pair of portals.
+    'jatz-road-tunnel': {'time': 10, 'made': 2, 'ingredients': {
+        'stone-brick': 20, 'steel-plate': 10, 'iron-gear-wheel': 10}},
 }
 # With Space Age, the freighter can be fuelled with 10 carbon instead, also by the freight system.
 CARBON_RECIPE = 'jatz-quinityn-freighter-carbon'
@@ -79,7 +82,10 @@ EXPECTED = {'recipes': RECIPES,
                                         'unlocked': 3, 'recipes': [
                     'jatz-liquid-provider-depot', 'jatz-liquid-request-depot', 'jatz-liquid-buffer-depot']},
                 'jatz-road-network-monitor': {'prerequisites': ['circuit-network', 'jatz-freight-system'], 'locked': 1,
-                                              'unlocked': 1, 'recipes': ['jatz-road-monitor']}},
+                                              'unlocked': 1, 'recipes': ['jatz-road-monitor']},
+                # Road tunnels, after the freight system and underground belts (logistics).
+                'jatz-road-tunnels': {'prerequisites': ['jatz-freight-system', 'logistics'], 'locked': 1,
+                                      'unlocked': 1, 'recipes': ['jatz-road-tunnel']}},
             'speed_infinite': True, 'research_levels': {'jatz-freighter-speed': 5, 'jatz-freighter-item-capacity': 5,
                                                         'jatz-freighter-fluid-capacity': 5},
             'researched_levels': {'speed': 6, 'item_capacity': 2, 'fluid_capacity': 3, 'fresh': 0},
@@ -116,7 +122,7 @@ EXPECTED = {'recipes': RECIPES,
             'depot_on_road': False, 'depot_ghost_on_road': False, 'depot_zone_on_road': True,
             'on_road': {'small-electric-pole': False, 'inserter': False, 'wooden-chest': False,
                         'transport-belt': True, 'pipe': True, 'straight-rail': True, 'jatz-quinityn-freighter': True,
-                        'jatz-road-monitor': False},
+                        'jatz-road-monitor': False, 'jatz-road-tunnel': False},
             # Nor can road be laid under any of them, a gate included while it stands open.
             'road_under': {'open_gate': 'grass-1', 'closed_gate': 'grass-1', 'pole': 'grass-1',
                            'gate_still_open': True, 'gate_closed': True},
@@ -127,6 +133,9 @@ EXPECTED = {'recipes': RECIPES,
             # The provider nearest by road wins over the one nearest in a straight line, and a
             # request with no road route to any provider sends no freighter at all.
             'shortest_from_far': 10, 'shortest_from_near': 0, 'island_freighter_sent': False,
+            # A road tunnel's two portals pair up and join two road networks under the walls between
+            # them: the freighter goes under, unseen, and brings the radars.
+            'tunnel_paired': True, 'tunnel_received': 10, 'tunnel_went_under': True,
             # The freighter is drawn at 60% of the artwork's scale (1.5 x 4.5 tiles measured): 0.9 x 2.7,
             # as the engine stores it, in 1/256 tiles rounded towards the centre.
             'freighter_box': [0.8984375, 2.6953125],

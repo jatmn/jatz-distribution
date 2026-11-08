@@ -139,4 +139,31 @@ local drones = {
 for _, entry in ipairs(paint.palette()) do
   drones[#drones + 1] = drone(entry.name, entry.color)
 end
+
+-- The freighter going through a road tunnel (scripts/logistics.lua: into_tunnel): the same unit,
+-- but drawn as nothing, lit by nothing and not selectable, as it stands unseen at the tunnel's mouth
+-- until it comes out at the other end. (Every unit is a military target in 2.1: the game refuses
+-- `is_military_target = false` for one, so enemies at the mouth can still hurt it.)
+local NOTHING = {
+  filename = "__core__/graphics/empty.png",
+  priority = "extra-high",
+  width = 1,
+  height = 1,
+  direction_count = 1,
+  frame_count = 1,
+}
+local underground = drone(paint.underground, nil)
+underground.flags = {
+  "placeable-player",
+  "placeable-off-grid",
+  "not-blueprintable",
+  "not-deconstructable",
+  "not-on-map",
+  "not-selectable-in-game",
+}
+underground.selection_box = nil
+underground.light = nil
+underground.run_animation = NOTHING
+underground.attack_parameters.animation = NOTHING
+drones[#drones + 1] = underground
 data:extend(drones)

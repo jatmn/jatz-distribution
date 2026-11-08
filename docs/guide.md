@@ -4,6 +4,7 @@ Everything you need to know to run Jat'z Distribution in your factory. New to th
 
 - [Research](#research)
 - [Roads](#roads)
+- [Road tunnels](#road-tunnels)
 - [Setting up a delivery](#setting-up-a-delivery)
 - [The freighter slot](#the-freighter-slot)
 - [How freighters choose where to go](#how-freighters-choose-where-to-go)
@@ -19,7 +20,7 @@ Everything you need to know to run Jat'z Distribution in your factory. New to th
 
 ## Research
 
-Research **Freight system** (after Engine, with red and green science) to unlock the provider, request, buffer and fuel depots, the freighter and road. **Liquid freight** expands it with the liquid depots: research it after Freight system and Fluid handling. **Road network monitor**, after Freight system and Circuit network, unlocks the [road network monitor](#road-network-monitor). In a game started before research came to the mod, these three are already researched, so nothing you could build is taken away.
+Research **Freight system** (after Engine, with red and green science) to unlock the provider, request, buffer and fuel depots, the freighter and road. **Liquid freight** expands it with the liquid depots: research it after Freight system and Fluid handling. **Road network monitor**, after Freight system and Circuit network, unlocks the [road network monitor](#road-network-monitor). In a game started before research came to the mod, these three are already researched, so nothing you could build is taken away. **Road tunnels**, after Freight system and Logistics, unlocks [road tunnels](#road-tunnels).
 
 Upgrades make freighters better:
 
@@ -36,6 +37,17 @@ Freighters drive **only on road**. Road is a floor tile you craft and place like
 - Every depot lays a road tile under its loading zone sign (the marked tile) when you build it, except on space platforms. You only need to bring road up to it: road that ends one tile away connects.
 - Removing the depot takes that tile away again and puts back the ground that was there, unless you laid your own road or tile over it.
 - Only belts, pipes and train tracks can be built on road (and vehicles can drive on it). Nothing else can: not depots, though their loading zone sits on road, nor poles, inserters or other buildings. Road can't be laid under them either.
+
+## Road tunnels
+
+Freighters can't drive over buildings, but they can go under them. Road tunnels work like underground belts:
+
+- Build a road tunnel at the end of a road, its mouth to the road: the tile in front of it is where freighters drive in and come out, so it must be road. Build a second one facing it, up to 32 tiles away, at the end of the other road. While you place it, the game shows how far it reaches and which tunnel it joins, as it does for pipes to ground. Each craft makes two.
+- Whatever stands between the two ends doesn't matter: buildings, belts, water.
+- A freighter whose provider, fuel depot or home is on another road network that tunnels join drives to a tunnel's mouth, disappears, and comes out of the other end after as long as driving that far on road takes, then drives on. It can go through several tunnels on one trip.
+- Freighters use tunnels only to reach another road network. If road already joins the two places, they drive the road, even when a tunnel would be shorter.
+- Like any building, a tunnel can't stand on road, and road can't be laid under it.
+- A freighter that is on fire, or splashed with acid or slowed, waits at the mouth until that wears off. One already under ground always comes out at the other end, even if you remove a tunnel meanwhile.
 
 ## Setting up a delivery
 

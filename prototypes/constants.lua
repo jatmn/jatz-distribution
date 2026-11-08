@@ -44,6 +44,10 @@ return {
   fuel_tank = "jatz-fuel-depot-tank",
   -- The combinator that reads what the depots on its road network hold (prototypes/road-monitor.lua).
   road_monitor = "jatz-road-monitor",
+  -- A road tunnel's portal (prototypes/road-tunnel.lua), and how many tiles apart two may be.
+  road_tunnel = "jatz-road-tunnel",
+  tunnel_reach = 32,
+  tunnel_technology_icon = "__jatz-distribution__/assets/depots/technology/road-tunnel.png",
   -- A blueprint's copy of a request or buffer depot's request, for parametrisation
   -- (prototypes/depot-settings.lua).
   depot_settings = "jatz-depot-settings",

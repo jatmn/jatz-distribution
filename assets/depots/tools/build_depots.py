@@ -29,6 +29,13 @@ MONITOR_PALETTE = {'cab':[.36,.26,.17], 'trim':[.80,.38,.12], 'cargo':[.43,.43,.
 # points and activity LED are these, projected for each direction (monitor_points).
 MONITOR_POSTS = {'red':(-.46,.42,1.60), 'green':(.46,.42,1.60)}
 MONITOR_LENS = (.60,-.40,1.28)
+# The road tunnel portal (prototypes/road-tunnel.lua): a low 1x1 arched hood in the same finish,
+# its mouth to the north (+Y), where freighters drive in from the road and go under ground.
+# Build it alone: --role road-tunnel --size 1.
+TUNNEL = 'road-tunnel'
+TUNNEL_PALETTE = MONITOR_PALETTE
+# The hood's arch, in model units (three to a tile): its axis height, outer radius and shell.
+TUNNEL_ARCH = (.10,1.24,.16)
 
 
 def finish(obj, name, mat, bevel=0):
@@ -780,6 +787,79 @@ def monitor_body():
     box('Monitor road plate',(.55,-.735,.92),(.40,.02,.20),brass,.008)
 
 
+def arch(name,y0,y1,radius,thickness,mat,z=TUNNEL_ARCH[0],segments=40):
+    """A half-pipe shell along Y from y0 to y1, standing on the ground: the part of a ring of
+    `radius` (outer) and `thickness` around an axis `z` high that is above the ground."""
+    inner=radius-thickness
+    start=math.asin(max(-1,min(1,-z/radius)))
+    start_inner=math.asin(max(-1,min(1,-z/inner)))
+    verts=[];faces=[]
+    for i in range(segments+1):
+        t=i/segments
+        a=start+(math.pi-2*start)*t
+        b=start_inner+(math.pi-2*start_inner)*t
+        for y in (y0,y1):
+            verts.append((radius*math.cos(a),y,z+radius*math.sin(a)))
+            verts.append((inner*math.cos(b),y,z+inner*math.sin(b)))
+    # Per segment: outer front, inner front, outer back, inner back.
+    for i in range(segments):
+        o0,i0,O0,I0=4*i,4*i+1,4*i+2,4*i+3
+        o1,i1,O1,I1=o0+4,i0+4,O0+4,I0+4
+        faces += [(o0,O0,O1,o1),(i0,i1,I1,I0),(o0,o1,i1,i0),(O0,I0,I1,O1)]
+    last=4*segments
+    faces += [(0,1,3,2),(last,last+2,last+3,last+1)]
+    mesh=bpy.data.meshes.new(name);mesh.from_pydata(verts,[],faces);mesh.update()
+    mesh.validate()
+    shell_mesh=bmesh.new();shell_mesh.from_mesh(mesh)
+    bmesh.ops.recalc_face_normals(shell_mesh,faces=shell_mesh.faces)
+    shell_mesh.to_mesh(mesh);shell_mesh.free()
+    for face in mesh.polygons:face.use_smooth=True
+    obj=bpy.data.objects.new(name,mesh);scene.collection.objects.link(obj)
+    return finish(obj,name,mat)
+
+
+def tunnel_body():
+    """The road tunnel portal, at depot scale (3 units to a tile) for the 1x1 build to scale."""
+    z,radius,shell=TUNNEL_ARCH
+    # Bronze skid under the hood, as under the monitor and the liquid depots' tanks.
+    for x in (-1.12,1.12):
+        box('Tunnel skid rail',(x,-.10,.06),(.26,2.70,.12),steel,.018)
+    for x in (-1.12,1.12):
+        for y in (-1.20,1.00):
+            taper('Bolted tunnel foot',(x,y,.07),(.34,.34),(.28,.28),.14,steel,.05)
+            bolt((x,y,.15),radius=.04)
+    # The grey hood, a half-pipe from the back of the tile to its mouth, with bronze ribs over it.
+    arch('Tunnel hood shell',-1.30,1.05,radius,shell,housing)
+    for y in (-1.05,-.35):
+        arch('Tunnel bronze rib',y-.07,y+.07,radius+.05,shell+.07,steel)
+    # Its brown band near the mouth, and a heavy bronze collar round the mouth itself.
+    arch('Tunnel identification band',.30,.62,radius+.03,shell+.05,rolepaint)
+    arch('Tunnel mouth collar',.95,1.25,radius+.09,shell+.20,steel)
+    # Back wall closing the hood.
+    arch('Tunnel back plate',-1.38,-1.30,radius,radius-.01,housing)
+    # The dark way in, going down under the ground: a deep recess in the mouth, and the ramp's floor.
+    arch('Tunnel mouth darkness',.20,1.06,radius-shell+.005,radius-shell-.10,black)
+    arch('Tunnel deep darkness',.15,.25,radius-shell+.005,radius-shell-.005,black)
+    box('Tunnel ramp floor',(0,.62,.012),(1.80,.86,.024),black,0)
+    # Orange clasps holding the collar to the skid, and brass bolts along the collar's foot.
+    # Orange clasps at both ends, so each view shows some.
+    for x in (-1.22,1.22):
+        for y in (1.10,-1.28):
+            box('Tunnel collar clasp',(x,y,.22),(.16,.34,.30),trim,.012)
+            bolt((x+math.copysign(.085,x),y,.28),'X',radius=.03)
+    for i in range(9):
+        a=math.pi*(i+1)/10
+        bolt((math.cos(a)*(radius+.05),1.255,z+math.sin(a)*(radius+.05)),'Y',radius=.03)
+    # A violet status lens on the crown of the collar, as the depots have.
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=24,ring_count=12,radius=1,location=(0,1.10,z+radius+.12))
+    obj=bpy.context.object;obj.scale=(.09,.09,.05)
+    for face in obj.data.polygons:face.use_smooth=True
+    finish(obj,'Tunnel convex status lens',violet)
+    cylinder('Tunnel status bezel',(0,1.10,z+radius+.10),.13,.05,edge)
+    # Road cue: a brass road-tile plate on the back of the hood.
+    box('Tunnel road plate',(0,-1.385,.45),(.50,.02,.24),brass,.008)
+
+
 def monitor_points(size):
     """Screen offsets, in tiles, of the posts and lens for each direction (north, east, south, west):
     the camera's projection (rotate, then x stays, up is y + z/sqrt(2)) and the ground shadow's
@@ -1273,7 +1353,7 @@ def build(role,size):
     rust=bpy.data.materials['BASE | old oxide and seam deposits']
     rolepaint=bpy.data.materials['PAINT | cab'];trim=bpy.data.materials['PAINT | trim'];housing=bpy.data.materials['PAINT | cargo']
     key=role.removeprefix('liquid-')
-    palette=MONITOR_PALETTE if role==MONITOR else {'cab':ROLE_COLORS[key], 'trim':[.80,.38,.12], 'cargo':[.43,.43,.40]}
+    palette=MONITOR_PALETTE if role==MONITOR else TUNNEL_PALETTE if role==TUNNEL else {'cab':ROLE_COLORS[key], 'trim':[.80,.38,.12], 'cargo':[.43,.43,.40]}
     for mat,channel in [(rolepaint,'cab'),(trim,'trim'),(housing,'cargo')]:
         color=[((v+.055)/1.055)**2.4 if v>.04045 else v/12.92 for v in palette[channel]]
         ramp=mat.node_tree.nodes['Surface pigment'].color_ramp
@@ -1281,7 +1361,7 @@ def build(role,size):
         ramp.elements[1].color=(*color,1)
         mat.diffuse_color=(*color,1)
     configure_depot_materials()
-    if role in ['fuel','liquid-provider','liquid-request','liquid-buffer',MONITOR]:warm_fluid_metal()
+    if role in ['fuel','liquid-provider','liquid-request','liquid-buffer',MONITOR,TUNNEL]:warm_fluid_metal()
     dial=edge.copy();dial.name='BASE | enamel gauge face'
     dial.node_tree.nodes['Surface pigment'].color_ramp.elements[1].color=(.65,.58,.43,1)
     root=bpy.data.objects.new('Depot | rotate this assembly',None)
@@ -1290,9 +1370,11 @@ def build(role,size):
     root['role']=role;root['tile_size']=size
     if role==MONITOR:
         monitor_body()
+    elif role==TUNNEL:
+        tunnel_body()
     else:
         foundation(role)
-    if role==MONITOR:
+    if role in (MONITOR,TUNNEL):
         pass
     elif role in ['provider','request','buffer']:
         before=set(root.children)
@@ -1313,7 +1395,7 @@ def build(role,size):
         # the automated transfer assembly at image right. +Y faces the opposite world axis.
         mirror=Matrix.Diagonal((-1,1,1,1))
         for obj in set(root.children)-before:obj.matrix_basis=mirror@obj.matrix_basis
-    if role!=MONITOR:surface_wear(role)
+    if role not in (MONITOR,TUNNEL):surface_wear(role)
     if size==1:
         for obj in root.children:
             obj.location *= 1/3
@@ -1375,7 +1457,7 @@ def build(role,size):
     scene['layer_mapping']='cab=role, trim=clamps, cargo=housing'
     scene['direction_count']=4
     scene['fidelity_pass']=18
-    scene['concept']='liquid-provider palette (no concept art)' if role==MONITOR else f'concepts/depots/images/{role}.png'
+    scene['concept']='liquid-provider palette (no concept art)' if role in (MONITOR,TUNNEL) else f'concepts/depots/images/{role}.png'
     shadow=bpy.data.scenes.new('Ground shadow')
     shadow.render.engine='CYCLES';shadow.cycles.samples=1;shadow.cycles.use_denoising=False
     shadow.render.film_transparent=True;shadow.camera=camera;shadow.collection.objects.link(camera)

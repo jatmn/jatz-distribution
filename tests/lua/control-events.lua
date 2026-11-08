@@ -2904,4 +2904,44 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
   end
 end
 
+do -- Road tunnels' portals: built, turned, cloned and removed, deliveries re-plan without them.
+  local tunnels = require("scripts.tunnels")
+  local logistics = require("scripts.logistics")
+  local registered = { on_built_entity = false, on_entity_cloned = false }
+  for event in pairs(registered) do
+    for _, filter in ipairs(filters[event]) do
+      registered[event] = registered[event] or filter.name == tunnels.name
+    end
+  end
+  check("building and cloning road tunnels are handled", registered.on_built_entity and registered.on_entity_cloned)
+  local changes = {}
+  local on_roads_changed = logistics.on_roads_changed
+  logistics.on_roads_changed = function(surface_index, added, removed_road)
+    changes[#changes + 1] = { surface_index, added, removed_road }
+  end
+  local function portal()
+    local entity = depot(900)
+    entity.name = tunnels.name
+    return entity
+  end
+  local built = portal()
+  fire("on_built_entity", { entity = built })
+  check(
+    "a built portal is a tunnel, and deliveries plan again",
+    storage.tunnel_portals[built.unit_number] ~= nil and #changes == 1 and changes[1][2] and changes[1][3]
+  )
+  check("it lays no depot road", cell(900, 2).name ~= "jatz-depot-road")
+  fire("on_player_rotated_entity", { entity = built })
+  check("turned, it re-plans them too", #changes == 2)
+  local cloned = portal()
+  fire("on_entity_cloned", { source = built, destination = cloned })
+  check("a cloned portal is a tunnel too", storage.tunnel_portals[cloned.unit_number] ~= nil and #changes == 3)
+  removed(built)
+  check(
+    "a removed portal is forgotten, and deliveries plan without it",
+    storage.tunnel_portals[built.unit_number] == nil and #changes == 4 and changes[4][3]
+  )
+  logistics.on_roads_changed = on_roads_changed
+end
+
 print("all control event checks passed")

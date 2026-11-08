@@ -9,7 +9,10 @@ research.system = "jatz-freight-system"
 research.liquid = "jatz-liquid-freight"
 -- Unlocks the road network monitor, after the circuit network.
 research.monitor = "jatz-road-network-monitor"
--- Every technology that unlocks recipes.
+-- Unlocks road tunnels, after underground belts.
+research.tunnels = "jatz-road-tunnels"
+-- Every technology that unlocked recipes in saves from before research (on_configuration_changed
+-- researches them for those). Road tunnels came after research, so no save had them unlocked.
 research.unlocks = { research.system, research.liquid, research.monitor }
 -- Upgrades are named <name>-<level>.
 research.speed = "jatz-freighter-speed"
