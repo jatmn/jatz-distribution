@@ -12,4 +12,13 @@ data:extend({
     target_movement_modifier = 0.9,
     damage_per_tick = { amount = 0.1, type = "acid" },
   },
+  -- An item stacking to 100 million, as a mod can make: a request depot's 48 stacks of it (4.8
+  -- billion) let a request pass a condition's int32 constant, which no base item can.
+  {
+    type = "item",
+    name = "jatz-check-crate",
+    hidden = true,
+    icon = "__base__/graphics/icons/wooden-chest.png",
+    stack_size = 100000000,
+  },
 })

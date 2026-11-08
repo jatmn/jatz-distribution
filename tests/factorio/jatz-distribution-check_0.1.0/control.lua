@@ -711,6 +711,13 @@ local function setup_deliveries(surface, result)
   assert(buffering.stocked.insert({ name = "copper-cable", count = 30 }) == 30, "cable: cannot stock buffer")
   assert(remote.call("jatz-distribution", "set_request", buffering.request, "copper-cable", 20), "cable: refused")
   assert(remote.call("jatz-distribution", "set_from_buffers", buffering.request, true), "from buffers: refused")
+  -- A request above what an item depot's 48 slots hold is 48 stacks: 9,600 copper cable (stacks of
+  -- 200) for a buffer depot, and 480 nuclear reactors (stacks of 10) for a request depot.
+  assert(remote.call("jatz-distribution", "set_request", buffering.filling, "copper-cable", 1000000), "cable: refused")
+  result.item_buffer_request_capped = remote.call("jatz-distribution", "get_request", buffering.filling).count
+  assert(remote.call("jatz-distribution", "set_request", buffering.request, "nuclear-reactor", 1000000), "reactor")
+  result.item_request_capped = remote.call("jatz-distribution", "get_request", buffering.request).count
+  assert(remote.call("jatz-distribution", "set_request", buffering.request, "copper-cable", 20), "cable: refused")
   assert(remote.call("jatz-distribution", "set_request", buffering.filling, "copper-cable", 15), "buffer: refused")
   result.buffer_has_no_from_buffers = remote.call("jatz-distribution", "set_from_buffers", buffering.filling, true)
   deliveries.buffering = buffering
@@ -1366,13 +1373,14 @@ local function setup_deliveries(surface, result)
   })
   item_holder.destroy()
   -- A condition's constant is an int32: a request at that limit goes in the settings, and one
-  -- above it (the panel takes any) stays in its tag only, the blueprint still made.
+  -- above it stays in its tag only, the blueprint still made. Requests stop at the depot's 48
+  -- stacks, so this needs the data stage's item stacking to 100 million.
   local limits = game.create_inventory(1)
   limits.insert({ name = "blueprint" })
   local limit_print = limits[1]
   result.blueprint_count_limit = {}
   for _, count in ipairs({ 2147483647, 2147483648 }) do
-    remote.call("jatz-distribution", "set_request", source, "wood", count)
+    remote.call("jatz-distribution", "set_request", source, "jatz-check-crate", count)
     local limit_mapping =
       limit_print.create_blueprint({ surface = surface, force = "player", area = { { -68, -68 }, { -65, -65 } } })
     local made = pcall(remote.call, "jatz-distribution", "setup_blueprint", limit_print, limit_mapping)

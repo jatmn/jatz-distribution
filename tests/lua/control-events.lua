@@ -719,7 +719,7 @@ end
 
 do -- Copy and paste: settings, blueprints, and depots built from blueprint ghosts.
   local logistics = require("scripts.logistics")
-  prototypes.item.wood = { name = "wood" }
+  prototypes.item.wood = { name = "wood", stack_size = 100 }
   local function request_depot(x)
     local entity = depot(x)
     entity.name = "jatz-request-depot"
@@ -849,10 +849,12 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
   end
   check("setting it up again replaces them", #saved == 2 and count == 1 and again == 9)
 
-  -- A request above a condition's int32 constant (the panel and set_request take any) can't be a
-  -- condition: the blueprint is still made, the request in the depot's tag and the settings' tag
-  -- (so pasting over a depot sets it too), the settings' condition holding the freighters.
-  assert(logistics.set_request(source, "wood", 9999999999))
+  -- A request above a condition's int32 constant can't be a condition: the blueprint is still
+  -- made, the request in the depot's tag and the settings' tag (so pasting over a depot sets it
+  -- too), the settings' condition holding the freighters. Requests stop at the depot's 48 stacks,
+  -- so only an item stacking past 44 million (as a mod can make) gets there.
+  prototypes.item.crate = { name = "crate", stack_size = 1000000000 }
+  assert(logistics.set_request(source, "crate", 9999999999))
   local made = pcall(logistics.setup_blueprint, blueprint, { [1] = source })
   local huge = settings_entry(saved)
   local huge_conditions = conditions_of(huge)
@@ -860,7 +862,7 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
     "a request too large for a condition still blueprints, in tags",
     made
       and saved[1].tags.jatz_request.count == 9999999999
-      and huge.tags.jatz_request.item == "wood"
+      and huge.tags.jatz_request.item == "crate"
       and huge.tags.jatz_request.count == 9999999999
       and #huge_conditions == 1
       and huge_conditions[1].first_signal == nil
@@ -890,7 +892,7 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
   -- settings from before, without it). Strict: only `parameters` reads them, as
   -- LuaDeciderCombinatorControlBehavior gives them, and a real one has no tags to read (only its
   -- build event's).
-  prototypes.item["iron-plate"] = { name = "iron-plate" }
+  prototypes.item["iron-plate"] = { name = "iron-plate", stack_size = 100 }
   local function placed_settings(x, item, count_, freighters, force, extra_tags, made_from)
     local tags = {}
     if made_from ~= false then
@@ -1079,7 +1081,7 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
     "settings with no freighters, pasted over a depot, match none",
     request and request.item == "iron-plate" and matched and matched.entity == pasted_over and matched.total == 0
   )
-  local oversized = placed_settings(180.5, nil, nil, 3, nil, { jatz_request = { item = "wood", count = 9999999999 } })
+  local oversized = placed_settings(180.5, nil, nil, 3, nil, { jatz_request = { item = "crate", count = 9999999999 } })
   standing(180, { pasted_over, oversized })
   matched = nil
   fire("on_built_entity", { entity = oversized, player_index = 3 })
@@ -1087,7 +1089,7 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
   request = logistics.get_request(pasted_over)
   check(
     "and a request too large for a condition comes from their tag",
-    request and request.item == "wood" and request.count == 9999999999 and matched and matched.total == 3
+    request and request.item == "crate" and request.count == 9999999999 and matched and matched.total == 3
   )
 
   -- Settings of a depot with no request clear one: pasted over a depot asking for wood, handed to a
@@ -1507,6 +1509,17 @@ do -- The priority slider: provider depots get a panel with it and their circuit
   check("a request depot's panel has no priority", inner.request_row and not inner.priority_row)
   nth[30]()
   check("and isn't rebuilt for lacking one", relative.jatz_request_frame.children[1] == inner)
+  local chooser, amount = inner.request_row.jatz_request_item, inner.request_row.jatz_request_count
+  chooser.elem_value = "iron-plate"
+  fire("on_gui_elem_changed", { player_index = 11, element = chooser })
+  check("an item chosen starts at one stack", logistics.get_request(request).count == 100 and amount.text == "100")
+  amount.text = "1000000"
+  fire("on_gui_text_changed", { player_index = 11, element = amount, text = amount.text })
+  check(
+    "an amount above its 48 stacks is 48 stacks, in the field too",
+    logistics.get_request(request).count == 4800 and amount.text == "4800"
+  )
+  assert(logistics.set_request(request, nil))
   local full_loads = inner.jatz_request_full_loads
   check("it has the full-loads-only checkbox, unticked", full_loads and full_loads.state == false)
   logistics.set_full_loads(request, true)
@@ -2033,7 +2046,7 @@ do -- The road network monitor shows what the provider and buffer depots on its 
   buffer.name = "jatz-buffer-depot"
   holding(buffer, { { name = "stone", quality = "normal", count = 3 } })
   request.get_inventory = function()
-    return {
+    local chest = {
       get_item_count = function(id)
         return (type(id) == "table" and id.name or id) == "wood" and 5 or 0
       end,
@@ -2044,6 +2057,11 @@ do -- The road network monitor shows what the provider and buffer depots on its 
         return { { name = "wood", quality = "normal", count = 5 } }
       end,
     }
+    -- Its 48 slots, which #chest counts.
+    for index = 1, 48 do
+      chest[index] = { valid_for_read = false }
+    end
+    return chest
   end
   check("setup: the request depot asks for 12 wood", logistics.set_request(request, "wood", 12))
   local screen = element()

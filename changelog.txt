@@ -4,6 +4,8 @@ Version: Unreleased
     - Startup settings for how many slots provider, request, buffer and fuel depots have, each kind separately, 48 by default, and for the size of the fuel depot's liquid fuel tank, 25,000 by default.
   Graphics:
     - Destroyed depots now leave wrecks of themselves instead of a steel chest's or storage tank's remains: caved in, burnt and scattered about, in the depot's own colours. Destroyed freighters leave a freighter wreck instead of a car's. Like the game's own, wrecks disappear after 15 minutes.
+  Bugfixes:
+    - Fixed request and buffer depots accepting a request for more items than their 48 slots hold (such as 1,000,000 iron plates). A larger request is now set to 48 stacks of the item, which the depot's window shows: 4,800 of an item that stacks to 100, 480 of one that stacks to 10.
 ---------------------------------------------------------------------------------------------------
 Version: 0.1.4
 Date: 2026-11-08
