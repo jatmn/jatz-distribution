@@ -333,6 +333,28 @@ function tunnels.facing(unit_number)
   return entity and entity.valid and entity.direction / 16 or nil
 end
 
+local ROAD_TILES = { [ROADS[1]] = true, [ROADS[2]] = true }
+-- How a freighter comes out of portal `unit_number`, whose entry tile's centre is `exit`: where it
+-- appears (just inside the mouth's edge, on the entry tile), the first point it drives to (straight
+-- out: a tile on, if that is road too, else the entry tile's centre) and the way it faces (out of
+-- the mouth). The game turns a unit to the first point of its route the moment it is given one, and
+-- the route on from the entry tile often starts across the road, so without this first stretch
+-- straight out it was never seen to leave the mouth (the owner's video, November 8, 2026). Nil if
+-- the portal is gone.
+function tunnels.way_out(unit_number, exit)
+  local portal = storage.tunnel_portals and storage.tunnel_portals[unit_number]
+  local entity = portal and portal.entity
+  if not (entity and entity.valid) then
+    return nil
+  end
+  local facing = FACING[entity.direction] or FACING[defines.direction.north]
+  local start = { x = exit.x - facing[1] * 0.3, y = exit.y - facing[2] * 0.3 }
+  local beyond = { x = exit.x + facing[1], y = exit.y + facing[2] }
+  local tile = entity.surface.get_tile(math.floor(beyond.x), math.floor(beyond.y))
+  local out = tile.valid and ROAD_TILES[tile.name] and beyond or { x = exit.x, y = exit.y }
+  return start, out, entity.direction / 16
+end
+
 -- Whether a tunnel planned by `route` is still there, its two portals still paired.
 function tunnels.open(hop)
   local portals = storage.tunnel_portals or {}

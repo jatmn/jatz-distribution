@@ -4693,15 +4693,24 @@ do -- Through a tunnel to a provider on another road network, and back.
   local sprites = #surface.sprites
   arrive(logistics, trip)
   check(
-    "it comes out at the east mouth, seen again",
+    "it comes out just inside the east mouth, seen again",
     trip.drone.name == "jatz-freighter-drone"
-      and trip.drone.position.x == 30.5
+      and math.abs(trip.drone.position.x - 30.2) < 1e-9
       and trip.drone.position.y == 0.5
       and trip.tunnel == nil
   )
   check("facing out of the east mouth, not north", trip.drone.orientation == 0.25)
   drive = trip.drone.commands[#trip.drone.commands]
-  check("and drives on to the provider", drive.destination.x == 40.5 and drive.destination.y == 2.5)
+  check(
+    "it drives straight out of the mouth first, a tile on along the road",
+    drive.type == defines.command.go_to_location and drive.destination.x == 31.5 and drive.destination.y == 0.5
+  )
+  arrive(logistics, trip)
+  drive = trip.drone.commands[#trip.drone.commands]
+  check(
+    "then on to the provider",
+    drive.destination.x == 40.5 and drive.destination.y == 2.5 and not trip.coming_out and trip.origin.x == 30.5
+  )
   check("drawing nothing while empty", #surface.sprites == sprites)
   arrive(logistics, trip)
   check("it loads there", trip.cargo.get_item_count("a") == 10)
@@ -4718,6 +4727,8 @@ do -- Through a tunnel to a provider on another road network, and back.
     trip.drone.name == "jatz-freighter-drone-500" and trip.drone.orientation == 0.75
   )
   check("with its cargo shown again", sprites_on(trip.drone) ~= "")
+  check("out of the mouth westward first", trip.drone.commands[#trip.drone.commands].destination.x == 19.5)
+  arrive(logistics, trip)
   arrive(logistics, trip)
   check("the load arrives", home.get_item_count("a") == 10 and not has_trip(request))
 end
@@ -4750,7 +4761,7 @@ do -- A portal removed while a freighter is under ground: it still comes out at 
   arrive(logistics, trip)
   check(
     "out at the far end",
-    trip.drone.valid and trip.drone.position.x == 30.5 and trip.drone.name == "jatz-freighter-drone"
+    trip.drone.valid and math.abs(trip.drone.position.x - 30.2) < 1e-9 and trip.drone.name == "jatz-freighter-drone"
   )
 end
 
@@ -4892,6 +4903,22 @@ do -- Tunnel mouths off road join nothing: no route through a chain still missin
     tunnels.add(made)
   end
   check("no way through mouths off road", tunnels.route(1, { x = 0.5, y = 2.5 }, { x = 40.5, y = 2.5 }) == nil)
+end
+
+do -- Out of a mouth onto a one-tile road: the first stretch ends on the entry tile itself.
+  local logistics = reset()
+  local _, _, portals = tunnelled(logistics, true)
+  local road_tile = surface.get_tile
+  -- Off road a tile beyond the east mouth (x 31).
+  function surface.get_tile(x)
+    return { valid = true, name = x == 31 and "grass-1" or "jatz-road" }
+  end
+  local start, out, facing = require("scripts.tunnels").way_out(portals.east.unit_number, { x = 30.5, y = 0.5 })
+  check(
+    "it appears inside the mouth and drives only to the entry tile's centre",
+    math.abs(start.x - 30.2) < 1e-9 and out.x == 30.5 and out.y == 0.5 and facing == 0.25
+  )
+  surface.get_tile = road_tile
 end
 
 do -- Routes within one road network never use tunnels.

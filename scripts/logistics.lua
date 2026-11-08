@@ -1718,7 +1718,7 @@ local function drive(trip, destination, sampled)
     burn(trip)
   end
   trip.destination = destination
-  trip.loading = nil
+  trip.loading, trip.coming_out = nil, nil
   -- On the road now: no longer standing at home deciding whether it can go.
   trip.departing = nil
   -- From the last place it arrived at (its road network is known there), or where it stands. (Not
@@ -3096,13 +3096,26 @@ function logistics.out_of_tunnel(id, trip)
     trip.drone.orientation = facing or trip.drone.orientation
     return logistics.command(trip, { type = defines.command.stop, distraction = defines.distraction.none })
   end
-  if not repaint(id, trip, tunnel.exit) then
+  -- Just inside the mouth, facing out, then straight out of it before its route (tunnels.way_out).
+  local start, out = tunnels.way_out(tunnel.to, tunnel.exit)
+  if not repaint(id, trip, start or tunnel.exit) then
     -- Something got stuck to it under ground: it comes out unseen, and is painted once that wears off
     -- (check_trip).
-    trip.drone.teleport(tunnel.exit)
+    trip.drone.teleport(start or tunnel.exit)
   end
   trip.drone.orientation = facing or trip.drone.orientation
   show_cargo(trip)
+  if out then
+    -- On to where it is going once out (on_ai_command_completed; a re-plan meanwhile drives it there).
+    trip.coming_out, trip.loading = true, nil
+    return logistics.command(trip, {
+      type = defines.command.go_to_location,
+      destination = out,
+      radius = 0.2,
+      distraction = defines.distraction.none,
+      pathfind_flags = { no_break = true },
+    })
+  end
   drive(trip, trip.destination or target(trip))
 end
 
@@ -3133,7 +3146,7 @@ function logistics.on_ai_command_completed(event)
     return
   end
   local depot = storage.depots[trip.request]
-  if event.result == defines.behavior_result.success and not tunnel then
+  if event.result == defines.behavior_result.success and not (tunnel or trip.coming_out) then
     -- Where it is now (a depot's loading zone): its road network is known there.
     trip.origin = trip.destination or trip.origin
   end
@@ -3150,6 +3163,9 @@ function logistics.on_ai_command_completed(event)
   elseif tunnel then
     -- At a tunnel's mouth (or waiting there for something stuck to it to wear off).
     logistics.into_tunnel(id, trip)
+  elseif trip.coming_out then
+    -- Out of a tunnel's mouth: on to where it is going.
+    drive(trip, trip.destination or target(trip))
   elseif trip.refuel and not trip.loading then
     -- At the Fuel depot: it stands there LOADING_TICKS to fill up too.
     trip.loading = true
@@ -3196,6 +3212,9 @@ function logistics.failed_commands()
       elseif trip.tunnel and trip.tunnel.started then
         -- Its wait under ground failed, yet it lives: it comes out at the other end all the same.
         logistics.out_of_tunnel(id, trip)
+      elseif trip.coming_out and trip.command_id == failure.command_id then
+        -- Its short stretch out of a mouth failed (road removed there, say): its route decides.
+        drive(trip, trip.destination or target(trip))
       elseif trip.command_id == failure.command_id and not trip.searching then
         if trip.refuel then
           fuel_route_failed(id, trip, storage.depots[trip.request])
