@@ -272,7 +272,7 @@ EXPECTED = {'recipes': RECIPES,
                                       '2147483648: made, tag 2147483648, settings freighters only'],
             # Pasted over a depot standing there, that blueprint sets its request from the
             # settings' tag, and asks for its 3 freighters. (The check mod's item stacking to 100
-            # million: 48 stacks of a base item never pass the int32.)
+            # million: a chest full of a base item never passes the int32.)
             'pasted_over_oversized': 'jatz-check-crate x2147483648', 'pasted_over_freighters': 3,
             # Freighters ride in the tag, not an insert plan. A depot requesting freighter items as
             # cargo with 3 freighters keeps both in its settings, and the depot built asks for both.
@@ -330,9 +330,10 @@ EXPECTED = {'recipes': RECIPES,
             # A liquid request above the tank's size is capped at it (25,000; 15,000 for the
             # check mod's liquid buffer).
             'liquid_request_capped': 25000, 'liquid_buffer_request_capped': 15000,
-            # An item request above what a depot's 48 slots hold is 48 stacks: 9,600 copper cable
-            # (stacks of 200) for a buffer, 480 nuclear reactors (stacks of 10) for a request depot.
-            'item_buffer_request_capped': 9600, 'item_request_capped': 480,
+            # An item request above what a depot's slots hold is a full chest, with the check
+            # mod's slot settings: 56 x 200 copper cable for a buffer, 52 x 10 nuclear reactors for
+            # a request depot.
+            'item_buffer_request_capped': 11200, 'item_request_capped': 520,
             'steam_delivered': 300, 'steam_temperature': 500, 'steam_buffer_left': 700,
             'steam_provider_left': 1000, 'liquid_requested': 2, 'liquid_robots_delivered': 2,
             # Not set to request from buffers, with the only liquid provider empty, a liquid request

@@ -40,7 +40,7 @@ Freighters drive **only on road**. Road is a floor tile you craft and place like
 ## Setting up a delivery
 
 1. Lay road between a provider depot's loading zone and a request depot's.
-2. Open the request depot and choose an item and an amount to keep in stock. A request or buffer depot holds 48 stacks, so it can't request more than 48 stacks of the item: a larger amount is set to that (4,800 of an item that stacks to 100, 480 of one that stacks to 10).
+2. Open the request depot and choose an item and an amount to keep in stock. A request or buffer depot can't request more of the item than fills every one of its slots: a larger amount is set to that (with the default 48 slots, 4,800 of an item that stacks to 100, 480 of one that stacks to 10).
 3. Put freighters in its freighter slot.
 
 Within a second, a freighter sets off for a provider depot that has the item. It stops for about a second to load what the request depot still needs and has room for, up to ten stacks (more with item capacity research), then drives back, stops again for about a second to unload and parks in the slot again.

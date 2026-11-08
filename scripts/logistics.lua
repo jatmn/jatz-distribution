@@ -1404,8 +1404,8 @@ end
 -- Set a request depot's request, or clear it with a nil item. Returns false, changing nothing,
 -- for anything but a request depot, an item that doesn't exist, or a count that isn't a number.
 -- A request is at most what the depot holds: its tank's size for a liquid depot, and for an item
--- depot as many of the item as fill every slot of its chest (48 stacks: 4,800 of an item that
--- stacks to 100, 480 of one that stacks to 10).
+-- depot as many of the item as fill every slot of its chest (slots are a startup setting, 48 by
+-- default: 4,800 of an item that stacks to 100, 480 of one that stacks to 10).
 function logistics.set_request(entity, item, count)
   local depot = request_depot(entity)
   if not depot then

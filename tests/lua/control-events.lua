@@ -851,8 +851,8 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
 
   -- A request above a condition's int32 constant can't be a condition: the blueprint is still
   -- made, the request in the depot's tag and the settings' tag (so pasting over a depot sets it
-  -- too), the settings' condition holding the freighters. Requests stop at the depot's 48 stacks,
-  -- so only an item stacking past 44 million (as a mod can make) gets there.
+  -- too), the settings' condition holding the freighters. Requests stop at a full chest (48 slots
+  -- here), so only an item stacking past 44 million (as a mod can make) gets there.
   prototypes.item.crate = { name = "crate", stack_size = 1000000000 }
   assert(logistics.set_request(source, "crate", 9999999999))
   local made = pcall(logistics.setup_blueprint, blueprint, { [1] = source })

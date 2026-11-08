@@ -711,8 +711,9 @@ local function setup_deliveries(surface, result)
   assert(buffering.stocked.insert({ name = "copper-cable", count = 30 }) == 30, "cable: cannot stock buffer")
   assert(remote.call("jatz-distribution", "set_request", buffering.request, "copper-cable", 20), "cable: refused")
   assert(remote.call("jatz-distribution", "set_from_buffers", buffering.request, true), "from buffers: refused")
-  -- A request above what an item depot's 48 slots hold is 48 stacks: 9,600 copper cable (stacks of
-  -- 200) for a buffer depot, and 480 nuclear reactors (stacks of 10) for a request depot.
+  -- A request above what an item depot's slots hold is a full chest of the item: with this mod's
+  -- slot settings (settings-updates.lua), 56 stacks of copper cable (200 each) for a buffer depot,
+  -- and 52 of nuclear reactors (10 each) for a request depot.
   assert(remote.call("jatz-distribution", "set_request", buffering.filling, "copper-cable", 1000000), "cable: refused")
   result.item_buffer_request_capped = remote.call("jatz-distribution", "get_request", buffering.filling).count
   assert(remote.call("jatz-distribution", "set_request", buffering.request, "nuclear-reactor", 1000000), "reactor")
@@ -1373,8 +1374,8 @@ local function setup_deliveries(surface, result)
   })
   item_holder.destroy()
   -- A condition's constant is an int32: a request at that limit goes in the settings, and one
-  -- above it stays in its tag only, the blueprint still made. Requests stop at the depot's 48
-  -- stacks, so this needs the data stage's item stacking to 100 million.
+  -- above it stays in its tag only, the blueprint still made. Requests stop at a full chest,
+  -- so this needs the data stage's item stacking to 100 million.
   local limits = game.create_inventory(1)
   limits.insert({ name = "blueprint" })
   local limit_print = limits[1]
