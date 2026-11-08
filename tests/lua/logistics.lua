@@ -420,9 +420,10 @@ local function reset()
   }
   -- Fresh modules, with no cache from an earlier check (scripts/impact.lua keeps the names of what
   -- freighters run over, scripts/research.lua the freighter's speed, read from its prototype once,
-  -- and scripts/fuel.lua what burns).
+  -- scripts/fuel.lua what burns, and scripts/routes.lua the freighter's shape).
   package.loaded["scripts.research"] = nil
   package.loaded["scripts.fuel"] = nil
+  package.loaded["scripts.routes"] = nil
   package.loaded["scripts.logistics"] = nil
   package.loaded["scripts.impact"] = nil
   local logistics = require("scripts.logistics")
