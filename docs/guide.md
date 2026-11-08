@@ -42,7 +42,7 @@ Freighters drive **only on road**. Road is a floor tile you craft and place like
 
 Freighters can't drive over buildings, but they can go under them. Road tunnels work like underground belts:
 
-- Build a road tunnel at the end of a road, its mouth to the road: the tile in front of it is where freighters drive in and come out, so it must be road. Build a second one facing it, up to 32 tiles away, at the end of the other road. While you place it, the game shows how far it reaches and which tunnel it joins, as it does for pipes to ground. Each craft makes two.
+- A road tunnel is one tile wide and two deep, a ramp going down from its mouth. Build one at the end of a road, its mouth to the road: the tile in front of it is where freighters drive in and come out, so it must be road. Build a second one facing it, up to 32 tiles away, at the end of the other road. While you place it, the game shows how far it reaches and which tunnel it joins, as it does for pipes to ground. Each craft makes two.
 - Whatever stands between the two ends doesn't matter: buildings, belts, water.
 - A freighter whose provider, fuel depot or home is on another road network that tunnels join drives to a tunnel's mouth, disappears, and comes out of the other end after as long as driving that far on road takes, then drives on. It can go through several tunnels on one trip.
 - Freighters use tunnels only to reach another road network. If road already joins the two places, they drive the road, even when a tunnel would be shorter.

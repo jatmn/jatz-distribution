@@ -703,21 +703,22 @@ local function setup_deliveries(surface, result)
   }
   lay_road(surface, 42, -65, 50, -65)
   lay_road(surface, 59, -65, 68, -65)
-  for x = 52, 57 do
+  for x = 53, 56 do
     for y = -67, -63 do
       surface.create_entity({ name = "stone-wall", position = { x + 0.5, y + 0.5 }, force = "player" })
     end
   end
+  -- Each one tile wide and two deep (tiles 51-52 and 57-58), its mouth on the road.
   tunnel.west = surface.create_entity({
     name = TUNNEL,
-    position = { 51.5, -64.5 },
+    position = { 52, -64.5 },
     direction = defines.direction.west,
     force = "player",
     raise_built = true,
   })
   tunnel.east = surface.create_entity({
     name = TUNNEL,
-    position = { 58.5, -64.5 },
+    position = { 58, -64.5 },
     direction = defines.direction.east,
     force = "player",
     raise_built = true,

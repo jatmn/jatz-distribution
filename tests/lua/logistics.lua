@@ -4641,9 +4641,10 @@ local function tunnelled(logistics, with_portals)
   local portals = {}
   if with_portals then
     local tunnels = require("scripts.tunnels")
-    local west = entity("jatz-road-tunnel", 21.5, 0.5)
+    -- Each one tile wide and two deep: centred between its two tiles, its mouth on the road.
+    local west = entity("jatz-road-tunnel", 22, 0.5)
     west.direction = defines.direction.west
-    local east = entity("jatz-road-tunnel", 29.5, 0.5)
+    local east = entity("jatz-road-tunnel", 29, 0.5)
     east.direction = defines.direction.east
     west.fluidbox_neighbours = { { east } }
     east.fluidbox_neighbours = { { west } }
@@ -4875,8 +4876,8 @@ do -- Tunnel mouths off road join nothing: no route through a chain still missin
     made.direction = facing
     return made
   end
-  local a, b = portal(21.5, defines.direction.west), portal(24.5, defines.direction.east)
-  local c, d = portal(27.5, defines.direction.west), portal(29.5, defines.direction.east)
+  local a, b = portal(22, defines.direction.west), portal(24, defines.direction.east)
+  local c, d = portal(27, defines.direction.west), portal(29, defines.direction.east)
   a.fluidbox_neighbours, b.fluidbox_neighbours = { { b } }, { { a } }
   c.fluidbox_neighbours, d.fluidbox_neighbours = { { d } }, { { c } }
   for _, made in ipairs({ a, b, c, d }) do

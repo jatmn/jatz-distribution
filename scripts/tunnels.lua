@@ -50,11 +50,15 @@ local function key(x, y)
   return x .. "," .. y
 end
 
--- The centre of the tile in front of a portal: where freighters drive in and come out.
+-- The centre of the tile in front of a portal (one tile wide and two deep, its centre between its
+-- two tiles): where freighters drive in and come out.
 function tunnels.entry(entity)
   local facing = FACING[entity.direction] or FACING[defines.direction.north]
   local position = entity.position
-  return { x = math.floor(position.x) + facing[1] + 0.5, y = math.floor(position.y) + facing[2] + 0.5 }
+  return {
+    x = math.floor(position.x + facing[1] * 1.5) + 0.5,
+    y = math.floor(position.y + facing[2] * 1.5) + 0.5,
+  }
 end
 
 -- The portal at the other end of `entity`'s tunnel, if it has one.

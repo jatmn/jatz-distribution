@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- Road tunnel portals: freighters go under whatever stands between two of them, as items go under
--- buildings on underground belts (scripts/tunnels.lua, scripts/logistics.lua). A portal stands at
+-- buildings on underground belts (scripts/tunnels.lua, scripts/logistics.lua). A portal is one tile
+-- wide and two deep, a ramp going down from its mouth (the owner, November 8, 2026). It stands at
 -- the end of a road, its mouth to the road: the tile in front of it is where freighters drive in
 -- and come out, and must be road.
 --
@@ -9,17 +10,17 @@
 -- while placing, and connects no pipe, nor any other mod's, to them. Nothing ever flows through. It
 -- collides with road like every other building (pipes-to-ground are otherwise allowed on road,
 -- prototypes/off-road.lua), so it can't stand on road, nor road be laid under it.
--- Its art is our own: a 1x1 model in the liquid depots' grey and bronze finish
--- (assets/depots/road-tunnel/1/, built and rendered with the depots), drawn with its default
--- colours (the packaged preview layer) and its ground shadow.
+-- Its art is our own: a model built like the item depots' loading side, its roof sloping down to the
+-- ground at the back (assets/depots/road-tunnel/1/, built and rendered with the depots), drawn with
+-- its default colours (the packaged preview layer) and its ground shadow.
 local collision_mask_util = require("collision-mask-util")
 local constants = require("prototypes.constants")
 local sounds = require("__base__.prototypes.entity.sounds")
 
 local name = constants.road_tunnel
 local sheets = "__" .. constants.mod_name .. "__/" .. string.format(constants.depot_sheets, "road-tunnel", 1)
--- The rendered frames: 512 px covering 2.5 tiles (assets/depots/road-tunnel/1/asset.json).
-local SCALE = 0.15625
+-- The rendered frames: 512 px covering 3.5 tiles (assets/depots/road-tunnel/1/asset.json).
+local SCALE = 0.21875
 local DIRECTIONS = { "north", "east", "south", "west" }
 local icon = "__" .. constants.mod_name .. "__/assets/depots/icons/road-tunnel.png"
 
@@ -54,18 +55,19 @@ data:extend({
     corpse = "pipe-to-ground-remnants",
     dying_explosion = "pipe-to-ground-explosion",
     resistances = { { type = "fire", percent = 80 }, { type = "impact", percent = 60 } },
-    collision_box = { { -0.35, -0.35 }, { 0.35, 0.35 } },
-    selection_box = { { -0.5, -0.5 }, { 0.5, 0.5 } },
+    -- One tile wide and two deep: the mouth's tile in front (north while unrotated), the ramp's behind.
+    collision_box = { { -0.35, -0.85 }, { 0.35, 0.85 } },
+    selection_box = { { -0.5, -1 }, { 0.5, 1 } },
     collision_mask = collision_mask,
     fluid_box = {
       volume = 1,
       hide_connection_info = true,
       pipe_connections = {
         {
-          -- The tunnel runs back from the mouth (north while unrotated: its mouth faces north).
+          -- The tunnel runs on from the back tile (its mouth faces north while unrotated).
           connection_type = "underground",
           direction = defines.direction.south,
-          position = { 0, 0 },
+          position = { 0, 0.5 },
           max_underground_distance = constants.tunnel_reach,
           connection_category = name,
           hide_connection_info = true,
