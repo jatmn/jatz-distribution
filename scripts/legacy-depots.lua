@@ -58,8 +58,10 @@ end
 -- is built: its inventory limit, and its circuit reading, every setting a container's control
 -- behavior and a logistic container's share (LuaContainerControlBehavior, and LuaControlBehavior's
 -- output_networks, which wire colours it sends on). Read from a depot or its ghost alike (the
--- inventory's bar through LuaEntity::get_inventory_bar, which works for both); nil for each the old
--- one doesn't have, so the new one keeps the game's default.
+-- inventory's bar through LuaEntity::get_inventory_bar, which works for both). Every field in
+-- READING is written back, nil too: a player can clear the empty-slot signal, and skipping it
+-- would leave the new chest's default signal-E sending its empty slots. A chest with no control
+-- behavior at all (never wired) gives the new one none either, so it keeps the same defaults.
 local CHEST = defines.inventory.chest
 local READING = { "read_contents", "read_empty_slots", "empty_slots_signal", "output_networks" }
 
@@ -84,8 +86,8 @@ local function apply_chest_settings(entity, settings)
   end
   if settings.reading then
     local behavior = entity.get_or_create_control_behavior()
-    for field, value in pairs(settings.reading) do
-      behavior[field] = value
+    for _, field in ipairs(READING) do
+      behavior[field] = settings.reading[field]
     end
   end
 end

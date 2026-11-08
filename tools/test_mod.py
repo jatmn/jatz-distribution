@@ -340,6 +340,13 @@ EXPECTED = {'recipes': RECIPES,
             'legacy_built_settings': [False, True, 'signal-Z', True, False, 6],
             'legacy_ghost_settings': [False, True, 'signal-Z', True, False, 6],
             'legacy_ghost_built_settings': [False, True, 'signal-Z', True, False, 6],
+            # And a buffer depot, its ghost, and the depot built from it, with the empty-slot signal
+            # cleared: it stays cleared (no E for the empty slots).
+            'legacy_cleared_signal': [
+                ['jatz-buffer-depot', [False, True, False, True, False, 6]],
+                ['jatz-buffer-depot', [False, True, False, True, False, 6]],
+                ['jatz-buffer-depot', [False, True, False, True, False, 6]],
+            ],
             # Full loads only: a request depot set to it, asking for 30 (less than a load), takes
             # all 30 from a provider 24 tiles away holding 40, passing by one 10 tiles away holding
             # only 10; off by default; provider depots have no such setting.

@@ -1928,13 +1928,13 @@ local function setup_robot_access(result)
   end
   result.built_robot_access = revived and remote.call("jatz-distribution", "get_robot_access", revived)
   holder.destroy()
-  -- Both set up as the game can't by default (contents not read, empty slots on Z, the red wire
-  -- only, 5 slots open) before their build event, which replaces them.
-  local function configure(entity)
+  -- Both set up as the game can't by default (contents not read, empty slots on Z, or with the
+  -- signal cleared, the red wire only, 5 slots open) before their build event, which replaces them.
+  local function configure(entity, signal)
     local behavior = entity.get_or_create_control_behavior()
     behavior.read_contents = false
     behavior.read_empty_slots = true
-    behavior.empty_slots_signal = { type = "virtual", name = "signal-Z" }
+    behavior.empty_slots_signal = signal
     behavior.output_networks = { red = true, green = false }
     entity.set_inventory_bar(defines.inventory.chest, 6)
     script.raise_script_built({ entity = entity })
@@ -1947,18 +1947,22 @@ local function setup_robot_access(result)
       and {
         behavior.read_contents,
         behavior.read_empty_slots,
-        signal and signal.name,
+        signal and signal.name or false,
         outputs.red,
         outputs.green,
         entity.get_inventory_bar(defines.inventory.chest),
       }
   end
-  configure(surface.create_entity({
-    name = "jatz-provider-depot-legacy",
-    position = { -10.5, 8.5 },
-    direction = defines.direction.west,
-    force = "player",
-  }))
+  local Z = { type = "virtual", name = "signal-Z" }
+  configure(
+    surface.create_entity({
+      name = "jatz-provider-depot-legacy",
+      position = { -10.5, 8.5 },
+      direction = defines.direction.west,
+      force = "player",
+    }),
+    Z
+  )
   local legacy = surface.find_entities_filtered({
     position = { -10.5, 8.5 },
     radius = 0.5,
@@ -1967,19 +1971,42 @@ local function setup_robot_access(result)
   result.legacy_built = legacy
     and { legacy.name, legacy.direction, remote.call("jatz-distribution", "get_robot_access", legacy) }
   result.legacy_built_settings = legacy and chest_settings(legacy)
-  configure(surface.create_entity({
-    name = "entity-ghost",
-    inner_name = "jatz-provider-depot-legacy",
-    position = { -20.5, 8.5 },
-    direction = defines.direction.south,
-    force = "player",
-    tags = { jatz_priority = 4 },
-  }))
+  configure(
+    surface.create_entity({
+      name = "entity-ghost",
+      inner_name = "jatz-provider-depot-legacy",
+      position = { -20.5, 8.5 },
+      direction = defines.direction.south,
+      force = "player",
+      tags = { jatz_priority = 4 },
+    }),
+    Z
+  )
   local ghost = surface.find_entities_filtered({ position = { -20.5, 8.5 }, radius = 0.5, type = "entity-ghost" })[1]
   result.legacy_ghost = ghost and { ghost.ghost_name, ghost.direction, ghost.tags and ghost.tags.jatz_priority }
   result.legacy_ghost_settings = ghost and chest_settings(ghost)
   local _, built = ghost.revive({ raise_revive = true })
   result.legacy_ghost_built_settings = built and chest_settings(built)
+  -- With the empty-slot signal cleared, which the game would otherwise set to E: a depot, a ghost,
+  -- and the depot built from that ghost.
+  local cleared = {}
+  configure(surface.create_entity({ name = "jatz-buffer-depot-legacy", position = { -10.5, 20.5 }, force = "player" }))
+  configure(surface.create_entity({
+    name = "entity-ghost",
+    inner_name = "jatz-buffer-depot-legacy",
+    position = { -20.5, 20.5 },
+    force = "player",
+  }))
+  local depot_names = { "jatz-buffer-depot", "jatz-buffer-depot-legacy" }
+  local cleared_depot =
+    surface.find_entities_filtered({ position = { -10.5, 20.5 }, radius = 0.5, name = depot_names })[1]
+  cleared[1] = cleared_depot and { cleared_depot.name, chest_settings(cleared_depot) }
+  local cleared_ghost =
+    surface.find_entities_filtered({ position = { -20.5, 20.5 }, radius = 0.5, ghost_name = depot_names })[1]
+  cleared[2] = cleared_ghost and { cleared_ghost.ghost_name, chest_settings(cleared_ghost) }
+  local _, cleared_built = cleared_ghost.revive({ raise_revive = true })
+  cleared[3] = cleared_built and { cleared_built.name, chest_settings(cleared_built) }
+  result.legacy_cleared_signal = cleared
   storage.robots = robots
 end
 
