@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.1.4](https://github.com/jatmn/jatz-distribution/compare/v0.1.3...v0.1.4) (2026-11-08)
+
+
+### Features
+
+* add a "Full loads only" setting to request and buffer depots ([#68](https://github.com/jatmn/jatz-distribution/issues/68)) ([4c400e4](https://github.com/jatmn/jatz-distribution/commit/4c400e457a0c9ff75c93281ed5d9608dd2259895))
+* lower the depots so they hide less of what stands behind them ([#76](https://github.com/jatmn/jatz-distribution/issues/76)) ([6f0c861](https://github.com/jatmn/jatz-distribution/commit/6f0c8619344dbdb0b7a062e259340828f0888ff9))
+* run 50% faster on road, as on Transport Drones' road ([#71](https://github.com/jatmn/jatz-distribution/issues/71)) ([2650482](https://github.com/jatmn/jatz-distribution/commit/26504827d208fd0254b841597faee3d9c95969c4))
+
+
+### Bug Fixes
+
+* cap liquid depot requests at the tank's size ([#74](https://github.com/jatmn/jatz-distribution/issues/74)) ([5c248ca](https://github.com/jatmn/jatz-distribution/commit/5c248cabdaabaf8995969357d218ac9bed77f8ad))
+* count pickups already promised against a provider's circuit condition ([#67](https://github.com/jatmn/jatz-distribution/issues/67)) ([82ea6c5](https://github.com/jatmn/jatz-distribution/commit/82ea6c57249f3cbd81148cc88a7efb139fe9a36d))
+* give delivering freighters headlights ([#72](https://github.com/jatmn/jatz-distribution/issues/72)) ([bb54422](https://github.com/jatmn/jatz-distribution/commit/bb54422e2a4c7ae11fbfea107f188285322fbf16))
+* let blueprint parametrisation change depot requests ([#70](https://github.com/jatmn/jatz-distribution/issues/70)) ([7f35db1](https://github.com/jatmn/jatz-distribution/commit/7f35db12a2a3863faff0cc897a6bd7a9bad34ddf))
+* let robots repair freighters, and lose ones killed by a script ([#65](https://github.com/jatmn/jatz-distribution/issues/65)) ([af9e714](https://github.com/jatmn/jatz-distribution/commit/af9e71441d4bc426fb757c523260430a3c572f41))
+
+
+### CI
+
+* update Pullfrog to v0.1.122 ([#73](https://github.com/jatmn/jatz-distribution/issues/73)) ([7fde38f](https://github.com/jatmn/jatz-distribution/commit/7fde38f2c1d6b2f3ff4618e635592645a8f2c0bc))
+
 ## [0.1.3](https://github.com/jatmn/jatz-distribution/compare/v0.1.2...v0.1.3) (2026-11-07)
 
 
