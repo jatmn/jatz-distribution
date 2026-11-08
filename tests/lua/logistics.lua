@@ -4831,6 +4831,8 @@ do -- Its provider removed while under ground: the reroute search it starts is s
   logistics.on_tick()
   answer(logistics, 1, "none")
   local trip = trip_of(request)
+  -- At the west mouth, where it goes under (the fake freighter doesn't move by itself).
+  trip.drone.position = { x = 20.5, y = 0.5 }
   arrive(logistics, trip)
   -- The unseen freighter has one direction: the game turns it north.
   trip.drone.orientation = 0
@@ -4843,13 +4845,62 @@ do -- Its provider removed while under ground: the reroute search it starts is s
     "it comes out to wait for the answer, the same unit, facing out of the east mouth",
     trip.id == searching and trip.drone.position.x == 30.5 and trip.tunnel == nil and trip.drone.orientation == 0.25
   )
-  answer(logistics, #requests, "route")
+  -- Asked from the west mouth, under ground: no road joins it to the other provider, which is on
+  -- the east side. The answer comes after the freighter is out at the east mouth.
+  check("the reroute asked from where it went under", requests[#requests].start.x == 20.5)
+  answer(logistics, #requests, "none")
   check(
-    "and the answer sends it to the other provider",
+    "and the answer sends it to the other provider, reached from there through the tunnel",
     trip.searching == nil
       and trip.provider == other.unit_number
+      and not storage.depots[request.unit_number].cooldowns[other.unit_number]
       and trip.drone.commands[#trip.drone.commands].destination.x == 50.5
   )
+end
+
+do -- A road network keeps its number however many freighter positions on it are asked about.
+  local logistics = reset()
+  tunnelled(logistics, true)
+  local tunnels = require("scripts.tunnels")
+  local provider_zone = { x = 40.5, y = 2.5 }
+  local routed = true
+  for _, x in ipairs({ 0.5, 5.5, 6.5, 5.5, 12.5, 0.5 }) do
+    game.tick = game.tick + 1
+    routed = routed and tunnels.route(1, { x = x, y = 2.5 }, provider_zone) ~= nil
+  end
+  check("routes from positions asked about on earlier ticks still go through the tunnel", routed)
+end
+
+do -- Road laid joining two networks before their numbers are forgotten: they become one.
+  local logistics = reset()
+  tunnelled(logistics, true)
+  local tunnels = require("scripts.tunnels")
+  -- West, then east, positions remembered (east's number is the higher).
+  tunnels.route(1, { x = 5.5, y = 2.5 }, { x = 35.5, y = 2.5 })
+  local split = surface.get_connected_tiles
+  function surface.get_connected_tiles(position)
+    local x, y = position[1], position[2]
+    if y < -5 or y > 5 or x < -5 or x > 60 then
+      return {}
+    end
+    local tiles = {}
+    for tx = -5, 60 do
+      for ty = -5, 5 do
+        tiles[#tiles + 1] = { x = tx, y = ty }
+      end
+    end
+    return tiles
+  end
+  tunnels.changed(1)
+  game.tick = game.tick + 1
+  -- Asked about within a second of the change, a new position floods the joined network.
+  tunnels.route(1, { x = 25.5, y = 2.5 }, { x = 0.5, y = 2.5 })
+  local points = storage.tunnel_nets[1].points
+  check(
+    "every point remembered on either joins the one network",
+    points["5,2"] == points["35,2"] and points["35,2"] == points["25,2"] and points["20,0"] == points["30,0"]
+  )
+  surface.get_connected_tiles = split
 end
 
 do -- Road cut behind a freighter on its way home: it plans from where it stands, not from where it loaded.

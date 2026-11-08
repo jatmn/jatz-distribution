@@ -193,6 +193,12 @@ local flooded = { tick = -1, nets = nil, tiles = {} }
 
 -- The road network `position` is on (a number), or false if it isn't on road. Unknown, its
 -- network is flooded once, noting every portal entry and depot loading zone it reaches.
+-- A network keeps its number while what is known of the surface lasts: one flooded again (from a
+-- point asked about on a later tick) takes the number of any point already remembered on it, so
+-- points remembered on it before still agree (a new number left them on a network with no
+-- portals, and routes from them found no tunnel: Pullfrog's review of 4d4f64a). Road laid since
+-- this was worked out (forgotten at most once a second) can have joined networks remembered
+-- apart: they become one, under the lowest of their numbers.
 local function net_of(nets, surface, position)
   local x, y = math.floor(position.x), math.floor(position.y)
   local wanted = key(x, y)
@@ -221,17 +227,40 @@ local function net_of(nets, surface, position)
   for _, zone in ipairs(tunnels.zones and tunnels.zones(surface.index) or {}) do
     noted[key(math.floor(zone.x), math.floor(zone.y))] = true
   end
-  nets.count = nets.count + 1
-  local net = nets.count
-  local this_tick = flooded.tiles
-  for _, tile in ipairs(tiles) do
+  local points, keys, seen, net = nets.points, {}, {}, nil
+  for index, tile in ipairs(tiles) do
     local found = key(tile.x, tile.y)
-    this_tick[found] = net
-    if noted[found] then
-      nets.points[found] = net
+    keys[index] = found
+    local id = points[found]
+    if id then
+      seen[id] = true
+      net = net and math.min(net, id) or id
     end
   end
-  nets.points[wanted] = net
+  local this_tick = flooded.tiles
+  if not net then
+    nets.count = nets.count + 1
+    net = nets.count
+  elseif next(seen, next(seen)) then
+    -- Networks remembered apart, joined since: every point on any of them takes the one number.
+    for point, id in pairs(points) do
+      if id and seen[id] then
+        points[point] = net
+      end
+    end
+    for tile, id in pairs(this_tick) do
+      if seen[id] then
+        this_tick[tile] = net
+      end
+    end
+  end
+  for _, found in ipairs(keys) do
+    this_tick[found] = net
+    if noted[found] then
+      points[found] = net
+    end
+  end
+  points[wanted] = net
   return net
 end
 

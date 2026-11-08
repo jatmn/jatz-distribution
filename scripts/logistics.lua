@@ -1938,6 +1938,10 @@ local function search_providers(depot, from, trip)
     request = depot.entity.unit_number,
     item = depot.request.item,
     from = from,
+    -- Where tunnels are looked for from (route_answered), fixed with `from`: a freighter's own
+    -- origin changes as it comes out of a tunnel, and an answer about `from` must not be read
+    -- from there (Pullfrog's review of 4d4f64a).
+    origin = rerouted and rerouted.origin or from,
     candidates = found,
     index = 1,
     trip = trip,
@@ -2263,6 +2267,8 @@ local function seek_fuel(id, trip)
     request = trip.request,
     item = trip.item,
     from = from,
+    -- (See search_providers.)
+    origin = trip.origin or from,
     candidates = found,
     index = 1,
     trip = id,
@@ -3485,10 +3491,9 @@ local function route_answered(search, length)
   end
   local candidate = search.candidates[search.index]
   if not length then
-    -- No road: through tunnels, perhaps (from where a rerouted freighter last arrived, whose road
-    -- network is known there).
-    local trip = search.trip and storage.trips[search.trip]
-    length = tunnels.route(depot.entity.surface_index, trip and trip.origin or search.from, candidate.position)
+    -- No road: through tunnels, perhaps, from the origin the search started with (for a rerouted
+    -- freighter, where it had last arrived when it started; searches from before have none).
+    length = tunnels.route(depot.entity.surface_index, search.origin or search.from, candidate.position)
   end
   if length then
     if length < (search.best_length or math.huge) then
