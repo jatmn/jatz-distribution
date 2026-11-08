@@ -27,7 +27,9 @@ local road = {
   minable = { mining_time = 0.1, result = name },
   mined_sound = stone_path.mined_sound,
   collision_mask = collision_mask,
-  walking_speed_modifier = 1.3,
+  -- Players run 50% faster, as on Transport Drones' road (stone path is 1.3). Units, freighters
+  -- included, ignore it.
+  walking_speed_modifier = 1.5,
   vehicle_friction_modifier = stone_path.vehicle_friction_modifier,
   -- Above base and Space Age floors (0-33, 60, 70 are taken), so roads laid over concrete or
   -- stone path draw on top of it.
