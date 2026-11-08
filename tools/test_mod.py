@@ -335,6 +335,11 @@ EXPECTED = {'recipes': RECIPES,
             'robots_from_open': 10, 'robots_from_closed': 0, 'robots_from_buffer': 10,
             'robots_requested': [10, 0, 10], 'blueprint_robot_access': True, 'built_robot_access': True,
             'legacy_built': ['jatz-provider-depot', 12, False], 'legacy_ghost': ['jatz-provider-depot', 8, 4],
+            # Their chest settings as set before they were replaced: contents not read, empty slots
+            # on Z, the red wire only, 5 slots open (bar 6); the depot built from the ghost too.
+            'legacy_built_settings': [False, True, 'signal-Z', True, False, 6],
+            'legacy_ghost_settings': [False, True, 'signal-Z', True, False, 6],
+            'legacy_ghost_built_settings': [False, True, 'signal-Z', True, False, 6],
             # Full loads only: a request depot set to it, asking for 30 (less than a load), takes
             # all 30 from a provider 24 tiles away holding 40, passing by one 10 tiles away holding
             # only 10; off by default; provider depots have no such setting.

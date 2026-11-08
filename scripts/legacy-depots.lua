@@ -6,12 +6,14 @@
 -- the hidden containers they were (`jatz-provider-depot-legacy`, `jatz-buffer-depot-legacy`,
 -- prototypes/depots.lua), which keep everything, and this replaces each with the depot: at once on
 -- configuration changes (control.lua's setup, before deliveries look at the depots), and as a
--- ghost of one is placed (a blueprint from before) or one is built. The new depot stands where the
--- old one stood, facing the same way, flipped the same, with its force, quality, health, last
--- user, contents (as stacks, so item data stays), inventory limit, wires, circuit reading and
--- deconstruction mark, and everything the mod kept by its unit number (logistics.replaced,
--- depot_road.replaced): its settings, freighters, trips and the promises made to it. Robots stay
--- out of it, as of every depot until it lets them.
+-- ghost of one is placed (a blueprint from before) or one is built. The new depot, or ghost, stands
+-- where the old one stood, facing the same way, flipped the same, with its force, quality, last
+-- user, wires and chest settings (`chest_settings`: its inventory limit and what it sends on its
+-- wires); a depot also with its health, contents (as stacks, so item data stays), deconstruction
+-- mark, and everything the mod kept by its unit number (logistics.replaced, depot_road.replaced,
+-- road_monitor.replaced): its settings, freighters, trips and the promises made to it; a ghost with
+-- its tags (a blueprint's settings) and insert plan. Robots stay out of it, as of every depot until
+-- it lets them.
 local logistics = require("scripts.logistics")
 local depot_road = require("scripts.depot-road")
 local robot_access = require("scripts.robot-access")
@@ -52,6 +54,42 @@ local function connect(entity, wires)
   end
 end
 
+-- The settings a chest has of its own, which its ghost keeps too and the game hands on as the ghost
+-- is built: its inventory limit, and its circuit reading, every setting a container's control
+-- behavior and a logistic container's share (LuaContainerControlBehavior, and LuaControlBehavior's
+-- output_networks, which wire colours it sends on). Read from a depot or its ghost alike (the
+-- inventory's bar through LuaEntity::get_inventory_bar, which works for both); nil for each the old
+-- one doesn't have, so the new one keeps the game's default.
+local CHEST = defines.inventory.chest
+local READING = { "read_contents", "read_empty_slots", "empty_slots_signal", "output_networks" }
+
+local function chest_settings(entity)
+  local settings = {}
+  if entity.inventory_supports_bar(CHEST) then
+    settings.bar = entity.get_inventory_bar(CHEST)
+  end
+  local behavior = entity.get_control_behavior()
+  if behavior then
+    settings.reading = {}
+    for _, field in ipairs(READING) do
+      settings.reading[field] = behavior[field]
+    end
+  end
+  return settings
+end
+
+local function apply_chest_settings(entity, settings)
+  if settings.bar and entity.inventory_supports_bar(CHEST) then
+    entity.set_inventory_bar(CHEST, settings.bar)
+  end
+  if settings.reading then
+    local behavior = entity.get_or_create_control_behavior()
+    for field, value in pairs(settings.reading) do
+      behavior[field] = value
+    end
+  end
+end
+
 -- What a new depot or ghost is made from: the old one's place, facing and owner.
 local function spec(entity, name, inner_name)
   return {
@@ -68,12 +106,12 @@ local function spec(entity, name, inner_name)
   }
 end
 
--- Replace a ghost of a legacy depot with a ghost of the depot, keeping its tags (a blueprint's
--- settings) and insert plan. Returns the new ghost.
+-- Replace a ghost of a legacy depot with a ghost of the depot. Returns the new ghost.
 local function replace_ghost(ghost)
   local surface = ghost.surface
   local made = spec(ghost, "entity-ghost", REPLACEMENT[ghost.ghost_name])
   local tags, plan, wires, user = ghost.tags, ghost.insert_plan, wires_of(ghost), ghost.last_user
+  local settings = chest_settings(ghost)
   ghost.destroy()
   local new = surface.create_entity(made)
   if not new then
@@ -85,6 +123,7 @@ local function replace_ghost(ghost)
     new.insert_plan = plan
   end
   connect(new, wires)
+  apply_chest_settings(new, settings)
   return new
 end
 
@@ -93,19 +132,12 @@ end
 local function replace(entity)
   local surface, old_id = entity.surface, entity.unit_number
   local made = spec(entity, REPLACEMENT[entity.name])
-  local held = entity.get_inventory(defines.inventory.chest)
+  local held = entity.get_inventory(CHEST)
   local kept = game.create_inventory(#held)
   for index = 1, #held do
     kept[index].transfer_stack(held[index])
   end
-  local bar = held.supports_bar() and held.get_bar() or nil
-  local behavior = entity.get_control_behavior()
-  local reading = behavior
-    and {
-      read_contents = behavior.read_contents,
-      read_empty_slots = behavior.read_empty_slots,
-      empty_slots_signal = behavior.empty_slots_signal,
-    }
+  local settings = chest_settings(entity)
   local wires, health, marked = wires_of(entity), entity.health, entity.to_be_deconstructed()
   local user = entity.last_user
   entity.destroy()
@@ -116,21 +148,13 @@ local function replace(entity)
     return nil
   end
   new.health, new.last_user = health, user
-  local inventory = new.get_inventory(defines.inventory.chest)
+  local inventory = new.get_inventory(CHEST)
   for index = 1, math.min(#kept, #inventory) do
     inventory[index].transfer_stack(kept[index])
   end
   kept.destroy()
-  if bar and inventory.supports_bar() then
-    inventory.set_bar(bar)
-  end
   connect(new, wires)
-  if reading then
-    local now = new.get_or_create_control_behavior()
-    now.read_contents = reading.read_contents
-    now.read_empty_slots = reading.read_empty_slots
-    now.empty_slots_signal = reading.empty_slots_signal
-  end
+  apply_chest_settings(new, settings)
   if marked then
     new.order_deconstruction(new.force)
   end

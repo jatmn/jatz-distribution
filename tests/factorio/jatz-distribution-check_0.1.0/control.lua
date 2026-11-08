@@ -1869,7 +1869,8 @@ end
 -- no such setting. A blueprint keeps it, and the depot built from the blueprint is let in too.
 -- An item provider depot from before they were logistic containers (built by a script, as an old
 -- blueprint's would be) and the ghost of one become the depot, facing as they did, the ghost with
--- its tags.
+-- its tags, both with their chest settings (inventory limit and circuit reading), which the depot
+-- built from the ghost has too.
 local function setup_robot_access(result)
   local surface = game.create_surface("jatz-robots", { width = 96, height = 96 })
   surface.request_to_generate_chunks({ 0, 0 }, 2)
@@ -1927,13 +1928,37 @@ local function setup_robot_access(result)
   end
   result.built_robot_access = revived and remote.call("jatz-distribution", "get_robot_access", revived)
   holder.destroy()
-  surface.create_entity({
+  -- Both set up as the game can't by default (contents not read, empty slots on Z, the red wire
+  -- only, 5 slots open) before their build event, which replaces them.
+  local function configure(entity)
+    local behavior = entity.get_or_create_control_behavior()
+    behavior.read_contents = false
+    behavior.read_empty_slots = true
+    behavior.empty_slots_signal = { type = "virtual", name = "signal-Z" }
+    behavior.output_networks = { red = true, green = false }
+    entity.set_inventory_bar(defines.inventory.chest, 6)
+    script.raise_script_built({ entity = entity })
+  end
+  local function chest_settings(entity)
+    local behavior = entity.get_control_behavior()
+    local outputs = behavior and behavior.output_networks or {}
+    local signal = behavior and behavior.empty_slots_signal
+    return behavior
+      and {
+        behavior.read_contents,
+        behavior.read_empty_slots,
+        signal and signal.name,
+        outputs.red,
+        outputs.green,
+        entity.get_inventory_bar(defines.inventory.chest),
+      }
+  end
+  configure(surface.create_entity({
     name = "jatz-provider-depot-legacy",
     position = { -10.5, 8.5 },
     direction = defines.direction.west,
     force = "player",
-    raise_built = true,
-  })
+  }))
   local legacy = surface.find_entities_filtered({
     position = { -10.5, 8.5 },
     radius = 0.5,
@@ -1941,17 +1966,20 @@ local function setup_robot_access(result)
   })[1]
   result.legacy_built = legacy
     and { legacy.name, legacy.direction, remote.call("jatz-distribution", "get_robot_access", legacy) }
-  surface.create_entity({
+  result.legacy_built_settings = legacy and chest_settings(legacy)
+  configure(surface.create_entity({
     name = "entity-ghost",
     inner_name = "jatz-provider-depot-legacy",
     position = { -20.5, 8.5 },
     direction = defines.direction.south,
     force = "player",
     tags = { jatz_priority = 4 },
-    raise_built = true,
-  })
+  }))
   local ghost = surface.find_entities_filtered({ position = { -20.5, 8.5 }, radius = 0.5, type = "entity-ghost" })[1]
   result.legacy_ghost = ghost and { ghost.ghost_name, ghost.direction, ghost.tags and ghost.tags.jatz_priority }
+  result.legacy_ghost_settings = ghost and chest_settings(ghost)
+  local _, built = ghost.revive({ raise_revive = true })
+  result.legacy_ghost_built_settings = built and chest_settings(built)
   storage.robots = robots
 end
 
