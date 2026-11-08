@@ -224,10 +224,11 @@ def finalize(root, day, source=None):
                            if line.startswith('Date: ')), None)
         if prior_date:
             day = date.fromisoformat(prior_date).isoformat()
-    if notes is None and text.startswith(header):
+    if source is None and notes is None and text.startswith(header):
         validate_notes(text, info['version'])
         clear_fragments(root)
-        return  # Keep the first preparation date, including on publication retries.
+        return  # No new source: a local retry keeps the prepared section and its date.
+    # An explicit source is authoritative, including when its last note was withdrawn.
     body = notes if notes and notes.strip() else '  Info:\n    - No player-facing changes.\n'
     result = header + f'Date: {day}\n' + body + history
     validate_notes(result, info['version'])

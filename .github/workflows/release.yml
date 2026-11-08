@@ -67,11 +67,24 @@ jobs:
             head="$(pr_head)"
           done
           test "$(git rev-parse FETCH_HEAD)" = "$head"
+          test -n "$RUNNER_TEMP"
           # Never execute changed code from a bot branch while holding its token.
-          git diff --quiet "$GITHUB_SHA" "$head" -- . \
-            ':(exclude)info.json' ':(exclude)changelog.txt' \
-            ':(exclude).github/version.txt' ':(exclude).github/release-please-manifest.json' \
-            ':(exclude)docs/CHANGELOG.md'
+          # Metadata may change, and a previous run may have removed note files it consumed.
+          # Any other change, including a rewritten or added note, still stops the checkout.
+          git diff --name-status --no-renames -z "$GITHUB_SHA" "$head" > "$RUNNER_TEMP/release-diff"
+          while IFS= read -r -d '' status; do
+            IFS= read -r -d '' path || exit 1
+            case "$path" in
+              info.json | changelog.txt | .github/version.txt | .github/release-please-manifest.json | docs/CHANGELOG.md) ;;
+              changelog/unreleased/*.txt)
+                if [ "$status" != D ]; then
+                  echo "::error::The release branch may only remove a consumed player note: $path"
+                  exit 1
+                fi
+                ;;
+              *) echo "::error::Release branch changes an unexpected file: $path"; exit 1 ;;
+            esac
+          done < "$RUNNER_TEMP/release-diff"
           for path in info.json changelog.txt .github/version.txt .github/release-please-manifest.json docs/CHANGELOG.md; do
             mode="$(git ls-tree "$head" -- "$path")"
             if [ -n "$mode" ] && [[ "$mode" != '100644 blob '* ]]; then
@@ -80,7 +93,6 @@ jobs:
             fi
           done
           # Copy main's notes as ordinary files. Never check out or run the release branch's copies.
-          test -n "$RUNNER_TEMP"
           notes="$RUNNER_TEMP/player-notes"
           rm -rf "$notes"
           mkdir -p "$notes"

@@ -134,6 +134,21 @@ class Releases(unittest.TestCase):
         build(self.output, self.root)
         validate(self.output, 'v' + version, self.root)
 
+    def test_withdrawing_the_last_note_replaces_the_prepared_section(self):
+        fragment = '  Bugfixes:\n    - Keep delivered cargo.\n'
+        source = self.note_source(fragment)
+        self.bump()
+        finalize(self.root, '2026-11-04', source)
+        (source / 'changelog' / 'unreleased' / 'cargo.txt').unlink()
+        finalize(self.root, '2026-11-05', source)
+        text = (self.root / 'changelog.txt').read_text()
+        self.assertIn('Date: 2026-11-04', text)
+        self.assertIn('No player-facing changes.', text)
+        self.assertNotIn('Keep delivered cargo.', text)
+        self.assertIn(self.history, text)
+        finalize(self.root, '2026-11-06')
+        self.assertEqual(text, (self.root / 'changelog.txt').read_text())
+
     def test_release_without_player_changes_and_mismatched_records(self):
         version = self.bump()
         with self.assertRaisesRegex(ValueError, 'top version'):
@@ -281,6 +296,87 @@ class ReleaseBranchGuard(unittest.TestCase):
                 else:
                     self.assertNotEqual(result.returncode, 0)
                     self.assertEqual(git('rev-parse', 'HEAD'), base)
+
+    def test_consumed_note_deletions_pass_and_rewritten_notes_do_not(self):
+        workflow = (REPO / '.github/workflows/release.yml').read_text()
+        start = workflow.index('          branch=release-please--branches--main')
+        end = workflow.index('          python3 tools/release_metadata.py', start)
+        guard = '\n'.join(line[10:] for line in workflow[start:end].splitlines())
+        separator = '-' * 99 + '\n'
+        history = separator + 'Version: 0.1.0\nDate: 2026-11-04\n  Info:\n    - First release.\n'
+        fragment = '  Bugfixes:\n    - Keep delivered cargo.\n'
+
+        def new_repo(folder):
+            root = Path(folder)
+            repo = root / 'repo'
+            repo.mkdir()
+
+            def git(*args):
+                return subprocess.check_output(['git', '-C', str(repo), *args], stderr=subprocess.DEVNULL).decode().strip()
+
+            git('init', '-b', 'main')
+            git('config', 'user.name', 'Test')
+            git('config', 'user.email', 'test@example.invalid')
+            (repo / '.github').mkdir()
+            (repo / 'info.json').write_text('{"name": "jatz-distribution", "version": "0.1.0"}\n')
+            (repo / '.github' / 'version.txt').write_text('0.1.0\n')
+            (repo / '.github' / 'release-please-manifest.json').write_text('{ ".": "0.1.0" }\n')
+            (repo / 'changelog.txt').write_text(history)
+            notes = repo / 'changelog' / 'unreleased'
+            notes.mkdir(parents=True)
+            (notes / 'fix.txt').write_text(fragment)
+            (repo / 'tool.py').write_text('trusted code')
+            git('add', '.')
+            git('commit', '-m', 'base')
+            base = git('rev-parse', 'HEAD')
+            source = root / 'main-notes'
+            (source / 'changelog' / 'unreleased').mkdir(parents=True)
+            (source / 'changelog.txt').write_text(history)
+            (source / 'changelog' / 'unreleased' / 'fix.txt').write_text(fragment)
+            git('checkout', '-b', 'release-please--branches--main')
+            info = json.loads((repo / 'info.json').read_text())
+            info['version'] = '0.1.1'
+            (repo / 'info.json').write_text(json.dumps(info) + '\n')
+            (repo / '.github' / 'version.txt').write_text('0.1.1\n')
+            (repo / '.github' / 'release-please-manifest.json').write_text('{ ".": "0.1.1" }\n')
+            git('add', '.')
+            git('commit', '-m', 'release metadata')
+            return root, repo, git, base, source
+
+        def run_guard(root, repo, git, head):
+            git('checkout', 'main')
+            git('remote', 'add', 'origin', str(repo)) if 'origin' not in git('remote') else None
+            commands = root / 'bin'
+            commands.mkdir(exist_ok=True)
+            (commands / 'gh').write_text('#!/bin/sh\nprintf "%s\\n" "$TEST_RELEASE_HEAD"\n')
+            (commands / 'gh').chmod(0o755)
+            env = {**os.environ, 'PATH': str(commands) + os.pathsep + os.environ['PATH'],
+                   'TEST_RELEASE_HEAD': head, 'GITHUB_SHA': git('rev-parse', 'main'), 'RUNNER_TEMP': str(root)}
+            return subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', guard], cwd=repo,
+                                  env=env, capture_output=True, text=True)
+
+        with tempfile.TemporaryDirectory() as folder:
+            root, repo, git, base, source = new_repo(folder)
+            finalize(repo, '2026-11-08', source)
+            self.assertFalse((repo / 'changelog' / 'unreleased' / 'fix.txt').exists())
+            self.assertIn('Keep delivered cargo.', (repo / 'changelog.txt').read_text())
+            git('add', '-A')
+            git('commit', '-m', 'chore: finalize player release notes')
+            finalized = git('rev-parse', 'HEAD')
+            result = run_guard(root, repo, git, finalized)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(git('rev-parse', 'HEAD'), finalized)
+
+        with tempfile.TemporaryDirectory() as folder:
+            root, repo, git, base, source = new_repo(folder)
+            (repo / 'changelog' / 'unreleased' / 'fix.txt').write_text(
+                '  Bugfixes:\n    - Untrusted replacement.\n')
+            git('add', '.')
+            git('commit', '-m', 'rewrite a note')
+            rewritten = git('rev-parse', 'HEAD')
+            result = run_guard(root, repo, git, rewritten)
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertEqual(git('rev-parse', 'HEAD'), base)
 
 
 if __name__ == '__main__':
