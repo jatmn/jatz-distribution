@@ -3786,14 +3786,14 @@ function logistics.apply_tags(entity, tags)
     -- The ghost's insert plan for freighters, into an item depot's own chest: asked of its truck
     -- chest instead at once, before robots bring any (a ghost built without its tags too).
     logistics.trim_freighter_requests(entity)
-    -- Built at once with the blueprint's request settings (scripts/depot-settings.lua) beside it,
-    -- as in the editor, or after they set it up: what they hold, which parametrisation may have
-    -- changed, comes before the tags'. Taken with or without tags, so they never stay.
+    -- Built from a blueprint with its request settings (scripts/depot-settings.lua): what they
+    -- hold, which parametrisation may have changed, comes before the tags' (a request of false:
+    -- the blueprint's depot had none). Taken with or without tags, so they never stay.
     if logistics.take_request_settings then
       request, freighters = logistics.take_request_settings(entity)
     end
   end
-  if not (tags or request or freighters) then
+  if not (tags or request ~= nil or freighters) then
     return
   end
   tags = tags or {}
@@ -3814,8 +3814,12 @@ function logistics.apply_tags(entity, tags)
   if not depot then
     return
   end
-  request = request or tags[REQUEST_TAG]
-  if type(request) == "table" and type(request.item) == "string" and type(request.count) == "number" then
+  if request == nil then
+    request = tags[REQUEST_TAG]
+  end
+  if request == false then
+    logistics.set_request(entity, nil)
+  elseif type(request) == "table" and type(request.item) == "string" and type(request.count) == "number" then
     logistics.set_request(entity, request.item, request.count)
   end
   if type(tags[FROM_BUFFERS_TAG]) == "boolean" then

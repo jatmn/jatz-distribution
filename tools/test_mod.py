@@ -242,13 +242,20 @@ EXPECTED = {'recipes': RECIPES,
             # settings (7 wood, and 3 freighters as a number with no signal, so parametrising
             # offers no item for them); changed to 11 iron plates and 5 freighters as parametrising
             # would and pasted, the depot built asks for 11 iron plates and 5 freighters, and no
-            # settings stay in the world. Settings beside a depot a script builds at once,
-            # untagged, give it their request (13 iron plates, 2 freighters; freighters first
-            # there, as either order is read) and go. A request at a condition's int32 limit goes
-            # in the settings; one above stays in its tag only, the blueprint still made.
+            # settings stay in the world. A settings ghost placed without a build event gives a
+            # depot built over its ghost without tags its request (13 iron plates, 2 freighters)
+            # and goes. A request at a condition's int32 limit goes in the settings; one above
+            # goes in tags only, the blueprint still made.
             'blueprint_settings': 'wood x7', 'blueprint_freighter_settings': 'no signal x3',
             'parametrised_request': 'iron-plate x11', 'parametrised_freighters': 5, 'settings_left': 0,
-            'at_once_request': 'iron-plate x13', 'at_once_freighters': 2, 'at_once_settings_left': False,
+            'quiet_settings_request': 'iron-plate x13', 'quiet_settings_freighters': 2, 'quiet_settings_left': False,
+            # A request-free blueprint pasted over a depot asking for 7 wood and 5 freighters
+            # clears both; a forced paste of an item depot's blueprint over a liquid depot places
+            # only the settings' ghost, which leaves the liquid depot's request and freighter
+            # requests alone and goes.
+            'empty_pasted_over_request': 'none', 'empty_pasted_over_freighters': 0,
+            'forced_over_liquid': '0 depot ghosts, water x1000, 5 freighters requested',
+            'forced_over_liquid_settings_left': 0,
             'blueprint_count_limit': ['2147483647: made, tag 2147483647, settings 2147483647',
                                       '2147483648: made, tag 2147483648, settings freighters only'],
             # Pasted over a depot standing there, that blueprint sets its request from the

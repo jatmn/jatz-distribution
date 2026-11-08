@@ -825,6 +825,7 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
       and settings.position.x == planned.position.x
       and settings.position.y == planned.position.y
       and settings.entity_number == 2
+      and settings.tags.jatz_settings_of == "jatz-request-depot"
   )
   check(
     "and its freighters, as a number with no signal",
@@ -867,8 +868,8 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
   )
   assert(logistics.set_request(source, "wood", 9))
 
-  -- Every requesting depot gets settings holding its freighters, none included: a depot with no
-  -- request and no freighters too, so pasting over a depot always matches them.
+  -- Every requesting depot gets settings, holding the depot as it is: a depot with no request and no
+  -- freighters too, so pasting over the same depot always sets both.
   local bare = request_depot(105)
   logistics.setup_blueprint(blueprint, { [1] = bare })
   local bare_settings = settings_entry(saved)
@@ -879,14 +880,25 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
       and #bare_conditions == 1
       and bare_conditions[1].first_signal == nil
       and bare_conditions[1].constant == 0
-      and bare_settings.tags == nil
+      and bare_settings.tags.jatz_settings_of == "jatz-request-depot"
+      and bare_settings.tags.jatz_request == nil
   )
 
   -- Request settings as built: a ghost (or, at once, the combinator itself) whose decider
-  -- parameters read the request and the freighters, either missing, in either order. Strict: only
-  -- `parameters` reads them, as LuaDeciderCombinatorControlBehavior gives them.
+  -- parameters read the request and the freighters, either missing, in either order, and whose
+  -- tags name the depot they were made from (`made_from`, a request depot unless given; false for
+  -- settings from before, without it). Strict: only `parameters` reads them, as
+  -- LuaDeciderCombinatorControlBehavior gives them, and a real one has no tags to read (only its
+  -- build event's).
   prototypes.item["iron-plate"] = { name = "iron-plate" }
-  local function placed_settings(x, item, count_, freighters, force, tags)
+  local function placed_settings(x, item, count_, freighters, force, extra_tags, made_from)
+    local tags = {}
+    if made_from ~= false then
+      tags.jatz_settings_of = made_from or "jatz-request-depot"
+    end
+    for name, value in pairs(extra_tags or {}) do
+      tags[name] = value
+    end
     local conditions = {}
     if freighters then
       conditions[#conditions + 1] = { comparator = "=", constant = freighters, compare_type = "or" }
@@ -919,6 +931,7 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
   end
   local function at_once(entity)
     entity.name, entity.type, entity.ghost_name = "jatz-depot-settings", "decider-combinator", nil
+    entity.event_tags, entity.tags = entity.tags, nil
     return entity
   end
   -- Entities at a spot, as find_entities_filtered gives them: by position, name, ghost name and
@@ -983,11 +996,13 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
     standing(x, { entity, real_settings })
     matched = nil
     if settings_first then
-      fire("on_built_entity", { entity = real_settings, player_index = 3 })
+      fire("on_built_entity", { entity = real_settings, player_index = 3, tags = real_settings.event_tags })
     end
     fire("on_built_entity", { entity = entity, tags = tags })
-    if not settings_first and real_settings.valid then
-      fire("on_built_entity", { entity = real_settings, player_index = 3 })
+    if not settings_first then
+      -- The depot's build event leaves them (it can't read their tags) to their own.
+      assert(real_settings.valid)
+      fire("on_built_entity", { entity = real_settings, player_index = 3, tags = real_settings.event_tags })
     end
     surface.find_entities_filtered = search
     return entity, real_settings
@@ -1073,6 +1088,134 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
   check(
     "and a request too large for a condition comes from their tag",
     request and request.item == "wood" and request.count == 9999999999 and matched and matched.total == 3
+  )
+
+  -- Settings of a depot with no request clear one: pasted over a depot asking for wood, handed to a
+  -- ghost tagged with one, or built at once with it (either event first, its tags still naming the
+  -- old request). Copilot's and Pullfrog's review of 4a0d9b9.
+  assert(logistics.set_request(pasted_over, "wood", 7))
+  local empty = placed_settings(180.5, nil, nil, 0)
+  standing(180, { pasted_over, empty })
+  matched = nil
+  fire("on_built_entity", { entity = empty, player_index = 3 })
+  surface.find_entities_filtered = search
+  check(
+    "settings with no request, pasted over a depot, clear its request",
+    logistics.get_request(pasted_over) == nil and matched and matched.total == 0
+  )
+  local tagged_ghost = {
+    valid = true,
+    name = "entity-ghost",
+    type = "entity-ghost",
+    ghost_name = "jatz-request-depot",
+    position = { x = 190.5, y = 0.5 },
+    force = "player",
+    tags = { jatz_request = { item = "wood", count = 9 }, jatz_freighters = 3 },
+  }
+  local empty_for_ghost = placed_settings(190.5, nil, nil, 2)
+  standing(190, { tagged_ghost, empty_for_ghost })
+  fire("on_built_entity", { entity = empty_for_ghost, player_index = 3 })
+  surface.find_entities_filtered = search
+  check(
+    "and a ghost's request tag",
+    tagged_ghost.tags.jatz_request == nil and tagged_ghost.tags.jatz_freighters == 2 and not empty_for_ghost.valid
+  )
+  for _, settings_first in ipairs({ false, true }) do
+    local x = settings_first and 210 or 200
+    local cleared = depot(x)
+    cleared.name = "jatz-request-depot"
+    local real_empty = at_once(placed_settings(x + 0.5, nil, nil, 0))
+    standing(x, { cleared, real_empty })
+    if settings_first then
+      fire("on_built_entity", { entity = real_empty, player_index = 3, tags = real_empty.event_tags })
+    end
+    fire("on_built_entity", { entity = cleared, tags = old_tags })
+    if not settings_first then
+      fire("on_built_entity", { entity = real_empty, player_index = 3, tags = real_empty.event_tags })
+    end
+    surface.find_entities_filtered = search
+    check(
+      "and a depot built at once with them" .. (settings_first and ", their event first" or ""),
+      logistics.get_request(cleared) == nil and not real_empty.valid
+    )
+  end
+
+  -- Only the depot they were made from takes them: a request depot's settings left by a forced
+  -- paste over a buffer depot, beside a buffer depot's ghost, or at the centre of a buffer depot
+  -- built from its ghost change nothing there, and go (Copilot's and Pullfrog's review of
+  -- 4a0d9b9). Settings from before, naming no depot, are ignored.
+  local other_kind = depot(220)
+  other_kind.name = "jatz-buffer-depot"
+  fire("on_built_entity", { entity = other_kind })
+  assert(logistics.set_request(other_kind, "wood", 9))
+  local wrong = placed_settings(220.5, "iron-plate", 50, 6)
+  standing(220, { other_kind, wrong })
+  matched = nil
+  fire("on_built_entity", { entity = wrong, player_index = 3 })
+  request = logistics.get_request(other_kind)
+  check(
+    "a request depot's settings leave a buffer depot alone",
+    request.item == "wood" and request.count == 9 and matched == nil and not wrong.valid
+  )
+  local buffer_ghost = {
+    valid = true,
+    name = "entity-ghost",
+    type = "entity-ghost",
+    ghost_name = "jatz-buffer-depot",
+    position = { x = 230.5, y = 0.5 },
+    force = "player",
+    tags = { jatz_request = { item = "wood", count = 9 }, jatz_freighters = 3 },
+  }
+  local wrong_for_ghost = placed_settings(230.5, "iron-plate", 50, 6)
+  standing(230, { buffer_ghost, wrong_for_ghost })
+  fire("on_built_entity", { entity = wrong_for_ghost, player_index = 3 })
+  check(
+    "and its ghost",
+    buffer_ghost.tags.jatz_request.item == "wood"
+      and buffer_ghost.tags.jatz_freighters == 3
+      and not wrong_for_ghost.valid
+  )
+  local built_buffer = depot(240)
+  built_buffer.name = "jatz-buffer-depot"
+  local wrong_at_centre = placed_settings(240.5, "iron-plate", 50, 6)
+  standing(240, { built_buffer, wrong_at_centre })
+  matched = nil
+  fire("on_robot_built_entity", { entity = built_buffer, tags = old_tags })
+  surface.find_entities_filtered = search
+  request = logistics.get_request(built_buffer)
+  check(
+    "and a buffer depot built beside their ghost",
+    request.item == "wood" and request.count == 9 and matched and matched.total == 3 and not wrong_at_centre.valid
+  )
+  local from_before = placed_settings(220.5, "iron-plate", 50, 6, nil, nil, false)
+  standing(220, { other_kind, from_before })
+  matched = nil
+  fire("on_built_entity", { entity = from_before, player_index = 3 })
+  request = logistics.get_request(other_kind)
+  check(
+    "settings naming no depot are ignored, and go",
+    request.item == "wood" and matched == nil and not from_before.valid
+  )
+  surface.find_entities_filtered = search
+
+  -- A parametrised request the depot can't take (a fluid for an item depot) has no say: the ghost
+  -- keeps the request it was blueprinted with, and still takes the freighters.
+  local kept_ghost = {
+    valid = true,
+    name = "entity-ghost",
+    type = "entity-ghost",
+    ghost_name = "jatz-request-depot",
+    position = { x = 250.5, y = 0.5 },
+    force = "player",
+    tags = { jatz_request = { item = "wood", count = 9 }, jatz_freighters = 3 },
+  }
+  local fluid_for_items = placed_settings(250.5, "water", 500, 4)
+  standing(250, { kept_ghost, fluid_for_items })
+  fire("on_built_entity", { entity = fluid_for_items, player_index = 3 })
+  surface.find_entities_filtered = search
+  check(
+    "a request the depot can't take leaves its ghost's",
+    kept_ghost.tags.jatz_request.item == "wood" and kept_ghost.tags.jatz_freighters == 4
   )
 end
 
