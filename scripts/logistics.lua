@@ -143,53 +143,8 @@ local DISPATCH_INTERVAL = 60
 logistics.dispatch_interval = DISPATCH_INTERVAL
 -- A request depot sends at most one freighter this often, so they leave one after another.
 local SEND_SPACING = 60
--- A freighter carries at most this many stacks, or this much fluid (Transport Drones' default
--- drone fluid capacity), before capacity research (scripts/research.lua).
-local CAPACITY_STACKS = 10
-local FLUID_CAPACITY = 500
-logistics.fluid_capacity = FLUID_CAPACITY
-
--- A force's research for freighters, kept (storage.research_levels[force index]): working it out
--- reads every level's technology and prototype, objects for Lua to collect, and freighters set off
--- many times a second. Forgotten when the force's research changes (on_research_changed), when
--- forces are reset, made or merged (a merged force's index can be given to a new one), on
--- configuration changes, and after a minute, in case a script changed a level without an event.
-local RESEARCH_MEMORY_TICKS = 60 * 60
-local function research_of(force)
-  storage.research_levels = storage.research_levels or {}
-  local index = force.index
-  local known = storage.research_levels[index]
-  if not (known and game.tick - known.tick < RESEARCH_MEMORY_TICKS) then
-    known = {
-      stacks = research.extra_stacks(force),
-      fluid = research.extra_fluid(force),
-      speed = research.speed_multiplier(force),
-      tick = game.tick,
-    }
-    storage.research_levels[index] = known
-  end
-  return known
-end
-
--- The freighter's own speed, read from its prototype once (prototypes don't change while the game
--- runs; reading one makes a new object every time).
-local drone_speed
-
--- What a force's freighters carry and how fast they drive, with its research. A trip keeps the
--- cargo size it set off with; speed research also reaches freighters already on the road
--- (logistics.on_research_changed).
-local function cargo_stacks(force)
-  return CAPACITY_STACKS + research_of(force).stacks
-end
-
-local function fluid_capacity(force)
-  return FLUID_CAPACITY + research_of(force).fluid
-end
-
-local function freighter_speed(force)
-  drone_speed = drone_speed or prototypes.entity[DRONE].speed
-  return drone_speed * research_of(force).speed
-end
+-- A freighter's fluid capacity before research (scripts/research.lua).
+logistics.fluid_capacity = research.base_fluid
 
 -- After a provider can't be reached, a request depot ignores it for this long; after a freighter
 -- can't be created, the depot waits this long before trying again. Laying road, or building or
@@ -1594,9 +1549,9 @@ function logistics.full_load(depot, trip)
   local force = depot.entity.force
   local capacity
   if depot.fluid then
-    capacity = fluid_capacity(force)
+    capacity = research.fluid_capacity_of(force)
   else
-    local stacks = trip and trip.cargo and #trip.cargo or cargo_stacks(force)
+    local stacks = trip and trip.cargo and #trip.cargo or research.cargo_stacks(force)
     capacity = stacks * stack_size_of(request.item)
   end
   return math.min(capacity, request.count), capacity
@@ -1782,13 +1737,13 @@ local function start_trip(depot, provider, from, planned, length)
     -- One with a full tank.
     energy = fuel_capacity()
   end
-  drone.speed = freighter_speed(drone.force)
+  drone.speed = research.freighter_speed(drone.force)
   local trip = {
     drone = drone,
     request = depot.entity.unit_number,
     provider = provider.entity.unit_number,
     item = depot.request.item,
-    cargo = not depot.fluid and game.create_inventory(cargo_stacks(drone.force)) or nil,
+    cargo = not depot.fluid and game.create_inventory(research.cargo_stacks(drone.force)) or nil,
     fluid = depot.fluid and { amount = 0 } or nil,
     -- The freighter item it was, taken from the depot's slot; it goes back there afterwards.
     truck = game.create_inventory(1),
@@ -1818,7 +1773,7 @@ local function start_trip(depot, provider, from, planned, length)
   depot.next_send = game.tick + SEND_SPACING
   if energy <= 0 and fuel_per_tile() > 0 then
     trip.dry = true
-    drone.speed = freighter_speed(drone.force) * DRY_SPEED
+    drone.speed = research.freighter_speed(drone.force) * DRY_SPEED
   end
   show_fuel(trip)
   -- set_off may send it straight back into the slot (too little fuel, nowhere to fill up), which
@@ -2548,7 +2503,7 @@ function burn(trip, per_tile)
   if trip.dry and per_tile <= 0 then
     -- Fuel was turned off: nothing to crawl for.
     trip.dry = nil
-    drone.speed = freighter_speed(drone.force)
+    drone.speed = research.freighter_speed(drone.force)
   end
 end
 
@@ -2578,7 +2533,7 @@ local function check_trip(id, trip, per_tile, capacity, polluters)
     search_again(id, trip)
   elseif trip.drone.valid and trip.energy <= 0 and not trip.dry and per_tile > 0 then
     trip.dry = true
-    trip.drone.speed = freighter_speed(trip.drone.force) * DRY_SPEED
+    trip.drone.speed = research.freighter_speed(trip.drone.force) * DRY_SPEED
     if not (trip.refuel or trip.searching or trip.loading) then
       look_for_fuel(id, trip)
     end
@@ -2860,7 +2815,7 @@ function upgrade(trip)
   trip.energy = trip.energy or fuel_capacity()
   if type(trip.cargo) == "number" then
     local count = trip.cargo
-    trip.cargo = game.create_inventory(CAPACITY_STACKS)
+    trip.cargo = game.create_inventory(research.base_stacks)
     if count > 0 and prototypes.item[trip.item] then
       trip.cargo.insert({ name = trip.item, count = count })
     end
@@ -2958,7 +2913,7 @@ local function arrived_at_provider(id, trip, depot)
     -- No more than is left after the promises made before its own, which are their freighters'.
     local limit = math.min(trip.planned or room, room, left or room)
     if trip.fluid then
-      load_fluid(provider, trip, math.min(limit, fluid_capacity(depot.entity.force)))
+      load_fluid(provider, trip, math.min(limit, research.fluid_capacity_of(depot.entity.force)))
     else
       load(inventory(provider), trip.cargo, trip.item, limit)
     end
@@ -2988,7 +2943,7 @@ local function arrived_at_fuel(id, trip)
   end
   if trip.dry and trip.energy > 0 then
     trip.dry = nil
-    trip.drone.speed = freighter_speed(trip.drone.force)
+    trip.drone.speed = research.freighter_speed(trip.drone.force)
   end
   show_fuel(trip)
   if storage.trips[id] then
@@ -3502,7 +3457,8 @@ local function finish_search(depot, search, owner)
   -- This freighter promises to load what the depot still needs, as far as the provider has it
   -- unpromised and it can carry; the next freighter covers the rest, from here or elsewhere.
   local force = depot.entity.force
-  local capacity = depot.fluid and fluid_capacity(force) or cargo_stacks(force) * stack_size_of(search.item)
+  local capacity = depot.fluid and research.fluid_capacity_of(force)
+    or research.cargo_stacks(force) * stack_size_of(search.item)
   local planned = math.min(room, available(provider, search.item), capacity)
   depot.retry_status = nil
   if start_trip(depot, provider, from, planned, search.best_length) then
@@ -4909,7 +4865,7 @@ function logistics.on_research_changed(event)
     return
   end
   local force = technology.force
-  local speed = freighter_speed(force)
+  local speed = research.freighter_speed(force)
   for _, trip in pairs(storage.trips or {}) do
     local drone = trip.drone
     if drone.valid and drone.force.index == force.index then
@@ -4919,7 +4875,7 @@ function logistics.on_research_changed(event)
   end
 end
 
--- Forces reset, made or merged: forget every force's research (research_of).
+-- Forces reset, made or merged: forget every force's research (scripts/research.lua's research_of).
 function logistics.on_forces_changed()
   storage.research_levels = nil
 end

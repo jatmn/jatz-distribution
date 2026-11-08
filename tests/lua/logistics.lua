@@ -419,7 +419,8 @@ local function reset()
     create_inventory = script_inventory,
   }
   -- Fresh modules, with no cache from an earlier check (scripts/impact.lua keeps the names of what
-  -- freighters run over).
+  -- freighters run over, scripts/research.lua the freighter's speed, read from its prototype once).
+  package.loaded["scripts.research"] = nil
   package.loaded["scripts.logistics"] = nil
   package.loaded["scripts.impact"] = nil
   local logistics = require("scripts.logistics")
