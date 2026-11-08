@@ -241,8 +241,13 @@ for name, size in pairs(STACK_SIZE) do
 end
 local NORMAL = prototypes.quality.normal
 local technologies = {}
-for _, name in ipairs({ "jatz-freighter-speed", "jatz-freighter-item-capacity", "jatz-freighter-fluid-capacity" }) do
-  for level = 1, 5 do
+local TECHNOLOGY_LEVELS = {
+  ["jatz-freighter-speed"] = 5,
+  ["jatz-freighter-item-capacity"] = 5,
+  ["jatz-freighter-fluid-capacity"] = 10,
+}
+for name, levels in pairs(TECHNOLOGY_LEVELS) do
+  for level = 1, levels do
     prototypes.technology[name .. "-" .. level] = { name = name .. "-" .. level }
     technologies[name .. "-" .. level] = { researched = false, level = level }
   end

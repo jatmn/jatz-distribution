@@ -1822,7 +1822,7 @@ do -- Copy and paste, and clones, carry the priority between provider and buffer
   check("a clone keeps it", logistics.get_priority(clone) == 9)
 end
 
--- Liquid depots: the same deliveries, for fluids, 500 at a time, between liquid depots only.
+-- Liquid depots: the same deliveries, for fluids, 750 at a time, between liquid depots only.
 local function liquids(logistics, wanted, trucks)
   local request = tank("jatz-liquid-request-depot", 0.5, 0.5)
   local provider = tank("jatz-liquid-provider-depot", 10.5, 0.5, "water", 1000, 60)
@@ -1870,46 +1870,46 @@ do -- Requests: fluids for liquid depots, items for item depots.
   )
 end
 
-do -- Full loads of fluid: 500, the freighter's fluid capacity.
+do -- Full loads of fluid: 750, the freighter's fluid capacity.
   local logistics = reset()
   local request, provider = liquids(logistics)
-  provider.held.amount = 300
+  provider.held.amount = 600
   assert(logistics.set_full_loads(request, true))
   logistics.on_tick()
-  check("a liquid provider with 300 isn't asked about", #requests == 0)
+  check("a liquid provider with 600 isn't asked about", #requests == 0)
   check("the liquid depot waits for a full load", logistics.get_status(request) == "full-load")
-  provider.held.amount = 600
+  provider.held.amount = 800
   game.tick = 60
   logistics.on_tick()
   answer(logistics, 1, "route")
   local trip = trips_from(request)[1]
-  check("with 600, a freighter goes for 500", trip and trip.planned == 500)
+  check("with 800, a freighter goes for 750", trip and trip.planned == 750)
 end
 
-do -- A fluid delivery: 500 per freighter, at the provider's temperature.
+do -- A fluid delivery: 750 per freighter, at the provider's temperature.
   local logistics = reset()
   local request, provider = liquids(logistics)
   logistics.on_tick()
   check("the liquid provider is asked about", #requests == 1 and requests[1].goal.x == 10.5)
   answer(logistics, 1, "route")
   local trip = trips_from(request)[1]
-  check("a freighter promises 500, all it carries", trip and trip.planned == 500)
+  check("a freighter promises 750, all it carries", trip and trip.planned == 750)
   check("with fluid cargo, not an item inventory", trip.fluid and not trip.cargo)
   arrive(logistics, trip)
-  check("it pumps 500 out of the provider", provider.held.amount == 500 and trip.fluid.amount == 500)
+  check("it pumps 750 out of the provider", provider.held.amount == 250 and trip.fluid.amount == 750)
   check("at the provider's temperature", trip.fluid.temperature == 60)
   check(
     "showing the fluid's icon in alt mode",
     sprites_on(trip.drone) == "utility/entity_info_dark_background fluid/water"
   )
   arrive(logistics, trip)
-  check("and into the request depot's tank", request.held.name == "water" and request.held.amount == 500)
+  check("and into the request depot's tank", request.held.name == "water" and request.held.amount == 750)
   check("hot", request.held.temperature == 60)
   check("then parks in the slot again", logistics.freighter_counts(request) == 3)
   game.tick = 60
   logistics.on_tick()
   answer(logistics, #requests, "route")
-  check("the next freighter fetches the remaining 300", trips_from(request)[1].planned == 300)
+  check("the next freighter fetches the remaining 50", trips_from(request)[1].planned == 50)
 end
 
 do -- A freighter stands at each loading zone for a moment before it loads or unloads.
@@ -1931,14 +1931,14 @@ do -- A freighter stands at each loading zone for a moment before it loads or un
   logistics.on_roads_changed(1, false, true)
   check("a road change doesn't cut its stop short", last_command() == stop)
   reached()
-  check("then it loads", provider.held.amount == 500 and trip.fluid.amount == 500)
+  check("then it loads", provider.held.amount == 250 and trip.fluid.amount == 750)
   check("and drives home", last_command().type == defines.command.go_to_location)
   reached()
   stop = last_command()
   check("at home it stops again", stop.type == defines.command.stop and stop.ticks_to_wait == 60)
-  check("before unloading", request.held.amount == 0 and trip.fluid.amount == 500)
+  check("before unloading", request.held.amount == 0 and trip.fluid.amount == 750)
   reached()
-  check("then it unloads", request.held.amount == 500)
+  check("then it unloads", request.held.amount == 750)
   check("and parks", logistics.freighter_counts(request) == 3 and not storage.trips[trip.drone.unit_number])
 end
 
@@ -1960,7 +1960,7 @@ do -- One coming home empty parks at once; one unloading at a removed depot take
   trip = trips_from(request)[1]
   arrive(logistics, trip)
   logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = defines.behavior_result.success })
-  check("setup: stopped at home to unload", trip.loading and trip.fluid.amount == 500)
+  check("setup: stopped at home to unload", trip.loading and trip.fluid.amount == 750)
   request.valid = false
   logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = request.unit_number })
   local drive = trip.drone.commands[#trip.drone.commands]
@@ -1979,7 +1979,7 @@ do -- A large request: several freighters, one a second, each promising what it 
   logistics.on_tick()
   answer(logistics, 2, "route")
   local trips = trips_from(request)
-  check("two freighters for 900", #trips == 2 and trips[1].planned == 500 and trips[2].planned == 400)
+  check("two freighters for 900", #trips == 2 and trips[1].planned == 750 and trips[2].planned == 150)
 end
 
 do -- Items and fluids never meet.
@@ -2080,7 +2080,7 @@ do -- Fluid that no longer fits goes back to the provider; a lost way back bring
   arrive(logistics, trip)
   request.held.name, request.held.amount = "steam", 100 -- another fluid got in meanwhile
   arrive(logistics, trip)
-  check("what doesn't fit heads back to the provider", trip.state == "returning" and trip.fluid.amount == 500)
+  check("what doesn't fit heads back to the provider", trip.state == "returning" and trip.fluid.amount == 750)
   arrive(logistics, trip)
   check("and goes back into its tank", provider.held.amount == 1000 and not storage.trips[trip.drone.unit_number])
   check("the freighter parks again", logistics.freighter_counts(request) == 3)
@@ -4154,7 +4154,7 @@ local SPEED, ITEMS, FLUIDS = "jatz-freighter-speed", "jatz-freighter-item-capaci
 local function researching(done)
   local force = { name = "player", index = 1, technologies = {} }
   prototypes.technology = {}
-  for name, levels in pairs({ [SPEED] = 5, [ITEMS] = 5, [FLUIDS] = 5 }) do
+  for name, levels in pairs({ [SPEED] = 5, [ITEMS] = 5, [FLUIDS] = 10 }) do
     for level = 1, levels do
       local key = name .. "-" .. level
       prototypes.technology[key] = {}
@@ -4213,19 +4213,33 @@ do -- Research: bigger loads and faster freighters, on the road too.
   check("and forgotten when forces change", storage.research_levels == nil)
 end
 
-do -- The infinite speed level counts every level researched; fluid capacity grows by 50 a level,
+do -- The infinite speed level counts every level researched; fluid capacity grows by 175 a level,
   -- and item capacity doesn't change it.
   local logistics = reset()
   local force = researching({ [SPEED] = 7, [ITEMS] = 4, [FLUIDS] = 2 })
-  local request, provider = liquids(logistics, 900)
+  local request, provider = liquids(logistics, 2000)
+  provider.held.amount = 2000
   request.force, provider.force = force, force
   logistics.on_tick()
   answer(logistics, 1, "route")
   local trip = trips_from(request)[1]
   check("seven speed levels, four finite and three infinite", near(trip.drone.speed, 0.2 * 2.4))
-  check("two fluid capacity levels: 600 fluid a freighter", trip.planned == 600)
+  check("two fluid capacity levels: 1100 fluid a freighter", trip.planned == 1100)
   arrive(logistics, trip)
-  check("all of it pumped out", trip.fluid.amount == 600)
+  check("all of it pumped out", trip.fluid.amount == 1100)
+  prototypes.technology = {}
+end
+
+do -- Ten fluid capacity levels carry 2500: the base 750 plus 175 each.
+  local logistics = reset()
+  local force = researching({ [SPEED] = 0, [ITEMS] = 0, [FLUIDS] = 10 })
+  local request, provider = liquids(logistics, 3000)
+  provider.held.amount = 3000
+  request.force, provider.force = force, force
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  check("all ten fluid capacity levels: 2500 fluid a freighter", trip and trip.planned == 2500)
   prototypes.technology = {}
 end
 

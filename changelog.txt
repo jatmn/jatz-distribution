@@ -1,5 +1,7 @@
 ---------------------------------------------------------------------------------------------------
 Version: Unreleased
+  Changes:
+    - Freighters carry 750 fluid at a time. Freighter fluid capacity now has ten levels, 175 more fluid each, up to 2,500.
   Bugfixes:
     - Fixed freighters stuck at the mouth of some road tunnels: coming out of a tunnel whose mouth faces west or north, west or north of the map's centre, a freighter found no way on. A loaded one turned round, went back through the tunnel and returned its load to the provider, so the request was never delivered.
 ---------------------------------------------------------------------------------------------------

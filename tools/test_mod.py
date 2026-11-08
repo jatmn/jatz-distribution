@@ -70,7 +70,7 @@ EXPECTED = {'recipes': RECIPES,
             # and fuel depots, the freighter and road; liquid freight, after it and fluid handling,
             # the liquid depots; and the road network monitor research, after it and the circuit
             # network, the monitor; each locked until then. Freighter speed has 4 levels then an
-            # infinite one; item and fluid capacity 5 each. A force with speed 1-4 and the infinite level written to 7, item
+            # infinite one; item capacity 5 and fluid capacity 10. A force with speed 1-4 and the infinite level written to 7, item
             # capacity 1-2 and fluid capacity 1-3 has 6, 2 and 3 levels; a new force none. Its
             # freighter leaves at 2.2 times the speed, slows to 1.6 times on the road when speed
             # level 4 is undone, and brings 12 stacks (1200 iron plates) a trip, 2000 in all.
@@ -87,7 +87,7 @@ EXPECTED = {'recipes': RECIPES,
                 'jatz-road-tunnels': {'prerequisites': ['jatz-freight-system', 'logistics'], 'locked': 1,
                                       'unlocked': 1, 'recipes': ['jatz-road-tunnel']}},
             'speed_infinite': True, 'research_levels': {'jatz-freighter-speed': 5, 'jatz-freighter-item-capacity': 5,
-                                                        'jatz-freighter-fluid-capacity': 5},
+                                                        'jatz-freighter-fluid-capacity': 10},
             'researched_levels': {'speed': 6, 'item_capacity': 2, 'fluid_capacity': 3, 'fresh': 0},
             'researched_speed': 2.2, 'researched_speed_reversed': 1.6, 'researched_first_load': 1200,
             'researched_received': 2000,

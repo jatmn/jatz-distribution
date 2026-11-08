@@ -5,7 +5,7 @@
 -- network, unlocks the monitor (Transport Drones' depot circuits research); road tunnels, after it
 -- and underground belts (logistics), unlock the tunnel portals. Upgrades: freighter
 -- speed (four levels and an infinite one),
--- item capacity (five levels) and, after liquid freight, fluid capacity (five levels).
+-- item capacity (five levels) and, after liquid freight, fluid capacity (ten levels).
 -- scripts/research.lua applies the levels at runtime.
 local constants = require("prototypes.constants")
 local research = require("scripts.research")
@@ -16,7 +16,9 @@ local BLUE = { "chemical-science-pack", 1 }
 local PURPLE = { "production-science-pack", 1 }
 local YELLOW = { "utility-science-pack", 1 }
 local WHITE = { "space-science-pack", 1 }
--- The science packs of each upgrade level.
+-- The science packs of each upgrade level. A level past the last rung keeps that rung's packs;
+-- the pack count is still the level times 200. Fluid capacity has ten levels, so 6 through 10
+-- take the same packs as level 5.
 local LADDER = {
   { RED, GREEN },
   { RED, GREEN, BLUE },
@@ -139,7 +141,7 @@ local function upgrades(name, levels, first, layers, effect)
       upgrade = true,
       effects = { effect },
       prerequisites = { level > 1 and name .. "-" .. (level - 1) or first },
-      unit = { count = level * 200, ingredients = LADDER[level], time = 30 },
+      unit = { count = level * 200, ingredients = LADDER[math.min(level, #LADDER)], time = 30 },
       order = "j[jatz]-" .. name,
     }
   end
@@ -189,7 +191,7 @@ local fluid_effect = nothing(
 )
 upgrades(
   research.fluid_capacity,
-  research.capacity_levels,
+  research.fluid_capacity_levels,
   research.liquid,
   icons(FREIGHTER, "constant-capacity", FLUID_BADGE),
   fluid_effect

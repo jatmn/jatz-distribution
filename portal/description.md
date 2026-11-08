@@ -5,7 +5,7 @@
 Build depots where goods are made and where they're needed, lay road between them, and armored **Quinityn freighters** do the hauling. Jat'z Distribution is a road logistics system for **Factorio 2.1**, inspired by Klonan's [Transport Drones](https://mods.factorio.com/mod/Transport_Drones) and rebuilt around big trucks, big loads and big factories.
 
 - **Request** an item or fluid at a depot, and freighters fetch it from the provider that's nearest **by road**.
-- **Haul** ten stacks of items or 500 fluid a trip from the start, and up to 15 stacks or 750 fluid with research.
+- **Haul** ten stacks of items or 750 fluid a trip from the start, and up to 15 stacks or 2,500 fluid with research.
 - **Fuel** your fleet with any fuel item or burnable fluid. Freighters top up at fuel depots on their own.
 - **Scale** to hundreds of depots and thousands of freighters, with the work spread evenly over every second.
 - **Run over** the biters in your way. Freighters don't stop for anything.
@@ -29,7 +29,7 @@ You'll feel at home: roads, provider and request depots, buffers, fluids and fue
 | | Transport Drones | Jat'z Distribution |
 | --- | --- | --- |
 | **The vehicle** | Small drones | The Quinityn freighter: an armored eight-wheel truck, rendered in 64 directions |
-| **Load per trip** | 1 stack (or 500 fluid) to start | **10 stacks** (or 500 fluid) to start, up to 15 stacks (or 750 fluid) with research |
+| **Load per trip** | 1 stack (or 500 fluid) to start | **10 stacks** (or 750 fluid) to start, up to 15 stacks (or 2,500 fluid) with research |
 | **Fuel** | Delivered to each request depot, which fuels its drones | **Each freighter carries its own tank** and stops at the nearest fuel depot by road when it runs low. Nothing has to deliver fuel to your request depots |
 | **What burns** | One fuel fluid, petroleum gas by default | **Any fuel item or burnable fluid**, from any mod: coal, solid fuel, rocket fuel, petroleum gas and more |
 
@@ -113,7 +113,7 @@ The 5 coal in a freighter is its first full tank. With **Space Age**, you can ma
 | **Road tunnels** | Freight system, Logistics | 300 × red and green, 30 s | Road tunnels |
 | **Freighter speed** 1–4, then infinite | Freight system | From 200 × red and green | +20% freighter speed per level, freighters already on the road included |
 | **Freighter item capacity** 1–5 | Freight system | From 200 × red and green | +1 stack per trip per level |
-| **Freighter fluid capacity** 1–5 | Liquid freight | From 200 × red and green | +50 fluid per trip per level |
+| **Freighter fluid capacity** 1–10 | Liquid freight | From 200 × red and green | +175 fluid per trip per level |
 
 Upgrade levels add science packs as they climb, from red and green up to utility. The infinite speed levels take every pack through space science, and each costs twice the last.
 
