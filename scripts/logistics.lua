@@ -768,7 +768,12 @@ local function show_fuel(trip, per_tile, capacity)
 end
 
 -- `position`: where the new one stands instead (coming out of a tunnel at its other end).
-local function repaint(id, trip, position)
+-- `orientation`: the way the new one faces instead (out of a tunnel's mouth).
+-- The new unit is made facing that way (its nearest of the 16 directions, then exactly): a unit
+-- made without one is drawn facing north and turns round at its rotation speed, whatever its
+-- orientation is set to after (the owner's video, November 8, 2026: freighters coming out of a
+-- tunnel and swapped for their cargo's paint showed north for a few ticks first).
+local function repaint(id, trip, position, orientation)
   local old = trip.drone
   local name = paint_of(trip)
   if not old.valid or old.name == name then
@@ -777,11 +782,17 @@ local function repaint(id, trip, position)
   if next(old.stickers or {}) then
     return false
   end
-  local drone = old.surface.create_entity({ name = name, position = position or old.position, force = old.force })
+  orientation = orientation or old.orientation or 0
+  local drone = old.surface.create_entity({
+    name = name,
+    position = position or old.position,
+    force = old.force,
+    direction = math.floor(orientation * 16 + 0.5) % 16,
+  })
   if not drone then
     return false
   end
-  drone.orientation = old.orientation
+  drone.orientation = orientation
   drone.health = old.health
   -- A dry freighter crawls (DRY_SPEED): the new one must too.
   drone.speed = old.speed
@@ -3098,7 +3109,7 @@ function logistics.out_of_tunnel(id, trip)
   end
   -- Just inside the mouth, facing out, then straight out of it before its route (tunnels.way_out).
   local start, out = tunnels.way_out(tunnel.to, tunnel.exit)
-  if not repaint(id, trip, start or tunnel.exit) then
+  if not repaint(id, trip, start or tunnel.exit, facing) then
     -- Something got stuck to it under ground: it comes out unseen, and is painted once that wears off
     -- (check_trip).
     trip.drone.teleport(start or tunnel.exit)

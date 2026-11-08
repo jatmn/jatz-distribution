@@ -2166,6 +2166,7 @@ do -- The cargo paint: grey out, the load's color from the provider home, the sa
     painted.position.x == empty.position.x
       and painted.position.y == empty.position.y
       and painted.orientation == 0.25
+      and painted.parameters.direction == defines.direction.east
       and painted.health == 321
       and painted.speed == 0.02
   )
@@ -4699,7 +4700,10 @@ do -- Through a tunnel to a provider on another road network, and back.
       and trip.drone.position.y == 0.5
       and trip.tunnel == nil
   )
-  check("facing out of the east mouth, not north", trip.drone.orientation == 0.25)
+  check(
+    "facing out of the east mouth, not north, made facing that way",
+    trip.drone.orientation == 0.25 and trip.drone.parameters.direction == defines.direction.east
+  )
   drive = trip.drone.commands[#trip.drone.commands]
   check(
     "it drives straight out of the mouth first, a tile on along the road",
