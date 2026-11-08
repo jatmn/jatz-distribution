@@ -144,7 +144,9 @@ Provider and buffer depots have a **priority** slider from 1 to 10 (5 to start w
 
 Liquid depots work the same way for fluids. Research **Liquid freight** to unlock them.
 
+- Opening a liquid depot shows your inventory on the left of its tank window, as opening an item depot does. Click a freighter there to pick it up, then click the slot. Shift-click puts that stack in the slot, and ctrl-click puts in every freighter you are carrying. Anything else stays in your inventory: a liquid depot has no chest for items.
 - A **liquid request** depot keeps a fluid in its tank, sending its freighters to liquid provider depots and liquid buffer depots (buffers first if **Request from buffer depots** is ticked, only when no provider can supply it otherwise), 750 units at a time (more with fluid capacity research).
+ 734631e (fix: show the player's inventory on liquid depots)
 - A **liquid buffer** depot fills from liquid providers only.
 - Liquid provider and buffer depots have the same priority slider.
 - Every liquid depot's tank holds 25,000 by default. You can change the tank size of liquid provider depots and of liquid buffer depots separately under **Settings → Mod settings → Startup**. Making a tank smaller on an existing save can lose the fluid above the new size. A liquid request or buffer depot can't request more than its tank holds: a larger amount is set to the tank's size.

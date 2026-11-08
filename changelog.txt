@@ -1,4 +1,8 @@
 ---------------------------------------------------------------------------------------------------
+Version: Unreleased
+  Bugfixes:
+    - Opening a liquid depot now shows your inventory on the left of its window, as an item depot does, so you can pick a freighter from it. Shift-click puts that stack in the freighter slot, and ctrl-click puts in every freighter you are carrying.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.5
 Date: 2026-11-08
   Features:
