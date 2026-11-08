@@ -72,6 +72,7 @@ local robot_requests = require("scripts.freighter-requests")
 local blueprints = require("scripts.blueprints")
 local fueling = require("scripts.fuel")
 local routes = require("scripts.routes")
+local transfer = require("scripts.cargo")
 
 local logistics = {}
 
@@ -203,7 +204,7 @@ logistics.status = {
 local TO_PROVIDER, TO_REQUEST, RETURNING = "to-provider", "to-request", "returning"
 
 -- Defined further down; dispatch, the search and on_tick need them first.
-local end_trip, load, load_fluid, unload_fluid, set_off, target, upgrade, burn
+local end_trip, set_off, target, upgrade, burn
 
 local function init_storage()
   storage.depots = storage.depots or {}
@@ -464,17 +465,8 @@ tunnels.zones = function(surface_index)
   return zones
 end
 
--- An item's stack size, read from its prototype once (prototypes don't change while the game runs;
--- reading one makes a new object every time).
-local stack_sizes = {}
-local function stack_size_of(item)
-  local size = stack_sizes[item]
-  if not size then
-    size = prototypes.item[item].stack_size
-    stack_sizes[item] = size
-  end
-  return size
-end
+-- Moving cargo (scripts/cargo.lua).
+transfer.install(logistics, { quality = QUALITY })
 
 -- The freighter item's stack size.
 local freighter_stack
@@ -1260,7 +1252,7 @@ function logistics.set_request(entity, item, count)
       count = math.min(count, depot.entity.get_fluid_capacity(1))
     else
       -- The chest's slots, not a constant, each a stack of this item.
-      count = math.min(count, #inventory(depot.entity) * stack_size_of(item))
+      count = math.min(count, #inventory(depot.entity) * transfer.stack_size_of(item))
     end
     depot.request = { item = item, count = count }
   end
@@ -1392,7 +1384,7 @@ function logistics.full_load(depot, trip)
     capacity = research.fluid_capacity_of(force)
   else
     local stacks = trip and trip.cargo and #trip.cargo or research.cargo_stacks(force)
-    capacity = stacks * stack_size_of(request.item)
+    capacity = stacks * transfer.stack_size_of(request.item)
   end
   return math.min(capacity, request.count), capacity
 end
@@ -1977,9 +1969,10 @@ local function absorb_freighters(depot)
   local room = FREIGHTER_CAPACITY - slot.get_item_count() - out
   if room > 0 then
     -- Freighters waiting in the truck chest for robots to take them away stay there.
-    local moved = in_truck_chest > 0 and load(chest, slot, FREIGHTER, room, logistics.leaving(entity), true) or 0
+    local moved = in_truck_chest > 0 and transfer.load(chest, slot, FREIGHTER, room, logistics.leaving(entity), true)
+      or 0
     if in_own > 0 and moved < room then
-      moved = moved + load(own, slot, FREIGHTER, room - moved, nil, true)
+      moved = moved + transfer.load(own, slot, FREIGHTER, room - moved, nil, true)
     end
     -- (A buffer depot's freighters could be another depot's cargo: the depots checked with it look
     -- again.)
@@ -2330,116 +2323,6 @@ function logistics.on_tick_share(tick)
   logistics.answer_remembered()
 end
 
--- Move up to `limit` items of `item` (normal quality) from one inventory into another, stack by
--- stack, keeping each stack's data. Returns how many moved.
--- `leave`, if given, maps `from` stack indices to how many items to leave in that stack. With
--- `any_quality`, items of every quality move (freighters do), not only normal quality (cargo).
-function load(from, to, item, limit, leave, any_quality)
-  local moved = 0
-  local size = stack_size_of(item)
-  -- Each `to` stack looked at is an object for Lua to collect, so later stacks start after the
-  -- leading ones that can take nothing more: full, or holding another item. A stack of `item` with
-  -- room is looked at again, though it refused one stack: stacks merge only when their quality and
-  -- data (health, tags, durability...) match, so it can still take a later one.
-  local first = 1
-  for index = 1, #from do
-    if moved >= limit then
-      break
-    end
-    local stack = from[index]
-    if stack.valid_for_read and stack.name == item and (any_quality or stack.quality.name == QUALITY) then
-      local kept = leave and leave[index] or 0
-      for slot = first, #to do
-        local movable = (stack.valid_for_read and stack.count or 0) - kept
-        if moved >= limit or movable <= 0 then
-          break
-        end
-        local into = to[slot]
-        if not into.valid_for_read or into.name == item then
-          local before = stack.count
-          into.transfer_stack(stack, math.min(movable, limit - moved))
-          moved = moved + before - (stack.valid_for_read and stack.count or 0)
-        end
-        if slot == first and into.valid_for_read and (into.name ~= item or into.count >= size) then
-          first = slot + 1
-        end
-      end
-    end
-  end
-  return moved
-end
-
--- Insert all cargo into an inventory, keeping each stack's data; what doesn't fit stays aboard.
-local function unload(cargo, into)
-  for index = 1, #cargo do
-    local stack = cargo[index]
-    if stack.valid_for_read then
-      local inserted = into.insert(stack)
-      if inserted >= stack.count then
-        stack.clear()
-      elseif inserted > 0 then
-        stack.count = stack.count - inserted
-      end
-    end
-  end
-end
-
--- Pump up to `limit` of a fluid trip's fluid out of a liquid depot's tank (its one fluid storage),
--- at the tank's temperature.
-function load_fluid(entity, trip, limit)
-  local held = entity.get_fluid(1)
-  if limit <= 0 or not held or held.name ~= trip.item then
-    return 0
-  end
-  local removed = entity.remove_fluid(1, limit)
-  local taken = removed and removed.amount or 0
-  if taken > 0 then
-    local had = trip.fluid.amount
-    local temperature = trip.fluid.temperature or removed.temperature
-    trip.fluid.temperature = (temperature * had + removed.temperature * taken) / (had + taken)
-    trip.fluid.amount = had + taken
-  end
-  return taken
-end
-
--- Pump a fluid trip's fluid into a liquid depot's tank, as far as it fits; the rest stays aboard.
-function unload_fluid(trip, entity)
-  if trip.fluid.amount <= 0 then
-    return 0
-  end
-  local put =
-    entity.insert_fluid({ name = trip.item, amount = trip.fluid.amount, temperature = trip.fluid.temperature })
-  trip.fluid.amount = trip.fluid.amount - put
-  return put
-end
-
--- Leave anything still aboard on the ground, marked for deconstruction so construction robots
--- can collect it.
-local function spill(trip, position)
-  if trip.fluid then
-    -- Fluid can't be left on the ground: it is lost.
-    trip.fluid.amount = 0
-    return
-  end
-  if not (trip.cargo and trip.cargo.valid) then
-    return
-  end
-  local surface, force = trip.drone.surface, trip.drone.force
-  for index = 1, #trip.cargo do
-    local stack = trip.cargo[index]
-    if stack.valid_for_read then
-      surface.spill_item_stack({
-        position = position or trip.drone.position,
-        stack = stack,
-        enable_looted = true,
-        force = force,
-        allow_belts = false,
-      })
-      stack.clear()
-    end
-  end
-end
-
 -- Saves from this PR's first version carried cargo as a plain count, and the mod version didn't
 -- change, so no configuration change converts them: carry such cargo as stacks from here on.
 function upgrade(trip)
@@ -2545,9 +2428,9 @@ local function arrived_at_provider(id, trip, depot)
     -- No more than is left after the promises made before its own, which are their freighters'.
     local limit = math.min(trip.planned or room, room, left or room)
     if trip.fluid then
-      load_fluid(provider, trip, math.min(limit, research.fluid_capacity_of(depot.entity.force)))
+      transfer.load_fluid(provider, trip, math.min(limit, research.fluid_capacity_of(depot.entity.force)))
     else
-      load(inventory(provider), trip.cargo, trip.item, limit)
+      transfer.load(inventory(provider), trip.cargo, trip.item, limit)
     end
   end
   trip.planned = nil
@@ -2587,7 +2470,7 @@ local function arrived_at_request(id, trip, depot)
   local entity = depot and depot.entity.valid and depot.entity
   if trip.fluid then
     if entity then
-      unload_fluid(trip, entity)
+      transfer.unload_fluid(trip, entity)
     end
     -- Fluid that didn't fit (another fluid got into the tank meanwhile, say) goes back.
     local provider = depot_entity(trip.provider)
@@ -2599,9 +2482,9 @@ local function arrived_at_request(id, trip, depot)
     return end_trip(id, trip)
   end
   if entity then
-    unload(trip.cargo, inventory(entity))
+    transfer.unload(trip.cargo, inventory(entity))
   end
-  spill(trip, entity and (loading_tile(entity)) or nil)
+  transfer.spill(trip, entity and (loading_tile(entity)) or nil)
   end_trip(id, trip)
 end
 
@@ -2609,12 +2492,12 @@ local function returned_to_provider(id, trip)
   local provider = depot_entity(trip.provider)
   if provider then
     if trip.fluid then
-      unload_fluid(trip, provider)
+      transfer.unload_fluid(trip, provider)
     else
-      unload(trip.cargo, inventory(provider))
+      transfer.unload(trip.cargo, inventory(provider))
     end
   end
-  spill(trip, provider and (loading_tile(provider)) or nil)
+  transfer.spill(trip, provider and (loading_tile(provider)) or nil)
   end_trip(id, trip)
 end
 
@@ -2630,7 +2513,7 @@ local function route_failed(id, trip, depot)
     promise(trip)
     return drive(trip, (loading_tile(provider)))
   end
-  spill(trip)
+  transfer.spill(trip)
   end_trip(id, trip)
 end
 
@@ -2999,7 +2882,7 @@ local function depot_removed(id)
         promise(trip)
         replan(trip)
       else
-        spill(trip)
+        transfer.spill(trip)
         end_trip(trip_id, trip)
       end
     elseif trip.provider == id and trip.state == TO_PROVIDER then
@@ -3090,7 +2973,7 @@ local function finish_search(depot, search, owner)
   -- unpromised and it can carry; the next freighter covers the rest, from here or elsewhere.
   local force = depot.entity.force
   local capacity = depot.fluid and research.fluid_capacity_of(force)
-    or research.cargo_stacks(force) * stack_size_of(search.item)
+    or research.cargo_stacks(force) * transfer.stack_size_of(search.item)
   local planned = math.min(room, available(provider, search.item), capacity)
   depot.retry_status = nil
   if start_trip(depot, provider, from, planned, search.best_length) then
@@ -3455,7 +3338,7 @@ function logistics.add_all()
     end
     if not kept then
       if trip.drone.valid and (trip.fluid or trip.cargo.valid) then
-        spill(trip)
+        transfer.spill(trip)
       end
       end_trip(id, trip)
     end
@@ -3621,7 +3504,7 @@ function logistics.take_in_freighters(entity, give_back, moved)
   local in_slot, out, capacity = logistics.freighter_counts(entity)
   -- Robots take freighters away from the truck chest only (a liquid depot's is its hand chest).
   local leave = depot.fluid and logistics.leaving(entity) or {}
-  local taken = load(chest, slot, FREIGHTER, math.min(new, math.max(0, capacity - in_slot - out)), leave, true)
+  local taken = transfer.load(chest, slot, FREIGHTER, math.min(new, math.max(0, capacity - in_slot - out)), leave, true)
   local returned = 0
   if give_back then
     for index = 1, #chest do
