@@ -109,6 +109,7 @@ local LIGHTS = {
   ["other-fluid"] = "utility/status_yellow",
   ["no-fuel"] = "utility/status_yellow",
   ["full-load"] = "utility/status_yellow",
+  ["least-fluid"] = "utility/status_yellow",
   ["no-provider"] = "utility/status_not_working",
   ["no-fuel-depot"] = "utility/status_not_working",
   none = "utility/status_inactive",

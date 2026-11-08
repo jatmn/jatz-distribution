@@ -1887,9 +1887,107 @@ do -- Full loads of fluid: 750, the freighter's fluid capacity.
   check("with 800, a freighter goes for 750", trip and trip.planned == 750)
 end
 
-do -- A fluid delivery: 750 per freighter, at the provider's temperature.
+do -- Liquid freighters never set off for less than 100, full loads or not: no endless tiny trips.
   local logistics = reset()
   local request, provider = liquids(logistics)
+  provider.held.amount = 0.003 -- what pumps leave behind
+  logistics.on_tick()
+  check("a liquid provider with a fraction isn't asked about", #requests == 0)
+  check("the depot says it waits for 100", logistics.get_status(request) == "least-fluid")
+  provider.held.amount = 99
+  game.tick = 60
+  logistics.on_tick()
+  check("nor one with 99", #requests == 0)
+  provider.held.amount = 100
+  game.tick = 120
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  check("with 100, a freighter goes for 100", trip and trip.planned == 100)
+  arrive(logistics, trip)
+  arrive(logistics, trip)
+  check("setup: 100 delivered", request.held.amount == 100 and logistics.freighter_counts(request) == 3)
+  provider.held.amount = 1000
+  request.held.amount = 750 -- 50 short of 800: pipes drained a little
+  -- (The road there is remembered now: a freighter would set off without asking the pathfinder.)
+  game.tick = 180
+  logistics.on_tick()
+  check("a tank 50 short of its request sends nothing", not has_trip(request))
+  check("and waits for room for 100", logistics.get_status(request) == "least-fluid")
+  request.held.amount = 700.5
+  game.tick = 240
+  logistics.on_tick()
+  check("99.5 short, still nothing", not has_trip(request))
+  request.held.amount = 700
+  game.tick = 300
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  trip = trips_from(request)[1]
+  check("100 short, a freighter goes for 100", trip and trip.planned == 100)
+end
+
+do -- A liquid request smaller than 100 is fetched whole, once there is room for all of it.
+  local logistics = reset()
+  local request, provider = liquids(logistics, 40)
+  provider.held.amount = 30
+  logistics.on_tick()
+  check("a provider with 30 of a 40 request isn't asked about", #requests == 0)
+  provider.held.amount = 40
+  request.held.name, request.held.amount = "water", 0.5
+  game.tick = 60
+  logistics.on_tick()
+  check("nor with 0.5 of it in the tank", #requests == 0)
+  request.held.amount = 0
+  game.tick = 120
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  check("an empty tank sends one for all 40", trip and trip.planned == 40)
+end
+
+do -- A rerouted liquid freighter passes providers holding less than 100 too.
+  local logistics = reset()
+  local request, near = liquids(logistics)
+  local small = tank("jatz-liquid-provider-depot", 20.5, 0.5, "water", 60)
+  local spare = tank("jatz-liquid-provider-depot", 40.5, 0.5, "water", 1000)
+  logistics.add(small)
+  logistics.add(spare)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  assert(trip.provider == near.unit_number and trip.planned == 750)
+  near.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = near.unit_number })
+  check("the reroute asks only about the provider with 100 or more", requests[#requests].goal.x == 40.5)
+  answer(logistics, #requests, "route")
+  check("and goes there for its 750", trip.provider == spare.unit_number and trip.planned == 750)
+end
+
+do -- A liquid freighter whose load was cut to almost nothing, rerouted, plans its load afresh.
+  local logistics = reset()
+  local request, near = liquids(logistics)
+  local spare = tank("jatz-liquid-provider-depot", 40.5, 0.5, "water", 1000)
+  logistics.add(spare)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  assert(trip.provider == near.unit_number and trip.planned == 750)
+  near.held.amount = 3 -- pumped out while it drives there
+  game.tick = 60
+  logistics.on_tick()
+  check("setup: its load is cut to the 3 left", trip.planned == 3)
+  near.held.amount = 0
+  game.tick = 120
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  check("rerouted, it plans 750 at the new provider, not 3", trip.provider == spare.unit_number and trip.planned == 750)
+  arrive(logistics, trip)
+  check("and loads 750", trip.fluid.amount == 750)
+end
+
+do -- A fluid delivery: 750 per freighter, at the provider's temperature.
+  local logistics = reset()
+  local request, provider = liquids(logistics, 900)
   logistics.on_tick()
   check("the liquid provider is asked about", #requests == 1 and requests[1].goal.x == 10.5)
   answer(logistics, 1, "route")
@@ -1910,7 +2008,7 @@ do -- A fluid delivery: 750 per freighter, at the provider's temperature.
   game.tick = 60
   logistics.on_tick()
   answer(logistics, #requests, "route")
-  check("the next freighter fetches the remaining 50", trips_from(request)[1].planned == 50)
+  check("the next freighter fetches the remaining 150", trips_from(request)[1].planned == 150)
 end
 
 do -- A freighter stands at each loading zone for a moment before it loads or unloads.

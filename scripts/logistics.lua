@@ -159,6 +159,11 @@ logistics.dispatch_interval = DISPATCH_INTERVAL
 local SEND_SPACING = 60
 -- A freighter's fluid capacity before research (scripts/research.lua).
 logistics.fluid_capacity = research.base_fluid
+-- The least fluid a liquid depot's freighter sets off for, Full loads only or not (or its whole
+-- request, if that is less): 100, the owner's choice (November 8, 2026). Without it, a provider with
+-- the fraction pumps leave behind, or a tank pipes drained a little, sent freighters for almost
+-- nothing, over and over.
+logistics.least_fluid = 100
 
 -- After a provider can't be reached, a request depot ignores it for this long; after a freighter
 -- can't be created, the depot waits this long before trying again. Laying road, or building or
@@ -203,6 +208,9 @@ logistics.status = {
   disabled = "disabled",
   -- Set to send full loads only: it lacks room for one, or no depot it fetches from has one.
   full_load = "full-load",
+  -- A liquid depot not set to: it lacks room for logistics.least_fluid (or its whole request, if
+  -- less), or no depot it fetches from has that much.
+  least_fluid = "least-fluid",
 }
 
 -- Trip states: driving out to the provider, bringing cargo to the request depot, or taking cargo
@@ -871,9 +879,10 @@ end
 -- still comes, in one trip); and what the freighter carries. A new freighter (no `trip`) carries
 -- the force's cargo stacks of the item or its fluid capacity, both with research; one already out
 -- carries what its cargo inventory holds, sized when it set off, or for fluid the force's fluid
--- capacity, which arrived_at_provider reads as it loads. nil for other depots, which send a
--- freighter for any amount. (On the module table, as `missing` is, to spare this file's main
--- chunk a local: Lua allows 200, and it is close; see issue #69.)
+-- capacity, which arrived_at_provider reads as it loads. A liquid depot not set to full loads
+-- still never sends one for less than logistics.least_fluid (or its whole request, if less). nil
+-- for item depots not set to full loads, which send a freighter for any amount. (On the module table, as `missing`
+-- is, to spare this file's main chunk a local: Lua allows 200, and it is close; see issue #69.)
 --
 -- Intentional: the threshold is the whole request, not what is still missing. A depot whose
 -- request is smaller than one load, with some of it already in stock, has less room than the
@@ -882,10 +891,13 @@ end
 -- Players who want topping up leave the setting off.
 function logistics.full_load(depot, trip)
   local request = depot.request
-  if not depot.full_loads or not request or request.count <= 0 then
+  if not request or request.count <= 0 or not (depot.full_loads or depot.fluid) then
     return nil
   end
   local force = depot.entity.force
+  if not depot.full_loads then
+    return math.min(logistics.least_fluid, request.count), research.fluid_capacity_of(force)
+  end
   local capacity
   if depot.fluid then
     capacity = research.fluid_capacity_of(force)
@@ -903,9 +915,9 @@ end
 -- surface and force, with road at its loading zone, holding the item and not on cooldown for this
 -- request. Within each kind, the highest priority first; within each priority, nearest first in a
 -- straight line from `from`. With `full` (the least the freighter may load, for a depot sending
--- full loads only), only those holding that much unpromised. `passed` (a unit number) is left out:
--- the provider a rerouted freighter gave up on. Also says whether one was skipped for cooldown, and
--- whether one was skipped for holding less than `full`.
+-- full loads only or a liquid depot: logistics.full_load), only those holding that much unpromised.
+-- `passed` (a unit number) is left out: the provider a rerouted freighter gave up on. Also says
+-- whether one was skipped for cooldown, and whether one was skipped for holding less than `full`.
 local function candidates(depot, from, full, passed)
   local entity = depot.entity
   local found, waiting, short = {}, false, false
@@ -1203,7 +1215,8 @@ local function reroute(id, trip)
   -- A Fuel depot it was heading for, or looking for, waits: set_off decides again for the new leg.
   trip.search_token, trip.searching, trip.fuel_search, trip.refuel = nil, nil, nil, nil
   -- A depot sending full loads only sends this one on only while the depot has room for its full
-  -- load, besides what its other freighters are bringing, as when it was sent.
+  -- load, besides what its other freighters are bringing, as when it was sent (a liquid depot, for
+  -- its least load: logistics.full_load).
   local full = request and logistics.full_load(depot, trip)
   if
     trip.drone.valid
@@ -1573,9 +1586,11 @@ local function dispatch(depot)
     return
   end
   local full = logistics.full_load(depot)
+  -- (A liquid depot not set to full loads waits for its least load the same way.)
+  local short_status = depot.full_loads and logistics.status.full_load or logistics.status.least_fluid
   if full and room < full then
     -- Sending full loads only, and a full load wouldn't fit: it waits until one does.
-    depot.status = out and logistics.status.delivering or logistics.status.full_load
+    depot.status = out and logistics.status.delivering or short_status
     return
   end
   local from, on_road = loading_tile(depot.entity)
@@ -1613,7 +1628,7 @@ local function dispatch(depot)
     cancel_search(depot)
     depot.status = out and logistics.status.delivering
       or (waiting and logistics.status.unreachable)
-      or (short and logistics.status.full_load)
+      or (short and short_status)
       or logistics.status.no_provider
   end
 end
@@ -2431,7 +2446,7 @@ local function finish_search(depot, search, owner)
   end
   local provider = search.best and storage.depots[search.best]
   -- Sending full loads only: the provider must still have one, and the depot room for one (for a
-  -- rerouted freighter, the full load its cargo holds).
+  -- rerouted freighter, the full load its cargo holds); a liquid depot, its least load likewise.
   local full, carries = logistics.full_load(depot, search.trip and owner)
   local still = depot.request
     and depot.request.item == search.item
@@ -2452,7 +2467,8 @@ local function finish_search(depot, search, owner)
       -- doesn't count this trip's promise: it gave up on its old provider, logistics.give_up, which
       -- unfiled it, or that one was removed, its entry left under the removed depot's number).
       -- Sending full loads only, a full load: planned afresh, as a freighter sent off now would be,
-      -- whatever it set off for.
+      -- whatever it set off for. So is a liquid freighter (its least load), rather than keep a load
+      -- keep_promises cut down to almost nothing at the provider it gave up on.
       local unpromised = available(provider, search.item)
       owner.planned = full and math.min(room, unpromised, carries) or math.min(owner.planned or 0, room, unpromised)
       owner.provider = search.best
