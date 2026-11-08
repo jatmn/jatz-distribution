@@ -3067,6 +3067,11 @@ end
 function logistics.into_tunnel(id, trip)
   local tunnel = trip.tunnel
   trip.origin = tunnel.entry
+  -- Fuel is burned by the straight line since the last sample (`burn`), and going through moves it
+  -- from one mouth to the other at once: the way here is burned now, the tunnel's length when it
+  -- comes out (out_of_tunnel), so neither is measured as part of one line across both (Pullfrog's
+  -- review of fa62744).
+  burn(trip)
   if not tunnels.open(tunnel) then
     trip.tunnel = nil
     return drive(trip, trip.destination or target(trip))
@@ -3093,6 +3098,17 @@ function logistics.into_tunnel(id, trip)
   tunnel.started = true
 end
 
+-- Out of a tunnel, where it now stands at the far mouth: the fuel for the tunnel's length on road,
+-- exactly, and the next sample measured from here (into_tunnel burned the way to the mouth).
+function logistics.through_tunnel(trip, tunnel)
+  local per_tile = fuel_per_tile()
+  if per_tile > 0 then
+    trip.energy = math.max(0, (trip.energy or fuel_capacity()) - tunnel.length * per_tile)
+  end
+  trip.at, trip.at_tick = trip.drone.position, game.tick
+  show_fuel(trip)
+end
+
 -- Through a tunnel: it comes out at the other end, seen again in its cargo's paint, and drives on
 -- to where it is going (trip.destination, which a re-plan or reroute while it was under ground
 -- changed), or waits there for a search still under way.
@@ -3111,6 +3127,7 @@ function logistics.out_of_tunnel(id, trip)
     -- drifts round, probed on 2.1.24.)
     trip.drone.teleport(tunnel.exit)
     trip.drone.orientation = facing or trip.drone.orientation
+    logistics.through_tunnel(trip, tunnel)
     return logistics.command(trip, { type = defines.command.stop, distraction = defines.distraction.none })
   end
   -- Just inside the mouth, facing out, then straight out of it before its route (tunnels.way_out).
@@ -3121,6 +3138,7 @@ function logistics.out_of_tunnel(id, trip)
     trip.drone.teleport(start or tunnel.exit)
   end
   trip.drone.orientation = facing or trip.drone.orientation
+  logistics.through_tunnel(trip, tunnel)
   show_cargo(trip)
   if out then
     -- On to where it is going once out (on_ai_command_completed; a re-plan meanwhile drives it there).
@@ -3320,6 +3338,16 @@ function logistics.on_roads_changed(surface_index, added, removed)
   -- Which road networks tunnels join may have changed too: at once if road was removed, which can
   -- split one.
   tunnels.changed(surface_index, removed)
+  if removed then
+    -- Where a freighter last arrived may be on another road network than where it stands now: it
+    -- plans from where it stands. First, before anything reads it: the searches restarted below fix
+    -- their origin from it (Pullfrog's review of fa62744).
+    for _, trip in pairs(storage.trips) do
+      if trip.drone.valid and trip.drone.surface_index == surface_index then
+        trip.origin = nil
+      end
+    end
+  end
   restart_searches(surface_index)
   if added then
     retry_now(surface_index)
@@ -3327,9 +3355,6 @@ function logistics.on_roads_changed(surface_index, added, removed)
   if removed then
     for _, trip in pairs(storage.trips) do
       if trip.drone.valid and trip.drone.surface_index == surface_index then
-        -- Where it last arrived may be on another road network than where it stands now: it plans
-        -- from where it stands.
-        trip.origin = nil
         replan(upgrade(trip))
       end
     end
