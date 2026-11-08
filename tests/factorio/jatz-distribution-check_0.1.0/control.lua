@@ -698,29 +698,31 @@ local function setup_deliveries(surface, result)
   -- Two road networks that no road joins, with stone walls between them: a road tunnel's two
   -- portals, one at the end of each road, mouths to it, join them under the walls. The request
   -- depot's freighter goes under (unseen) to fetch radars from the provider on the other network,
-  -- and back.
+  -- and back. West of x 0, so it comes out of the west mouth at negative x, where the game rounds
+  -- positions towards the portal: one that appeared touching the portal's tile was off road there
+  -- and found no way on (the owner's save, November 8, 2026).
   local tunnel = {
-    provider = depot(surface, "provider", free(surface, 42.5, -66.5)[1], -66.5),
-    request = depot(surface, "request", free(surface, 68.5, -66.5)[1], -66.5),
+    provider = depot(surface, "provider", free(surface, -70.5, -50.5)[1], -50.5),
+    request = depot(surface, "request", free(surface, -44.5, -50.5)[1], -50.5),
   }
-  lay_road(surface, 42, -65, 50, -65)
-  lay_road(surface, 59, -65, 68, -65)
-  for x = 53, 56 do
-    for y = -67, -63 do
+  lay_road(surface, -71, -49, -63, -49)
+  lay_road(surface, -54, -49, -45, -49)
+  for x = -60, -57 do
+    for y = -51, -47 do
       surface.create_entity({ name = "stone-wall", position = { x + 0.5, y + 0.5 }, force = "player" })
     end
   end
-  -- Each one tile wide and two deep (tiles 51-52 and 57-58), its mouth on the road.
+  -- Each one tile wide and two deep (tiles -62 to -61 and -56 to -55), its mouth on the road.
   tunnel.west = surface.create_entity({
     name = TUNNEL,
-    position = { 52, -64.5 },
+    position = { -61, -48.5 },
     direction = defines.direction.west,
     force = "player",
     raise_built = true,
   })
   tunnel.east = surface.create_entity({
     name = TUNNEL,
-    position = { 58, -64.5 },
+    position = { -55, -48.5 },
     direction = defines.direction.east,
     force = "player",
     raise_built = true,
