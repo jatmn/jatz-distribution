@@ -7,13 +7,13 @@
 -- freighter, so freighters leave one after another rather than all at once. Each goes from the
 -- depot's loading zone to the provider depot with the highest priority (1 to 10), nearest by road
 -- among equals, that has some of the item not already promised to another freighter, and promises
--- itself what it will load there (up to ten stacks, more with capacity research); once one
+-- itself what it will load there (up to two stacks, more with capacity research); once one
 -- provider's stock is all promised, the next freighter goes to the next provider, so a large
 -- request is gathered from several. Road distance comes from the engine's pathfinder (surface.request_path, with the
 -- freighter's own size and collision mask), asked one provider at a time in order of straight-line
 -- distance until no remaining provider could be nearer by road than the best found; a provider
 -- with no road route at all is skipped for a while, and no freighter is sent towards it. The freighter
--- loads what is needed (no more than fits at the request depot, and at most ten stacks before
+-- loads what is needed (no more than fits at the request depot, and at most two stacks before
 -- capacity research), drives back, unloads and leaves the map. Freighters are units whose only
 -- collision layer is on every tile except roads (prototypes/off-road.lua), so the engine's
 -- pathfinder keeps them on roads; both loading zones must be road for a trip to start.
@@ -1833,13 +1833,20 @@ end
 
 -- Saves from this PR's first version carried cargo as a plain count, and the mod version didn't
 -- change, so no configuration change converts them: carry such cargo as stacks from here on.
+-- Base stacks is 2, so the inventory has to be large enough for a count saved when a freighter
+-- held ten.
 function upgrade(trip)
   -- Trips from before fuel set off with a full tank.
   trip.energy = trip.energy or fueling.fuel_capacity()
   if type(trip.cargo) == "number" then
     local count = trip.cargo
-    trip.cargo = game.create_inventory(research.base_stacks)
-    if count > 0 and prototypes.item[trip.item] then
+    local item = prototypes.item[trip.item]
+    local slots = research.base_stacks
+    if count > 0 and item and item.stack_size > 0 then
+      slots = math.max(slots, math.ceil(count / item.stack_size))
+    end
+    trip.cargo = game.create_inventory(slots)
+    if count > 0 and item then
       trip.cargo.insert({ name = trip.item, count = count })
     end
   end

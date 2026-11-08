@@ -25,8 +25,8 @@ Research **Freight system** (after Engine, with red and green science) to unlock
 Upgrades make freighters better:
 
 - **Freighter speed:** each level makes delivering freighters 20% faster, freighters already on the road included. After four levels it goes on forever, each level costing twice the last.
-- **Freighter item capacity:** each of five levels lets a freighter carry one more stack of items (ten to start with).
-- **Freighter fluid capacity:** after Liquid freight, each of five levels lets a freighter carry 50 more fluid (500 to start with).
+- **Freighter item capacity:** each of ten levels lets a freighter carry one more stack of items (two to start with, twelve at the last).
+- **Freighter fluid capacity:** after Liquid freight, each of ten levels lets a freighter carry 375 more fluid (750 to start with, 4,500 at the last level).
 
 A freighter already out keeps the load size it set off with.
 
@@ -55,7 +55,7 @@ Freighters can't drive over buildings, but they can go under them. Road tunnels 
 2. Open the request depot and choose an item and an amount to keep in stock. A request or buffer depot can't request more of the item than fills every one of its slots: a larger amount is set to that (with the default 48 slots, 4,800 of an item that stacks to 100, 480 of one that stacks to 10).
 3. Put freighters in its freighter slot.
 
-Within a second, a freighter sets off for a provider depot that has the item. It stops for about a second to load what the request depot still needs and has room for, up to ten stacks (more with item capacity research), then drives back, stops again for about a second to unload and parks in the slot again.
+Within a second, a freighter sets off for a provider depot that has the item. It stops for about a second to load what the request depot still needs and has room for, up to two stacks (more with item capacity research), then drives back, stops again for about a second to unload and parks in the slot again.
 
 You can tell what a freighter carries by its cargo bays. They are light grey while it's empty, on its way to pick up. When it loads, they turn the color of its cargo, like a chemical plant's tank or a pipe window: water blue, iron plates blue-grey, copper orange, sulfur yellow, and so on. Cargo without an obvious color keeps the truck's usual slate blue. A freighter that's on fire, or splashed with acid or slowed, when it loads keeps its grey until that wears off, then changes color on the road.
 
@@ -63,7 +63,7 @@ If one freighter isn't enough, or one provider doesn't have it all, the depot se
 
 ### Full loads only
 
-Tick **Full loads only** on a request or buffer depot (item or liquid) to keep freighters from driving out for a handful of items. A freighter then sets off only when it can come back full: a depot it fetches from has a whole load to give (ten stacks of the item, or 500 of a fluid, more with capacity research), and the requesting depot has room for one. Providers holding less are passed by, even when they're nearer, and smaller amounts wait until a full load is ready. A request smaller than one load counts as a full load, so it's fetched whole once the depot has room for all of it. The check is made when a freighter sets off, and again if it's sent on to another provider. If the depot fills up some other way, or the provider's stock is taken, while the freighter is on its way, it still brings back what fits rather than come home empty. It's off by default.
+Tick **Full loads only** on a request or buffer depot (item or liquid) to keep freighters from driving out for a handful of items. A freighter then sets off only when it can come back full: a depot it fetches from has a whole load to give (two stacks of the item, or 750 of a fluid, more with capacity research), and the requesting depot has room for one. Providers holding less are passed by, even when they're nearer, and smaller amounts wait until a full load is ready. A request smaller than one load counts as a full load, so it's fetched whole once the depot has room for all of it. The check is made when a freighter sets off, and again if it's sent on to another provider. If the depot fills up some other way, or the provider's stock is taken, while the freighter is on its way, it still brings back what fits rather than come home empty. It's off by default.
 
 ## The freighter slot
 
@@ -144,7 +144,7 @@ Provider and buffer depots have a **priority** slider from 1 to 10 (5 to start w
 
 Liquid depots work the same way for fluids. Research **Liquid freight** to unlock them.
 
-- A **liquid request** depot keeps a fluid in its tank, sending its freighters to liquid provider depots and liquid buffer depots (buffers first if **Request from buffer depots** is ticked, only when no provider can supply it otherwise), 500 units at a time (more with fluid capacity research).
+- A **liquid request** depot keeps a fluid in its tank, sending its freighters to liquid provider depots and liquid buffer depots (buffers first if **Request from buffer depots** is ticked, only when no provider can supply it otherwise), 750 units at a time (more with fluid capacity research).
 - A **liquid buffer** depot fills from liquid providers only.
 - Liquid provider and buffer depots have the same priority slider.
 - Every liquid depot's tank holds 25,000 by default. You can change the tank size of liquid provider depots and of liquid buffer depots separately under **Settings → Mod settings → Startup**. Making a tank smaller on an existing save can lose the fluid above the new size. A liquid request or buffer depot can't request more than its tank holds: a larger amount is set to the tank's size.

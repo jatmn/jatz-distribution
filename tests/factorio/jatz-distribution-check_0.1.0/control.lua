@@ -180,15 +180,15 @@ local function check_research(result)
     result.research_unlocks[name] = unlocks
     result.localised_names[name] = { technology = locale_key(technology.localised_name) }
   end
-  -- Speed: four levels, then an infinite one; item and fluid capacity: five levels each. Each after
-  -- the one before; fluid capacity after liquid freight.
+  -- Speed: four levels, then an infinite one; item capacity: ten levels; fluid capacity: ten.
+  -- Each after the one before; fluid capacity after liquid freight.
   local speed_top = prototypes.technology[research.speed .. "-" .. (research.speed_levels + 1)]
   result.speed_infinite = speed_top.max_level == 4294967295 and speed_top.research_unit_count_formula ~= nil
   result.research_levels = {}
   for name, upgrade in pairs({
     [research.speed] = { levels = research.speed_levels + 1, first = research.system },
     [research.item_capacity] = { levels = research.capacity_levels, first = research.system },
-    [research.fluid_capacity] = { levels = research.capacity_levels, first = research.liquid },
+    [research.fluid_capacity] = { levels = research.fluid_capacity_levels, first = research.liquid },
   }) do
     for level = 1, upgrade.levels do
       local technology = prototypes.technology[name .. "-" .. level]
@@ -619,7 +619,7 @@ local function setup_deliveries(surface, result)
   end
 
   -- A force with six speed levels and two item capacity levels (check_research): its one freighter
-  -- leaves at 2.2 times the speed and carries 12 stacks of iron plates (1200), not 10. Speed
+  -- leaves at 2.2 times the speed and carries 4 stacks of iron plates (400), not 2. Speed
   -- research undone while it is out (watch_researched) slows it down on the road.
   deliveries.researched = {
     provider = depot(surface, "provider", -65.5, -7.5, nil, "jatz-researched"),
@@ -802,7 +802,7 @@ local function setup_deliveries(surface, result)
   assert(remote.call("jatz-distribution", "set_request", full_loads.request, "iron-chest", 30), "chests: refused")
   deliveries.full_loads = full_loads
   -- Liquid depots, on one road (loading zones at y -35): a liquid request depot with 3 freighters
-  -- asks for 1200 water from a liquid provider holding 2000, 500 a freighter.
+  -- asks for 1200 water from a liquid provider holding 2000, 750 a freighter.
   local liquid = {
     request = depot(surface, "liquid-request", 20.5, -36.5),
     provider = depot(surface, "liquid-provider", 30.5, -36.5),
