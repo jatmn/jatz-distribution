@@ -5,7 +5,7 @@
 -- network, unlocks the monitor (Transport Drones' depot circuits research); road tunnels, after it
 -- and underground belts (logistics), unlock the tunnel portals. Upgrades: freighter
 -- speed (four levels and an infinite one),
--- item capacity (five levels) and, after liquid freight, fluid capacity (ten levels).
+-- item capacity (ten levels) and, after liquid freight, fluid capacity (ten levels).
 -- scripts/research.lua applies the levels at runtime.
 local constants = require("prototypes.constants")
 local research = require("scripts.research")
@@ -17,8 +17,8 @@ local PURPLE = { "production-science-pack", 1 }
 local YELLOW = { "utility-science-pack", 1 }
 local WHITE = { "space-science-pack", 1 }
 -- The science packs of each upgrade level. A level past the last rung keeps that rung's packs;
--- the pack count is still the level times 200. Fluid capacity has ten levels, so 6 through 10
--- take the same packs as level 5.
+-- the pack count is still the level times 200. Item and fluid capacity have ten levels, so 6
+-- through 10 take the same packs as level 5.
 local LADDER = {
   { RED, GREEN },
   { RED, GREEN, BLUE },

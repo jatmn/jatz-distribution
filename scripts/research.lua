@@ -25,15 +25,16 @@ research.fluid_capacity = "jatz-freighter-fluid-capacity"
 -- Transport Drones' speed research: +20% a level, four levels, then an infinite one.
 research.speed_levels = 4
 research.speed_bonus = 0.2
--- Item capacity: five levels, one more stack a level (the owner's choice, November 5, 2026).
+-- Item capacity: ten levels, one more stack a level, from 2 up to 12 (the owner's choice,
+-- November 8, 2026).
 -- Fluid capacity: ten levels, 175 a level, from 750 up to 2,500 (the owner's choice, November 8,
 -- 2026). The two stay separate upgrades.
-research.capacity_levels = 5
+research.capacity_levels = 10
 research.fluid_capacity_levels = 10
 research.stacks_per_level = 1
 research.fluid_per_level = 175
 -- A freighter carries at most this many stacks, or this much fluid, before capacity research.
-research.base_stacks = 10
+research.base_stacks = 2
 research.base_fluid = 750
 
 -- The levels of `name` the force has researched: `name-1`, `name-2`, ... in turn, up to the first

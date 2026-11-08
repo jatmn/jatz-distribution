@@ -1531,8 +1531,8 @@ do -- Changing "request from buffer depots" restarts searches under way, freight
   check("and started afresh at the next check", #requests == 3)
 end
 
--- Full loads only: a depot set to it sends a freighter only to a depot with a whole load (ten
--- stacks of "a", 500, here) unpromised, and only while it has room for one; a request smaller
+-- Full loads only: a depot set to it sends a freighter only to a depot with a whole load (two
+-- stacks of "a", 100, here) unpromised, and only while it has room for one; a request smaller
 -- than a load counts as one.
 do -- Off by default, and set only on request and buffer depots.
   local logistics = reset()
@@ -1545,9 +1545,10 @@ end
 do -- A request smaller than a load: providers holding less than all of it aren't asked about.
   local logistics = reset()
   local request, near, far = supplied(logistics, 5)
+  assert(logistics.set_request(request, "a", 90))
   assert(logistics.set_full_loads(request, true))
   logistics.on_tick()
-  check("no provider has all 100: nothing is asked or sent", #requests == 0 and #trips_from(request) == 0)
+  check("no provider has all 90: nothing is asked or sent", #requests == 0 and #trips_from(request) == 0)
   check("and the depot says it waits for a full load", logistics.get_status(request) == "full-load")
   far.chest.contents.a = 120
   game.tick = 60
@@ -1556,13 +1557,13 @@ do -- A request smaller than a load: providers holding less than all of it aren'
   answer(logistics, 1, "route")
   local trips = trips_from(request)
   check("and the freighter goes there for the whole request", #trips == 1 and trips[1].provider == far.unit_number)
-  check("promising all 100", trips[1].planned == 100)
+  check("promising all 90", trips[1].planned == 90)
   check("unless set, the nearer provider's 30 would have been fetched", near.chest.contents.a == 30)
 end
 
 do -- A request larger than a load: it waits for room for a full one, then fetches a full one.
   local logistics = reset()
-  local request = entity("jatz-request-depot", 0.5, 0.5, { a = 700 })
+  local request = entity("jatz-request-depot", 0.5, 0.5, { a = 950 })
   local provider = entity("jatz-provider-depot", 10.5, 0.5, { a = 2000 })
   logistics.add(request)
   logistics.add(provider)
@@ -1570,24 +1571,24 @@ do -- A request larger than a load: it waits for room for a full one, then fetch
   assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 2)) == 2)
   assert(logistics.set_full_loads(request, true))
   logistics.on_tick()
-  check("300 short of 1000 is less than a load: nothing is sent", #requests == 0)
+  check("50 short of 1000 is less than a load: nothing is sent", #requests == 0)
   check("waiting for a full load", logistics.get_status(request) == "full-load")
-  request.chest.contents.a = 400
+  request.chest.contents.a = 850
   game.tick = 60
   logistics.on_tick()
   answer(logistics, 1, "route")
   local trip = trips_from(request)[1]
-  check("600 short: a freighter goes for a full load", trip and trip.planned == 500)
+  check("150 short: a freighter goes for a full load", trip and trip.planned == 100)
   game.tick = 120
   logistics.on_tick()
-  check("and none for the 100 left", #requests == 1 and #trips_from(request) == 1)
+  check("and none for the 50 left", #requests == 1 and #trips_from(request) == 1)
   assert(logistics.set_full_loads(request, false))
   game.tick = 180
   logistics.on_tick()
   answer(logistics, 2, "route")
   check(
-    "turned off, a freighter goes for the 100 left",
-    #trips_from(request) == 2 and trips_from(request)[2].planned == 100
+    "turned off, a freighter goes for the 50 left",
+    #trips_from(request) == 2 and trips_from(request)[2].planned == 50
   )
 end
 
@@ -1619,8 +1620,8 @@ do -- A buffer depot set to full loads fetches full loads from providers too.
   answer(logistics, 1, "route")
   local trip = trips_from(filling)[1]
   check(
-    "a full load of 500 is fetched from the other",
-    trip and trip.provider == large.unit_number and trip.planned == 500
+    "a full load of 100 is fetched from the other",
+    trip and trip.provider == large.unit_number and trip.planned == 100
   )
 end
 
@@ -1629,7 +1630,7 @@ do -- A freighter sent for less than a full load before the setting was ticked, 
   local logistics = reset()
   local request = entity("jatz-request-depot", 0.5, 0.5)
   local near = entity("jatz-provider-depot", 10.5, 0.5, { a = 30 })
-  local small = entity("jatz-provider-depot", 20.5, 0.5, { a = 100 })
+  local small = entity("jatz-provider-depot", 20.5, 0.5, { a = 40 })
   local far = entity("jatz-provider-depot", 40.5, 0.5, { a = 600 })
   for _, depot in ipairs({ request, near, small, far }) do
     logistics.add(depot)
@@ -1648,7 +1649,7 @@ do -- A freighter sent for less than a full load before the setting was ticked, 
   logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = near.unit_number })
   check("its reroute asks only about the provider with a full load", #requests == 2 and requests[2].goal.x == 40.5)
   answer(logistics, 2, "route")
-  check("and it is planned to bring a full load from there", trip.provider == far.unit_number and trip.planned == 500)
+  check("and it is planned to bring a full load from there", trip.provider == far.unit_number and trip.planned == 100)
 end
 
 -- Two providers with plenty, and a full-load request depot whose freighter heads for the nearer.
@@ -1665,17 +1666,17 @@ local function full_reroute(logistics)
   logistics.on_tick()
   answer(logistics, 1, "route")
   local trip = trips_from(request)[1]
-  assert(trip.provider == near.unit_number and trip.planned == 500)
+  assert(trip.provider == near.unit_number and trip.planned == 100)
   return request, near, trip
 end
 
 do -- The depot's room falls below a load before a freighter's reroute: it goes home empty.
   local logistics = reset()
   local request, near, trip = full_reroute(logistics)
-  request.chest.contents.a = 600
+  request.chest.contents.a = 950
   near.valid = false
   logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = near.unit_number })
-  check("400 short of 1000 can't take a full load: no reroute search", #requests == 1)
+  check("50 short of 1000 can't take a full load: no reroute search", #requests == 1)
   check("the freighter heads home empty", trip.state == "to-request" and trip.planned == nil)
 end
 
@@ -1685,10 +1686,10 @@ do -- The depot's room falls below a load during a freighter's reroute: it goes 
   near.valid = false
   logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = near.unit_number })
   check("a reroute search starts", #requests == 2 and requests[2].goal.x == 40.5)
-  request.chest.contents.a = 600
+  request.chest.contents.a = 950
   answer(logistics, 2, "route")
   check(
-    "room for 400 only when it ends: the freighter heads home empty",
+    "room for 50 only when it ends: the freighter heads home empty",
     trip.state == "to-request" and not trip.planned
   )
   check("without searching again", #requests == 2)
@@ -2208,19 +2209,19 @@ do -- Loading fills every cargo stack it can, though stacks of one item differ i
     stock[index].quality = { name = "normal" }
     stock[index].health = index % 2 == 1 and 1 or 0.5
   end
-  assert(logistics.set_request(request, "a", 500))
+  assert(logistics.set_request(request, "a", 100))
   logistics.on_tick()
   answer(logistics, 1, "route")
   local trip = trip_of(request)
-  check("setup: a freighter to fetch ten stacks' worth", trip.planned == 500 and #trip.cargo == 10)
+  check("setup: a freighter to fetch two stacks' worth", trip.planned == 100 and #trip.cargo == 2)
   arrive(logistics, trip)
   local loaded, mixed = 0, false
   for index = 1, #trip.cargo do
     loaded = loaded + trip.cargo[index].count
     mixed = mixed or (trip.cargo[index].valid_for_read and trip.cargo[index].count ~= 50)
   end
-  check("all 500 load, in ten full stacks, each of one health", loaded == 500 and not mixed)
-  check("and leave the provider", stock.get_item_count("a") == 0)
+  check("all 100 load, in two full stacks, each of one health", loaded == 100 and not mixed)
+  check("and the rest stays with the provider", stock.get_item_count("a") == 400)
 end
 
 do -- The cargo paint: grey out, the load's color from the provider home, the same trip throughout.
@@ -4154,7 +4155,7 @@ local SPEED, ITEMS, FLUIDS = "jatz-freighter-speed", "jatz-freighter-item-capaci
 local function researching(done)
   local force = { name = "player", index = 1, technologies = {} }
   prototypes.technology = {}
-  for name, levels in pairs({ [SPEED] = 5, [ITEMS] = 5, [FLUIDS] = 10 }) do
+  for name, levels in pairs({ [SPEED] = 5, [ITEMS] = 10, [FLUIDS] = 10 }) do
     for level = 1, levels do
       local key = name .. "-" .. level
       prototypes.technology[key] = {}
@@ -4180,7 +4181,7 @@ do -- Research: bigger loads and faster freighters, on the road too.
   logistics.on_tick()
   answer(logistics, 1, "route")
   local trip = trips_from(request)[1]
-  check("without research a freighter carries ten stacks", trip.planned == 500 and #trip.cargo == 10)
+  check("without research a freighter carries two stacks", trip.planned == 100 and #trip.cargo == 2)
   check("at the freighter's own speed", near(trip.drone.speed, 0.2))
 
   logistics = reset()
@@ -4192,7 +4193,7 @@ do -- Research: bigger loads and faster freighters, on the road too.
   logistics.on_tick()
   answer(logistics, 1, "route")
   trip = trips_from(request)[1]
-  check("each item capacity level adds a stack, fluid capacity none", trip.planned == 650 and #trip.cargo == 13)
+  check("each item capacity level adds a stack, fluid capacity none", trip.planned == 250 and #trip.cargo == 5)
   check("each speed level adds 20%", near(trip.drone.speed, 0.2 * 1.4))
   arrive(logistics, trip)
   check("a freighter repainted for its load keeps its speed", near(trip.drone.speed, 0.2 * 1.4))
@@ -4230,6 +4231,20 @@ do -- The infinite speed level counts every level researched; fluid capacity gro
   prototypes.technology = {}
 end
 
+do -- Ten item capacity levels carry 12 stacks: the base 2 plus 1 each.
+  local logistics = reset()
+  local force = researching({ [SPEED] = 0, [ITEMS] = 10, [FLUIDS] = 0 })
+  local request, near_provider = supplied(logistics, 5)
+  request.force, near_provider.force = force, force
+  near_provider.chest.contents.a = 1000
+  assert(logistics.set_request(request, "a", 2000))
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  check("all ten item capacity levels: 12 stacks a freighter", trip and trip.planned == 600 and #trip.cargo == 12)
+  prototypes.technology = {}
+end
+
 do -- Ten fluid capacity levels carry 2500: the base 750 plus 175 each.
   local logistics = reset()
   local force = researching({ [SPEED] = 0, [ITEMS] = 0, [FLUIDS] = 10 })
@@ -4244,12 +4259,12 @@ do -- Ten fluid capacity levels carry 2500: the base 750 plus 175 each.
 end
 
 do -- A full load for a freighter already out is what its cargo holds, sized when it set off:
-  -- capacity research since doesn't make a replacement provider's 520 too few for its 500.
+  -- capacity research since doesn't make a replacement provider's 120 too few for its 100.
   local logistics = reset()
   local force = researching({ [SPEED] = 0, [ITEMS] = 0, [FLUIDS] = 0 })
   local request = entity("jatz-request-depot", 0.5, 0.5)
   local first = entity("jatz-provider-depot", 10.5, 0.5, { a = 600 })
-  local spare = entity("jatz-provider-depot", 40.5, 0.5, { a = 520 })
+  local spare = entity("jatz-provider-depot", 40.5, 0.5, { a = 120 })
   for _, depot in ipairs({ request, first, spare }) do
     depot.force = force
     logistics.add(depot)
@@ -4260,14 +4275,14 @@ do -- A full load for a freighter already out is what its cargo holds, sized whe
   logistics.on_tick()
   answer(logistics, 1, "route")
   local trip = trips_from(request)[1]
-  check("setup: ten stacks, a full 500", #trip.cargo == 10 and trip.planned == 500)
+  check("setup: two stacks, a full 100", #trip.cargo == 2 and trip.planned == 100)
   force.technologies[ITEMS .. "-1"].researched = true
   logistics.on_research_changed({ research = force.technologies[ITEMS .. "-1"] })
   first.valid = false
   logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = first.unit_number })
-  check("after research, its reroute still asks about 520", #requests == 2 and requests[2].goal.x == 40.5)
+  check("after research, its reroute still asks about 120", #requests == 2 and requests[2].goal.x == 40.5)
   answer(logistics, 2, "route")
-  check("and fetches its own full load there", trip.provider == spare.unit_number and trip.planned == 500)
+  check("and fetches its own full load there", trip.provider == spare.unit_number and trip.planned == 100)
   prototypes.technology = {}
 end
 

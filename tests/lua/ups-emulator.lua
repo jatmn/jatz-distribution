@@ -243,7 +243,7 @@ local NORMAL = prototypes.quality.normal
 local technologies = {}
 local TECHNOLOGY_LEVELS = {
   ["jatz-freighter-speed"] = 5,
-  ["jatz-freighter-item-capacity"] = 5,
+  ["jatz-freighter-item-capacity"] = 10,
   ["jatz-freighter-fluid-capacity"] = 10,
 }
 for name, levels in pairs(TECHNOLOGY_LEVELS) do
