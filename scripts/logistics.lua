@@ -1403,7 +1403,9 @@ end
 
 -- Set a request depot's request, or clear it with a nil item. Returns false, changing nothing,
 -- for anything but a request depot, an item that doesn't exist, or a count that isn't a number.
--- A liquid depot's request is at most what its tank holds.
+-- A request is at most what the depot holds: its tank's size for a liquid depot, and for an item
+-- depot as many of the item as fill every slot of its chest (slots are a startup setting, 48 by
+-- default: 4,800 of an item that stacks to 100, 480 of one that stacks to 10).
 function logistics.set_request(entity, item, count)
   local depot = request_depot(entity)
   if not depot then
@@ -1422,6 +1424,9 @@ function logistics.set_request(entity, item, count)
     if depot.fluid then
       -- The tank's size, not a constant: liquid buffer sizes are a startup setting.
       count = math.min(count, depot.entity.get_fluid_capacity(1))
+    else
+      -- The chest's slots, not a constant, each a stack of this item.
+      count = math.min(count, #inventory(depot.entity) * stack_size_of(item))
     end
     depot.request = { item = item, count = count }
   end

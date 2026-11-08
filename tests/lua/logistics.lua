@@ -113,6 +113,11 @@ local function inventory(contents)
     end
     return list
   end
+  -- A depot's 48 slots, so #inventory (LuaInventory's length operator) counts them. Their stacks
+  -- read empty: what it holds is `contents`.
+  for index = 1, 48 do
+    self[index] = { valid_for_read = false }
+  end
   return self
 end
 
@@ -1827,6 +1832,14 @@ do -- Requests: fluids for liquid depots, items for item depots.
   check("a fluid request above the tank's size", logistics.set_request(request, "water", 1000000))
   check("is the tank's size", logistics.get_request(request).count == 25000)
   assert(logistics.set_request(request, "water", 1000))
+  -- An item depot's request is at most its 48 slots full of the item: stacks, not units.
+  check("an item request above what the chest holds", logistics.set_request(item_depot, "a", 1000000))
+  check("is 48 stacks of it, of 50", logistics.get_request(item_depot).count == 2400)
+  assert(logistics.set_request(item_depot, "megacell", 1000))
+  check("of an item stacking to 10, 480", logistics.get_request(item_depot).count == 480)
+  assert(logistics.set_request(item_depot, "a", 2400))
+  check("a request that fits is kept", logistics.get_request(item_depot).count == 2400)
+  assert(logistics.set_request(item_depot, nil))
   local chest = surface.created[1]
   check("a liquid request depot gets a truck chest", chest and chest.name == "jatz-truck-chest")
   check("under its centre", chest.position.x == 0.5 and chest.position.y == 0.5)
@@ -2083,9 +2096,9 @@ do -- A liquid request depot mined: its freighters go to the miner, its truck ch
 end
 
 -- Give a depot a chest of real stacks (the fake chests only count), holding `count` of `name`, of
--- `size` stacks (4 unless given).
+-- `size` stacks (a depot's 48 unless given).
 local function stocked(depot, name, count, size)
-  size = size or 4
+  size = size or 48
   local chest = script_inventory(size)
   if count then
     chest[1] = stack(name, count)

@@ -522,8 +522,9 @@ local function on_gui_closed(event)
   end
 end
 
--- After a request is set from the panel: a liquid depot's request stops at its tank's size, so
--- show that rather than the larger amount typed.
+-- After a request is set from the panel: a request stops at what the depot holds (a liquid
+-- depot's tank, an item depot's chest full of the item), so show that rather than the larger
+-- amount typed.
 local function show_count(field, entity, amount)
   local request = logistics.get_request(entity)
   if request and request.count < amount then
