@@ -1,4 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.6
+Date: 2026-11-09
+  Changes:
+    - Freighters carry 750 fluid at a time. Freighter fluid capacity now has ten levels, 375 more fluid each, up to 4,500.
+    - Freighters carry 2 stacks of items at a time. Freighter item capacity now has ten levels, one more stack each, up to 12. A save that already finished the old five levels keeps them and can research five more.
+  Bugfixes:
+    - Opening a liquid depot now shows your inventory on the left of its window, as an item depot does, so you can pick a freighter from it. On a liquid request or buffer depot, shift-click puts that stack in the freighter slot, and ctrl-click puts in every freighter you are carrying. A liquid provider has no freighter slot.
+    - Fixed liquid freighters endlessly fetching and delivering almost nothing, such as the last fraction of a unit pumps leave in a provider's tank, or the little that pipes drained out of the requesting tank. Freighters now never set off for less than 100 of a fluid: a liquid request or buffer depot waits until it has room for 100 and a depot it fetches from has 100 to give, and says so. A request below 100 is still fetched whole.
+    - Fixed freighters stuck at the mouth of some road tunnels: coming out of a tunnel whose mouth faces west or north, west or north of the map's centre, a freighter found no way on. A loaded one turned round, went back through the tunnel and returned its load to the provider, so the request was never delivered.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.5
 Date: 2026-11-08
   Features:
