@@ -571,6 +571,22 @@ local function count_pockets(player)
   end
 end
 
+-- True while this mod is moving freighters into the slot itself. That drop in what the player
+-- carries is already accounted for. The inventory-changed handler below must not also treat it as
+-- freighters just put into the depot's chest: `take_in_freighters` would then pull that many out
+-- of the truck chest (robot deliveries still waiting) into the slot, or hand them back.
+local accounting_carried = false
+
+local function account_carried(player, move)
+  accounting_carried = true
+  local ok, err = pcall(move)
+  accounting_carried = false
+  count_pockets(player)
+  if not ok then
+    error(err, 0)
+  end
+end
+
 local function on_gui_opened(event)
   if monitor_gui.on_gui_opened(event) then
     return
@@ -712,7 +728,9 @@ local function on_gui_click(event)
   elseif event.shift then
     logistics.take_freighters(entity, nil, nil, player.get_main_inventory())
   elseif cursor.valid_for_read then
-    logistics.put_freighters(entity, cursor, right and 1 or nil)
+    account_carried(player, function()
+      logistics.put_freighters(entity, cursor, right and 1 or nil)
+    end)
   else
     local in_slot = logistics.freighter_counts(entity)
     logistics.take_freighters(entity, cursor, right and math.ceil(in_slot / 2) or nil)
@@ -765,6 +783,10 @@ function request_gui.on_player_main_inventory_changed(event)
   storage.pocket_freighters = storage.pocket_freighters or {}
   local now, pockets = carried(player)
   local before = storage.pocket_freighters[event.player_index]
+  if accounting_carried then
+    storage.pocket_freighters[event.player_index] = now
+    return
+  end
   storage.pocket_freighters[event.player_index] = now
   if not before or now >= before then
     return
@@ -936,29 +958,31 @@ local function on_inventory_action(event)
   local function give(stack, limit)
     return logistics.put_freighters(entity, stack, limit)
   end
-  if mode == "stack" then
-    give(clicked)
-  elseif mode == "half-stack" then
-    give(clicked, math.ceil(clicked.count / 2))
-  else
-    local total = 0
-    for index = 1, #pockets do
-      local stack = pockets[index]
-      if stack.valid_for_read and stack.name == logistics.freighter then
-        total = total + stack.count
+  account_carried(player, function()
+    if mode == "stack" then
+      give(clicked)
+    elseif mode == "half-stack" then
+      give(clicked, math.ceil(clicked.count / 2))
+    else
+      local total = 0
+      for index = 1, #pockets do
+        local stack = pockets[index]
+        if stack.valid_for_read and stack.name == logistics.freighter then
+          total = total + stack.count
+        end
+      end
+      local left = mode == "half" and math.ceil(total / 2) or total
+      for index = 1, #pockets do
+        if left <= 0 then
+          break
+        end
+        local stack = pockets[index]
+        if stack.valid_for_read and stack.name == logistics.freighter then
+          left = left - give(stack, left)
+        end
       end
     end
-    local left = mode == "half" and math.ceil(total / 2) or total
-    for index = 1, #pockets do
-      if left <= 0 then
-        break
-      end
-      local stack = pockets[index]
-      if stack.valid_for_read and stack.name == logistics.freighter then
-        left = left - give(stack, left)
-      end
-    end
-  end
+  end)
   local frame = frame_of(player)
   if frame then
     show_freighters(frame.children[1], entity)

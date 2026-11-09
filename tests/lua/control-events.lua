@@ -610,7 +610,11 @@ do -- The freighter slot's clicks: ghosts request freighters from robots; remote
     player.cursor_ghost = ghost and { name = { name = ghost } } or nil
     player.cursor_stack = held and { valid_for_read = true, name = held, count = 5 } or { valid_for_read = false }
     player.get_main_inventory = function()
-      return {}
+      return {
+        get_item_count_filtered = function()
+          return 0
+        end,
+      }
     end
     fire("on_gui_click", {
       element = element,
@@ -3048,6 +3052,34 @@ do -- A liquid depot shows the player's inventory, so a freighter can be picked 
       action = defines.inventory_actions[kind],
     })
   end
+  -- The game raises an inventory change while freighters leave the player's stack. Count what the
+  -- player actually carries, and fail if that change is taken as a second hand-off into the chest.
+  local hand_moves = 0
+  logistics.count_freighters = function(inventory_)
+    if inventory_ ~= pockets then
+      return 0
+    end
+    local total = 0
+    for index = 1, #pockets do
+      local stack = pockets[index]
+      if stack.valid_for_read and stack.name == "jatz-quinityn-freighter" then
+        total = total + stack.count
+      end
+    end
+    return total
+  end
+  logistics.take_in_freighters = function()
+    hand_moves = hand_moves + 1
+    return 0, 0
+  end
+  local put_freighters = logistics.put_freighters
+  logistics.put_freighters = function(entity, stack, limit)
+    local moved = put_freighters(entity, stack, limit)
+    fire("on_player_main_inventory_changed", { player_index = 21 })
+    return moved
+  end
+  fire("on_gui_opened", { player_index = 21, entity = request })
+  slots = relative.jatz_depot_inventory.children[1].jatz_depot_inventory_slots
   action(2, "stack_transfer")
   check("shift-clicking another item leaves it", pockets[2].count == 10 and pockets[2].valid_for_read)
   action(1, "stack_split")
@@ -3056,11 +3088,17 @@ do -- A liquid depot shows the player's inventory, so a freighter can be picked 
     logistics.freighter_counts(request) == 2 and pockets[1].count == 2
   )
   action(1, "stack_transfer")
+  check(
+    "shift-clicking the rest of that stack puts the whole stack in the slot",
+    logistics.freighter_counts(request) == 4 and not pockets[1].valid_for_read and pockets[3].count == 6
+  )
   action(3, "inventory_transfer")
   check(
     "ctrl-clicking a freighter puts every one being carried into the slot",
     logistics.freighter_counts(request) == 10 and not pockets[1].valid_for_read and not pockets[3].valid_for_read
   )
+  fire("on_player_main_inventory_changed", { player_index = 21 })
+  check("a slot transfer is not a second hand-off into the chest", hand_moves == 0)
   local item = depot(950)
   item.name = "jatz-request-depot"
   fire("on_built_entity", { entity = item })

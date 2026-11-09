@@ -1,0 +1,2 @@
+  Bugfixes:
+    - Opening a liquid depot now shows your inventory on the left of its window, as an item depot does, so you can pick a freighter from it. On a liquid request or buffer depot, shift-click puts that stack in the freighter slot, and ctrl-click puts in every freighter you are carrying. A liquid provider has no freighter slot.
