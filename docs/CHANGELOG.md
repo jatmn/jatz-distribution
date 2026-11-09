@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.6](https://github.com/jatmn/jatz-distribution/compare/v0.1.5...v0.1.6) (2026-11-09)
+
+
+### Features
+
+* set freighter loads to 2 stacks and 4500 fluid ([#87](https://github.com/jatmn/jatz-distribution/issues/87)) ([6d1f1a0](https://github.com/jatmn/jatz-distribution/commit/6d1f1a0082ddf1ef344e8e33fea2952bd890f2bd))
+
+
+### Bug Fixes
+
+* don't send liquid freighters for almost nothing ([#83](https://github.com/jatmn/jatz-distribution/issues/83)) ([b0b41b4](https://github.com/jatmn/jatz-distribution/commit/b0b41b412b9b52f68895404dfb2cafbfa5f5b48f))
+* let freighters drive on out of west- and north-facing tunnel mouths ([#84](https://github.com/jatmn/jatz-distribution/issues/84)) ([6eec54c](https://github.com/jatmn/jatz-distribution/commit/6eec54c49c6c017a830f069293d47cbb9e68455b))
+* show the player's inventory on liquid depots ([#85](https://github.com/jatmn/jatz-distribution/issues/85)) ([38253be](https://github.com/jatmn/jatz-distribution/commit/38253beca8823fa2be7e15fb1f99cd629f39e95c))
+
+
+### CI
+
+* keep pull requests from editing changelog.txt ([#88](https://github.com/jatmn/jatz-distribution/issues/88)) ([557d972](https://github.com/jatmn/jatz-distribution/commit/557d9725b7248725aa3ef0dfacc861a5c13085ec))
+
 ## [0.1.5](https://github.com/jatmn/jatz-distribution/compare/v0.1.4...v0.1.5) (2026-11-08)
 
 
