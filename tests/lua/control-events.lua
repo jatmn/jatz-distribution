@@ -372,6 +372,22 @@ storage = {}
 -- A one-slot script inventory, as far as the freighter slot's counts need.
 local function script_inventory()
   local slot = { valid_for_read = false, count = 0 }
+  -- As far as putting freighters into the slot needs: move `count` from `from` into this stack.
+  function slot.transfer_stack(from, count)
+    local moving = math.min(count or from.count, from.valid_for_read and from.count or 0)
+    if moving <= 0 then
+      return 0
+    end
+    slot.name = from.name
+    slot.count = (slot.count or 0) + moving
+    slot.valid_for_read = true
+    from.count = from.count - moving
+    if from.count <= 0 then
+      from.count = 0
+      from.valid_for_read = false
+    end
+    return moving
+  end
   return {
     valid = true,
     [1] = slot,
@@ -561,6 +577,7 @@ do -- The freighter slot's clicks: ghosts request freighters from robots; remote
   local logistics = require("scripts.logistics")
   local calls = {}
   local removing = 0
+  local saved = { requested_freighters = logistics.requested_freighters }
   logistics.requested_freighters = function()
     return 0, removing
   end
@@ -572,6 +589,7 @@ do -- The freighter slot's clicks: ghosts request freighters from robots; remote
     "remove_freighters",
     "cancel_freighter_removal",
   }) do
+    saved[name] = logistics[name]
     logistics[name] = function(_, a, b)
       calls[#calls + 1] = { name = name, a = a, b = b }
       return 0
@@ -592,7 +610,11 @@ do -- The freighter slot's clicks: ghosts request freighters from robots; remote
     player.cursor_ghost = ghost and { name = { name = ghost } } or nil
     player.cursor_stack = held and { valid_for_read = true, name = held, count = 5 } or { valid_for_read = false }
     player.get_main_inventory = function()
-      return {}
+      return {
+        get_item_count_filtered = function()
+          return 0
+        end,
+      }
     end
     fire("on_gui_click", {
       element = element,
@@ -642,6 +664,9 @@ do -- The freighter slot's clicks: ghosts request freighters from robots; remote
   fire("on_gui_leave", { element = element, player_index = 1 })
   fire("jatz-pipette", { player_index = 1 })
   check("pipette elsewhere is left to the game", picked == nil)
+  for name, fn in pairs(saved) do
+    logistics[name] = fn
+  end
 end
 
 do -- Every status the dispatcher can report has a status light, one of the game's own.
@@ -1624,6 +1649,7 @@ do -- Liquid depots: the same panels, beside the storage tank window, choosing a
     "its panel is beside the storage tank's window, a pipe window",
     frame.anchor.gui == "relative_gui_type.pipe_gui"
   )
+  check("and no inventory of its own when the player has none", relative.jatz_depot_inventory == nil)
   check("titled for a liquid request depot", frame.caption[1] == "jatz-gui.liquid-request-title")
   local inner = frame.children[1]
   local chooser = inner.request_row.jatz_request_item
@@ -2960,6 +2986,133 @@ do -- Road tunnels' portals: built, turned, cloned and removed, deliveries re-pl
     storage.tunnel_portals[built.unit_number] == nil and #changes == 4 and changes[4][3]
   )
   logistics.on_roads_changed = on_roads_changed
+end
+
+do -- A liquid depot shows the player's inventory, so a freighter can be picked from it.
+  local logistics = require("scripts.logistics")
+  local function stack(name, count)
+    return { valid_for_read = count > 0, name = name, count = count }
+  end
+  local pockets = {
+    stack("jatz-quinityn-freighter", 4),
+    stack("iron-plate", 10),
+    stack("jatz-quinityn-freighter", 6),
+  }
+  local relative = element()
+  local player = {
+    index = 21,
+    valid = true,
+    gui = { relative = relative },
+    get_main_inventory = function()
+      return pockets
+    end,
+  }
+  game.get_player = function()
+    return player
+  end
+  local function liquid(x, name)
+    local entity = depot(x)
+    entity.name = name
+    entity.get_fluid_count = function()
+      return 0
+    end
+    entity.get_fluid_contents = function()
+      return {}
+    end
+    fire("on_built_entity", { entity = entity })
+    return entity
+  end
+  local request = liquid(940, "jatz-liquid-request-depot")
+  fire("on_gui_opened", { player_index = 21, entity = request })
+  local shown = relative.jatz_depot_inventory
+  local slots = shown and shown.children[1].jatz_depot_inventory_slots
+  local names = {}
+  for _, name in ipairs(shown and shown.anchor.names or {}) do
+    names[name] = true
+  end
+  check(
+    "opening a liquid depot shows the player's inventory on the left of the tank window",
+    shown
+      and shown.anchor.gui == "relative_gui_type.pipe_gui"
+      and shown.anchor.position == "relative_gui_position.left"
+      and names["jatz-liquid-request-depot"]
+      and names["jatz-liquid-buffer-depot"]
+      and names["jatz-liquid-provider-depot"]
+      and slots
+      and slots.inventory == pockets
+      and slots.slots_per_row == 10
+      and slots.handle_cursor_transfer == true
+      and slots.handle_cursor_split == true
+  )
+  local function action(index, kind)
+    fire("on_gui_inventory_action", {
+      player_index = 21,
+      element = slots,
+      slot = index,
+      action = defines.inventory_actions[kind],
+    })
+  end
+  -- The game raises an inventory change while freighters leave the player's stack. Count what the
+  -- player actually carries, and fail if that change is taken as a second hand-off into the chest.
+  local hand_moves = 0
+  logistics.count_freighters = function(inventory_)
+    if inventory_ ~= pockets then
+      return 0
+    end
+    local total = 0
+    for index = 1, #pockets do
+      local pocket = pockets[index]
+      if pocket.valid_for_read and pocket.name == "jatz-quinityn-freighter" then
+        total = total + pocket.count
+      end
+    end
+    return total
+  end
+  logistics.take_in_freighters = function()
+    hand_moves = hand_moves + 1
+    return 0, 0
+  end
+  local put_freighters = logistics.put_freighters
+  logistics.put_freighters = function(entity, from, limit)
+    local moved = put_freighters(entity, from, limit)
+    fire("on_player_main_inventory_changed", { player_index = 21 })
+    return moved
+  end
+  fire("on_gui_opened", { player_index = 21, entity = request })
+  slots = relative.jatz_depot_inventory.children[1].jatz_depot_inventory_slots
+  action(2, "stack_transfer")
+  check("shift-clicking another item leaves it", pockets[2].count == 10 and pockets[2].valid_for_read)
+  action(1, "stack_split")
+  check(
+    "shift-right-clicking a freighter puts half that stack in the slot",
+    logistics.freighter_counts(request) == 2 and pockets[1].count == 2
+  )
+  action(1, "stack_transfer")
+  check(
+    "shift-clicking the rest of that stack puts the whole stack in the slot",
+    logistics.freighter_counts(request) == 4 and not pockets[1].valid_for_read and pockets[3].count == 6
+  )
+  action(3, "inventory_transfer")
+  check(
+    "ctrl-clicking a freighter puts every one being carried into the slot",
+    logistics.freighter_counts(request) == 10 and not pockets[1].valid_for_read and not pockets[3].valid_for_read
+  )
+  fire("on_player_main_inventory_changed", { player_index = 21 })
+  check("a slot transfer is not a second hand-off into the chest", hand_moves == 0)
+  local item = depot(950)
+  item.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = item })
+  fire("on_gui_opened", { player_index = 21, entity = item })
+  check("an item depot does not add a second inventory", relative.jatz_depot_inventory == nil)
+  local provider = liquid(960, "jatz-liquid-provider-depot")
+  pockets[1].count, pockets[1].valid_for_read = 3, true
+  fire("on_gui_opened", { player_index = 21, entity = provider })
+  slots = relative.jatz_depot_inventory.children[1].jatz_depot_inventory_slots
+  action(1, "inventory_transfer")
+  check("a liquid provider shows the inventory and takes no freighters", pockets[1].count == 3)
+  player.controller_type = defines.controllers.remote
+  fire("on_gui_opened", { player_index = 21, entity = request })
+  check("remote view shows no inventory to take freighters from", relative.jatz_depot_inventory == nil)
 end
 
 print("all control event checks passed")

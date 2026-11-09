@@ -6,9 +6,10 @@
 -- with a priority slider at the top; provider depots have a panel with only that slider. Item
 -- provider and buffer depots also have a "Logistic robots can use it" checkbox under it. Liquid
 -- depots have the same panels, for a fluid, beside their storage tank window (a pipe window in
--- Factorio 2.1). The Fuel depot's panel shows the liquid fuel in its hidden tank, which has no
--- window of its own, with a button to flush it. Changes apply as they are made. Factorio shows the
--- panel only with these depots' windows.
+-- Factorio 2.1). That window does not show the character inventory a chest does, so a liquid
+-- depot also shows the player's inventory on its left. The Fuel depot's panel shows the liquid
+-- fuel in its hidden tank, which has no window of its own, with a button to flush it. Changes
+-- apply as they are made. Factorio shows the panel only with these depots' windows.
 --
 -- The freighter slot works like an inventory slot: click with freighters in hand to put them in
 -- (right-click: one), click with an empty hand to take them all (right-click: half), and
@@ -387,11 +388,66 @@ local function apply_condition(inner, entity)
   show_condition(inner, entity)
 end
 
+-- A liquid depot is a storage tank, so its window does not show the character inventory the way
+-- an item depot's chest does. Show the player's inventory on the left of that window. Nothing in
+-- remote view, where items are not moved by hand, and nothing when the player has no inventory.
+local INVENTORY_FRAME = "jatz_depot_inventory"
+local INVENTORY = "jatz_depot_inventory_slots"
+-- A character's inventory is ten slots wide.
+local INVENTORY_COLUMNS = 10
+local LIQUID_NAMES = {}
+for name in pairs(LIQUID) do
+  LIQUID_NAMES[#LIQUID_NAMES + 1] = name
+end
+table.sort(LIQUID_NAMES)
+
+local function inventory_frame_of(player)
+  return player.gui.relative[INVENTORY_FRAME]
+end
+
+local function show_player_inventory(player, liquid)
+  local old = inventory_frame_of(player)
+  if old then
+    old.destroy()
+  end
+  if not liquid or player.controller_type == defines.controllers.remote then
+    return
+  end
+  local pockets = player.get_main_inventory()
+  if not pockets then
+    return
+  end
+  local frame = player.gui.relative.add({
+    type = "frame",
+    name = INVENTORY_FRAME,
+    caption = { "jatz-gui.inventory" },
+    tooltip = { "jatz-gui.inventory-tooltip" },
+    direction = "vertical",
+    anchor = {
+      gui = defines.relative_gui_type.pipe_gui,
+      position = defines.relative_gui_position.left,
+      -- Only these depots: a vanilla storage tank must not gain this inventory.
+      names = LIQUID_NAMES,
+    },
+  })
+  local slots = frame.add({ type = "frame", style = "inside_shallow_frame", direction = "vertical" }).add({
+    type = "inventory",
+    name = INVENTORY,
+    slots_per_row = INVENTORY_COLUMNS,
+    -- A click picks the stack up or puts it down, a right-click half of it, as in a chest
+    -- (LuaGuiElement inventory, Factorio 2.1.7). Shift-click and ctrl-click are handled below.
+    handle_cursor_transfer = true,
+    handle_cursor_split = true,
+  })
+  slots.inventory = pockets
+end
+
 local function open(player, entity)
   local old = frame_of(player)
   if old then
     old.destroy()
   end
+  show_player_inventory(player, LIQUID[entity.name])
   local frame = player.gui.relative.add({
     type = "frame",
     name = FRAME,
@@ -512,6 +568,22 @@ local function count_pockets(player)
   if player then
     storage.pocket_freighters = storage.pocket_freighters or {}
     storage.pocket_freighters[player.index] = carried(player)
+  end
+end
+
+-- True while this mod is moving freighters into the slot itself. That drop in what the player
+-- carries is already accounted for. The inventory-changed handler below must not also treat it as
+-- freighters just put into the depot's chest: `take_in_freighters` would then pull that many out
+-- of the truck chest (robot deliveries still waiting) into the slot, or hand them back.
+local accounting_carried = false
+
+local function account_carried(player, move)
+  accounting_carried = true
+  local ok, err = pcall(move)
+  accounting_carried = false
+  count_pockets(player)
+  if not ok then
+    error(err, 0)
   end
 end
 
@@ -656,7 +728,9 @@ local function on_gui_click(event)
   elseif event.shift then
     logistics.take_freighters(entity, nil, nil, player.get_main_inventory())
   elseif cursor.valid_for_read then
-    logistics.put_freighters(entity, cursor, right and 1 or nil)
+    account_carried(player, function()
+      logistics.put_freighters(entity, cursor, right and 1 or nil)
+    end)
   else
     local in_slot = logistics.freighter_counts(entity)
     logistics.take_freighters(entity, cursor, right and math.ceil(in_slot / 2) or nil)
@@ -709,6 +783,10 @@ function request_gui.on_player_main_inventory_changed(event)
   storage.pocket_freighters = storage.pocket_freighters or {}
   local now, pockets = carried(player)
   local before = storage.pocket_freighters[event.player_index]
+  if accounting_carried then
+    storage.pocket_freighters[event.player_index] = now
+    return
+  end
   storage.pocket_freighters[event.player_index] = now
   if not before or now >= before then
     return
@@ -847,6 +925,70 @@ local function refresh()
   end
 end
 
+-- Freighters shift-clicked or ctrl-clicked in the inventory beside a liquid depot go into its
+-- slot. Other items stay: a liquid depot has no chest to put them in. A click that picks a stack
+-- up is done by the inventory widget (handle_cursor_transfer / handle_cursor_split).
+local function on_inventory_action(event)
+  local element = event.element
+  if not (element and element.valid and element.name == INVENTORY) then
+    return
+  end
+  local mode
+  if event.action == defines.inventory_actions.stack_transfer then
+    mode = "stack"
+  elseif event.action == defines.inventory_actions.stack_split then
+    mode = "half-stack"
+  elseif event.action == defines.inventory_actions.inventory_transfer then
+    mode = "all"
+  elseif event.action == defines.inventory_actions.inventory_split then
+    mode = "half"
+  else
+    return
+  end
+  local player = game.get_player(event.player_index)
+  local entity = player and opened_depot(player, true)
+  if not (entity and LIQUID[entity.name]) then
+    return
+  end
+  local pockets = element.inventory
+  local clicked = pockets and pockets[event.slot]
+  if not (clicked and clicked.valid_for_read and clicked.name == logistics.freighter) then
+    return
+  end
+  local function give(stack, limit)
+    return logistics.put_freighters(entity, stack, limit)
+  end
+  account_carried(player, function()
+    if mode == "stack" then
+      give(clicked)
+    elseif mode == "half-stack" then
+      give(clicked, math.ceil(clicked.count / 2))
+    else
+      local total = 0
+      for index = 1, #pockets do
+        local stack = pockets[index]
+        if stack.valid_for_read and stack.name == logistics.freighter then
+          total = total + stack.count
+        end
+      end
+      local left = mode == "half" and math.ceil(total / 2) or total
+      for index = 1, #pockets do
+        if left <= 0 then
+          break
+        end
+        local stack = pockets[index]
+        if stack.valid_for_read and stack.name == logistics.freighter then
+          left = left - give(stack, left)
+        end
+      end
+    end
+  end)
+  local frame = frame_of(player)
+  if frame then
+    show_freighters(frame.children[1], entity)
+  end
+end
+
 function request_gui.register()
   script.on_event(defines.events.on_gui_opened, on_gui_opened)
   script.on_event(defines.events.on_gui_closed, on_gui_closed)
@@ -858,6 +1000,7 @@ function request_gui.register()
   script.on_event(defines.events.on_gui_selection_state_changed, on_gui_selection_state_changed)
   script.on_event(defines.events.on_gui_hover, on_gui_hover)
   script.on_event(defines.events.on_gui_leave, on_gui_leave)
+  script.on_event(defines.events.on_gui_inventory_action, on_inventory_action)
   script.on_event("jatz-pipette", on_pipette)
   script.on_nth_tick(30, refresh)
 end
