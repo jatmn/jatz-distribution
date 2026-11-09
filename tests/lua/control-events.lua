@@ -3061,9 +3061,9 @@ do -- A liquid depot shows the player's inventory, so a freighter can be picked 
     end
     local total = 0
     for index = 1, #pockets do
-      local stack = pockets[index]
-      if stack.valid_for_read and stack.name == "jatz-quinityn-freighter" then
-        total = total + stack.count
+      local pocket = pockets[index]
+      if pocket.valid_for_read and pocket.name == "jatz-quinityn-freighter" then
+        total = total + pocket.count
       end
     end
     return total
@@ -3073,8 +3073,8 @@ do -- A liquid depot shows the player's inventory, so a freighter can be picked 
     return 0, 0
   end
   local put_freighters = logistics.put_freighters
-  logistics.put_freighters = function(entity, stack, limit)
-    local moved = put_freighters(entity, stack, limit)
+  logistics.put_freighters = function(entity, from, limit)
+    local moved = put_freighters(entity, from, limit)
     fire("on_player_main_inventory_changed", { player_index = 21 })
     return moved
   end
