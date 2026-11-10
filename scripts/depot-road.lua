@@ -18,11 +18,21 @@ local depot_road = {}
 local ROAD, DEPOT_ROAD = "jatz-road", "jatz-depot-road"
 depot_road.name = DEPOT_ROAD
 
--- storage.depot_roads[unit_number] = { surface = index, x, y, tile, hidden, double }: the tile
--- position the depot laid road on, and the ground it covered there. `false` means the player
+-- storage.depot_roads[unit_number] = { phase = "owned", surface = index, x, y, tile, hidden, double }: the tile
+-- position the depot laid road on, and the ground it covered there. `{ phase = "released" }` means the player
 -- mined or covered the depot's road: it isn't laid again for that depot until it is turned.
 local function records()
   storage.depot_roads = storage.depot_roads or {}
+  if not storage.depot_roads_version then
+    for id, record in pairs(storage.depot_roads) do
+      if record == false then
+        storage.depot_roads[id] = { phase = "released" }
+      else
+        record.phase = record.phase or "owned"
+      end
+    end
+    storage.depot_roads_version = 1
+  end
   return storage.depot_roads
 end
 
@@ -34,7 +44,13 @@ end
 -- Another depot's record for the same tile, if any.
 local function sharing(surface_index, x, y, except)
   for unit_number, record in pairs(records()) do
-    if record and unit_number ~= except and record.surface == surface_index and record.x == x and record.y == y then
+    if
+      record.phase == "owned"
+      and unit_number ~= except
+      and record.surface == surface_index
+      and record.x == x
+      and record.y == y
+    then
       return record
     end
   end
@@ -71,9 +87,9 @@ end
 -- Remove the road a depot laid (removed or turned depot). Returns the surface index if road went.
 function depot_road.lift(unit_number)
   local record = records()[unit_number]
-  -- Forget the depot whether or not it still owns road (`false`: the player took the spot).
+  -- Forget the depot whether or not it still owns road (`released`: the player took the spot).
   records()[unit_number] = nil
-  if not record then
+  if not record or record.phase ~= "owned" then
     return nil
   end
   return restore(unit_number, record) and record.surface or nil
@@ -99,7 +115,7 @@ function depot_road.lay(entity)
     -- (from a cloned area, say) is adopted, with the ground hidden under it as what it covered.
     local other = sharing(surface.index, x, y, unit_number)
     local position = { x, y }
-    local record = { surface = surface.index, x = x, y = y }
+    local record = { phase = "owned", surface = surface.index, x = x, y = y }
     if other then
       -- Copied as they are, nil included: a missing hidden tile must stay missing.
       record.tile, record.hidden, record.double = other.tile, other.hidden, other.double
@@ -111,6 +127,7 @@ function depot_road.lay(entity)
   end
   local position = { x, y }
   records()[unit_number] = {
+    phase = "owned",
     surface = surface.index,
     x = x,
     y = y,
@@ -139,29 +156,29 @@ local function xy(position)
   return position.x or position[1], position.y or position[2]
 end
 
--- The depot's road was mined by hand: put back the ground it covered (mining reveals only the
--- hidden tile, which would lose concrete laid there before the depot), and forget it.
-function depot_road.mined(surface_index, position)
+-- Ownership ends for every depot sharing the tile. Mining restores its layers once; covering
+-- preserves the player's replacement. A released record prevents reload from claiming it again.
+local function release(surface_index, position, reason)
   local x, y = xy(position)
+  local ground
   for unit_number, record in pairs(records()) do
-    if record and record.surface == surface_index and record.x == x and record.y == y then
-      records()[unit_number] = false
-      local surface = game.surfaces[surface_index]
-      if surface and record.tile then
-        put_back(surface, record)
-      end
+    if record.phase == "owned" and record.surface == surface_index and record.x == x and record.y == y then
+      ground = ground or record
+      records()[unit_number] = { phase = "released", reason = reason }
     end
+  end
+  local surface = game.surfaces[surface_index]
+  if reason == "mined" and ground and ground.tile and surface then
+    put_back(surface, ground)
   end
 end
 
--- A player placed a tile over the depot's road: it's theirs now, so never put the old ground back.
+function depot_road.mined(surface_index, position)
+  release(surface_index, position, "mined")
+end
+
 function depot_road.covered(surface_index, position)
-  local x, y = xy(position)
-  for unit_number, record in pairs(records()) do
-    if record and record.surface == surface_index and record.x == x and record.y == y then
-      records()[unit_number] = false
-    end
-  end
+  release(surface_index, position, "covered")
 end
 
 -- Depots already in the game without a road record (the mod added to a save) get their road.

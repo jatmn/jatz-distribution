@@ -35,6 +35,34 @@ local MARK = "jatz_removal_of"
 -- Settings waiting for their undo action are given up after this long (a removal that made none).
 local GIVE_UP_TICKS = 60
 
+local function action_state(marked)
+  if not marked.phase then
+    marked.phase = marked.action and "located" or (marked.unlocated and "unlocated" or "locating")
+    marked.unlocated = nil
+  end
+  return marked.phase
+end
+
+local function located(marked, action)
+  marked.phase, marked.action = "located", action
+end
+
+-- Configuration migration is idempotent; queue membership supplies old snapshots' phase.
+function undo.migrate()
+  for _, marked in pairs(storage.undo_marked or {}) do
+    action_state(marked)
+  end
+  for _, mining in pairs(storage.undo_mining or {}) do
+    mining.entry.phase = "captured"
+  end
+  for _, entries in pairs(storage.undo_pending or {}) do
+    for _, entry in ipairs(entries) do
+      entry.phase = entry.tagged and "tagged" or "pending"
+      entry.tagged = nil
+    end
+  end
+end
+
 local function key(surface_index, name, position)
   return surface_index .. " " .. name .. " " .. position.x .. " " .. position.y
 end
@@ -89,7 +117,7 @@ local function tag(stack, entries)
       for index, entry in ipairs(list or {}) do
         if may_take(action, entry) then
           put(stack, item, action_index, action, table.remove(list, index))
-          entry.tagged, left = true, left - 1
+          entry.phase, left = "tagged", left - 1
           break
         end
       end
@@ -97,7 +125,7 @@ local function tag(stack, entries)
   end
   local missing = {}
   for _, entry in ipairs(entries) do
-    if not entry.tagged then
+    if entry.phase ~= "tagged" then
       missing[#missing + 1] = entry
     end
   end
@@ -113,6 +141,7 @@ local function wait(player_index, entries)
   local pending = storage.undo_pending[player_index] or {}
   storage.undo_pending[player_index] = pending
   for _, entry in ipairs(entries) do
+    entry.phase = "pending"
     pending[#pending + 1] = entry
   end
 end
@@ -122,6 +151,7 @@ end
 -- spot in order).
 local function note(entity)
   return {
+    phase = "captured",
     unit_number = entity.unit_number,
     key = key(entity.surface_index, entity.name, entity.position),
     tags = logistics.settings_tags(entity) or {},
@@ -136,6 +166,7 @@ function undo.marked(entity, player_index)
   if player_index and entity.valid and entity.unit_number then
     storage.undo_marked = storage.undo_marked or {}
     storage.undo_marked[entity.unit_number] = {
+      phase = "locating",
       player_index = player_index,
       key = key(entity.surface_index, entity.name, entity.position),
       tick = game.tick,
@@ -151,7 +182,7 @@ end
 local function locate(tick)
   local wanted = {}
   for unit_number, marked in pairs(storage.undo_marked or {}) do
-    if not marked.action and not marked.unlocated then
+    if action_state(marked) == "locating" then
       local by_player = wanted[marked.player_index] or {}
       wanted[marked.player_index] = by_player
       local list = by_player[marked.key] or {}
@@ -179,7 +210,7 @@ local function locate(tick)
             stack.set_undo_tag(item, action_index, MARK, unit_number)
             action.tags = action.tags or {}
             action.tags[MARK] = unit_number
-            storage.undo_marked[unit_number].action = action_index
+            located(storage.undo_marked[unit_number], action_index)
             left = left - 1
             break
           end
@@ -194,7 +225,7 @@ local function locate(tick)
         if marked.tick >= tick then
           storage.undo_locating = true
         else
-          marked.unlocated = true
+          marked.phase = "unlocated"
         end
       end
     end
@@ -227,7 +258,7 @@ function undo.removing_marked(entity)
     return
   end
   local entry = note(entity)
-  if marked.action then
+  if action_state(marked) == "located" then
     for item = 1, stack.get_undo_item_count() do
       -- An item may have fewer actions: reading past them is an error, not a nil (probed).
       local ok, mark = pcall(stack.get_undo_tag, item, marked.action, MARK)
@@ -289,6 +320,8 @@ function undo.tag_pending(tick)
     for _, entry in ipairs(pending) do
       if tick - entry.tick < GIVE_UP_TICKS then
         due[#due + 1] = entry
+      else
+        entry.phase = "expired"
       end
     end
     local stack = undo_stack(player_index)
@@ -341,7 +374,12 @@ function undo.on_undo_applied(event)
         ghost = found
       end
     end
-    local settings = ghost and (kept or table.remove(storage.undo_pending[event.player_index], waiting).tags)
+    local settings = ghost and kept
+    if ghost and not kept and waiting then
+      local entry = table.remove(storage.undo_pending[event.player_index], waiting)
+      entry.phase = "consumed"
+      settings = entry.tags
+    end
     if settings and next(settings) ~= nil then
       local tags = ghost.tags or {}
       for name, value in pairs(settings) do

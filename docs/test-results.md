@@ -2,6 +2,36 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Explicit runtime states: passed (automated)
+
+**November 9, 2026.** Refactor against `af0429cd7673a3674e3b8a50d301616fd572a3de`,
+Factorio 2.1.24 headless on Linux. Saved freighter flags become independent named movement,
+search, service and fuel states; fleet, undo and road ownership have compatible migrations.
+See [Runtime state and transition ownership](runtime-state.md).
+
+- `tools/test_mod_setup.py`: all 14 setup tests passed, including the Lua logistics,
+  control-event and depot-road harnesses and the runtime compiler/local-limit checks.
+- Lifecycle invariants run at each logistics checkpoint. New sequences exercise saved loading
+  and underground-search states, repeated migration, stale answers after exit, repaint identity,
+  once-only refunds, old fleet targets, undo records and road ownership.
+- A delayed approach failure ending a newer tunnel crossing reproduced on the base and passed
+  after adding the command-generation guard to the underground failure branch.
+- `tools/test_mod.py`: packaged mod passed with the base game and Space Age, including the
+  automated undo scenario. These engine runs use fresh scenarios; migration callback ordering
+  is covered by the Lua harness, not by a captured player save.
+- StyLua 2.5.2, Luacheck 1.2.0 and Ruff 0.17.3 passed; release/package and emulator tests passed.
+- A focused independent static review found no actionable regression in transitions or migrations.
+
+The deterministic standard emulator comparison reports +3.3% mean Lua instructions (+2.1% p99,
++3.0% worst tick), with identical API calls, paths, commands, vehicles and deliveries. The
+in-game standard comparison below has three alternating runs per revision. Run-to-run variation
+is larger than the median change, so it establishes no speed improvement.
+
+| | Mean update (ms) | UPS | Script (ms) | Pathfinder (ms) | p99 (ms) | Max (ms) | Run spread (ms) | Vehicles out | Delivered/min |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Before | 1.276 | 784 | 0.499 | 0.056 | 4.146 | 11.678 | 0.272 | 1510 | 264720 |
+| After | 1.214 | 824 | 0.488 | 0.053 | 3.517 | 9.975 | 0.132 | 1510 | 264720 |
+
 ## Mod: passed (automated)
 
 **November 3, 2026.** `tools/test_mod.py` with Factorio 2.1.24 (build 87808) headless on Linux, loading the packaged `jatz-distribution_0.1.0.zip`. It ran once with the base game only and once with Space Age, and both passed:

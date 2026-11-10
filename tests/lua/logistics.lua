@@ -458,7 +458,7 @@ local function arrive(logistics, trip, result)
   if result == defines.behavior_result.fail then
     logistics.failed_commands()
   end
-  if trip.loading then
+  if trip.service then
     logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = defines.behavior_result.success })
   end
 end
@@ -565,7 +565,63 @@ local function coming_filed()
   return true
 end
 
+-- State invariants run at every existing behavioral checkpoint, alongside the ledger invariant.
+local function lifecycle_consistent()
+  local movements = {
+    departing = true,
+    road = true,
+    ["approaching-tunnel"] = true,
+    ["waiting-at-tunnel"] = true,
+    underground = true,
+    ["exiting-tunnel"] = true,
+  }
+  local keys = {}
+  for id, trip in pairs(storage.trips or {}) do
+    if trip.lifecycle_version == 1 then
+      assert(movements[trip.movement], "live trip has invalid movement")
+      assert(trip.drone.unit_number == id and trip.id == id, "trip identity not rebound")
+      assert(not keys[trip.key], "logical trip identity duplicated")
+      keys[trip.key] = true
+      local home = storage.depots[trip.request]
+      assert(not home or home.trips[id], "home lost its trip")
+      assert(not (trip.search and trip.service), "search overlaps depot service")
+      assert(trip.fuel_check == "unchecked" or trip.fuel_check == "checked", "invalid fuel check")
+      if trip.search then
+        assert(trip.search.kind == "provider" or trip.search.kind == "fuel", "invalid search kind")
+        assert(type(trip.search.since) == "number", "search has no timeout origin")
+        assert(
+          (trip.search.phase == "pending" and type(trip.search.token) == "number")
+            or (trip.search.phase == "retry" and trip.search.token == nil),
+          "invalid search ownership"
+        )
+      end
+      if trip.service then
+        assert(
+          trip.service.kind == "loading" or trip.service.kind == "unloading" or trip.service.kind == "refueling",
+          "invalid service"
+        )
+        assert(trip.movement == "road", "servicing away from a depot")
+      end
+      local in_tunnel = trip.movement == "underground"
+        or trip.movement == "approaching-tunnel"
+        or trip.movement == "waiting-at-tunnel"
+      assert((trip.tunnel ~= nil) == in_tunnel, "tunnel payload disagrees with movement")
+      assert(
+        trip.searching == nil
+          and trip.search_token == nil
+          and trip.loading == nil
+          and trip.departing == nil
+          and trip.coming_out == nil
+          and trip.refueled == nil
+          and trip.fuel_search == nil,
+        "legacy trip flags survived migration"
+      )
+    end
+  end
+end
+
 local function check(name, condition)
+  lifecycle_consistent()
   local filed, problem = coming_filed()
   if not filed then
     error("FAILED: " .. name .. ": what freighters bring is filed wrong: " .. problem, 2)
@@ -621,7 +677,7 @@ do -- A busy pathfinder is not asked again at once; the next dispatch asks again
   logistics.on_tick()
   answer(logistics, 1, "busy")
   check("a busy answer does not resubmit immediately", #requests == 1)
-  check("the depot is free to search again", storage.depots[request.unit_number].searching == nil)
+  check("the depot is free to search again", storage.depots[request.unit_number].search == nil)
   game.tick = 60
   logistics.on_tick()
   check("the next dispatch asks again", #requests == 2)
@@ -650,7 +706,7 @@ local function rerouting(logistics)
   check("the freighter heads for the provider nearest by road", trip.provider == provider.unit_number)
   provider.valid = false
   logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = provider.unit_number })
-  check("a removed provider starts a reroute search", trip.searching ~= nil and #requests == 2)
+  check("a removed provider starts a reroute search", trip.search ~= nil and #requests == 2)
   local stop = trip.drone.commands[#trip.drone.commands]
   check("the freighter waits while it runs", stop.type == defines.command.stop)
   return request, spare, trip
@@ -661,7 +717,7 @@ do -- The reroute finds the spare provider and the freighter drives there.
   local _, spare, trip = rerouting(logistics)
   answer(logistics, 2, "route")
   local drive = trip.drone.commands[#trip.drone.commands]
-  check("the reroute picks the spare provider", trip.provider == spare.unit_number and not trip.searching)
+  check("the reroute picks the spare provider", trip.provider == spare.unit_number and not trip.search)
   check("and the freighter drives on", drive.type == defines.command.go_to_location)
 end
 
@@ -681,7 +737,7 @@ do -- The provider a reroute found is emptied before the answer arrives: look ag
   local fourth = entity("jatz-provider-depot", 50.5, 0.5, { a = 20 })
   logistics.add(fourth)
   answer(logistics, 2, "route")
-  check("an emptied pick starts another search", trip.drone.valid and trip.searching ~= nil and #requests == 3)
+  check("an emptied pick starts another search", trip.drone.valid and trip.search ~= nil and #requests == 3)
   check("among the providers that still qualify", requests[3].goal.x == 50.5)
   check("the request depot keeps its freighter", has_trip(request))
 end
@@ -691,7 +747,7 @@ do -- A freighter waiting on a reroute stays put through road changes and stale 
   local _, _, trip = rerouting(logistics)
   local commands = #trip.drone.commands
   logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = defines.behavior_result.success })
-  check("a stale arrival does not end a rerouting trip", trip.drone.valid and trip.searching ~= nil)
+  check("a stale arrival does not end a rerouting trip", trip.drone.valid and trip.search ~= nil)
   logistics.on_roads_changed(1, false, true)
   local last = trip.drone.commands[#trip.drone.commands]
   check("a road change restarts the reroute and keeps the freighter stopped", last.type == defines.command.stop)
@@ -699,7 +755,7 @@ do -- A freighter waiting on a reroute stays put through road changes and stale 
   answer(logistics, 2, "none")
   check(
     "the replaced search's answer is ignored",
-    trip.searching ~= nil and next(storage.depots[trip.request].cooldowns) == nil
+    trip.search ~= nil and next(storage.depots[trip.request].cooldowns) == nil
   )
 end
 
@@ -962,7 +1018,7 @@ do -- A freighter goes back into the slot after its trip; one destroyed on the w
       and proxy.parameters.target == truck
       and truck.name == "jatz-truck-chest"
       and proxy.parameters.modules[1].items.in_inventory[1].count == 1
-      and storage.depots[request.unit_number].freighter_target == 2
+      and storage.depots[request.unit_number].replenishment.target == 2
   )
 end
 
@@ -984,7 +1040,7 @@ do -- A freighter lost while every stack of its depot's truck chest is taken (by
   local created = #surface.created
   logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = trip.drone.unit_number })
   check("with a full chest, no replacement can be requested yet", #surface.created == created)
-  check("but the depot remembers it had 2", storage.depots[request.unit_number].freighter_target == 2)
+  check("but the depot remembers it had 2", storage.depots[request.unit_number].replenishment.target == 2)
   chest[2].name, chest[2].count, chest[2].valid_for_read = nil, 0, false
   game.tick = 60
   forget_roads()
@@ -1013,11 +1069,21 @@ do -- Freighters asked for while the truck chest has no free stack wait for one;
   local depot = storage.depots[request.unit_number]
   local created = #surface.created
   check("with a full chest, nothing is requested yet", logistics.request_freighters(request, 5) == 0)
-  check("but the 5 are remembered", depot.freighter_target == 5 and #surface.created == created)
+  check("but the 5 are remembered", depot.replenishment.target == 5 and #surface.created == created)
+  depot.freighter_target, depot.replenishment = 5, nil
+  logistics.trim_freighter_requests(request)
+  logistics.trim_freighter_requests(request)
+  check(
+    "old blocked fleet target migrates without issuing duplicate plans",
+    depot.freighter_target == nil
+      and depot.replenishment.target == 5
+      and depot.replenishment.phase == "waiting-for-space"
+      and #surface.created == created
+  )
   logistics.request_freighters(request, 1)
-  check("one more adds to them", depot.freighter_target == 6)
+  check("one more adds to them", depot.replenishment.target == 6)
   check("a match to what it is already waiting for adds nothing", logistics.match_freighters(request, 6) == 0)
-  check("and keeps them", depot.freighter_target == 6)
+  check("and keeps them", depot.replenishment.target == 6)
   chest[2].name, chest[2].count, chest[2].valid_for_read = nil, 0, false
   game.tick = 60
   logistics.on_tick()
@@ -1028,7 +1094,7 @@ do -- Freighters asked for while the truck chest has no free stack wait for one;
       and proxy.name == "item-request-proxy"
       and proxy.parameters.modules[1].items.in_inventory[1].count == 6
   )
-  check("and the target isn't counted twice", depot.freighter_target == 6)
+  check("and the target isn't counted twice", depot.replenishment.target == 6)
 end
 
 do -- Freighters robots bring into a request depot's truck chest go to its slot; those in its own
@@ -1134,7 +1200,7 @@ do -- Several item request proxies can target a depot, and `item_request_proxy` 
   logistics.trim_freighter_requests(request)
   check("every freighter proxy on the depot goes", not first.valid and not second.valid)
   check("the other item's stays, plan and all", iron.valid and iron.insert_plan[1].id.name == "b")
-  check("their freighters, together, become its target", depot.freighter_target == 5)
+  check("their freighters, together, become its target", depot.replenishment.target == 5)
   local asked = surface.created[#surface.created]
   check(
     "and are asked of its truck chest",
@@ -1526,7 +1592,7 @@ do -- Changing "request from buffer depots" restarts searches under way, freight
   assert(logistics.set_from_buffers(request, true))
   check("a retry delay doesn't hold the change back", depot.retry_at == 0)
   answer(logistics, 2, "route")
-  check("the freighter's old reroute search is dropped", trip.searching ~= nil and trip.provider ~= nil)
+  check("the freighter's old reroute search is dropped", trip.search ~= nil and trip.provider ~= nil)
   logistics.on_tick()
   check("and started afresh at the next check", #requests == 3)
 end
@@ -2059,11 +2125,11 @@ do -- One coming home empty parks at once; one unloading at a removed depot take
   trip = trips_from(request)[1]
   arrive(logistics, trip)
   logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = defines.behavior_result.success })
-  check("setup: stopped at home to unload", trip.loading and trip.fluid.amount == 750)
+  check("setup: stopped at home to unload", trip.service and trip.fluid.amount == 750)
   request.valid = false
   logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = request.unit_number })
   local drive = trip.drone.commands[#trip.drone.commands]
-  check("a removed request depot sends it back at once", trip.state == "returning" and not trip.loading)
+  check("a removed request depot sends it back at once", trip.state == "returning" and not trip.service)
   check("driving", drive.type == defines.command.go_to_location and drive.destination.x == 10.5)
   arrive(logistics, trip)
   check("and the fluid goes back into the provider", provider.held.amount == 1000)
@@ -2419,10 +2485,10 @@ do -- A freighter standing to load or unload is never painted from on_tick.
   arrive(logistics, trip)
   drone.stickers = nil
   logistics.on_ai_command_completed({ unit_number = drone.unit_number, result = defines.behavior_result.success })
-  check("setup: it stands at home to unload", trip.loading and trip.drone == drone)
+  check("setup: it stands at home to unload", trip.service and trip.drone == drone)
   game.tick = 60
   logistics.on_tick()
-  check("on_tick leaves it standing", trip.drone == drone and drone.valid and trip.loading)
+  check("on_tick leaves it standing", trip.drone == drone and drone.valid and trip.service)
 end
 
 do -- Nothing to load keeps the empty paint; an item with no color of its own gets the artwork's.
@@ -2611,7 +2677,10 @@ do -- Short of fuel for the leg: to the Fuel depot nearest by road first, fill u
     return near
   end)
   local trip = trips_from(request)[1]
-  check("a freighter short of fuel stands while it looks for a Fuel depot", trip.searching and trip.fuel_search)
+  check(
+    "a freighter short of fuel stands while it looks for a Fuel depot",
+    trip.search and (trip.search and trip.search.kind == "fuel")
+  )
   check("asking the pathfinder for the nearest first", requests[2].goal.x == near.position.x)
   answer(logistics, 2, "route")
   check("the farther one isn't asked once a nearer has a road", #requests == 2)
@@ -2664,7 +2733,10 @@ do -- Nothing to fill up with: a fluid that doesn't burn, a chest of things that
   check("once the Fuel depot has fuel, it looks again at once, not after the wait", #requests == 3)
   answer(logistics, 3, "route")
   local trip = trips_from(request)[1]
-  check("and the freighter sets off to fill up there", trip and trip.fuel_search and requests[4].goal.x == -10.5)
+  check(
+    "and the freighter sets off to fill up there",
+    trip and (trip.search and trip.search.kind == "fuel") and requests[4].goal.x == -10.5
+  )
 end
 
 do -- A Fuel depot with fuel on another road counts for nothing: an empty one on this road is yellow.
@@ -2699,7 +2771,10 @@ do -- No Fuel depot at all: red, until one is built; then a freighter sets off t
   check("a Fuel depot built: it looks again at once", #requests == 2)
   answer(logistics, 2, "route")
   local trip = trips_from(request)[1]
-  check("and sets off to fill up there", trip and trip.fuel_search and requests[3].goal.x == fuel.position.x)
+  check(
+    "and sets off to fill up there",
+    trip and (trip.search and trip.search.kind == "fuel") and requests[3].goal.x == fuel.position.x
+  )
 end
 
 do -- A Fuel depot with fuel but no road route to it: red too, and no new search while it cools down.
@@ -2719,7 +2794,10 @@ do -- Short, but enough to reach the provider, and nowhere to fill up: it goes a
   local logistics = reset()
   local request, provider = fuelled(logistics, 0.15 * MJ)
   local trip = trips_from(request)[1]
-  check("it sets off on what it has", trip and trip.destination.x == provider.position.x and trip.refueled)
+  check(
+    "it sets off on what it has",
+    trip and trip.destination.x == provider.position.x and trip.fuel_check == "checked"
+  )
 end
 
 do -- No road route to the Fuel depot: that one waits out a cooldown, and the freighter goes on.
@@ -2732,7 +2810,10 @@ do -- No road route to the Fuel depot: that one waits out a cooldown, and the fr
   answer(logistics, 2, "none")
   local trip = trips_from(request)[1]
   check("no route: the Fuel depot goes on cooldown", storage.depots[request.unit_number].cooldowns[fuel.unit_number])
-  check("and it sets off with what it has", trip.destination and not trip.fuel_search and not trip.refuel)
+  check(
+    "and it sets off with what it has",
+    trip.destination and not (trip.search and trip.search.kind == "fuel") and not trip.refuel
+  )
 end
 
 do -- Running dry on the road: it crawls to a Fuel depot; one removed on the way sends it to another.
@@ -2744,18 +2825,27 @@ do -- Running dry on the road: it crawls to a Fuel depot; one removed on the way
     return first
   end)
   local trip = trips_from(request)[1]
-  check("with fuel for the leg it doesn't look for any", not trip.fuel_search and #requests == 1)
+  check(
+    "with fuel for the leg it doesn't look for any",
+    not (trip.search and trip.search.kind == "fuel") and #requests == 1
+  )
   -- 21 tiles on, beside the first Fuel depot, with fuel for 10 tiles left.
   trip.energy = 0.1 * MJ
   trip.drone.position = { x = trip.drone.position.x + 21, y = trip.drone.position.y }
   game.tick = 60
   logistics.on_tick()
-  check("run dry, it crawls and looks for a Fuel depot", trip.dry and trip.drone.speed < 0.2 and trip.fuel_search)
+  check(
+    "run dry, it crawls and looks for a Fuel depot",
+    trip.dry and trip.drone.speed < 0.2 and (trip.search and trip.search.kind == "fuel")
+  )
   answer(logistics, #requests, "route")
   check("and heads for it", trip.refuel == first.unit_number)
   first.valid = false
   logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = first.unit_number })
-  check("that one removed, it looks again", trip.fuel_search and requests[#requests].goal.x == second.position.x)
+  check(
+    "that one removed, it looks again",
+    (trip.search and trip.search.kind == "fuel") and requests[#requests].goal.x == second.position.x
+  )
   check("and the removed depot's tank goes with it", storage.depots[first.unit_number] == nil)
   answer(logistics, #requests, "route")
   arrive(logistics, trip)
@@ -2902,7 +2992,7 @@ do -- A fuel item worth more than a tank (10 GJ) goes in whole, and stays with t
   answer(logistics, #requests, "route")
   local again = trips_from(request)[1]
   check("the fullest goes next: the one with the big fill", again and again.energy == energy)
-  check("and needs no fuel stop", again and not again.fuel_search and not again.refuel)
+  check("and needs no fuel stop", again and not (again.search and again.search.kind == "fuel") and not again.refuel)
 end
 
 do -- Freighters taken out take their fuel with them; new ones put in come with a full tank.
@@ -3323,13 +3413,13 @@ do -- A provider switched off while a freighter drives there: it goes elsewhere.
   wire(near, { ["signal-A"] = 0 })
   game.tick = 60
   logistics.on_tick()
-  check("switched off, its freighter looks for another", trip.searching ~= nil and requests[#requests].goal.x == 40.5)
+  check("switched off, its freighter looks for another", trip.search ~= nil and requests[#requests].goal.x == 40.5)
   check(
     "letting go of its promise there at once, while it looks",
     storage.promised[near.unit_number] == nil and trip.planned == 10
   )
   answer(logistics, #requests, "route")
-  check("and drives to it", trip.provider == far.unit_number and not trip.searching)
+  check("and drives to it", trip.provider == far.unit_number and not trip.search)
 end
 
 do -- Stock taken out by something else (an inserter, a player): the freighters it no longer
@@ -3347,13 +3437,13 @@ do -- Stock taken out by something else (an inserter, a player): the freighters 
   near.chest.contents.a = 5
   game.tick = 60
   logistics.on_tick()
-  check("the first keeps going for the 5 left", early.provider == near.unit_number and not early.searching)
+  check("the first keeps going for the 5 left", early.provider == near.unit_number and not early.search)
   check("promising only those 5, so its depot sends for the rest", early.planned == 5)
-  check("the second looks for another provider", late.searching ~= nil)
+  check("the second looks for another provider", late.search ~= nil)
   answer(logistics, #requests, "route")
   check("and goes to the far one", late.provider == far.unit_number and late.planned == 10)
   arrive(logistics, early)
-  check("the first one arriving loads there and heads home", early.state == "to-request" and not early.searching)
+  check("the first one arriving loads there and heads home", early.state == "to-request" and not early.search)
 end
 
 do -- A freighter arriving at a provider emptied since the last check goes elsewhere, not home.
@@ -3366,9 +3456,9 @@ do -- A freighter arriving at a provider emptied since the last check goes elsew
   local trip = trip_of(request)
   near.chest.contents.a = 0
   arrive(logistics, trip)
-  check("finding nothing there, it looks for another provider", trip.state == "to-provider" and trip.searching ~= nil)
+  check("finding nothing there, it looks for another provider", trip.state == "to-provider" and trip.search ~= nil)
   answer(logistics, #requests, "route")
-  check("and drives to it", trip.provider == far.unit_number and not trip.loading)
+  check("and drives to it", trip.provider == far.unit_number and not trip.service)
 end
 
 do -- A freighter rerouted to a provider joins the end of its queue: it doesn't take the load of
@@ -3409,7 +3499,7 @@ do -- A freighter rerouted to a provider joins the end of its queue: it doesn't 
   logistics.on_tick()
   check(
     "the one sent there first keeps its load",
-    late.state == "to-provider" and late.provider == kept.unit_number and late.planned == 5 and not late.searching
+    late.state == "to-provider" and late.provider == kept.unit_number and late.planned == 5 and not late.search
   )
 end
 
@@ -3441,7 +3531,7 @@ do -- A source switched on by taking items out (here: only while it holds under 
     "holding 120, it no longer supplies: both go home",
     trip_of(first).state == "to-request" and trip_of(second).state == "to-request"
   )
-  check("without searching again", not trip_of(first).searching and not trip_of(second).searching)
+  check("without searching again", not trip_of(first).search and not trip_of(second).search)
   game.tick = 120
   logistics.on_tick()
   check("nor later", #requests == asked)
@@ -3474,7 +3564,7 @@ end
 do
   local logistics = reset()
   local trip = diverted_twice(logistics)
-  check("diverted again, it goes home empty", trip.state == "to-request" and not trip.searching)
+  check("diverted again, it goes home empty", trip.state == "to-request" and not trip.search)
   check("having asked about no other provider", requests[#requests].goal.x ~= 60.5 and not trip.planned)
 end
 
@@ -3482,7 +3572,10 @@ do
   local logistics = reset()
   local fuel = fuel_depot(logistics, 30.5, 0.5, { { "coal", 20 } })
   local trip = diverted_twice(logistics, 0.05 * MJ)
-  check("short of fuel for the way home, it looks for a Fuel depot", trip.state == "to-request" and trip.fuel_search)
+  check(
+    "short of fuel for the way home, it looks for a Fuel depot",
+    trip.state == "to-request" and (trip.search and trip.search.kind == "fuel")
+  )
   answer(logistics, #requests, "route")
   check("and heads there before going home", trip.refuel == fuel.unit_number)
 end
@@ -3624,7 +3717,7 @@ local function failed_pickup_short_of_fuel(logistics, other)
   provider.chest.contents.a = 0
   arrive(logistics, trip)
   if other then
-    check("setup: it asks about the other provider", trip.searching and requests[#requests].goal.x == 40.5)
+    check("setup: it asks about the other provider", trip.search and requests[#requests].goal.x == 40.5)
     answer(logistics, #requests, "none")
   end
   return trip, fuel
@@ -3634,12 +3727,15 @@ do -- Home from a failed pickup goes through the fuel check, as every leg (Pullf
   -- 712a2fd: the first diversion drove straight home).
   local logistics = reset()
   local trip = failed_pickup_short_of_fuel(logistics)
-  check("no other provider: home, looking for a Fuel depot first", trip.state == "to-request" and trip.fuel_search)
+  check(
+    "no other provider: home, looking for a Fuel depot first",
+    trip.state == "to-request" and (trip.search and trip.search.kind == "fuel")
+  )
   logistics = reset()
   trip = failed_pickup_short_of_fuel(logistics, true)
   check(
     "the other provider without road: home, looking for a Fuel depot first",
-    trip.state == "to-request" and trip.fuel_search
+    trip.state == "to-request" and (trip.search and trip.search.kind == "fuel")
   )
 end
 
@@ -3652,7 +3748,10 @@ do -- A freighter still at home, waiting to hear where to fill up before it sets
   logistics.on_tick()
   answer(logistics, 1, "route")
   local trip = trip_of(request)
-  check("setup: short of fuel, it waits at home for a Fuel depot's road", trip.departing and trip.fuel_search)
+  check(
+    "setup: short of fuel, it waits at home for a Fuel depot's road",
+    (trip.movement == "departing") and (trip.search and trip.search.kind == "fuel")
+  )
   provider.chest.contents.a = 0
   game.tick = 60
   local asked = #requests
@@ -3728,7 +3827,7 @@ do -- Freighters arriving to load at a busy provider cost about in proportion to
     end
     local trips = {}
     for _, trip in pairs(storage.trips) do
-      trip.loading = true
+      trip.service = { kind = "loading", since = game.tick }
       trips[#trips + 1] = trip
     end
     local steps = 0
@@ -3831,7 +3930,7 @@ do -- Arriving where the stock covers every promise, but the condition (reading 
   -- Now kept above 12: 30 less the 20 promised before the first doesn't hold, 30 does.
   logistics.set_circuit(provider, true, { first_signal = a, comparator = ">", constant = 12 }, "contents")
   for _, trip in ipairs(trips) do
-    trip.loading = true
+    trip.service = { kind = "loading", since = game.tick }
   end
   logistics.on_ai_command_completed({
     unit_number = trips[1].drone.unit_number,
@@ -3889,7 +3988,7 @@ do -- Filled while it looks for another provider: the answer sends it home, not 
   near.chest.contents.a = 0
   game.tick = 60
   logistics.on_tick()
-  check("setup: it looks for another provider", trip.searching ~= nil and requests[#requests].goal.x == 40.5)
+  check("setup: it looks for another provider", trip.search ~= nil and requests[#requests].goal.x == 40.5)
   request.chest.contents.a = 10
   answer(logistics, #requests, "route")
   check("filled meanwhile, it goes home", trip.state == "to-request" and trip.provider ~= far.unit_number)
@@ -4015,8 +4114,8 @@ do -- A promise made smaller in a provider's check changes what other depots che
   game.tick = 60
   logistics.on_tick()
   check("setup: the promise is trimmed to the 12 left", trip_of(for_a).planned == 12)
-  check("the depot checked before it found it off", storage.depots[before.unit_number].searching == nil)
-  check("the depot checked after it finds it on", storage.depots[after.unit_number].searching ~= nil)
+  check("the depot checked before it found it off", storage.depots[before.unit_number].search == nil)
+  check("the depot checked after it finds it on", storage.depots[after.unit_number].search ~= nil)
 end
 
 do -- A depot filled some other way lets its freighters' promises go at once, rather than when they
@@ -4068,12 +4167,18 @@ do -- Turned on the road, a freighter decides whether the way home needs a Fuel 
     return fuel_depot(logistics, -10.5, 0.5, { { "coal", 20 } })
   end)
   local trip = trips_from(request)[1]
-  check("setup: enough for the way out, it drives to the provider", not trip.fuel_search and trip.leg == 10)
+  check(
+    "setup: enough for the way out, it drives to the provider",
+    not (trip.search and trip.search.kind == "fuel") and trip.leg == 10
+  )
   trip.drone.position = { x = trip.drone.position.x + 5, y = trip.drone.position.y }
   request.chest.contents.a = 10
   logistics.release_excess(storage.depots[request.unit_number], 10)
   check("setup: it turns home", trip.state == "to-request")
-  check("short for the way home, it looks for a Fuel depot first", trip.fuel_search and trip.searching ~= nil)
+  check(
+    "short for the way home, it looks for a Fuel depot first",
+    (trip.search and trip.search.kind == "fuel") and trip.search ~= nil
+  )
   check("on what it has now", math.abs(trip.energy - (2.13 * MJ - 5 * 10000)) < 1)
 end
 
@@ -4086,7 +4191,7 @@ do -- A stand cut short burns the way there too: its provider removed while it s
   local home = { x = trip.drone.position.x, y = trip.drone.position.y }
   trip.drone.position = { x = provider.position.x, y = provider.position.y }
   logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = defines.behavior_result.success })
-  check("setup: it stands at the provider", trip.loading == true and trip.energy == 20 * MJ)
+  check("setup: it stands at the provider", trip.service and trip.service.kind == "loading" and trip.energy == 20 * MJ)
   provider.valid = false
   logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = provider.unit_number })
   check("setup: with no other provider, it turns home", trip.state == "to-request")
@@ -4139,7 +4244,7 @@ do -- Sent on to another provider from the road (its own emptied by an inserter)
   trip.drone.position = { x = home.x + 5, y = home.y }
   near.chest.contents.a = 0
   logistics.keep_promises(near.unit_number, storage.depots[near.unit_number])
-  check("setup: it looks for another provider", trip.searching ~= nil)
+  check("setup: it looks for another provider", trip.search ~= nil)
   answer(logistics, #requests, "route")
   check("setup: it sets off for the far one", trip.provider == far.unit_number and trip.destination.x == far.position.x)
   check("the 5 tiles it came are burned as it turns", math.abs(trip.energy - (20 * MJ - 5 * 10000)) < 1)
@@ -4195,11 +4300,11 @@ do -- One standing at its provider to load is left to load what its depot needs 
   answer(logistics, 1, "route")
   local trip = trip_of(request)
   logistics.on_ai_command_completed({ unit_number = trip.drone.unit_number, result = defines.behavior_result.success })
-  check("setup: standing at the provider to load", trip.loading)
+  check("setup: standing at the provider to load", trip.service)
   request.chest.contents.a = 10
   game.tick = 60
   logistics.on_tick()
-  check("filled by hand, the one standing there to load is left alone", trip.loading and trip.planned == 10)
+  check("filled by hand, the one standing there to load is left alone", trip.service and trip.planned == 10)
   logistics = reset()
   request = setup(logistics)
   fuel_depot(logistics, 5.5, 30.5, { { "coal", 20 } })
@@ -4207,7 +4312,10 @@ do -- One standing at its provider to load is left to load what its depot needs 
   logistics.on_tick()
   answer(logistics, 1, "route")
   trip = trip_of(request)
-  check("setup: short of fuel, it waits at home", trip.departing and trip.fuel_search)
+  check(
+    "setup: short of fuel, it waits at home",
+    (trip.movement == "departing") and (trip.search and trip.search.kind == "fuel")
+  )
   request.chest.contents.a = 10
   game.tick = 60
   logistics.on_tick()
@@ -4921,7 +5029,10 @@ do -- Through a tunnel to a provider on another road network, and back.
   drive = trip.drone.commands[#trip.drone.commands]
   check(
     "then on to the provider",
-    drive.destination.x == 40.5 and drive.destination.y == 2.5 and not trip.coming_out and trip.origin.x == 30.5
+    drive.destination.x == 40.5
+      and drive.destination.y == 2.5
+      and trip.movement ~= "exiting-tunnel"
+      and trip.origin.x == 30.5
   )
   check("drawing nothing while empty", #surface.sprites == sprites)
   arrive(logistics, trip)
@@ -5007,7 +5118,9 @@ do -- Something stuck to it at the mouth: it waits there until that wears off.
   local wait = trip.drone.commands[#trip.drone.commands]
   check(
     "a burning freighter waits at the mouth",
-    trip.drone.name == "jatz-freighter-drone" and wait.type == defines.command.stop and not trip.tunnel.under
+    trip.drone.name == "jatz-freighter-drone"
+      and wait.type == defines.command.stop
+      and trip.movement == "waiting-at-tunnel"
   )
   trip.drone.stickers = nil
   arrive(logistics, trip)
@@ -5046,7 +5159,7 @@ do -- Its provider removed while under ground: the reroute search it starts is s
   trip.drone.orientation = 0
   provider.valid = false
   logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = provider.unit_number })
-  check("a reroute under ground searches", trip.searching ~= nil)
+  check("a reroute under ground searches", trip.search ~= nil)
   local searching = trip.id
   arrive(logistics, trip)
   check(
@@ -5059,7 +5172,7 @@ do -- Its provider removed while under ground: the reroute search it starts is s
   answer(logistics, #requests, "none")
   check(
     "and the answer sends it to the other provider, reached from there through the tunnel",
-    trip.searching == nil
+    trip.search == nil
       and trip.provider == other.unit_number
       and not storage.depots[request.unit_number].cooldowns[other.unit_number]
       and trip.drone.commands[#trip.drone.commands].destination.x == 50.5
@@ -5197,7 +5310,7 @@ do -- Road cut behind a freighter with a reroute under way: the restarted search
   trip.drone.position = { x = 10.5, y = 0.5 }
   provider.valid = false
   logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = provider.unit_number })
-  check("setup: a reroute is under way", trip.searching ~= nil)
+  check("setup: a reroute is under way", trip.search ~= nil)
   -- Road cut at x 5: home (x 0.5) is cut off from the freighter and the west mouth.
   local whole = surface.get_connected_tiles
   function surface.get_connected_tiles(position)
@@ -5339,6 +5452,92 @@ do -- Routes within one road network never use tunnels.
   local trip = trip_of(request)
   local drive = trip.drone.commands[#trip.drone.commands]
   check("a provider on the same network is driven to directly", trip.tunnel == nil and drive.destination.x == 10.5)
+end
+
+do -- A failure queued before a new tunnel wait must not complete that new command.
+  local logistics = reset()
+  local request = tunnelled(logistics, true)
+  logistics.on_tick()
+  answer(logistics, 1, "none")
+  local trip = trip_of(request)
+  logistics.on_ai_command_completed({ unit_number = trip.id, result = defines.behavior_result.fail })
+  logistics.on_roads_changed(1, false, true) -- replaces the failed approach command
+  arrive(logistics, trip) -- the replacement reaches the mouth and begins its timed crossing
+  local crossing, command = trip.tunnel, trip.command_id
+  logistics.failed_commands()
+  check(
+    "a stale approach failure cannot finish a new tunnel crossing",
+    trip.movement == "underground" and trip.tunnel == crossing and trip.command_id == command
+  )
+  arrive(logistics, trip)
+  check("the current tunnel completion still brings it out", trip.movement == "exiting-tunnel")
+end
+
+do -- Upgrade a saved loading stop, then complete it through the ordinary event path.
+  local logistics = reset()
+  local request, provider = supplied(logistics, 1)
+  stocked(provider, "a", 30)
+  stocked(request, "a", 0, 4)
+  assert(logistics.set_request(request, "a", 10))
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  local key = trip.key
+  logistics.on_ai_command_completed({ unit_number = trip.id, result = defines.behavior_result.success })
+  trip.lifecycle_version, trip.movement, trip.service, trip.fuel_check = nil, nil, nil, nil
+  trip.loading, trip.refueled = true, true
+  logistics.add_all()
+  logistics.add_all()
+  check("loading survives repeated configuration migration", trip.service.kind == "loading" and trip.key == key)
+  arrive(logistics, trip)
+  check(
+    "the migrated stop loads once and rebinds without changing its logical identity",
+    trip.state == "to-request" and trip.key == key and trip.cargo.get_item_count("a") == 10
+  )
+  local drone, truck, cargo = trip.drone, trip.truck, trip.cargo
+  arrive(logistics, trip)
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = drone.unit_number })
+  logistics.on_ai_command_completed({ unit_number = drone.unit_number, result = defines.behavior_result.success })
+  local home, out = logistics.freighter_counts(request)
+  check(
+    "completion followed by duplicate events refunds once and destroys both inventories",
+    home == 1 and out == 0 and not truck.valid and not cargo.valid and trip.movement == "ended"
+  )
+end
+
+do -- A saved search and underground crossing are independent; configuration restarts only the search.
+  local logistics = reset()
+  local request, provider = tunnelled(logistics, true)
+  local other = entity("jatz-provider-depot", 50.5, 0.5)
+  stocked(other, "a", 20)
+  logistics.add(other)
+  logistics.on_tick()
+  answer(logistics, 1, "none")
+  local trip = trip_of(request)
+  arrive(logistics, trip)
+  provider.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = provider.unit_number })
+  local old_answer, key, command = #requests, trip.key, trip.command_id
+  trip.searching, trip.search_token = trip.search.since, trip.search.token
+  trip.search, trip.lifecycle_version, trip.movement, trip.fuel_check = nil, nil, nil, nil
+  trip.tunnel.under, trip.tunnel.started = true, true
+  logistics.add_all()
+  check(
+    "migration restarts the search without replacing the underground wait",
+    trip.movement == "underground" and trip.search and trip.command_id == command and trip.key == key
+  )
+  arrive(logistics, trip)
+  local live_answer, live_token = #requests, trip.search.token
+  answer(logistics, old_answer, "none")
+  check(
+    "the old saved answer cannot claim the search after exiting",
+    trip.search.token == live_token and trip.movement == "road"
+  )
+  answer(logistics, live_answer, "none")
+  check(
+    "the migrated search resumes the same trip at its new provider",
+    trip.provider == other.unit_number and trip.key == key and trip.search == nil
+  )
 end
 
 print("all logistics checks passed")

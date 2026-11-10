@@ -75,6 +75,7 @@ local routes = require("scripts.routes")
 local transfer = require("scripts.cargo")
 local switching = require("scripts.circuit-switch")
 local ledger = require("scripts.promises")
+local lifecycle = require("scripts.trip-state")
 
 local logistics = {}
 
@@ -272,8 +273,7 @@ end
 
 -- Drop a request depot's current search; the next dispatch, within a second, starts a fresh one.
 local function cancel_search(depot)
-  depot.search_token = nil
-  depot.searching = nil
+  lifecycle.cancel_search(depot)
 end
 
 -- A depot's item inventory: its chest, or a mining depot's output.
@@ -547,7 +547,7 @@ end
 
 -- The paint for what a trip's freighter carries.
 local function paint_of(trip)
-  if trip.tunnel and trip.tunnel.under then
+  if trip.movement == "underground" or trip.movement == "entering-tunnel" then
     -- In a tunnel: unseen.
     return paint.underground
   end
@@ -591,16 +591,9 @@ local function repaint(id, trip, position, orientation)
   drone.health = old.health
   -- A dry freighter crawls (DRY_SPEED): the new one must too.
   drone.speed = old.speed
-  local new = drone.unit_number
-  storage.trips[id], storage.trips[new] = nil, trip
-  trip.id = new
   local depot = storage.depots[trip.request]
-  if depot then
-    local trips = trips_of(depot)
-    trips[id], trips[new] = nil, true
-  end
+  lifecycle.rebind(trip, id, drone, depot and trips_of(depot))
   script.register_on_object_destroyed(drone)
-  trip.drone = drone
   show_fuel(trip)
   -- Its on_object_destroyed finds no trip under the old number, so nothing else happens.
   old.destroy()
@@ -612,7 +605,7 @@ end
 -- move with it and go when it leaves the map, or is swapped for another paint (`repaint`): call
 -- this after repainting. An empty freighter shows nothing.
 local function show_cargo(trip)
-  if cargo_empty(trip) or not trip.drone.valid or (trip.tunnel and trip.tunnel.under) then
+  if cargo_empty(trip) or not trip.drone.valid or (trip.movement == "underground") then
     return
   end
   for _, sprite in ipairs({ "utility/entity_info_dark_background", (trip.fluid and "fluid/" or "item/") .. trip.item }) do
@@ -646,8 +639,8 @@ local function restart_depot_searches(depot)
   cancel_search(depot)
   for id in pairs(trips_of(depot)) do
     local trip = storage.trips[id]
-    if trip and trip.searching then
-      trip.search_token, trip.searching = nil, game.tick - SEARCH_TIMEOUT
+    if trip and trip.search then
+      lifecycle.retry_search(trip, game.tick - SEARCH_TIMEOUT)
     end
   end
 end
@@ -1011,8 +1004,7 @@ end
 -- Every command a freighter gets goes through here. (A field, not a local: this file has as many
 -- locals as Lua allows.)
 function logistics.command(trip, command)
-  local tunnel = trip.tunnel
-  if tunnel and tunnel.started then
+  if trip.movement == "underground" then
     -- Under ground: it comes out at the other end first (out_of_tunnel), which then drives it on
     -- to where it is going by then, or stops it for a search under way.
     return
@@ -1034,18 +1026,18 @@ end
 -- drives to the first tunnel's mouth (`trip.tunnel`), and on from where it comes out
 -- (logistics.out_of_tunnel). Under ground, it only notes where it is going.
 local function drive(trip, destination, sampled)
-  local tunnel = trip.tunnel
-  if tunnel and tunnel.under then
-    trip.destination, trip.loading, trip.departing = destination, nil, nil
+  if trip.movement == "underground" then
+    trip.destination = destination
+    lifecycle.travel(trip)
     return
   end
-  if not (sampled or trip.departing) then
+  if not (sampled or (trip.movement == "departing")) then
     burn(trip)
   end
   trip.destination = destination
-  trip.loading, trip.coming_out = nil, nil
+  lifecycle.travel(trip)
   -- On the road now: no longer standing at home deciding whether it can go.
-  trip.departing = nil
+  lifecycle.move(trip, "road")
   -- From the last place it arrived at (its road network is known there), or where it stands. (Not
   -- even asked in a game without tunnels: every leg of every freighter starts here.)
   local hop
@@ -1053,7 +1045,7 @@ local function drive(trip, destination, sampled)
   if tunnelled and next(tunnelled) then
     hop = select(2, tunnels.route(trip.drone.surface_index, trip.origin or trip.drone.position, destination))
   end
-  trip.tunnel = hop
+  lifecycle.road(trip, hop)
   logistics.command(trip, {
     type = defines.command.go_to_location,
     destination = hop and hop.entry or destination,
@@ -1106,7 +1098,9 @@ local function start_trip(depot, provider, from, planned, length)
     -- Where it last arrived (or set off from): the road network it is on, for tunnels.
     origin = from,
     leg = length,
-    departing = true,
+    movement = "departing",
+    fuel_check = "unchecked",
+    lifecycle_version = 1,
     -- Where it is going, should the provider go before it sets off (see target).
     destination = (loading_tile(provider.entity)),
   }
@@ -1148,10 +1142,10 @@ end
 local function owner_of(search)
   if search.trip then
     local trip = storage.trips[search.trip]
-    return trip and trip.search_token == search.token and trip or nil
+    return lifecycle.owns_search(trip, search.token) and trip or nil
   end
   local depot = storage.depots[search.request]
-  return depot and depot.search_token == search.token and depot or nil
+  return lifecycle.owns_search(depot, search.token) and depot or nil
 end
 
 -- Start looking for the provider nearest by road. With `trip`, the search is for a freighter
@@ -1178,8 +1172,7 @@ local function search_providers(depot, from, trip)
     trip = trip,
   }
   local owner = trip and storage.trips[trip] or depot
-  owner.search_token = search.token
-  owner.searching = game.tick
+  lifecycle.begin_search(owner, "provider", search.token, game.tick)
   routes.ask_route(search, depot.entity.surface, depot.entity.force)
   return true
 end
@@ -1188,14 +1181,13 @@ end
 -- way fills up at a Fuel depot first (as one that found nothing to load at its provider always
 -- did). (A field, not a local: this file has as many locals as Lua allows.)
 function logistics.home_empty(id, trip, depot)
-  if trip.departing then
+  if trip.movement == "departing" then
     -- Still at home, never set off (waiting to hear where to fill up): it parks there and then, as
     -- one that can't set off does (go_without_fuel), rather than driving to a Fuel depot and back.
     return end_trip(id, trip)
   end
   trip.planned, trip.passed = nil, nil
-  trip.state = TO_REQUEST
-  promise(trip)
+  lifecycle.mission(trip, TO_REQUEST, promise)
   -- As far by road as it came (when it came from home), never less than the straight line: as one
   -- that found nothing to load at its provider (arrived_at_provider).
   local home, here = loading_tile(depot.entity), trip.drone.position
@@ -1213,7 +1205,7 @@ local function reroute(id, trip)
   local depot = storage.depots[trip.request]
   local request = depot and depot.entity.valid and depot.request
   -- A Fuel depot it was heading for, or looking for, waits: set_off decides again for the new leg.
-  trip.search_token, trip.searching, trip.fuel_search, trip.refuel = nil, nil, nil, nil
+  lifecycle.clear_route_search(trip)
   -- A depot sending full loads only sends this one on only while the depot has room for its full
   -- load, besides what its other freighters are bringing, as when it was sent (a liquid depot, for
   -- its least load: logistics.full_load).
@@ -1338,7 +1330,8 @@ end
 -- it home instead if it was diverted once already, by a Fuel depot if it is short of fuel for the
 -- way (home_empty), so it never goes back and forth between providers.
 function logistics.give_up(id, trip)
-  trip.loading, trip.passed = nil, trip.provider
+  lifecycle.travel(trip)
+  trip.passed = trip.provider
   promise(trip)
   reroute(id, trip)
 end
@@ -1399,7 +1392,7 @@ function logistics.keep_promises(id, depot, held)
   for _, trip in ipairs(queue) do
     local item = trip.item
     local kept = true
-    if trip.state == TO_PROVIDER and trip.provider == id and not trip.loading then
+    if trip.state == TO_PROVIDER and trip.provider == id and not trip.service then
       local left = stock[item] - (ahead[item] or 0)
       if not (on and left > 0 and (not live or logistics.holds_less(depot, ahead, live))) then
         failed[#failed + 1] = trip
@@ -1426,7 +1419,8 @@ function logistics.keep_promises(id, depot, held)
     return
   end
   for _, trip in ipairs(failed) do
-    trip.loading, trip.passed = nil, trip.provider
+    lifecycle.travel(trip)
+    trip.passed = trip.provider
     promise(trip)
   end
   -- The depots checked before it this tick saw it among their suppliers, with those promises (and
@@ -1445,11 +1439,11 @@ end
 -- last one, and could set off for home without the Fuel depot it needed (Copilot's review of
 -- be24d17).
 function set_off(id, trip, length)
-  if not trip.departing then
+  if trip.movement ~= "departing" then
     burn(trip)
   end
   upgrade(trip)
-  trip.refueled = nil
+  lifecycle.begin_leg(trip)
   if fueling.short_of_fuel(trip, length) then
     return fueling.look_for_fuel(id, trip)
   end
@@ -1458,7 +1452,7 @@ end
 
 -- Drop a trip's search and start again: for fuel, or for a new provider.
 local function search_again(id, trip)
-  if trip.fuel_search then
+  if trip.search and trip.search.kind == "fuel" then
     fueling.look_for_fuel(id, trip)
   else
     reroute(id, trip)
@@ -1522,7 +1516,7 @@ function logistics.release_excess(depot, excess)
     if
       trip
       and trip.state == TO_PROVIDER
-      and not trip.loading
+      and not trip.service
       and trip.drone.valid
       and (trip.planned or 0) > 0
       and trip.item == depot.request.item
@@ -1549,7 +1543,7 @@ function logistics.release_excess(depot, excess)
     else
       -- Nothing left to fetch: any search or Fuel depot it was heading for is dropped (set_off
       -- decides again for the way home).
-      trip.search_token, trip.searching, trip.fuel_search, trip.refuel = nil, nil, nil, nil
+      lifecycle.clear_route_search(trip)
       logistics.home_empty(trip.id, trip, depot)
     end
   end
@@ -1618,7 +1612,7 @@ local function dispatch(depot)
     -- The last freighter left less than SEND_SPACING ago.
     return
   end
-  if depot.searching and game.tick - depot.searching < SEARCH_TIMEOUT then
+  if depot.search and game.tick - depot.search.since < SEARCH_TIMEOUT then
     return
   end
   local started, waiting, short = search_providers(depot, from)
@@ -1676,19 +1670,19 @@ local function check_trip(id, trip, per_tile, capacity, polluters)
     -- Where burn just found it.
     pollute(trip.at, POLLUTION_PER_SECOND * DISPATCH_INTERVAL / 60, DRONE)
   end
-  if trip.searching and game.tick - trip.searching >= SEARCH_TIMEOUT then
+  if trip.search and game.tick - trip.search.since >= SEARCH_TIMEOUT then
     search_again(id, trip)
   elseif trip.drone.valid and trip.energy <= 0 and not trip.dry and per_tile > 0 then
     trip.dry = true
     trip.drone.speed = research.freighter_speed(trip.drone.force) * DRY_SPEED
-    if not (trip.refuel or trip.searching or trip.loading) then
+    if not (trip.refuel or trip.search or trip.service) then
       fueling.look_for_fuel(id, trip)
     end
   elseif
     trip.drone.valid
     and trip.destination
-    and not trip.searching
-    and not trip.loading
+    and not trip.search
+    and not trip.service
     and trip.drone.name ~= paint_of(trip)
   then
     return true
@@ -1851,6 +1845,7 @@ end
 -- Base stacks is 2, so the inventory has to be large enough for a count saved when a freighter
 -- held ten.
 function upgrade(trip)
+  lifecycle.upgrade(trip)
   -- Trips from before fuel set off with a full tank.
   trip.energy = trip.energy or fueling.fuel_capacity()
   if type(trip.cargo) == "number" then
@@ -1874,11 +1869,13 @@ end
 -- fuel sample is burned first: one coming home empty parks at once, with no stand (and so no
 -- once-a-second check) at the end of its last leg (see drive).
 function end_trip(id, trip, lost)
-  if not trip.departing then
+  if storage.trips[id] ~= trip then
+    return
+  end
+  if trip.movement ~= "departing" then
     burn(trip)
   end
-  storage.trips[id] = nil
-  promise(trip, true)
+  lifecycle.finish(trip, id, promise)
   local depot = storage.depots[trip.request]
   if depot and depot.trips then
     depot.trips[id] = nil
@@ -1927,7 +1924,7 @@ end
 local function lose(id, trip)
   local home = storage.depots[trip.request]
   local entity = home and home.entity.valid and home.entity
-  local had = entity and math.max(logistics.freighter_total(entity), home.freighter_target or 0)
+  local had = entity and math.max(logistics.freighter_total(entity), robot_requests.target(home) or 0)
   end_trip(id, trip, true)
   if entity then
     logistics.match_freighters(entity, had)
@@ -1964,8 +1961,7 @@ local function arrived_at_provider(id, trip, depot)
     end
   end
   trip.planned = nil
-  trip.state = TO_REQUEST
-  promise(trip)
+  lifecycle.mission(trip, TO_REQUEST, promise)
   if not (depot and depot.entity.valid) then
     return end_trip(id, trip)
   end
@@ -1982,7 +1978,7 @@ end
 -- Filled up at a Fuel depot (as far as it had fuel): on to where it was going.
 local function arrived_at_fuel(id, trip)
   local fuel = storage.depots[trip.refuel]
-  trip.refuel, trip.refueled = nil, true
+  lifecycle.fuel_checked(trip)
   if fuel and fuel.entity.valid then
     fueling.refuel(trip, fuel)
   end
@@ -2005,8 +2001,7 @@ local function arrived_at_request(id, trip, depot)
     -- Fluid that didn't fit (another fluid got into the tank meanwhile, say) goes back.
     local provider = depot_entity(trip.provider)
     if trip.fluid.amount > 0 and provider then
-      trip.state = RETURNING
-      promise(trip)
+      lifecycle.mission(trip, RETURNING, promise)
       return drive(trip, (loading_tile(provider)))
     end
     return end_trip(id, trip)
@@ -2039,8 +2034,7 @@ local function route_failed(id, trip, depot)
   end
   local provider = depot_entity(trip.provider)
   if trip.state == TO_REQUEST and provider and not cargo_empty(trip) then
-    trip.state = RETURNING
-    promise(trip)
+    lifecycle.mission(trip, RETURNING, promise)
     return drive(trip, (loading_tile(provider)))
   end
   transfer.spill(trip)
@@ -2081,14 +2075,14 @@ function logistics.into_tunnel(id, trip)
   -- review of fa62744).
   burn(trip)
   if not tunnels.open(tunnel) then
-    trip.tunnel = nil
+    lifecycle.move(trip, "road")
     return drive(trip, trip.destination or target(trip))
   end
-  tunnel.under = true
+  lifecycle.move(trip, "entering-tunnel", tunnel)
   -- The unseen freighter has one direction, so the game turns it north: remember which way it went in.
   tunnel.orientation = trip.drone.orientation
   if not repaint(id, trip) then
-    tunnel.under = nil
+    lifecycle.move(trip, "waiting-at-tunnel", tunnel)
     return logistics.command(trip, {
       type = defines.command.stop,
       distraction = defines.distraction.none,
@@ -2103,7 +2097,7 @@ function logistics.into_tunnel(id, trip)
     distraction = defines.distraction.none,
     ticks_to_wait = math.max(1, math.ceil(tunnel.length / math.max(speed, 0.001))),
   })
-  tunnel.started = true
+  lifecycle.move(trip, "underground", tunnel)
 end
 
 -- Out of a tunnel, where it now stands at the far mouth: the fuel for the tunnel's length on road,
@@ -2122,13 +2116,13 @@ end
 -- changed), or waits there for a search still under way.
 function logistics.out_of_tunnel(id, trip)
   local tunnel = trip.tunnel
-  trip.tunnel = nil
+  lifecycle.move(trip, "road")
   trip.origin = tunnel.exit
   trip.last_position = nil
   -- Facing out of the far mouth (or as it went in, should that portal be gone), not as the unseen
   -- freighter stood: north, which it then turned from at once. However it comes out.
   local facing = tunnels.facing(tunnel.to) or tunnel.orientation
-  if trip.searching then
+  if trip.search then
     -- A search under way belongs to this unit (its id): it comes out unseen, waits for the answer,
     -- and is painted once that is in (check_trip), as repainting would make the search stale.
     -- Painting keeps its facing, so it is turned now. (A stop keeps a unit's facing; an idle one
@@ -2150,7 +2144,8 @@ function logistics.out_of_tunnel(id, trip)
   show_cargo(trip)
   if out then
     -- On to where it is going once out (on_ai_command_completed; a re-plan meanwhile drives it there).
-    trip.coming_out, trip.loading = true, nil
+    lifecycle.travel(trip)
+    lifecycle.move(trip, "exiting-tunnel")
     return logistics.command(trip, {
       type = defines.command.go_to_location,
       destination = out,
@@ -2168,8 +2163,9 @@ function logistics.on_ai_command_completed(event)
   if not trip or event.result == defines.behavior_result.deleted then
     return
   end
+  lifecycle.upgrade(trip)
   local tunnel = trip.tunnel
-  if tunnel and tunnel.started and event.result == defines.behavior_result.success and trip.drone.valid then
+  if trip.movement == "underground" and event.result == defines.behavior_result.success and trip.drone.valid then
     -- Through the tunnel (a search under way waits for it to come out). A failure under ground is
     -- a freighter dying at the mouth (enemies, or a script: see below), acted on as any failure.
     return logistics.out_of_tunnel(id, trip)
@@ -2177,7 +2173,7 @@ function logistics.on_ai_command_completed(event)
   -- A command replaced by a newer one (see replan) is not the end of anything, and a freighter
   -- waiting for a reroute search has nowhere to arrive (unless under ground, whose failed wait is
   -- acted on below).
-  if trip.searching and not (tunnel and tunnel.started) then
+  if trip.search and trip.movement ~= "underground" then
     return
   end
   upgrade(trip)
@@ -2189,7 +2185,7 @@ function logistics.on_ai_command_completed(event)
     return
   end
   local depot = storage.depots[trip.request]
-  if event.result == defines.behavior_result.success and not (tunnel or trip.coming_out) then
+  if event.result == defines.behavior_result.success and not (tunnel or (trip.movement == "exiting-tunnel")) then
     -- Where it is now (a depot's loading zone): its road network is known there.
     trip.origin = trip.destination or trip.origin
   end
@@ -2206,12 +2202,12 @@ function logistics.on_ai_command_completed(event)
   elseif tunnel then
     -- At a tunnel's mouth (or waiting there for something stuck to it to wear off).
     logistics.into_tunnel(id, trip)
-  elseif trip.coming_out then
+  elseif trip.movement == "exiting-tunnel" then
     -- Out of a tunnel's mouth: on to where it is going.
     drive(trip, trip.destination or target(trip))
-  elseif trip.refuel and not trip.loading then
+  elseif trip.refuel and not trip.service then
     -- At the Fuel depot: it stands there LOADING_TICKS to fill up too.
-    trip.loading = true
+    lifecycle.begin_service(trip, game.tick)
     logistics.command(trip, {
       type = defines.command.stop,
       distraction = defines.distraction.none,
@@ -2219,10 +2215,10 @@ function logistics.on_ai_command_completed(event)
     })
   elseif trip.refuel then
     arrived_at_fuel(id, trip)
-  elseif not trip.loading and not (trip.state == TO_REQUEST and cargo_empty(trip)) then
+  elseif not trip.service and not (trip.state == TO_REQUEST and cargo_empty(trip)) then
     -- Arrived to load or unload: stand there LOADING_TICKS first. The stop command's completion
     -- comes back here, and the freighter loads or unloads then. One coming home empty just parks.
-    trip.loading = true
+    lifecycle.begin_service(trip, game.tick)
     logistics.command(trip, {
       type = defines.command.stop,
       distraction = defines.distraction.none,
@@ -2252,13 +2248,13 @@ function logistics.failed_commands()
     if storage.trips[id] == trip then
       if not trip.drone.valid then
         lose(id, trip)
-      elseif trip.tunnel and trip.tunnel.started then
+      elseif trip.movement == "underground" and trip.command_id == failure.command_id then
         -- Its wait under ground failed, yet it lives: it comes out at the other end all the same.
         logistics.out_of_tunnel(id, trip)
-      elseif trip.coming_out and trip.command_id == failure.command_id then
+      elseif (trip.movement == "exiting-tunnel") and trip.command_id == failure.command_id then
         -- Its short stretch out of a mouth failed (road removed there, say): its route decides.
         drive(trip, trip.destination or target(trip))
-      elseif trip.command_id == failure.command_id and not trip.searching then
+      elseif trip.command_id == failure.command_id and not trip.search then
         if trip.refuel then
           fuel_route_failed(id, trip, storage.depots[trip.request])
         else
@@ -2285,7 +2281,7 @@ end
 local function replan(trip)
   -- A freighter waiting for a reroute search stays put; the search decides where it goes. One
   -- loading or unloading finishes first, then plans its next route afresh.
-  if trip.drone.valid and trip.destination and not trip.searching and not trip.loading then
+  if trip.drone.valid and trip.destination and not trip.search and not trip.service then
     drive(trip, target(trip))
   end
 end
@@ -2303,12 +2299,12 @@ end
 -- Searches on a surface may have used roads or depots that changed since: start them again.
 local function restart_searches(surface_index)
   for _, depot in pairs(storage.depots) do
-    if depot.search_token and depot.entity.valid and depot.entity.surface_index == surface_index then
+    if depot.search and depot.search.token and depot.entity.valid and depot.entity.surface_index == surface_index then
       cancel_search(depot)
     end
   end
   for id, trip in pairs(storage.trips) do
-    if trip.search_token and trip.drone.valid and trip.drone.surface_index == surface_index then
+    if trip.search and trip.search.token and trip.drone.valid and trip.drone.surface_index == surface_index then
       search_again(id, trip)
     end
   end
@@ -2399,8 +2395,7 @@ local function depot_removed(id)
       -- Nobody to deliver to: cargo goes back to the provider, an empty freighter just leaves.
       if trip.state == TO_REQUEST and depot_entity(trip.provider) then
         -- One standing there to unload leaves at once too.
-        trip.state, trip.loading = RETURNING, nil
-        promise(trip)
+        lifecycle.mission(trip, RETURNING, promise)
         replan(trip)
       elseif trip.state == TO_PROVIDER or cargo_empty(trip) then
         end_trip(trip_id, trip)
@@ -2408,8 +2403,7 @@ local function depot_removed(id)
     elseif trip.provider == id and trip.state == RETURNING then
       -- Bringing cargo back to a provider that is gone: try the request depot again.
       if depot_entity(trip.request) then
-        trip.state, trip.loading = TO_REQUEST, nil
-        promise(trip)
+        lifecycle.mission(trip, TO_REQUEST, promise)
         replan(trip)
       else
         transfer.spill(trip)
@@ -2419,7 +2413,7 @@ local function depot_removed(id)
       reroute(trip_id, trip)
     elseif trip.refuel == id then
       -- The Fuel depot it was heading for is gone (one standing there leaves at once): another.
-      trip.refuel, trip.loading = nil, nil
+      lifecycle.clear_route_search(trip)
       fueling.look_for_fuel(trip_id, trip)
     end
   end
@@ -2430,7 +2424,7 @@ end
 local function finish_search(depot, search, owner)
   if search.fuel then
     -- A freighter's search for a Fuel depot: fill up at the nearest by road, if it still has fuel.
-    owner.search_token, owner.searching, owner.fuel_search = nil, nil, nil
+    lifecycle.cancel_search(owner)
     local fuel = search.best and storage.depots[search.best]
     if fuel and fuel.entity.valid and fueling.has_fuel(fuel) then
       owner.refuel = search.best
@@ -2461,7 +2455,7 @@ local function finish_search(depot, search, owner)
     -- Its depot filled during the search: reroute sends it home. Sending full loads only, it needs
     -- room for this freighter's full load.
     if still and room > 0 and (not full or room >= full) then
-      owner.search_token, owner.searching = nil, nil
+      lifecycle.cancel_search(owner)
       -- Promise only what its depot still has room for (it may have filled in part during the
       -- search: Sourcery's review of ac9ab0a), and the new provider has unpromised (`available`
       -- doesn't count this trip's promise: it gave up on its old provider, logistics.give_up, which
@@ -2788,7 +2782,12 @@ function logistics.add_all()
   end
   -- Searches still waiting for the pathfinder start again from scratch.
   storage.searches = {}
+  -- Migrate before removing depots can inspect or redirect their live trips.
+  for _, trip in pairs(storage.trips) do
+    lifecycle.upgrade(trip)
+  end
   for id, depot in pairs(storage.depots) do
+    lifecycle.upgrade_search(depot)
     cancel_search(depot)
     if not depot.entity.valid then
       -- Gone without on_object_destroyed reaching it: forgotten as that would (see check_depot).
@@ -2807,6 +2806,7 @@ function logistics.add_all()
       depot.circuit_mode = depot_circuit.mode(depot.circuit_mode) or nil
       switching.watch(depot)
       if REQUESTING[depot.role] then
+        robot_requests.target(depot)
         truck_chest(depot.entity)
       end
     end
@@ -2836,7 +2836,7 @@ function logistics.add_all()
     end
   end
   for id, trip in pairs(storage.trips) do
-    if trip.searching then
+    if trip.search then
       search_again(id, trip)
     end
   end
@@ -2936,7 +2936,7 @@ function logistics.cancel_freighter_requests(entity)
   if not depot then
     return 0
   end
-  depot.freighter_target = nil
+  robot_requests.set_target(depot, nil)
   local proxies, requested = robot_requests.freighter_requests(entity)
   for _, proxy in ipairs(proxies) do
     local kept = {}
@@ -3062,7 +3062,7 @@ function logistics.take_freighters(entity, stack, count, into)
     return 0
   end
   -- Taking freighters out on purpose: no longer top the depot up to an earlier target.
-  depot.freighter_target = nil
+  robot_requests.set_target(depot, nil)
   local slot = trucks_of(depot)
   local before = slot.get_item_count()
   local wanted = math.min(count or before, before)
@@ -3130,7 +3130,7 @@ function logistics.describe_freighters(entity)
     logistics.waiting_freighters(entity),
     coming,
     removing,
-    tostring(depot.freighter_target),
+    tostring(robot_requests.target(depot)),
     robot_requests.freighter_total(entity),
     capacity,
     #proxies,

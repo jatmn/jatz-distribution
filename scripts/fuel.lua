@@ -5,6 +5,7 @@
 -- logistics.lua keeps the trips and the search (burning fuel is part of a trip's check, `burn`),
 -- and hands this module the helpers it shares with it once they are all defined (fueling.install).
 local fueling = {}
+local lifecycle = require("scripts.trip-state")
 
 -- scripts/logistics.lua, and its helpers, from fueling.install.
 local logistics, fuel_tank, inventory, depots_at, loading_tile, new_token, ask_route, drive, end_trip, target
@@ -231,14 +232,14 @@ end
 -- Start looking for the Fuel depot nearest by road from where a freighter stands; it waits while
 -- the search runs. Returns false if there is none to look for.
 local function seek_fuel(id, trip)
-  trip.search_token, trip.searching, trip.fuel_search, trip.refuel = nil, nil, nil, nil
+  lifecycle.clear_route_search(trip)
   local depot = storage.depots[trip.request]
   if not (trip.drone.valid and depot and depot.entity.valid) then
     return false
   end
   local from = trip.drone.position
   -- One still at home also looks for empty ones, so its depot can say which it is waiting for.
-  local found = fuel_candidates(depot, from, trip.departing)
+  local found = fuel_candidates(depot, from, (trip.movement == "departing"))
   if #found == 0 then
     return false
   end
@@ -254,7 +255,7 @@ local function seek_fuel(id, trip)
     trip = id,
     fuel = true,
   }
-  trip.search_token, trip.searching, trip.fuel_search = search.token, game.tick, true
+  lifecycle.begin_search(trip, "fuel", search.token, game.tick)
   logistics.command(trip, { type = defines.command.stop, distraction = defines.distraction.none })
   ask_route(search, depot.entity.surface, depot.entity.force)
   return true
@@ -266,11 +267,11 @@ end
 -- dispatch looks every second), and otherwise shows red, no Fuel depot connected by road, until
 -- one is built or connected (or RETRY_TICKS pass).
 local function go_without_fuel(id, trip, empty_reachable)
-  trip.fuel_search, trip.refueled = nil, true
+  lifecycle.fuel_checked(trip)
   if not trip.drone.valid then
     return end_trip(id, trip)
   end
-  if trip.departing and trip.energy < (trip.leg or 0) * fuel_per_tile() then
+  if (trip.movement == "departing") and trip.energy < (trip.leg or 0) * fuel_per_tile() then
     local depot = storage.depots[trip.request]
     if depot then
       local status = empty_reachable and logistics.status.no_fuel or logistics.status.no_fuel_depot
@@ -295,7 +296,7 @@ end
 -- less. Once a leg: after filling up, or finding nowhere to, it goes.
 local function short_of_fuel(trip, length)
   local per_tile = fuel_per_tile()
-  if trip.refueled or not length or per_tile <= 0 then
+  if trip.fuel_check == "checked" or not length or per_tile <= 0 then
     return false
   end
   local capacity = fuel_capacity()
