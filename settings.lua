@@ -4,6 +4,7 @@
 -- Slots stop at 1,000: deliveries and refuelling look through a depot's chest stack by stack.
 -- Whether players can place the freighter as a car is one too (prototypes/freighter.lua).
 -- Freighter fuel is runtime: scripts/logistics.lua reads it as freighters drive and refuel.
+-- So are the default requests, read by scripts/request-gui.lua when an item or fluid is chosen.
 data:extend({
   {
     type = "int-setting",
@@ -95,5 +96,26 @@ data:extend({
     minimum_value = 0,
     maximum_value = 100000,
     order = "b[fuel]-b[use]",
+  },
+  {
+    -- In stacks of the item chosen: what a request or buffer depot's request starts at when an
+    -- item is chosen with no amount (scripts/request-gui.lua). Capped at what the chest holds.
+    type = "int-setting",
+    name = "jatz-default-item-request",
+    setting_type = "runtime-global",
+    default_value = 1,
+    minimum_value = 1,
+    maximum_value = 1000,
+    order = "c[request]-a[item]",
+  },
+  {
+    -- The same for a fluid chosen on a liquid request or buffer depot. Capped at the tank's size.
+    type = "int-setting",
+    name = "jatz-default-fluid-request",
+    setting_type = "runtime-global",
+    default_value = 1000,
+    minimum_value = 1,
+    maximum_value = 1000000,
+    order = "c[request]-b[fluid]",
   },
 })
