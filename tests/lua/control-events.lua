@@ -233,25 +233,22 @@ commands = {
   end,
 }
 -- luacheck: globals settings
--- Runtime settings, as Factorio gives them: an unknown name fails, as `settings.global[name].value`
--- would on nil in game.
-local SETTINGS = {
-  ["jatz-freighter-fuel-capacity"] = 20,
-  ["jatz-freighter-fuel-per-tile"] = 10,
-  ["jatz-default-item-request"] = 1,
-  ["jatz-default-fluid-request"] = 1000,
-}
-settings = {
-  global = setmetatable({}, {
+-- Settings, as Factorio gives them: an unknown name fails, as `settings.global[name].value` would
+-- on nil in game, and a name of the other kind too.
+local SETTINGS = { ["jatz-freighter-fuel-capacity"] = 20, ["jatz-freighter-fuel-per-tile"] = 10 }
+local STARTUP = { ["jatz-default-item-request"] = 1, ["jatz-default-fluid-request"] = 1000 }
+local function setting_kind(values, kind)
+  return setmetatable({}, {
     __index = function(_, name)
-      local value = SETTINGS[name]
+      local value = values[name]
       if value == nil then
-        error("FAILED: no runtime-global setting " .. tostring(name), 2)
+        error("FAILED: no " .. kind .. " setting " .. tostring(name), 2)
       end
       return { value = value }
     end,
-  }),
-}
+  })
+end
+settings = { global = setting_kind(SETTINGS, "runtime-global"), startup = setting_kind(STARTUP, "startup") }
 prototypes = {
   decorative = {},
   item = {
@@ -1529,14 +1526,14 @@ do -- The priority slider: provider depots get a panel with it and their circuit
   fire("on_gui_value_changed", { player_index = 11, element = inner.priority_row.jatz_depot_priority })
   check("which sets the buffer depot's priority", logistics.get_priority(buffer) == 2)
   -- The map's default item request, in stacks of the item chosen.
-  SETTINGS["jatz-default-item-request"] = 3
+  STARTUP["jatz-default-item-request"] = 3
   inner.request_row.jatz_request_item.elem_value = "iron-plate"
   fire("on_gui_elem_changed", { player_index = 11, element = inner.request_row.jatz_request_item })
   check(
     "an item chosen starts at the default request's stacks",
     logistics.get_request(buffer).count == 300 and inner.request_row.jatz_request_count.text == "300"
   )
-  SETTINGS["jatz-default-item-request"] = 1
+  STARTUP["jatz-default-item-request"] = 1
   nth[30]()
   check("a buffer panel isn't rebuilt either", relative.jatz_request_frame.children[1] == inner)
 
@@ -1715,21 +1712,21 @@ do -- Liquid depots: the same panels, beside the storage tank window, choosing a
   fire("on_gui_opened", { player_index = 12, entity = buffer })
   inner = relative.jatz_request_frame.children[1]
   check("a liquid buffer depot has its priority above its request", inner.children[1] == inner.priority_row)
-  SETTINGS["jatz-default-fluid-request"] = 2000
+  STARTUP["jatz-default-fluid-request"] = 2000
   inner.request_row.jatz_request_item.elem_value = "water"
   fire("on_gui_elem_changed", { player_index = 12, element = inner.request_row.jatz_request_item })
   check(
     "a fluid chosen starts at the default fluid request",
     logistics.get_request(buffer).count == 2000 and inner.request_row.jatz_request_count.text == "2000"
   )
-  SETTINGS["jatz-default-fluid-request"] = 1000000
+  STARTUP["jatz-default-fluid-request"] = 1000000
   inner.request_row.jatz_request_count.text = ""
   fire("on_gui_elem_changed", { player_index = 12, element = inner.request_row.jatz_request_item })
   check(
     "one above the tank's size is its size, in the field too",
     logistics.get_request(buffer).count == 25000 and inner.request_row.jatz_request_count.text == "25000"
   )
-  SETTINGS["jatz-default-fluid-request"] = 1000
+  STARTUP["jatz-default-fluid-request"] = 1000
   local provider = liquid(320, "jatz-liquid-provider-depot")
   fire("on_gui_opened", { player_index = 12, entity = provider })
   frame = relative.jatz_request_frame

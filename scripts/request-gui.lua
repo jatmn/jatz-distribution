@@ -644,12 +644,12 @@ local function on_gui_elem_changed(event)
   local item = event.element.elem_value
   local field = event.element.parent[COUNT]
   local amount = tonumber(field.text) or 0
-  -- A newly chosen item starts at the map's default request (settings.lua: stacks of an item, an
-  -- amount of a fluid; one stack and 1,000 unless changed), so the request does something
-  -- straight away.
+  -- A newly chosen item starts at the default request (startup settings, settings.lua: stacks of
+  -- an item, an amount of a fluid; one stack and 1,000 unless changed), so the request does
+  -- something straight away.
   if item and amount == 0 then
-    amount = LIQUID[entity.name] and settings.global["jatz-default-fluid-request"].value
-      or settings.global["jatz-default-item-request"].value * prototypes.item[item].stack_size
+    amount = LIQUID[entity.name] and settings.startup["jatz-default-fluid-request"].value
+      or settings.startup["jatz-default-item-request"].value * prototypes.item[item].stack_size
     field.text = tostring(amount)
   end
   logistics.set_request(entity, item, amount)
