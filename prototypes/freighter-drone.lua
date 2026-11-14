@@ -94,6 +94,10 @@ local function drone(name, cargo)
     -- The middle of the body, so it is easy to point at while it turns.
     selection_box = art.box(0.8, 0.8),
     selection_priority = 60,
+    -- Its dot on the map and minimap: the artwork's default violet cab paint (mask-cab in
+    -- assets/quinityn-freighter/factorio/freighter-animation.lua) rather than the game's blue for
+    -- friendly entities (the owner's choice, November 13, 2026).
+    friendly_map_color = { 0.48, 0.26, 0.58 },
     run_animation = animation,
     -- Tiles per tick: Transport Drones' default (0.066, before speed research), about 4 tiles a
     -- second (14.3 km/h). It was 0.2.

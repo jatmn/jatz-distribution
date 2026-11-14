@@ -54,7 +54,8 @@ local road = {
   },
   walking_sound = stone_path.walking_sound,
   build_sound = stone_path.build_sound,
-  map_color = { 90, 70, 50 },
+  -- Light green on the map and minimap (the owner's choice, November 13, 2026; it was brown).
+  map_color = { 130, 210, 120 },
   scorch_mark_color = stone_path.scorch_mark_color,
   trigger_effect = stone_path.trigger_effect,
 }

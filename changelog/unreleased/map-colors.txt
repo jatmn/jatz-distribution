@@ -1,0 +1,2 @@
+  Changes:
+    - Freighters show on the map and minimap in their violet paint instead of blue, and roads in light green instead of brown.
