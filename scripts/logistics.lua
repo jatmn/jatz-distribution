@@ -3349,7 +3349,8 @@ end
 -- game's calls would refuse, are forgotten: a depot's request for one becomes a normal one (any
 -- quality stays any), the freighters' fuel parked under one goes (they are full tanks now), robots
 -- bring normal freighters for its freighter target; a trip plans no load of one, and its freighter
--- counts as normal. (A field, not a local: this file has few locals to spare.)
+-- counts as normal, driving at a normal one's speed (the game made its unit normal, but the speed
+-- set from its quality stays). (A field, not a local: this file has few locals to spare.)
 function logistics.forget_lost_qualities(depot, trip)
   local function lost(name)
     return name ~= nil and not prototypes.quality[name]
@@ -3377,6 +3378,12 @@ function logistics.forget_lost_qualities(depot, trip)
   if trip then
     if lost(trip.freighter_quality) then
       trip.freighter_quality = nil
+      local drone = trip.drone
+      if drone.valid then
+        -- A dry one still crawls (DRY_SPEED), as on_research_changed sets it.
+        local speed = research.freighter_speed(drone.force)
+        drone.speed = trip.dry and speed * DRY_SPEED or speed
+      end
     end
     local kept, changed = {}, false
     for name, amount in pairs(trip.mix or {}) do

@@ -109,7 +109,8 @@ removes `searching`, `search_token`, `fuel_search`, `loading`, `departing`, `com
 Legacy `freighter_target` becomes a replenishment record; old road `false` tombstones become
 released records; undo queue membership and action indexes identify their old phases. A quality a
 mod change removed is forgotten (`logistics.forget_lost_qualities`): requests for it become
-normal, trips plan none of it, its parked fuel and robot quality go.
+normal, trips plan none of it, a freighter of it counts as normal and drives at normal speed
+(dry ones still crawl), its parked fuel and robot quality go.
 All migrations are idempotent and retain quantities, inventory objects, tags and ground layers.
 The normal release configuration change runs them; no migration is performed in `on_load`.
 
