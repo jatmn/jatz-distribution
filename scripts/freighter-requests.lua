@@ -6,6 +6,25 @@
 -- with it when it loads (requests.install).
 local requests = {}
 
+-- One target owner, including saves from before replenishment had a named phase. Idle is nil;
+-- outstanding plans live in Factorio, so reconciliation derives whether more chest room is needed.
+function requests.target(depot)
+  if depot.freighter_target ~= nil then
+    depot.replenishment = { phase = "reconciling", target = depot.freighter_target }
+    depot.freighter_target = nil
+  end
+  return depot.replenishment and depot.replenishment.target
+end
+
+function requests.set_target(depot, target)
+  depot.freighter_target = nil
+  depot.replenishment = target and { phase = "reconciling", target = target } or nil
+end
+
+local function awaiting(depot, total, target)
+  depot.replenishment.phase = total < target and "waiting-for-space" or "requested"
+end
+
 -- scripts/logistics.lua, and its helpers, from requests.install.
 local logistics, request_depot, truck_chest, freighter_chest, trucks_of, a_freighter, parked_fuel
 local freighter_stack_size, FREIGHTER, QUALITY
@@ -154,9 +173,10 @@ local function request_up_to(entity, goal)
   if goal <= have then
     return 0
   end
-  request_depot(entity).freighter_target = goal
+  requests.set_target(request_depot(entity), goal)
   -- A stack at a time, into chest stacks that are empty and in no other plan.
   local amount, positions = spread(goal - have, free_chest_stacks(chest, proxies))
+  awaiting(request_depot(entity), have + amount, goal)
   if amount <= 0 then
     return 0
   end
@@ -176,7 +196,7 @@ function requests.request_freighters(entity, count)
     return 0
   end
   local have, capacity = logistics.freighter_total(entity)
-  local asked = math.max(have, depot.freighter_target or 0)
+  local asked = math.max(have, requests.target(depot) or 0)
   local room = capacity - asked
   local amount = math.min(math.floor(tonumber(count) or room), room)
   if amount <= 0 then
@@ -194,7 +214,7 @@ function requests.remove_freighters(entity, count)
     return 0
   end
   -- Taking freighters away on purpose: no longer top the depot up to an earlier target.
-  depot.freighter_target = nil
+  requests.set_target(depot, nil)
   local slot = trucks_of(depot)
   local wanted = math.min(math.floor(tonumber(count) or slot.get_item_count()), slot.get_item_count())
   if wanted <= 0 then
@@ -255,7 +275,7 @@ function requests.match_freighters(entity, total)
   end
   -- Already as many or more: freighter requests beyond `total` are cancelled. Freighters already
   -- in the depot stay; they are the player's, and taking them away is the player's call.
-  depot.freighter_target = total
+  requests.set_target(depot, total)
   logistics.trim_freighter_requests(entity)
   return 0
 end
@@ -304,7 +324,7 @@ local function reduce_freighter_requests(entity, excess)
   end
 end
 
--- Keep a request depot's freighter requests to what they are for (`depot.freighter_target`: the
+-- Keep a request depot's freighter requests to what they are for (`depot.replenishment.target`: the
 -- total the depot should end up with), until it has them:
 -- * beyond the target (freighters arrived some other way, put in by hand, say): the excess
 --   requests are cancelled, so robots never bring more, nor overfill the slot;
@@ -365,22 +385,23 @@ function requests.trim_freighter_requests(entity)
         end
       end
     end
-    if moved > 0 and not depot.freighter_target then
-      depot.freighter_target = freighter_total(entity) + moved
+    if moved > 0 and not requests.target(depot) then
+      requests.set_target(depot, freighter_total(entity) + moved)
     end
   end
-  if not depot.freighter_target and not truck_chest(entity).item_request_proxy then
+  if not requests.target(depot) and not truck_chest(entity).item_request_proxy then
     -- No target and no requests: nothing to keep.
     return
   end
   local total, capacity, coming = freighter_total(entity)
-  if not depot.freighter_target and coming > 0 then
+  if not requests.target(depot) and coming > 0 then
     -- Freighters requested without a target: Factorio's own request from a blueprint ghost (a
     -- player building over a ghost doesn't pass its tags on), or one set by another mod. What the
     -- depot has and is asking for is what it should end up with.
-    depot.freighter_target = total
+    requests.set_target(depot, total)
   end
-  local wanted = depot.freighter_target and math.min(depot.freighter_target, capacity)
+  local target = requests.target(depot)
+  local wanted = target and math.min(target, capacity)
   if not wanted then
     return
   end
@@ -389,13 +410,16 @@ function requests.trim_freighter_requests(entity)
     if coming > 0 then
       logistics.cancel_freighter_requests(entity)
     end
-    depot.freighter_target = nil
+    requests.set_target(depot, nil)
   elseif total > wanted then
     -- More coming than still needed: lower the requests by the excess, in place.
     reduce_freighter_requests(entity, total - wanted)
+    awaiting(depot, wanted, wanted)
   elseif total < wanted then
     -- Short, with nothing requested to cover it: ask again for the rest.
     request_up_to(entity, wanted)
+  else
+    awaiting(depot, total, wanted)
   end
 end
 

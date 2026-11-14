@@ -1,0 +1,2 @@
+  Bugfixes:
+    - Fixed an old path command failure ending a freighter's newer road-tunnel crossing early.

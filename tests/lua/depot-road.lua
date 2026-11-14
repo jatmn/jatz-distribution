@@ -227,4 +227,21 @@ do -- Records of depots whose road the player took are dropped when those depots
   check("no records are left behind", next(storage.depot_roads) == nil)
 end
 
+do -- Old false tombstones and owned records migrate without relaying or losing hidden layers.
+  local roads = reset()
+  local first, second = depot(), depot(10.5, 0.5)
+  local cell = surface.cell(0, 2)
+  cell.name, cell.hidden = "concrete", "grass-1"
+  roads.lay(first)
+  storage.depot_roads[first.unit_number].phase = nil
+  storage.depot_roads[second.unit_number] = false
+  storage.depot_roads_version = nil
+  surface.entities = { first, second }
+  check("old records do not lay road again", next(roads.lay_all({})) == nil)
+  check("released ownership migrates", storage.depot_roads[second.unit_number].phase == "released")
+  roads.lay_all({})
+  roads.lift(first.unit_number)
+  check("old owned road still restores its exact ground", cell.name == "concrete" and cell.hidden == "grass-1")
+end
+
 print("all depot road checks passed")

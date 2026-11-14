@@ -6,6 +6,7 @@
 -- points (`logistics.on_script_path_request_finished`, `logistics.answer_remembered`), and hands
 -- this module the helpers it shares with it once they are defined (routes.install).
 local routes = {}
+local lifecycle = require("scripts.trip-state")
 
 -- scripts/logistics.lua's helpers, from routes.install.
 local owner_of, cancel_search, route_answered
@@ -124,7 +125,7 @@ function routes.on_script_path_request_finished(event)
     local depot = storage.depots[search.request]
     if owner and depot and depot.entity.valid then
       if search.trip then
-        owner.search_token, owner.searching = nil, game.tick - SEARCH_TIMEOUT
+        lifecycle.retry_search(owner, game.tick - SEARCH_TIMEOUT)
       else
         cancel_search(depot)
       end

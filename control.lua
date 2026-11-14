@@ -318,6 +318,7 @@ local function setup()
   -- Item provider and buffer depots from before they were logistic containers become the depots
   -- they were first, so deliveries find them as they were (scripts/legacy-depots.lua).
   legacy_depots.replace_all()
+  undo.migrate()
   logistics.init()
   -- Depots that were in the game before this mod laid road under them (it was added to a save,
   -- or updated) get theirs now.

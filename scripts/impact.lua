@@ -71,7 +71,7 @@ function impact.run_over(trips, from, to, fresh)
   for index = from, to do
     local trip = trips[index]
     -- (One in a tunnel is under ground: it hits nothing on its way through.)
-    local drone = storage.trips[trip.id] == trip and not (trip.tunnel and trip.tunnel.under) and trip.drone
+    local drone = storage.trips[trip.id] == trip and trip.movement ~= "underground" and trip.drone
     if drone and drone.valid then
       -- Where its once-a-second check found it, if that was this tick (a read makes a new table).
       local here = trip.at_tick == game.tick and trip.at or drone.position

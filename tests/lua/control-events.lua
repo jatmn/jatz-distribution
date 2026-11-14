@@ -504,7 +504,7 @@ do -- A player places a tile over the depot's road: it stays when the depot goes
     tile = { name = "stone-path" },
     tiles = { { old_tile = { name = "jatz-depot-road" }, position = { x = 20, y = 2 } } },
   })
-  check("the depot gives the spot up to the player", storage.depot_roads[entity.unit_number] == false)
+  check("the depot gives the spot up to the player", storage.depot_roads[entity.unit_number].phase == "released")
   removed(entity)
   check("a tile a player placed over depot road stays", cell(20, 2).name == "stone-path")
 end
@@ -518,7 +518,7 @@ do -- A robot places one: the same.
     tile = { name = "concrete" },
     tiles = { { old_tile = { name = "jatz-depot-road" }, position = { x = 25, y = 2 } } },
   })
-  check("the depot gives the spot up to the robot's owner", storage.depot_roads[entity.unit_number] == false)
+  check("the depot gives the spot up to the robot's owner", storage.depot_roads[entity.unit_number].phase == "released")
   removed(entity)
   check("a tile a robot placed over depot road stays", cell(25, 2).name == "concrete")
 end
@@ -534,7 +534,7 @@ do -- A player mines the depot's road: the concrete under it comes back, not jus
     tiles = { { old_tile = { name = "jatz-depot-road" }, position = { x = 30, y = 2 } } },
   })
   check("mining the depot's road by hand puts back the concrete", spot.name == "concrete")
-  check("and gives the spot up", storage.depot_roads[entity.unit_number] == false)
+  check("and gives the spot up", storage.depot_roads[entity.unit_number].phase == "released")
   removed(entity)
   check("and removing the depot then leaves it", spot.name == "concrete")
 end
@@ -547,7 +547,7 @@ do -- Another mod's script sets a tile over the depot's road: it stays when the 
     "script_raised_set_tiles",
     { surface_index = 1, tiles = { { name = "refined-concrete", position = { 40, 2 } } } }
   )
-  check("the depot gives the spot up to the script", storage.depot_roads[entity.unit_number] == false)
+  check("the depot gives the spot up to the script", storage.depot_roads[entity.unit_number].phase == "released")
   removed(entity)
   check("a tile a script set over depot road stays", cell(40, 2).name == "refined-concrete")
 end
@@ -2651,6 +2651,18 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
   fire("on_pre_player_mined_item", { entity = survivor, player_index = 20 })
   fire("on_robot_pre_mined", { entity = survivor })
   check("a mining attempt that leaves it standing keeps who marked it", storage.undo_marked ~= nil)
+  -- Reconstruct the saved representation before named phases. The failed attempt must remain
+  -- captured without becoming a pending removal, and its marked action must still be found.
+  local survivor_mark = storage.undo_marked[survivor.unit_number]
+  survivor_mark.phase = nil
+  survivor_mark.unlocated = survivor_mark.action == nil or nil
+  storage.undo_mining[20].entry.phase = nil
+  require("scripts.undo").migrate()
+  require("scripts.undo").migrate()
+  check(
+    "undo migration preserves the failed attempt without queuing a removal",
+    storage.undo_mining[20].entry.phase == "captured" and storage.undo_pending == nil
+  )
   assert(logistics.set_request(survivor, "wood", 7))
   freighters_in(survivor, 4)
   game.tick = 1800
@@ -2681,6 +2693,10 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
   hand_mine(mined)
   check("mining still hands its freighters over", not slot.valid_for_read)
   check("its settings wait for its undo item, made just after the mining", #storage.undo_pending[20] == 1)
+  storage.undo_pending[20][1].phase = nil
+  require("scripts.undo").migrate()
+  require("scripts.undo").migrate()
+  check("old pending snapshots migrate idempotently", storage.undo_pending[20][1].phase == "pending")
   new_item({ removal("jatz-request-depot", 630.5, 0.5) })
   fire("on_tick", { tick = 2000 })
   check(
