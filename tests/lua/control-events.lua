@@ -1985,6 +1985,55 @@ do -- Liquid depots: the same panels, beside the storage tank window, choosing a
       and inner.freighter_fuel.caption[1] == "jatz-gui.freighter-fuel-none"
       and inner.freighter_fuel.tooltip[1] == "jatz-gui.freighter-fuel-tooltip"
   )
+  -- What a full tank holds is each of its freighters' own (a better freighter's holds more,
+  -- scripts/quality.lua), not a normal one's: one full rare freighter's 32 MJ isn't said to be more
+  -- than a full tank (the review of 690429b).
+  local freighter_fuel = logistics.freighter_fuel
+  local function tanks_said(home_tanks, out_tanks)
+    logistics.freighter_fuel = function()
+      local home = {}
+      for index, tank in ipairs(home_tanks) do
+        home[index] = tank
+      end
+      local out = {}
+      for index, tank in ipairs(out_tanks) do
+        out[index] = tank
+      end
+      return {
+        home = home,
+        out = out,
+        capacity = 20000000,
+        home_tanks = home_tanks,
+        out_tanks = out_tanks,
+        used = true,
+      }
+    end
+    fire("on_gui_opened", { player_index = 12, entity = request })
+    logistics.freighter_fuel = freighter_fuel
+    return relative.jatz_request_frame.children[1].freighter_fuel.tooltip[4]
+  end
+  local function caption_of(said, joules)
+    local caption = logistics.energy_caption(joules)
+    return type(said) == "table" and said[1] == caption[1] and said[2] == caption[2]
+  end
+  local said = tanks_said({}, {})
+  check("no freighters: a normal tank", said[1] == "jatz-gui.freighter-fuel-tank" and caption_of(said[2], 20000000))
+  said = tanks_said({ 20000000 }, { 20000000 })
+  check("normal freighters: a normal tank", said[1] == "jatz-gui.freighter-fuel-tank" and caption_of(said[2], 20000000))
+  said = tanks_said({ 32000000 }, {})
+  check("one rare freighter: its own tank", said[1] == "jatz-gui.freighter-fuel-tank" and caption_of(said[2], 32000000))
+  said = tanks_said({ 20000000 }, { 32000000, 20000000 })
+  check(
+    "a mixed fleet: each size, smallest first",
+    said[1] == "jatz-gui.freighter-fuel-tanks"
+      and caption_of(said[2][2], 20000000)
+      and said[2][3] == ", "
+      and caption_of(said[2][4], 32000000)
+      and #said[2] == 4
+  )
+  fire("on_gui_opened", { player_index = 12, entity = request })
+  inner = relative.jatz_request_frame.children[1]
+  chooser = inner.request_row.jatz_request_item
   chooser.elem_value = "water"
   fire("on_gui_elem_changed", { player_index = 12, element = chooser })
   local request_set = logistics.get_request(request)

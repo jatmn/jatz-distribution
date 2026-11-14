@@ -201,11 +201,23 @@ local function show_freighter_fuel(inner, entity)
   end
   label.caption = #home > 0 and { "jatz-gui.freighter-fuel-home", full, #home, logistics.energy_caption(home[#home]) }
     or { "jatz-gui.freighter-fuel-none" }
+  -- What a full tank holds: each size these freighters have, smallest first (a better freighter's
+  -- holds more), or a normal one's when there are none.
+  local tanks, seen = {}, {}
+  for _, list in ipairs({ fuel.home_tanks or {}, fuel.out_tanks or {} }) do
+    for _, tank in ipairs(list) do
+      if not seen[tank] then
+        seen[tank], tanks[#tanks + 1] = true, tank
+      end
+    end
+  end
+  table.sort(tanks)
   label.tooltip = {
     "jatz-gui.freighter-fuel-tooltip",
     #home > 0 and energy_list(home) or "-",
     #fuel.out > 0 and energy_list(fuel.out) or "-",
-    logistics.energy_caption(fuel.capacity),
+    #tanks > 1 and { "jatz-gui.freighter-fuel-tanks", energy_list(tanks) }
+      or { "jatz-gui.freighter-fuel-tank", logistics.energy_caption(tanks[1] or fuel.capacity) },
   }
 end
 
