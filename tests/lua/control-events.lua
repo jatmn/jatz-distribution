@@ -236,7 +236,11 @@ commands = {
 -- Settings, as Factorio gives them: an unknown name fails, as `settings.global[name].value` would
 -- on nil in game, and a name of the other kind too.
 local SETTINGS = { ["jatz-freighter-fuel-capacity"] = 20, ["jatz-freighter-fuel-per-tile"] = 10 }
-local STARTUP = { ["jatz-default-item-request"] = 1, ["jatz-default-fluid-request"] = 1000 }
+local STARTUP = {
+  ["jatz-default-item-request"] = 1,
+  ["jatz-default-fluid-request"] = 1000,
+  ["jatz-default-full-loads"] = false,
+}
 local function setting_kind(values, kind)
   return setmetatable({}, {
     __index = function(_, name)
@@ -1471,6 +1475,68 @@ do -- The "full loads only" checkbox, on buffer and request depots alike, carrie
   check("unticking it turns it off", not logistics.get_full_loads(built))
   local provider = requesting(240, "jatz-provider-depot")
   check("provider depots have no such setting", not logistics.set_full_loads(provider, true))
+  local function blueprinted(entity)
+    logistics.setup_blueprint(blueprint, { [1] = entity })
+    return saved[1].tags or {}
+  end
+  local function built_from(tags, x, name)
+    local entity = depot(x)
+    entity.name = name
+    fire("on_robot_built_entity", { entity = entity, tags = tags })
+    return entity
+  end
+  -- A blueprint, and so undo, keeps a depot's "off" too, whatever the startup setting "Full loads
+  -- only by default" is: the depot built from it may start with it on (another game, or the setting
+  -- changed since), and must still have it off.
+  local ROLES = { "jatz-request-depot", "jatz-buffer-depot", "jatz-liquid-request-depot", "jatz-liquid-buffer-depot" }
+  local made_off = {}
+  local all_off = true
+  for index, name in ipairs(ROLES) do
+    made_off[name] = blueprinted(requesting(240 + index, name))
+    all_off = all_off and made_off[name].jatz_full_loads == false
+  end
+  check("with it off by default, a blueprint of a depot with it off says so, item and liquid", all_off)
+  check("and so does its undo snapshot", logistics.settings_tags(built).jatz_full_loads == false)
+
+  -- The startup setting "Full loads only by default" ticks it on new request and buffer depots,
+  -- item and liquid; a depot built from a blueprint still takes the blueprint's own.
+  STARTUP["jatz-default-full-loads"] = true
+  local on_request, on_buffer = requesting(250, "jatz-request-depot"), requesting(260, "jatz-buffer-depot")
+  local on_liquid = requesting(270, "jatz-liquid-request-depot")
+  local on_liquid_buffer = requesting(280, "jatz-liquid-buffer-depot")
+  check(
+    "set on, new request and buffer depots, item and liquid, start with full loads only",
+    logistics.get_full_loads(on_request)
+      and logistics.get_full_loads(on_buffer)
+      and logistics.get_full_loads(on_liquid)
+      and logistics.get_full_loads(on_liquid_buffer)
+  )
+  check(
+    "a new provider depot still has no such setting",
+    not logistics.get_full_loads(requesting(290, "jatz-provider-depot"))
+  )
+  check("a depot built before keeps its own", not logistics.get_full_loads(built))
+  local off_tags = blueprinted(built)
+  check("a blueprint of a depot with it off says so", off_tags.jatz_full_loads == false)
+  check("a blueprint of a depot with it on says so", blueprinted(on_request).jatz_full_loads == true)
+  check(
+    "and a depot built from the blueprint with it off has it off",
+    not logistics.get_full_loads(built_from(off_tags, 300, "jatz-request-depot"))
+  )
+  local kept_off = true
+  for index, name in ipairs(ROLES) do
+    kept_off = kept_off and not logistics.get_full_loads(built_from(made_off[name], 300 + index, name))
+  end
+  check("as does one built from a blueprint made while it was off by default, item and liquid", kept_off)
+  STARTUP["jatz-default-full-loads"] = false
+  check(
+    "and one built from a blueprint with it on has it on with it off by default",
+    logistics.get_full_loads(built_from(blueprinted(on_request), 305, "jatz-request-depot"))
+  )
+  check(
+    "set off again, new depots start without it",
+    not logistics.get_full_loads(requesting(310, "jatz-request-depot"))
+  )
 end
 
 do -- The priority slider: provider depots get a panel with it and their circuit condition; buffer
@@ -2522,6 +2588,14 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
     ghosts[#ghosts + 1] = ghost
     return ghost
   end
+  -- The settings a bare request depot keeps: only its "Full loads only", off.
+  local function bare(settings)
+    local count = 0
+    for _ in pairs(settings) do
+      count = count + 1
+    end
+    return count == 1 and settings.jatz_full_loads == false
+  end
   -- A player mining it by hand: before, the mining (its freighters to the player), then gone.
   local function hand_mine(entity)
     fire("on_pre_player_mined_item", { entity = entity, player_index = 20 })
@@ -2730,14 +2804,14 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
   local second = depot(650)
   second.name = "jatz-request-depot"
   fire("on_built_entity", { entity = second })
-  -- The newer one bare: nothing to keep, but its own snapshot, so the order holds.
+  -- The newer one bare: its own snapshot all the same, so the order holds.
   freighters_in(second, 0)
   hand_mine(second)
   new_item({ removal("jatz-request-depot", 650.5, 0.5) })
   fire("on_tick", { tick = 4001 })
   check(
     "two removals at one spot each tag their own action, the newest the newest, a bare one too",
-    next(items[1][1].tags.jatz_settings) == nil and items[2][1].tags.jatz_settings.jatz_freighters == 1
+    bare(items[1][1].tags.jatz_settings) and items[2][1].tags.jatz_settings.jatz_freighters == 1
   )
 
   -- Mined by hand but not removed after all: nothing waits, so no later removal at that spot is
@@ -2778,10 +2852,16 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
   assert(logistics.set_request(reset, nil))
   freighters_in(reset, 0)
   robot_takes(reset)
-  check("robots taking it bare save nothing to keep, replacing that", next(items[1][1].tags.jatz_settings) == nil)
+  check("robots taking it bare save it bare, replacing that", bare(items[1][1].tags.jatz_settings))
   local bare_ghost = ghost_at(680.5, 0.5)
   fire("on_undo_applied", { player_index = 20, actions = items[1] })
-  check("so undo leaves its ghost as it is", bare_ghost.tags.jatz_freighters == nil and bare_ghost.tags.other_mod == 1)
+  check(
+    "so undo gives its ghost only its full loads off, keeping its other tags",
+    bare_ghost.tags.jatz_freighters == nil
+      and bare_ghost.tags.jatz_request == nil
+      and bare_ghost.tags.jatz_full_loads == false
+      and bare_ghost.tags.other_mod == 1
+  )
 
   -- A space platform takes a liquid depot in the tick it was marked, before its action was looked
   -- for: the removal finds it itself.

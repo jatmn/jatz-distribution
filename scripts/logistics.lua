@@ -455,6 +455,9 @@ function logistics.add(entity)
     status = logistics.status.none,
     -- Liquid depots deal in fluids, with liquid depots only.
     fluid = LIQUID[entity.name] or nil,
+    -- Request and buffer depots start with "Full loads only" as the startup setting says (off
+    -- unless changed); blueprint tags and copied settings then set their own (scripts/blueprints.lua).
+    full_loads = REQUESTING[role] and settings.startup["jatz-default-full-loads"].value or nil,
   }
   storage.depots[entity.unit_number] = depot
   index_depot(entity.unit_number, depot, true)

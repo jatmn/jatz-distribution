@@ -35,6 +35,8 @@ settings = {
       return { value = value }
     end,
   }),
+  -- Startup settings the scripts read; new depots start with "Full loads only" off.
+  startup = { ["jatz-default-full-loads"] = { value = false } },
 }
 -- Every item and fluid prototype has a fuel_value (0 if it doesn't burn), as in game.
 prototypes = {

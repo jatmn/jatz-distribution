@@ -3,7 +3,8 @@
 -- they are prototype values (prototypes/depots.lua reads them); the liquid request depot keeps 25,000.
 -- Slots stop at 1,000: deliveries and refuelling look through a depot's chest stack by stack.
 -- Whether players can place the freighter as a car is one too (prototypes/freighter.lua), and so are
--- the default requests (scripts/request-gui.lua), like the rest of the depot settings.
+-- the default requests (scripts/request-gui.lua) and whether new depots start with "Full loads only"
+-- ticked (scripts/logistics.lua), like the rest of the depot settings.
 -- Freighter fuel is runtime: scripts/logistics.lua reads it as freighters drive and refuel.
 data:extend({
   {
@@ -89,6 +90,15 @@ data:extend({
     minimum_value = 1,
     maximum_value = 1000000,
     order = "a[request]-b[fluid]",
+  },
+  {
+    -- Whether a new request or buffer depot, item or liquid, starts with "Full loads only" ticked
+    -- (logistics.add). Depots built before keep theirs, and blueprints carry each depot's own.
+    type = "bool-setting",
+    name = "jatz-default-full-loads",
+    setting_type = "startup",
+    default_value = false,
+    order = "a[request]-c[full-loads]",
   },
   {
     type = "bool-setting",

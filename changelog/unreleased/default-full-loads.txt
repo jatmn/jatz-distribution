@@ -1,0 +1,2 @@
+  Features:
+    - Added the startup setting "Full loads only by default" (off by default). When it's on, new request and buffer depots, item and liquid, start with "Full loads only" ticked. Depots already built keep their own setting.

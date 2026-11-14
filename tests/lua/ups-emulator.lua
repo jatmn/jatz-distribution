@@ -262,14 +262,17 @@ local function strict(values, kind)
     {},
     properties({
       __index = function(_, name)
-        return { value = assert(values[name], "emulator: unknown " .. kind .. " setting " .. tostring(name)) }
+        -- (A setting may be false, so only a missing one fails.)
+        local value = values[name]
+        assert(value ~= nil, "emulator: unknown " .. kind .. " setting " .. tostring(name))
+        return { value = value }
       end,
     })
   )
 end
 settings = {
   global = strict({ ["jatz-freighter-fuel-capacity"] = 20, ["jatz-freighter-fuel-per-tile"] = 10 }, "global"),
-  startup = strict({}, "startup"),
+  startup = strict({ ["jatz-default-full-loads"] = false }, "startup"),
 }
 -- Alt-mode cargo icons: drawn, never read back.
 rendering = natives({
