@@ -431,6 +431,40 @@ local function check_road_placement(surface, result)
   -- So is a road tunnel's portal: it stands at the end of a road, its mouth to it.
   result.on_road[TUNNEL] = can_place(TUNNEL, { 66.5, 66.5 })
   result.monitor_beside_road = can_place(MONITOR, { 66.5, 67.5 })
+  -- Road can't be laid through a cliff, from a ghost or as building a tile does, but a road tunnel
+  -- goes under one: portals north and south of it pair up (the owner's report, November 14, 2026).
+  assert(surface.count_entities_filtered({ area = { { 56, 62 }, { 64, 72 } } }) == 0, "cliff: area not clear")
+  local cliff = surface.create_entity({ name = "cliff", position = { 60, 67 }, cliff_orientation = "west-to-east" })
+  local box = cliff.bounding_box
+  local x = math.floor((box.left_top.x + box.right_bottom.x) / 2)
+  local y = math.floor((box.left_top.y + box.right_bottom.y) / 2)
+  surface.set_tiles({ { name = ROAD, position = { x, y } } }, true, "abort_on_collision")
+  local ghost =
+    surface.create_entity({ name = "tile-ghost", inner_name = ROAD, position = { x - 1, y }, force = "player" })
+  if ghost then
+    ghost.revive()
+  end
+  result.road_through_cliff = {
+    laid = surface.get_tile(x, y).name == ROAD,
+    from_ghost = surface.get_tile(x - 1, y).name == ROAD,
+  }
+  local north = surface.create_entity({
+    name = TUNNEL,
+    position = { x + 0.5, math.floor(box.left_top.y) - 1 },
+    direction = defines.direction.north,
+    force = "player",
+  })
+  local south = surface.create_entity({
+    name = TUNNEL,
+    position = { x + 0.5, math.ceil(box.right_bottom.y) + 1 },
+    direction = defines.direction.south,
+    force = "player",
+  })
+  local paired = north and south and north.fluidbox_neighbours[1] or {}
+  result.road_through_cliff.tunnel_under = paired[1] ~= nil and paired[1].unit_number == south.unit_number
+  cliff.destroy()
+  north.destroy()
+  south.destroy()
   -- Road can't be laid under them either, a gate included while it stands open (an open gate
   -- uses its opened collision mask): an open gate, a closed one and a pole on grass, where
   -- `lay_road_under` tries road once the first is open.
