@@ -52,7 +52,7 @@ Freighters can't drive over buildings, but they can go under them. Road tunnels 
 ## Setting up a delivery
 
 1. Lay road between a provider depot's loading zone and a request depot's.
-2. Open the request depot and choose an item and an amount to keep in stock. A request or buffer depot can't request more of the item than fills every one of its slots: a larger amount is set to that (with the default 48 slots, 4,800 of an item that stacks to 100, 480 of one that stacks to 10).
+2. Open the request depot and choose an item and an amount to keep in stock. A request or buffer depot can't request more of the item than fills every one of its slots: a larger amount is set to that (with the default 48 slots, 4,800 of an item that stacks to 100, 480 of one that stacks to 10). If you choose an item without typing an amount, the request starts at one stack of it. You can change that under **Settings → Mod settings → Startup** (**Default item request**, in stacks). A fluid on a liquid depot starts at 1,000, set by **Default fluid request** there. Changing either one doesn't change requests that are already set.
 3. Put freighters in its freighter slot.
 
 Within a second, a freighter sets off for a provider depot that has the item. It stops for about a second to load what the request depot still needs and has room for, up to two stacks (more with item capacity research), then drives back, stops again for about a second to unload and parks in the slot again.
