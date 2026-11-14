@@ -372,9 +372,9 @@ EXPECTED = {'recipes': RECIPES,
             # robots bring a liquid depot's 2 freighters through it; items and fluids don't mix.
             'water_delivered': 1200, 'water_provider_left': 800, 'truck_chests': 1, 'provider_truck_chests': 0,
             'liquid_refuses_items': False, 'item_depot_refuses_fluids': False,
-            # A liquid request above the tank's size is capped at it (25,000; 15,000 for the
-            # check mod's liquid buffer).
-            'liquid_request_capped': 25000, 'liquid_buffer_request_capped': 15000,
+            # A liquid request above the tank's size is capped at it (the check mod's 35,000; 15,000
+            # for its liquid buffer).
+            'liquid_request_capped': 35000, 'liquid_buffer_request_capped': 15000,
             # An item request above what a depot's slots hold is a full chest, with the check
             # mod's slot settings: 56 x 200 copper cable for a buffer, 52 x 10 nuclear reactors for
             # a request depot.
@@ -388,9 +388,9 @@ EXPECTED = {'recipes': RECIPES,
             # it, so an open window keeps showing the request.
             'hand_fill_same_proxy': True, 'hand_fill_requested': 4,
             # Slots and tank sizes: the check mod sets the depots' settings to these
-            # (settings-updates.lua); the liquid request depot's tank keeps 25,000.
+            # (settings-updates.lua).
             'slot_counts': {'provider': 60, 'request': 52, 'buffer': 56, 'fuel': 24},
-            'tank_sizes': {'fuel': 30000, 'liquid-provider': 40000, 'liquid-request': 25000,
+            'tank_sizes': {'fuel': 30000, 'liquid-provider': 40000, 'liquid-request': 35000,
                            'liquid-buffer': 15000},
             # Fuel: a freighter short of fuel for the leg fills up at a Fuel depot first (5 of 10
             # coal, 20 MJ) and still delivers, parking with 19 MJ left; with liquid fuel it takes
@@ -498,8 +498,8 @@ EXPECTED_QUALITY = {
     'freighter_first_load': 150,
     'freighter_tank': 32,
     'rare_request_slots': True,
-    'rare_liquid_capacity': 40000,
-    'rare_liquid_request_capped': 40000,
+    'rare_liquid_capacity': 56000,
+    'rare_liquid_request_capped': 56000,
     'rare_fuel_tank': True,
     'upgraded_by_robots': {'quality': 'rare', 'request': 'wood x7', 'freighters': 3},
     'replaced_by_player': {'quality': 'rare', 'new': True, 'priority': 7, 'robot_access': True},

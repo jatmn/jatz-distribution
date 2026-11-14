@@ -1,0 +1,2 @@
+  Features:
+    - Added the startup setting "Liquid request depot tank size" (25,000 by default), like the liquid provider and liquid buffer ones. A liquid request depot's freighters only set off for what still fits in its tank, counting what is already on its way, so a bigger tank lets more of them out at once. Requests already set keep their amount: raise them after making the tank bigger.

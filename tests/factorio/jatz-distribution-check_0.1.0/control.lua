@@ -943,7 +943,8 @@ local function setup_deliveries(surface, result)
   assert(remote.call("jatz-distribution", "add_freighters", liquid.request, 3) == 3, "liquid: no freighters")
   result.liquid_refuses_items = remote.call("jatz-distribution", "set_request", liquid.request, "iron-plate", 10)
   result.item_depot_refuses_fluids = remote.call("jatz-distribution", "set_request", prioritised.request, "water", 10)
-  -- A request above the tank's size is its size: 25,000, and 15,000 for a liquid buffer here.
+  -- A request above the tank's size is its size: 35,000 for a liquid request, 15,000 for a liquid
+  -- buffer here (settings-updates.lua).
   assert(remote.call("jatz-distribution", "set_request", liquid.request, "water", 1000000), "water: refused")
   result.liquid_request_capped = remote.call("jatz-distribution", "get_request", liquid.request).count
   assert(remote.call("jatz-distribution", "set_request", liquid.request, "water", 1200), "water: refused")

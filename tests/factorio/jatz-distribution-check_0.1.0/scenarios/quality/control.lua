@@ -122,7 +122,7 @@ script.on_event(defines.events.on_tick, function(event)
     result.rare_request_slots = #rare_request.get_inventory(defines.inventory.chest)
       == math.floor(#normal_request.get_inventory(defines.inventory.chest) * 1.6)
     local rare_liquid = depot(surface, "liquid-request", 46.5, "rare")
-    -- (In whole units: the game's 1.6 times 25,000 is a hair over 40,000.)
+    -- (In whole units: the game's 1.6 times the check mod's 35,000 is a hair over 56,000.)
     result.rare_liquid_capacity = math.floor(rare_liquid.get_fluid_capacity(1))
     assert(remote.call(REMOTE, "set_request", rare_liquid, "water", 100000), "water: refused")
     result.rare_liquid_request_capped = remote.call(REMOTE, "get_request", rare_liquid).count

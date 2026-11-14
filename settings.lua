@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- Jat'z Distribution settings stage. Depot slot counts and tank sizes are startup settings because
--- they are prototype values (prototypes/depots.lua reads them); the liquid request depot keeps 25,000.
+-- they are prototype values (prototypes/depots.lua reads them).
 -- Slots stop at 1,000: deliveries and refuelling look through a depot's chest stack by stack.
 -- Whether players can place the freighter as a car is one too (prototypes/freighter.lua), and so are
 -- the default requests (scripts/request-gui.lua) and whether new depots start with "Full loads only"
@@ -45,13 +45,24 @@ data:extend({
     order = "a[liquid]-a[provider]",
   },
   {
+    -- A liquid request depot's freighters set off only for what its tank has room for, counting what
+    -- is already on its way, so its size caps how many of them are out at once.
+    type = "int-setting",
+    name = "jatz-liquid-request-depot-capacity",
+    setting_type = "startup",
+    default_value = 25000,
+    minimum_value = 1000,
+    maximum_value = 1000000,
+    order = "a[liquid]-b[request]",
+  },
+  {
     type = "int-setting",
     name = "jatz-liquid-buffer-depot-capacity",
     setting_type = "startup",
     default_value = 25000,
     minimum_value = 1000,
     maximum_value = 1000000,
-    order = "a[liquid]-b[buffer]",
+    order = "a[liquid]-c[buffer]",
   },
   {
     type = "int-setting",
