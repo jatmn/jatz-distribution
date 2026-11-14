@@ -114,6 +114,10 @@ EXPECTED = {'recipes': RECIPES,
             # A request depot filled some other way while its freighter is out lets its promise go:
             # the freighter turns home before reaching the provider, which keeps its stock.
             'filled_reached_provider': False, 'filled_provider_left': 20, 'filled_received': 10,
+            # So does one marked for deconstruction, and it sends no other: freighters refilled what
+            # robots emptied.
+            'deconstructing_reached_provider': False, 'deconstructing_provider_left': 20,
+            'deconstructing_received': 0, 'deconstructing_still_marked': True,
             'cut_returned': 30, 'cut_received': 0, 'cut_status': 'unreachable',
             'spilled': 0, 'bad_item_rejected': True, 'refused_request_kept': True, 'cloned_request': 'wood x5', 'request_cleared': True, 'road_on_grass': True,
             'road_on_water': False,

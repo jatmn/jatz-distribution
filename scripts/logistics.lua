@@ -797,6 +797,11 @@ local function need(depot, except)
   if not request or request.count <= 0 or not exists(depot.fluid, request.item) then
     return 0, 0
   end
+  if depot.entity.to_be_deconstructed() then
+    -- Marked for deconstruction: it wants nothing more, and what its freighters set off to fetch
+    -- is let go, so freighters don't refill what construction robots are emptying.
+    return 0, 0, nil, ledger.committed(depot, except)
+  end
   if depot.fluid then
     local tank = depot.entity
     local coming = ledger.committed(depot, except)
