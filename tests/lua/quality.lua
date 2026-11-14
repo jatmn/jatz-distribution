@@ -314,6 +314,161 @@ do -- A rare freighter lost on the way: robots are asked for a rare one.
   )
 end
 
+-- A request depot's truck chest of `stacks` stacks, all full of item b, whose item request proxies
+-- are found as in the game: what they ask for counts, and their plans' stacks are taken. The
+-- freighter plans of every proxy made for it, as { quality, count } in order, and a function that
+-- empties chest stack `index` (1-based).
+local function full_truck_chest(request, stacks)
+  local truck = storage.depots[request.unit_number].chest
+  local chest = script_inventory(stacks)
+  for index = 1, stacks do
+    chest[index].name, chest[index].count, chest[index].valid_for_read = "b", 50, true
+  end
+  truck.get_inventory = function()
+    return chest
+  end
+  local proxies = {}
+  local create = surface.create_entity
+  function surface.create_entity(parameters)
+    local made = create(parameters)
+    if parameters.name == "item-request-proxy" then
+      made.proxy_target, made.insert_plan, made.removal_plan = truck, parameters.modules, {}
+      setmetatable(made, {
+        __index = function(_, key)
+          if key == "item_requests" then
+            local list = {}
+            for _, plan in ipairs(made.insert_plan) do
+              for _, position in ipairs(plan.items.in_inventory) do
+                list[#list + 1] = { name = plan.id.name, quality = plan.id.quality, count = position.count }
+              end
+            end
+            return list
+          end
+        end,
+      })
+      proxies[#proxies + 1] = made
+      truck.item_request_proxy = made
+    end
+    return made
+  end
+  function surface.find_entities_filtered(filter)
+    return filter.name == "item-request-proxy" and proxies or {}
+  end
+  local function planned()
+    local list = {}
+    for _, proxy in ipairs(proxies) do
+      for _, plan in ipairs(proxy.insert_plan) do
+        for _, position in ipairs(plan.items.in_inventory) do
+          list[#list + 1] = { plan.id.quality, position.count }
+        end
+      end
+    end
+    return list
+  end
+  local function free(index)
+    chest[index].name, chest[index].count, chest[index].valid_for_read = nil, 0, false
+  end
+  return planned, free
+end
+local function plans_are(planned, expected)
+  local got = planned()
+  if #got ~= #expected then
+    return false
+  end
+  for index, plan in ipairs(expected) do
+    if got[index][1] ~= plan[1] or got[index][2] ~= plan[2] then
+      return false
+    end
+  end
+  return true
+end
+
+do -- Freighters asked for while the truck chest has no free stack keep the quality each was asked
+  -- for at: one of another quality asked for next doesn't change them (the review of 7145d36: a
+  -- normal one waiting, then a rare one, brought two rare). As stacks free up they are requested in
+  -- the order asked, each quality its own stack; the same quality twice shares one.
+  for _, case in ipairs({ { nil, "rare" }, { "rare", nil }, { "rare", "rare" } }) do
+    local logistics = reset()
+    local request = supplied(logistics, 0)
+    local planned, free = full_truck_chest(request, 2)
+    local first, second = case[1], case[2]
+    local named = tostring(first) .. " then " .. tostring(second)
+    check(named .. ": nothing is requested yet", logistics.request_freighters(request, 1, first) == 0)
+    check(named .. ": still nothing", logistics.request_freighters(request, 1, second) == 0)
+    free(2)
+    game.tick = 60
+    logistics.on_tick()
+    local normal = "normal"
+    if first == second then
+      check(named .. ": once a stack is free, both share it", plans_are(planned, { { first, 2 } }))
+    else
+      check(
+        named .. ": once a stack is free, the first asked for is requested, at its quality",
+        plans_are(planned, { { first or normal, 1 } })
+      )
+      free(1)
+      game.tick = 120
+      logistics.on_tick()
+      check(
+        named .. ": and then the second, at its own",
+        plans_are(planned, { { first or normal, 1 }, { second or normal, 1 } })
+      )
+    end
+  end
+end
+
+do -- Freighters waiting for a free stack at a quality a mod change took away are asked for as normal.
+  local logistics = reset()
+  local request = supplied(logistics, 0)
+  local planned, free = full_truck_chest(request, 2)
+  logistics.request_freighters(request, 1, "rare")
+  local saved = prototypes.quality.rare
+  prototypes.quality.rare = nil
+  logistics.add_all()
+  free(1)
+  game.tick = 60
+  logistics.on_tick()
+  check("the rare one waiting becomes a normal one", plans_are(planned, { { "normal", 1 } }))
+  prototypes.quality.rare = saved
+end
+
+do -- Lost freighters waiting for a free stack: each replacement is of its own freighter's quality,
+  -- whichever was lost first (the review of 7145d36: a legendary and then a rare lost brought two
+  -- rare).
+  for _, order in ipairs({ { "legendary", "rare" }, { "rare", "legendary" } }) do
+    local logistics = reset()
+    local request = supplied(logistics, 0)
+    assert(logistics.put_freighters(request, graded("jatz-quinityn-freighter", 1, "legendary")) == 1)
+    assert(logistics.put_freighters(request, graded("jatz-quinityn-freighter", 1, "rare")) == 1)
+    local planned, free = full_truck_chest(request, 2)
+    logistics.on_tick()
+    answer(logistics, 1, "route")
+    game.tick = 60
+    forget_roads()
+    logistics.on_tick()
+    answer(logistics, 2, "route")
+    local by_quality = {}
+    for _, trip in ipairs(trips_from(request)) do
+      by_quality[trip.freighter_quality] = trip
+    end
+    check("setup: a legendary and a rare freighter out", by_quality.legendary and by_quality.rare)
+    for _, grade in ipairs(order) do
+      local trip = by_quality[grade]
+      logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = trip.drone.unit_number })
+    end
+    local named = order[1] .. " lost, then " .. order[2]
+    check(named .. ": no stack free, nothing requested yet", #planned() == 0)
+    free(1)
+    free(2)
+    game.tick = 120
+    logistics.on_tick()
+    check(
+      named .. ": once stacks are free, a replacement of each quality",
+      plans_are(planned, { { order[1], 1 }, { order[2], 1 } })
+    )
+  end
+end
+
 do -- A quality a mod change took away (the Quality mod removed) is forgotten, as the game's calls
   -- would refuse it: requests for it become normal, any quality stays any, trips plan none of it.
   local logistics = reset()
@@ -406,6 +561,82 @@ do -- A Fuel depot replaced by itself at another quality keeps the freighters he
   local better = entity("jatz-fuel-depot", 5.5, 10.5)
   logistics.replaced(fuel.unit_number, better)
   check("its freighter heads for the new one", trip.refuel == better.unit_number)
+end
+
+do -- A provider replaced by itself at another quality while a freighter is on its way there: the
+  -- promise moves with it, and goes once the freighter has loaded, for a promise of one key (normal
+  -- items, a fluid) and of several qualities alike, so what is put in it later is free for the next
+  -- freighter (the review of 7145d36: the promise stayed filed under the old one, never let go).
+  local function upgraded(logistics, provider, made)
+    local better = made()
+    provider.valid = false
+    logistics.replaced(provider.unit_number, better)
+    return better
+  end
+  local function nothing_promised(provider)
+    return storage.promised[provider.unit_number] == nil and storage.promise_totals[provider.unit_number] == nil
+  end
+
+  local logistics = reset()
+  local request, near = supplied(logistics, 1)
+  stocked_chest(request)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  check("setup: a freighter on its way to the near provider for 30", trip.provider == near.unit_number)
+  local stock
+  local better = upgraded(logistics, near, function()
+    local made = entity("jatz-provider-depot", 10.5, 0.5)
+    stock = graded_stock(made, { { "normal", 30 } })
+    return made
+  end)
+  check("its promise is filed at the new provider", storage.promise_totals[better.unit_number].a == 30)
+  arrive(logistics, trip)
+  check("it loads the 30 there", count_of(trip.cargo, "normal") == 30 and count_of(stock, "normal") == 0)
+  check("and its promise there goes", nothing_promised(better))
+  stock[1].name, stock[1].count, stock[1].valid_for_read, stock[1].quality = "a", 30, true, { name = "normal" }
+  arrive(logistics, trip)
+  game.tick = 60
+  logistics.on_tick()
+  local next_trip = trips_from(request)[1]
+  check(
+    "30 put in it later go to the next freighter",
+    next_trip and next_trip.provider == better.unit_number and next_trip.planned == 30
+  )
+
+  logistics = reset()
+  local provider
+  request, provider = quality_pair(logistics, 100, nil, "any", { { "rare", 15 }, { "legendary", 10 } }, 1)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  trip = trips_from(request)[1]
+  check("setup: a freighter promises rare and legendary", trip.mix.rare == 15 and trip.mix.legendary == 10)
+  better = upgraded(logistics, provider, function()
+    local made = entity("jatz-provider-depot", 10.5, 0.5)
+    made.get_inventory = provider.get_inventory
+    return made
+  end)
+  arrive(logistics, trip)
+  check("it loads both", count_of(trip.cargo, "rare") == 15 and count_of(trip.cargo, "legendary") == 10)
+  check("and its promises of both go", nothing_promised(better))
+
+  logistics = reset()
+  request = tank("jatz-liquid-request-depot", 0.5, 0.5)
+  provider = tank("jatz-liquid-provider-depot", 10.5, 0.5, "water", 1000)
+  logistics.add(request)
+  logistics.add(provider)
+  assert(logistics.set_request(request, "water", 2000))
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  trip = trips_from(request)[1]
+  check("setup: a liquid freighter promises 750 water", trip.planned == 750)
+  better = upgraded(logistics, provider, function()
+    return tank("jatz-liquid-provider-depot", 10.5, 0.5, "water", 1000)
+  end)
+  arrive(logistics, trip)
+  check("it loads 750 water", better.held.amount == 250 and trip.fluid.amount == 750)
+  check("and its promise goes", nothing_promised(better))
 end
 
 print("all quality checks passed")

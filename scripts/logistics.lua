@@ -3319,6 +3319,12 @@ function logistics.replaced(old_id, entity)
     if trip.provider == old_id then
       trip.provider = id
     end
+    -- Where its promise is filed (scripts/promises.lua), which moves below: letting it go, or
+    -- filing it again, looks there.
+    local filed = trip.promise
+    if filed and filed.provider == old_id then
+      filed.provider = id
+    end
     -- (A Fuel depot it is heading for: one replaced by itself at another quality, Claude's review.)
     if trip.refuel == old_id then
       trip.refuel = id
@@ -3361,6 +3367,11 @@ function logistics.forget_lost_qualities(depot, trip)
     end
     if depot.replenishment and lost(depot.replenishment.quality) then
       depot.replenishment.quality = nil
+    end
+    for _, part in ipairs(depot.replenishment and depot.replenishment.waiting or {}) do
+      if lost(part.quality) then
+        part.quality = nil
+      end
     end
   end
   if trip then
