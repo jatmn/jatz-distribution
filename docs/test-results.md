@@ -2,6 +2,34 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Quality: passed (automated)
+
+**November 13, 2026.** Quality support against `e5b329a99cc64b145706f571213b6af5293a2088`,
+Factorio 2.1.24 headless on Linux (build 87808), base game and Space Age with Quality.
+
+- `tools/test_mod.py`: packaged mod passed with the base game and Space Age, including the new
+  quality scenario. That covers requests by quality, better freighters and depots, a robot upgrade
+  and a player's fast replace, and blueprints. Against the base the same scenario fails: normal items
+  arrive instead of rare, a rare freighter brings 100 with a 20 MJ tank, and an upgraded depot loses
+  its request and freighters.
+- `tools/test_mod_setup.py`: all 15 setup tests passed, including the new `tests/lua/quality.lua`
+  (59 checks) on the shared `tests/lua/harness.lua`, the logistics harness's 716 unchanged, and
+  the control-event checks for upgrades and the quality panel.
+- An independent review found four defects: room by quality when planning, rare cargo refiled as
+  normal, a hand-mined upgrade-marked depot, and a Fuel depot's refuel stop. All are fixed, each with
+  a check that fails before its fix.
+- StyLua 2.5.2, Luacheck 1.2.0 and Ruff 0.17.3 passed; the emulator tests passed.
+- Not checked: the request panel and freighter slot tooltip in the graphical client.
+
+The deterministic quick emulator comparison reports +3.8% mean Lua instructions (+7.2% p99,
++5.8% worst tick), +0.6% API calls, and identical paths, commands, vehicles and deliveries. In game,
+standard preset, five alternating runs per revision:
+
+| | Mean update (ms) | UPS | Script (ms) | Pathfinder (ms) | p99 (ms) | Max (ms) | Run spread (ms) | Vehicles out | Delivered/min |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Before | 1.365 | 733 | 0.552 | 0.060 | 4.437 | 11.038 | 0.087 | 1510 | 264720 |
+| After | 1.372 | 729 | 0.565 | 0.060 | 4.397 | 10.243 | 0.054 | 1510 | 264720 |
+
 ## Explicit runtime states: passed (automated)
 
 **November 9, 2026.** Refactor against `af0429cd7673a3674e3b8a50d301616fd572a3de`,

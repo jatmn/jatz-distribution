@@ -115,7 +115,8 @@ The normal release configuration change runs them; no migration is performed in 
 
 ## Regression protection
 
-`tests/lua/logistics.lua` checks lifecycle invariants at each behavioral checkpoint alongside
+`tests/lua/logistics.lua` and `tests/lua/quality.lua` (through the shared `check` of
+`tests/lua/harness.lua`) check lifecycle invariants at each behavioral checkpoint alongside
 its reservation/incoming-cargo accounting checks. Live trips have unique logical identities,
 consistent entity/home indexes, valid search ownership, no search/service overlap, matching
 tunnel payloads and no retired flags. Event-sequence tests cover migration while loading and
