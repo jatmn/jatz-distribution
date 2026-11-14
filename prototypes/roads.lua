@@ -15,6 +15,12 @@ local name = constants.road
 local art = "__jatz-distribution__/" .. constants.road_art
 local stone_path = data.raw.tile["stone-path"]
 
+-- Road stacks to 250 and a rocket lifts 2 stacks of it by default (startup settings). The weight is
+-- worked out as the game does for its own items: the rocket's lift over the items it carries.
+local stack_size = settings.startup["jatz-road-stack-size"].value
+local rocket_stacks = settings.startup["jatz-road-rocket-stacks"].value
+local lift = data.raw["utility-constants"].default.default_rocket_lift_weight
+
 local collision_mask = tile_collision_masks.ground()
 collision_mask.layers[constants.road_layer] = true
 
@@ -87,7 +93,8 @@ data:extend({
     subgroup = constants.subgroup,
     -- After the freighter ("c[freighter]"): last in our row.
     order = "d[road]",
-    stack_size = 100,
+    stack_size = stack_size,
+    weight = lift / (rocket_stacks * stack_size),
     place_as_tile = {
       result = name,
       condition_size = 1,

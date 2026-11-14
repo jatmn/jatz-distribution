@@ -4,7 +4,8 @@
 -- Slots stop at 1,000: deliveries and refuelling look through a depot's chest stack by stack.
 -- Whether players can place the freighter as a car is one too (prototypes/freighter.lua), and so are
 -- the default requests (scripts/request-gui.lua) and whether new depots start with "Full loads only"
--- ticked (scripts/logistics.lua), like the rest of the depot settings.
+-- ticked (scripts/logistics.lua), like the rest of the depot settings, and road's stack size and
+-- rocket capacity (prototypes/roads.lua).
 -- Freighter fuel is runtime: scripts/logistics.lua reads it as freighters drive and refuel.
 data:extend({
   {
@@ -99,6 +100,26 @@ data:extend({
     setting_type = "startup",
     default_value = false,
     order = "a[request]-c[full-loads]",
+  },
+  {
+    -- How much road stacks to, and how many stacks of it a rocket lifts (its weight, which only
+    -- Space Age's rockets to space platforms use): prototypes/roads.lua.
+    type = "int-setting",
+    name = "jatz-road-stack-size",
+    setting_type = "startup",
+    default_value = 250,
+    minimum_value = 1,
+    maximum_value = 10000,
+    order = "a[road]-a[stack-size]",
+  },
+  {
+    type = "int-setting",
+    name = "jatz-road-rocket-stacks",
+    setting_type = "startup",
+    default_value = 2,
+    minimum_value = 1,
+    maximum_value = 100,
+    order = "a[road]-b[rocket-stacks]",
   },
   {
     type = "bool-setting",
