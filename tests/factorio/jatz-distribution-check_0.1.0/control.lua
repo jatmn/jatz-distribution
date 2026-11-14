@@ -382,6 +382,11 @@ local function check_road(result)
     recipe = locale_key(prototypes.recipe[ROAD].localised_name),
   }
   record_recipe(ROAD, ROAD, result)
+  -- Its stack size and a rocket's load of it, in stacks, are startup settings (250 and 2 by
+  -- default, as here). The capacity is the item tooltip's "Rocket capacity": the base game's silo
+  -- doesn't lift to space platforms, so its own lift weight is unlimited.
+  result.road_stack_size = item.stack_size
+  result.road_rocket_capacity = prototypes.utility_constants.default_rocket_lift_weight / item.weight
   assert(not prototypes.tile[ROAD].collision_mask.layers.jatz_off_road, "road: must not be off-road")
   assert(prototypes.tile.concrete.collision_mask.layers.jatz_off_road, "concrete: must be off-road")
   -- Players run on both road tiles as fast as on Transport Drones' road.

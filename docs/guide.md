@@ -32,7 +32,7 @@ A freighter already out keeps the load size it set off with.
 
 ## Roads
 
-Freighters drive **only on road**. Road is a floor tile you craft and place like stone path; it's in our row of the crafting menu.
+Freighters drive **only on road**. Road is a floor tile you craft and place like stone path; it's in our row of the crafting menu. It stacks to 250, and with Space Age a rocket carries two stacks of it (500) to a space platform. You can change both under **Settings → Mod settings → Startup** (**Road stack size** and **Road rocket capacity**, in stacks).
 
 - Every depot lays a road tile under its loading zone sign (the marked tile) when you build it, except on space platforms. You only need to bring road up to it: road that ends one tile away connects.
 - Removing the depot takes that tile away again and puts back the ground that was there, unless you laid your own road or tile over it.
