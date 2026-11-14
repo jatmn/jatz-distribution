@@ -491,6 +491,37 @@ do -- A quality a mod change took away (the Quality mod removed) is forgotten, a
   prototypes.quality.rare = saved
 end
 
+do -- Freighters on the road whose quality a mod change took away count as normal, and drive at a
+  -- normal freighter's speed: no rare speed kept for the rest of the trip, a dry one still crawling.
+  local logistics = reset()
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  local provider = entity("jatz-provider-depot", 10.5, 0.5, { a = 500 })
+  logistics.add(request)
+  logistics.add(provider)
+  assert(logistics.set_request(request, "a", 500))
+  assert(logistics.put_freighters(request, graded("jatz-quinityn-freighter", 2, "rare")) == 2)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  game.tick = 60
+  forget_roads()
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  local trips = trips_from(request)
+  local driving, dry = trips[1], trips[2]
+  check("setup: two rare freighters out", #trips == 2 and math.abs(driving.drone.speed - 0.2 * 1.6) < 1e-9)
+  dry.energy = 0
+  game.tick = 120
+  logistics.on_tick()
+  check("setup: one runs dry", dry.dry and math.abs(dry.drone.speed - 0.2 * 1.6 * 0.1) < 1e-9)
+  local saved = prototypes.quality.rare
+  prototypes.quality.rare = nil
+  logistics.add_all()
+  check("its freighter counts as normal", driving.freighter_quality == nil and dry.freighter_quality == nil)
+  check("and drives at a normal freighter's speed", math.abs(driving.drone.speed - 0.2) < 1e-9)
+  check("a dry one crawls at a normal freighter's share", math.abs(dry.drone.speed - 0.2 * 0.1) < 1e-9)
+  prototypes.quality.rare = saved
+end
+
 do -- Room by quality, not in all (Claude's review): a depot taking rare and better, whose only room
   -- is 20 in a part-filled rare stack, sends no freighter for a provider's legendary (it would load
   -- nothing, over and over, or bring what has to be spilled), and says it is full.
