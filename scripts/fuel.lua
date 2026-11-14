@@ -248,6 +248,8 @@ local function seek_fuel(id, trip)
     request = trip.request,
     item = trip.item,
     from = from,
+    -- Where it last arrived when the search started (see logistics.search_plan).
+    origin = trip.origin,
     candidates = found,
     index = 1,
     trip = id,

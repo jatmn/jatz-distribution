@@ -1052,12 +1052,16 @@ local function drive(trip, destination, sampled, plan)
       trip.plan = { to = destination, hops = plan, step = 1 }
     end
     local current = trip.plan
-    if not (current and current.to.x == destination.x and current.to.y == destination.y) then
+    local surface_index = trip.drone.surface_index
+    if
+      tunnels.on(surface_index)
+      and not (current and current.to.x == destination.x and current.to.y == destination.y)
+    then
       -- From the last place it arrived at (its road network is known there), or where it stands.
       storage.search_count = (storage.search_count or 0) + 1
       local token = storage.search_count
       local hops = tunnels.plan(
-        trip.drone.surface_index,
+        surface_index,
         trip.origin or trip.drone.position,
         destination,
         nil,
@@ -1071,14 +1075,7 @@ local function drive(trip, destination, sampled, plan)
       trip.plan = hops and { to = destination, hops = hops, step = 1 } or nil
       current = trip.plan
     end
-    -- (A search started under ground plans from the mouth it went in at: the tunnel it has come out
-    -- of since is behind it.)
-    local origin = trip.origin
     hop = current and current.hops[current.step]
-    while hop and origin and hop.exit.x == origin.x and hop.exit.y == origin.y do
-      current.step = current.step + 1
-      hop = current.hops[current.step]
-    end
   end
   lifecycle.road(trip, hop)
   logistics.command(trip, {
@@ -1199,6 +1196,8 @@ local function search_providers(depot, from, trip)
     request = depot.entity.unit_number,
     item = depot.request.item,
     from = from,
+    -- Where a rerouted freighter last arrived when its search started (see logistics.search_plan).
+    origin = rerouted and rerouted.origin,
     candidates = found,
     index = 1,
     trip = trip,
@@ -2386,6 +2385,11 @@ function logistics.on_roads_changed(surface_index, added, removed)
   -- Which road networks tunnels join may have changed too: at once if road was removed, which can
   -- split one.
   tunnels.changed(surface_index, removed)
+  -- The roads measured for ways through tunnels, where road was laid or removed (not for a tile
+  -- such as concrete laid elsewhere).
+  if added or removed then
+    tunnels.forget(surface_index, removed)
+  end
   if removed then
     -- Where a freighter last arrived may be on another road network than where it stands now: it
     -- plans from where it stands. First, before anything reads it: the searches restarted below fix
@@ -2464,6 +2468,18 @@ local function depot_removed(id)
   end
 end
 
+-- The way through tunnels a freighter's search found, if it still starts where the freighter is: a
+-- search started under ground plans from the mouth it went in at, and one that has come out at the
+-- other end since plans afresh from there (drive). (A field, not a local: this file has few locals
+-- to spare.)
+function logistics.search_plan(search, trip)
+  local was, now = search.origin, trip.origin
+  if was == now or (was and now and was.x == now.x and was.y == now.y) then
+    return search.best_plan
+  end
+  return nil
+end
+
 -- The search is over: send a freighter to the provider nearest by road (or redirect the freighter
 -- the search was for), if the request still wants the item.
 local function finish_search(depot, search, owner)
@@ -2473,7 +2489,7 @@ local function finish_search(depot, search, owner)
     local fuel = search.best and storage.depots[search.best]
     if fuel and fuel.entity.valid and fueling.has_fuel(fuel) then
       owner.refuel = search.best
-      drive(owner, (loading_tile(fuel.entity)), nil, search.best_plan)
+      drive(owner, (loading_tile(fuel.entity)), nil, logistics.search_plan(search, owner))
     elseif search.best and search.best_rank == 0 then
       -- The one found was emptied or removed meanwhile: look again among the rest.
       fueling.look_for_fuel(search.trip, owner)
@@ -2516,7 +2532,7 @@ local function finish_search(depot, search, owner)
       owner.queued, owner.passed, owner.diverted = logistics.queue_place(), nil, true
       promise(owner)
       owner.leg = search.best_length
-      set_off(search.trip, owner, search.best_length, search.best_plan)
+      set_off(search.trip, owner, search.best_length, logistics.search_plan(search, owner))
     else
       -- The provider found was emptied or removed meanwhile: look again among the rest. (Or the
       -- depot no longer has room for a full load: reroute sends it home.)
@@ -2577,10 +2593,11 @@ local function route_answered(search, length)
       candidate.position,
       length or false,
       depot.entity.force,
-      { id = "search " .. search.token, order = search.token, search = search }
+      { id = "search " .. search.token, order = search.token, search = search, wait = (search.wait or 0) + 1 }
     )
     if plan == false then
-      search.waiting = length or false
+      -- (Each wait its own: a question an earlier one asked, answered busy, says nothing of this.)
+      search.waiting, search.wait = length or false, (search.wait or 0) + 1
       return
     end
     if plan then
@@ -2631,7 +2648,7 @@ function tunnels.resume(waiter, busy)
   if search then
     local owner = owner_of(search)
     local depot = storage.depots[search.request]
-    if not (owner and depot and depot.entity.valid and search.waiting ~= nil) then
+    if not (owner and depot and depot.entity.valid and search.waiting ~= nil and waiter.wait == search.wait) then
       return
     end
     if busy then

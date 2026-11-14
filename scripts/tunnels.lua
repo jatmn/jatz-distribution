@@ -132,8 +132,9 @@ end
 function tunnels.add_all()
   init_storage()
   storage.tunnel_portals, storage.tunnel_surfaces, storage.tunnel_nets = {}, {}, {}
-  -- Roads measured, and questions and waits about them, start afresh too: the searches and plans
-  -- waiting do (logistics, on_configuration_changed; a freighter plans again at its next check).
+  -- Roads measured, and questions and waits about them, start afresh too: the searches waiting do
+  -- (logistics, on_configuration_changed), and a freighter waiting for its plan plans again once
+  -- its wait has lasted SEARCH_TIMEOUT (check_trip).
   storage.tunnel_legs, storage.tunnel_leg_asks, storage.tunnel_waiters = nil, nil, nil
   if not prototypes.entity[tunnels.name] then
     return
@@ -270,13 +271,16 @@ end
 -- Road lengths the pathfinder measured between points (a tunnel's entry, a depot's loading zone,
 -- where a freighter stood), so that a way through tunnels is weighed by the road it really takes,
 -- as the road round it is (the owner, November 14, 2026: "There should never be a penalty for
--- underground road path even multiple in series"). Per surface: { version = its road version when
--- measured (storage.road_versions, counted up by scripts/logistics.lua at every road change),
--- lengths = { [leg] = tiles, or false for no road }, ticks = { [leg] = tick measured }, asked =
--- { [leg] = tick the pathfinder was asked } }, forgotten when its road changes and each length
--- after LEG_MEMORY_TICKS (another mod may change tiles without an event), as scripts/routes.lua's.
--- A question unanswered after ASK_TICKS (lost with a save loaded meanwhile, say) is asked again, as
--- a search's is.
+-- underground road path even multiple in series"). Per surface: { cut = how many times road was
+-- removed there, made = tick, lengths = { [leg] = tiles, or false for no road }, asked = { [leg] =
+-- { tick, id } of the question to the pathfinder } }. Forgotten at once when road is removed there,
+-- and when road is laid (`forget`) at most once a second (FORGET_TICKS), as the networks are: robots
+-- lay road a tile at a time, and forgetting every tile's worth would keep a freighter whose plan
+-- takes a few answers waiting for as long as they work. An answer to a question asked before road
+-- was only laid is still taken (laid road can only make a road shorter); one asked before road was
+-- removed is dropped. All are forgotten after LEG_MEMORY_TICKS in any case (another mod may change
+-- tiles without an event). A question unanswered after ASK_TICKS (lost with a save loaded
+-- meanwhile, say) is asked again, as a search's is.
 local LEG_MEMORY_TICKS = 5 * 60 * 60
 local ASK_TICKS = 10 * 60
 
@@ -286,20 +290,26 @@ tunnels.ask = nil
 -- `busy` when the pathfinder couldn't answer this time.
 tunnels.resume = nil
 
-local function road_version(surface_index)
-  local versions = storage.road_versions
-  return versions and versions[surface_index] or 0
-end
-
 local function legs_of(surface_index)
   storage.tunnel_legs = storage.tunnel_legs or {}
   local legs = storage.tunnel_legs[surface_index]
-  local version = road_version(surface_index)
-  if not legs or legs.version ~= version then
-    legs = { version = version, lengths = {}, ticks = {}, asked = {} }
+  local age = legs and game.tick - legs.made
+  if not legs or age >= LEG_MEMORY_TICKS or (legs.stale and age >= FORGET_TICKS) then
+    legs = { cut = legs and legs.cut or 0, made = game.tick, lengths = {}, asked = legs and legs.asked or {} }
     storage.tunnel_legs[surface_index] = legs
   end
   return legs
+end
+
+-- Road laid or removed on a surface: the roads measured there are forgotten (scripts/logistics.lua,
+-- on_roads_changed).
+function tunnels.forget(surface_index, removed)
+  local legs = storage.tunnel_legs and storage.tunnel_legs[surface_index]
+  if legs and removed then
+    storage.tunnel_legs[surface_index] = { cut = legs.cut + 1, made = game.tick, lengths = {}, asked = {} }
+  elseif legs then
+    legs.stale = true
+  end
 end
 
 -- A leg's key, the same either way along it, by the tiles of its ends.
@@ -314,15 +324,6 @@ end
 local function distance(a, b)
   local dx, dy = a.x - b.x, a.y - b.y
   return math.sqrt(dx * dx + dy * dy)
-end
-
--- What is known of a leg's road: its length, false for no road, or nil if not measured.
-local function measured(legs, leg)
-  local length = legs.lengths[leg]
-  if length ~= nil and game.tick - legs.ticks[leg] >= LEG_MEMORY_TICKS then
-    return nil
-  end
-  return length
 end
 
 -- The way from `from` to `to` on a surface, through any number of tunnels or none, as the shortest
@@ -349,8 +350,7 @@ function tunnels.plan(surface_index, from, to, road, force, waiter)
   end
   local legs = legs_of(surface_index)
   if road ~= nil then
-    local leg = leg_key(from, to)
-    legs.lengths[leg], legs.ticks[leg] = road, game.tick
+    legs.lengths[leg_key(from, to)] = road
   end
   -- States: 1 is at `from`, 2 at `to`; 2 + i at portal i's entry, come by road, and 2 + count + i
   -- there, come out of its partner's tunnel. Only `from` and a tunnel's way out go on by road: two
@@ -384,12 +384,15 @@ function tunnels.plan(surface_index, from, to, road, force, waiter)
     if net or current == 1 then
       for state = 2, count + 2 do
         local direct = current == 1 and state == 2 and road
-        if (net and points[state] ~= points[current] and not done[state] and on[state] == net) or direct then
-          local leg = leg_key(points[current], points[state])
-          local length = measured(legs, leg)
-          local known = length ~= nil
+        if (net and state ~= current and not done[state] and on[state] == net) or direct then
+          local a, b = points[current], points[state]
+          local leg = leg_key(a, b)
+          local length = legs.lengths[leg]
+          -- Within one tile (a freighter just out of a tunnel, at its mouth), the straight line is
+          -- the road.
+          local known = length ~= nil or (math.floor(a.x) == math.floor(b.x) and math.floor(a.y) == math.floor(b.y))
           if length == nil then
-            length = distance(points[current], points[state])
+            length = distance(a, b)
           end
           if length then
             local cost = shortest + length
@@ -438,11 +441,15 @@ function tunnels.plan(surface_index, from, to, road, force, waiter)
   storage.tunnel_waiters[surface_index] = waiting
   for _, leg in ipairs(unknown) do
     local asked = legs.asked[leg.leg]
-    if not asked or game.tick - asked >= ASK_TICKS then
-      legs.asked[leg.leg] = game.tick
+    if not asked or game.tick - asked.tick >= ASK_TICKS then
       storage.tunnel_leg_asks = storage.tunnel_leg_asks or {}
-      storage.tunnel_leg_asks[tunnels.ask(surface, force, leg.from, leg.to)] =
-        { surface_index = surface_index, leg = leg.leg, from = leg.from, version = legs.version }
+      if asked then
+        -- Its answer won't count now: the question is asked again.
+        storage.tunnel_leg_asks[asked.id] = nil
+      end
+      local id = tunnels.ask(surface, force, leg.from, leg.to)
+      legs.asked[leg.leg] = { tick = game.tick, id = id }
+      storage.tunnel_leg_asks[id] = { surface_index = surface_index, leg = leg.leg, from = leg.from, cut = legs.cut }
     end
     waiting[leg.leg] = waiting[leg.leg] or {}
     waiting[leg.leg][waiter.id] = waiter
@@ -460,10 +467,10 @@ function tunnels.answered(id, length, busy)
   end
   asks[id] = nil
   local legs = storage.tunnel_legs and storage.tunnel_legs[ask.surface_index]
-  if legs and legs.version == ask.version then
+  if legs and legs.cut == ask.cut then
     legs.asked[ask.leg] = nil
     if not busy then
-      legs.lengths[ask.leg], legs.ticks[ask.leg] = length or false, game.tick
+      legs.lengths[ask.leg] = length or false
     end
   end
   local waiting = storage.tunnel_waiters and storage.tunnel_waiters[ask.surface_index]

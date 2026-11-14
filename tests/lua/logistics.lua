@@ -5722,6 +5722,70 @@ do -- A freighter waiting for its roads to be measured, the pathfinder busy: it 
   restore()
 end
 
+do -- Rerouted under ground to a provider back on the side it went in at: back through the tunnel.
+  local logistics = reset()
+  local request, provider = tunnelled(logistics, true)
+  local other = entity("jatz-provider-depot", 10.5, 0.5)
+  stocked(other, "a", 20)
+  logistics.add(other)
+  -- The east provider first: the west one waits out a cooldown.
+  storage.depots[request.unit_number].cooldowns[other.unit_number] = game.tick + 100000
+  logistics.on_tick()
+  answer(logistics, 1, "none")
+  local trip = trip_of(request)
+  storage.depots[request.unit_number].cooldowns[other.unit_number] = nil
+  trip.drone.position = { x = 20.5, y = 0.5 }
+  arrive(logistics, trip)
+  provider.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = provider.unit_number })
+  check(
+    "setup: a reroute under ground searches from the west mouth",
+    trip.search and requests[#requests].start.x == 20.5
+  )
+  arrive(logistics, trip)
+  check("setup: out at the east mouth", trip.drone.position.x == 30.5)
+  answer(logistics, #requests, "route")
+  local drive = trip.drone.commands[#trip.drone.commands]
+  check(
+    "found from the west mouth, it plans afresh from the east one: back through the tunnel",
+    trip.provider == other.unit_number and trip.tunnel and drive.destination.x == 30.5
+  )
+end
+
+-- A freighter waits for its roads while tiles are laid elsewhere between each question and its
+-- answer (`laid`: road, or another tile).
+local function laid_meanwhile(laid)
+  local logistics = reset()
+  local request, _, _, _, restore = joined_round(logistics, "round")
+  local trip = trip_of(request)
+  trip.drone.position = { x = 10.5, y = 0.5 }
+  logistics.on_roads_changed(1, false, true)
+  local waited = trip.planning ~= nil
+  for _ = 1, 10 do
+    local ids = {}
+    for id in pairs(storage.tunnel_leg_asks or {}) do
+      ids[#ids + 1] = id
+    end
+    if #ids == 0 then
+      break
+    end
+    table.sort(ids)
+    game.tick = game.tick + 2
+    logistics.on_roads_changed(1, laid == "road", false)
+    for _, id in ipairs(ids) do
+      logistics.on_script_path_request_finished({ id = id, path = leg_road(requests[id].start, requests[id].goal) })
+    end
+  end
+  local drive = trip.drone.commands[#trip.drone.commands]
+  restore()
+  return waited and trip.planning == nil and trip.tunnel ~= nil and drive.destination.x == 20.5
+end
+
+do -- Tiles laid elsewhere while a freighter waits for its roads to be measured: it goes on all the same.
+  check("road laid elsewhere meanwhile, it goes on through the tunnel", laid_meanwhile("road"))
+  check("concrete laid elsewhere meanwhile, it goes on through the tunnel", laid_meanwhile("concrete"))
+end
+
 do -- Just after road joins two networks, their tunnel is no longer than the road the pathfinder found.
   local logistics = reset()
   local whole = surface.get_connected_tiles
