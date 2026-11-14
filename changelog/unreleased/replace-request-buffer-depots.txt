@@ -1,0 +1,2 @@
+  Features:
+    - Request and buffer depots can replace each other in place, like chests: place a buffer depot over a request depot, or a request depot over a buffer depot, by hand, or let robots do it from a ghost or a blueprint placed over it. The depot keeps what is in its chest, its request and settings, and its freighters, including any out on trips.

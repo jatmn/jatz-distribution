@@ -132,6 +132,8 @@ Request depots take from buffer depots too. The **Request from buffer depots** c
 - **Ticked:** buffer depots first, even when a provider is nearer. It goes to providers only for what no buffer can supply.
 - **Unticked** (the default): provider depots first, however near a buffer is. It falls back to buffer depots only for what no provider can supply: when no provider has the item, none can be reached by road, or what they have is already promised to other freighters.
 
+Request and buffer depots replace each other in place, as chests do. Place a buffer depot over a request depot, or a request depot over a buffer depot, and it swaps without being emptied first. Robots do the same from a ghost placed over it, or from a blueprint pasted over it with super-forced building (Ctrl+Shift+click). The depot keeps what is in its chest, its request and settings, and its freighters, including any out on trips. It does its new job at once: a buffer depot supplies request depots, a request depot supplies no one. Freighters already on their way finish their trips. Logistic robots are kept out of a new buffer depot until you let them in, as with any new one.
+
 ## Priority
 
 Provider and buffer depots have a **priority** slider from 1 to 10 (5 to start with) in the panel beside their window.

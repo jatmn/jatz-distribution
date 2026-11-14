@@ -2413,6 +2413,53 @@ do -- A depot replaced by a new entity of itself where it stood (scripts/legacy-
   check("and goes back into its slot", logistics.freighter_counts(new_buffer) == 2)
 end
 
+do -- A request depot replaced by a buffer depot (scripts/depot-swap.lua) keeps its request and
+  -- freighters and is a buffer depot: request depots fetch from it. Replaced by a request depot
+  -- again, it supplies no one.
+  local logistics = reset()
+  local other = entity("jatz-request-depot", 10.5, 0.5)
+  local swapped = entity("jatz-request-depot", 0.5, 0.5, { a = 20 })
+  logistics.add(other)
+  logistics.add(swapped)
+  assert(logistics.set_request(other, "a", 10))
+  assert(logistics.put_freighters(other, stack("jatz-quinityn-freighter", 1)) == 1)
+  assert(logistics.set_request(swapped, "b", 5))
+  assert(logistics.put_freighters(swapped, stack("jatz-quinityn-freighter", 2)) == 2)
+  local buffer = entity("jatz-buffer-depot", 0.5, 0.5)
+  buffer.get_inventory, buffer.chest = swapped.get_inventory, swapped.chest
+  swapped.valid = false
+  logistics.replaced(swapped.unit_number, buffer)
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = swapped.unit_number })
+  check(
+    "a request depot replaced by a buffer depot is a buffer depot with its request and freighters",
+    storage.depots[buffer.unit_number].role == "buffer"
+      and logistics.get_request(buffer).item == "b"
+      and logistics.freighter_counts(buffer) == 2
+  )
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(other)[1]
+  check("a request depot fetches from it", trip and trip.provider == buffer.unit_number)
+
+  logistics = reset()
+  other = entity("jatz-request-depot", 10.5, 0.5)
+  swapped = entity("jatz-buffer-depot", 0.5, 0.5, { a = 20 })
+  logistics.add(other)
+  logistics.add(swapped)
+  assert(logistics.set_request(other, "a", 10))
+  assert(logistics.put_freighters(other, stack("jatz-quinityn-freighter", 1)) == 1)
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  request.get_inventory, request.chest = swapped.get_inventory, swapped.chest
+  swapped.valid = false
+  logistics.replaced(swapped.unit_number, request)
+  check(
+    "a buffer depot replaced by a request depot is a request depot",
+    storage.depots[request.unit_number].role == "request"
+  )
+  logistics.on_tick()
+  check("which no request depot fetches from", #requests == 0 and next(storage.depots[other.unit_number].trips) == nil)
+end
+
 do -- Loading fills every cargo stack it can, though stacks of one item differ in their data: a
   -- damaged stack doesn't merge into a stack at full health, and a later one at full health does.
   local logistics = reset()

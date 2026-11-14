@@ -231,7 +231,8 @@ end
 
 -- Depots by where they stand and what they do: storage.depot_index[surface index][role] =
 -- { [unit_number] = true }, so finding the providers or Fuel depots for a depot looks only at
--- those on its surface rather than at every depot. Depots never change surface or role. Kept up to
+-- those on its surface rather than at every depot. Depots never change surface, and change role
+-- only when a request and a buffer depot replace each other (logistics.replaced). Kept up to
 -- date as depots are added and removed, and built afresh when missing (a save from before it, or
 -- after add_all). Not by force: a script can change an entity's force without an event (and
 -- merging forces moves them), so the force is checked as the depots are looked at.
@@ -2850,9 +2851,11 @@ end
 
 -- A depot the game knew as `old_id` is now `entity`, a new entity of the same depot standing where
 -- it stood (scripts/legacy-depots.lua: an item provider or buffer depot from before they were
--- logistic containers). Everything kept by its unit number moves to the new one, so its settings,
+-- logistic containers; scripts/depot-swap.lua: a request depot replaced by a buffer depot, or the
+-- other way round). Everything kept by its unit number moves to the new one, so its settings,
 -- freighters, trips and the promises made to it carry on. Called before add_all, which starts
--- searches afresh and files promises again.
+-- searches afresh and files promises again, or before the build's on_depot_changed, which starts
+-- searches afresh.
 function logistics.replaced(old_id, entity)
   local depots = storage.depots
   local depot = depots and depots[old_id]
@@ -2862,6 +2865,9 @@ function logistics.replaced(old_id, entity)
   end
   index_depot(old_id, depot, false)
   depots[old_id], depots[id] = nil, depot
+  -- It does what the new one does: a buffer depot supplies request depots and fetches from
+  -- providers only, a request depot supplies no one. Freighters already sent finish their trips.
+  depot.role = logistics.depots[entity.name] or depot.role
   index_depot(id, depot, true)
   depot.entity = entity
   -- The old entity's inventory, and its custom status, which the new one doesn't show yet.

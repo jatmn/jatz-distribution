@@ -439,6 +439,10 @@ local function depot(x)
     to_be_deconstructed = function()
       return false
     end,
+    -- Not marked for upgrade (scripts/depot-swap.lua asks a depot mined by robots).
+    to_be_upgraded = function()
+      return false
+    end,
     get_inventory = function()
       -- An empty chest of 48 stacks.
       local chest = {
