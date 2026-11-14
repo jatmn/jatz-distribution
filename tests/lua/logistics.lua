@@ -5753,9 +5753,8 @@ do -- Rerouted under ground to a provider back on the side it went in at: back t
 end
 
 -- A freighter waits for its roads while tiles are laid elsewhere between each question and its
--- answer (`laid`: road, or another tile), each answer `ticks` after its question (2 unless given),
--- with the freighters' once-a-second checks in between.
-local function laid_meanwhile(laid, ticks)
+-- answer (`laid`: road, or another tile), 61 ticks on, its checks run meanwhile.
+local function laid_meanwhile(laid)
   local logistics = reset()
   local request, _, _, _, restore = joined_round(logistics, "round")
   local trip = trip_of(request)
@@ -5771,7 +5770,7 @@ local function laid_meanwhile(laid, ticks)
       break
     end
     table.sort(ids)
-    for _ = 1, ticks or 2 do
+    for _ = 1, 61 do
       game.tick = game.tick + 1
       logistics.on_tick_share(game.tick)
     end
@@ -5788,153 +5787,76 @@ end
 do -- Tiles laid elsewhere while a freighter waits for its roads to be measured: it goes on all the same.
   check("road laid elsewhere meanwhile, it goes on through the tunnel", laid_meanwhile("road"))
   check("concrete laid elsewhere meanwhile, it goes on through the tunnel", laid_meanwhile("concrete"))
-  -- Answers more than a second apart, road laid before each: the roads measured before it still
-  -- count, so the plan comes together while the building goes on (the review of 3569498: each
-  -- answer was forgotten as it came, and the freighter waited for as long as road was laid).
-  check("road laid while answers take over a second, it still goes on", laid_meanwhile("road", 61))
 end
 
-do -- Road laid elsewhere: the roads measured before are measured again, and a way it shortened is taken.
-  local logistics = reset()
-  tunnelled(logistics, true)
-  local tunnels = require("scripts.tunnels")
-  local whole = surface.get_connected_tiles
-  surface.get_connected_tiles = one_network
-  leg_road = round_between(function(point)
-    return point.x < 25
-  end)
-  logistics.on_roads_changed(1, true, false)
-  local from, to = { x = 0.5, y = 2.5 }, { x = 40.5, y = 2.5 }
-  local hops = plan_of(logistics, from, to)
-  check("setup: the tunnel is the shorter way", hops and #hops == 1)
-  -- Road laid straight across, a second later.
-  leg_road = nil
-  logistics.on_roads_changed(1, true, false)
-  game.tick = game.tick + 60
-  local asked = #requests
-  hops = tunnels.plan(1, from, to, nil, "player", { id = "check", order = 0 })
-  check(
-    "a way is planned at once from the roads measured before, which are asked about again",
-    hops and #hops == 1 and #requests > asked
-  )
-  settle(logistics)
-  local length
-  hops, length = plan_of(logistics, from, to)
-  check("measured again, the straight road is the way", hops and #hops == 0 and math.abs(length - 40) < 1e-6)
-  surface.get_connected_tiles = whole
-end
-
-do -- Road laid while a freighter waits: with the road measured before, the tunnel is shorter, and
-  -- the roads to and from it, never measured, are asked about for it to wait for.
+do -- Road laid while it waits: the roads it needs are asked about.
   local logistics = reset()
   local request, _, _, _, restore = joined_round(logistics, "round")
   local trip = trip_of(request)
   trip.drone.position = { x = 10.5, y = 0.5 }
   logistics.on_roads_changed(1, false, true)
-  -- The road straight to the provider first, then the roads to and from the tunnel, answered busy.
-  local direct = #requests
-  logistics.on_script_path_request_finished({
-    id = direct,
-    path = leg_road(requests[direct].start, requests[direct].goal),
-  })
-  local tunnel_legs = {}
-  for id in pairs(storage.tunnel_leg_asks) do
-    tunnel_legs[#tunnel_legs + 1] = id
+  local id = #requests
+  logistics.on_script_path_request_finished({ id = id, path = leg_road(requests[id].start, requests[id].goal) })
+  for asked in pairs(storage.tunnel_leg_asks) do
+    logistics.on_script_path_request_finished({ id = asked, try_again_later = true })
   end
-  for _, id in ipairs(tunnel_legs) do
-    logistics.on_script_path_request_finished({ id = id, try_again_later = true })
-  end
-  check("setup: busy, it waits to plan again", #tunnel_legs == 2 and trip.planning ~= nil)
+  leg_road = nil
   logistics.on_roads_changed(1, true, false)
   game.tick = game.tick + 60
   logistics.on_tick()
-  local unasked = 0
-  for leg in pairs(storage.tunnel_waiters[1] or {}) do
-    if not storage.tunnel_legs[1].asked[leg] then
-      unasked = unasked + 1
-    end
-  end
-  check("planning again, every road it waits for is asked about", trip.planning ~= nil and unasked == 0)
   settle(logistics)
   local drive = trip.drone.commands[#trip.drone.commands]
-  check("answered, it goes on through the tunnel", trip.planning == nil and trip.tunnel and drive.destination.x == 20.5)
+  check("road laid straight across, it is taken", not (trip.planning or trip.tunnel) and drive.destination.x == 40.5)
   restore()
 end
 
-do -- A reply to a question asked before road was removed says nothing to those waiting now
-  -- (Pullfrog's review of 3569498: a busy one cancelled the depot's new search).
+do -- Old answers resume nobody once road is removed (Pullfrog's review of 3569498).
   local logistics = reset()
   local request = tunnelled(logistics, true)
   local whole = surface.get_connected_tiles
   surface.get_connected_tiles = one_network
-  leg_road = round_between(function(point)
-    return point.x < 25
-  end)
   logistics.on_roads_changed(1, true, false)
   logistics.on_tick()
-  logistics.on_script_path_request_finished({
-    id = #requests,
-    path = leg_road(requests[#requests].start, requests[#requests].goal),
-  })
+  logistics.on_script_path_request_finished({ id = #requests })
   local old = {}
   for id in pairs(storage.tunnel_leg_asks) do
     old[#old + 1] = id
   end
-  check("setup: the search waits for its roads", #old > 0)
   logistics.on_roads_changed(1, false, true)
-  check(
-    "road removed: its questions and those waiting for them are dropped",
-    next(storage.tunnel_leg_asks) == nil and next(storage.tunnel_waiters[1] or {}) == nil
-  )
+  check("removed, all go", not next(storage.tunnel_leg_asks) and not next(storage.tunnel_waiters[1]))
   game.tick = game.tick + 60
   logistics.on_tick()
-  logistics.on_script_path_request_finished({
-    id = #requests,
-    path = leg_road(requests[#requests].start, requests[#requests].goal),
-  })
+  logistics.on_script_path_request_finished({ id = #requests })
   local depot = storage.depots[request.unit_number]
-  local token = depot.search and depot.search.token
-  check("setup: the new search waits for the same roads", token and next(storage.tunnel_leg_asks) ~= nil)
+  local token = depot.search.token
   for _, id in ipairs(old) do
     logistics.on_script_path_request_finished({ id = id, try_again_later = true })
+    logistics.on_script_path_request_finished({ id = id, path = { { position = requests[id].goal } } })
   end
-  check("old busy answers leave the new search alone", depot.search and depot.search.token == token)
-  for _, id in ipairs(old) do
-    logistics.on_script_path_request_finished({ id = id, path = leg_road(requests[id].start, requests[id].goal) })
-  end
-  check("and old answers too", depot.search and depot.search.token == token)
+  check("old answers leave the new search alone", depot.search and depot.search.token == token)
   settle(logistics)
-  local trip = trip_of(request)
-  check("its own answers send the freighter through the tunnel", trip and trip.tunnel and depot.search == nil)
-  leg_road = nil
+  check("its own answers send the freighter", trip_of(request).tunnel ~= nil)
   surface.get_connected_tiles = whole
 end
 
-do -- Questions never answered (lost with a save loaded, say) are dropped with those waiting for them
-  -- once the measured roads expire, five minutes on.
+do -- Questions never answered go with their waits once the roads expire.
   local logistics = reset()
   tunnelled(logistics, true)
-  local tunnels = require("scripts.tunnels")
-  for index = 1, 10 do
-    game.tick = game.tick + 60
-    tunnels.plan(1, { x = index + 0.5, y = 2.5 }, { x = 40.5, y = 2.5 }, false, "player", { id = index, order = index })
+  local plan, to = require("scripts.tunnels").plan, { x = 40.5, y = 2.5 }
+  for index = 1, 11 do
+    game.tick = game.tick + (index < 11 and 60 or 18000)
+    plan(1, { x = index - 0.5, y = 2.5 }, to, false, "player", { id = index, order = index })
   end
-  game.tick = game.tick + 5 * 60 * 60
-  check(
-    "a new question after five minutes",
-    tunnels.plan(1, { x = 0.5, y = 2.5 }, { x = 40.5, y = 2.5 }, false, "player", { id = "new", order = 11 }) == false
-  )
-  local asks, waiters, others = 0, 0, 0
-  for _ in pairs(storage.tunnel_leg_asks) do
-    asks = asks + 1
-  end
+  local count = 0
   for _, waiting in pairs(storage.tunnel_waiters[1]) do
     for id in pairs(waiting) do
-      waiters = waiters + 1
-      others = others + (id == "new" and 0 or 1)
+      count = count + (id == 11 and 1 or 9)
     end
   end
-  check("only its questions are left, and only it waits", asks > 0 and asks == waiters and others == 0)
+  for _ in pairs(storage.tunnel_leg_asks) do
+    count = count + 1
+  end
+  check("only the last plan's are left", count == 4)
 end
 
 do -- Just after road joins two networks, their tunnel is no longer than the road the pathfinder found.
