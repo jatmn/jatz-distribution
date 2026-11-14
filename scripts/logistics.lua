@@ -1,7 +1,8 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- Deliveries between provider and request depots.
 --
--- A request depot asks to keep at least `count` of one item (normal quality), and holds the
+-- A request depot asks to keep at least `count` of one item (normal quality, unless it asks for
+-- another or several: scripts/quality.lua), and holds the
 -- freighters that fetch it: up to 100 of them, in its freighter slot. Once a second, while what it
 -- still needs (less what freighters are already bringing) is more than nothing, it sends one more
 -- freighter, so freighters leave one after another rather than all at once. Each goes from the
@@ -76,6 +77,7 @@ local transfer = require("scripts.cargo")
 local switching = require("scripts.circuit-switch")
 local ledger = require("scripts.promises")
 local lifecycle = require("scripts.trip-state")
+local quality = require("scripts.quality")
 
 local logistics = {}
 
@@ -178,8 +180,8 @@ local LOADING_TICKS = 60
 -- A search for the nearest provider by road that hasn't answered in this long (a save loaded
 -- mid-search, say) is started again.
 local SEARCH_TIMEOUT = 10 * 60
--- Requests are for normal-quality items.
-local QUALITY = "normal"
+-- Requests are for normal-quality items unless they ask for others (scripts/quality.lua).
+local QUALITY = quality.normal
 -- Pollution each freighter out makes a second: Transport Drones' default for its drones.
 local POLLUTION_PER_SECOND = 0.005
 -- A freighter whose tank is dry crawls at this share of its speed.
@@ -341,12 +343,37 @@ local function fuel_tank(entity)
   if not (tank and tank.valid) then
     tank = stray_tank(entity)
   end
+  if tank and tank.valid and not depot.tank_graded then
+    -- Its tank is the depot's quality, so a better depot holds more fuel too, as its chest does
+    -- (the game makes a better storage tank hold more). Looked at once (and again when the depot is
+    -- replaced by one of another quality, logistics.replaced), not at every check: reading a
+    -- quality makes an object for Lua to collect.
+    depot.tank_graded = true
+    if tank.quality.name ~= entity.quality.name then
+      local held = tank.get_fluid(1)
+      tank.destroy()
+      tank = entity.surface.create_entity({
+        name = FUEL_TANK,
+        position = entity.position,
+        direction = entity.direction,
+        force = entity.force,
+        quality = entity.quality,
+        create_build_effect_smoke = false,
+      })
+      if tank and held then
+        -- (Into a smaller tank, what doesn't fit is lost, as with a storage tank.)
+        tank.set_fluid(1, held)
+      end
+    end
+  end
   if not (tank and tank.valid) then
+    depot.tank_graded = true
     tank = entity.surface.create_entity({
       name = FUEL_TANK,
       position = entity.position,
       direction = entity.direction,
       force = entity.force,
+      quality = entity.quality,
       create_build_effect_smoke = false,
     })
   end
@@ -514,19 +541,72 @@ local function a_freighter(depot)
   end
 end
 
--- The fuel of the freighters parked in a requesting depot's slot whose tank isn't exactly full, in
--- joules, lowest first: less than a tank, or more (a fuel item worth more than a tank goes in
--- whole); the others have a full tank (new freighters come with one). Freighters taken out of the
--- slot (by hand, by robots, or with the depot) take the full ones first, then the fullest entries.
-local function parked_fuel(depot)
-  local parked = depot.fuel or {}
-  depot.fuel = parked
-  table.sort(parked)
-  local count = trucks_of(depot).get_item_count()
-  while #parked > count do
-    table.remove(parked)
+-- The fuel of the freighters of quality `grade` (nil: normal) parked in a requesting depot's slot
+-- whose tank isn't exactly full, in joules, lowest first: less than their tank, or more (a fuel item
+-- worth more than a tank goes in whole); the others have a full tank (new freighters come with
+-- one). A better freighter's tank holds more (scripts/quality.lua), so each quality keeps its own
+-- list: normal ones `depot.fuel` (as before quality), others `depot.graded_fuel[quality]`.
+-- Freighters taken out of the slot (by hand, by robots, or with the depot) take the full ones first,
+-- then the fullest entries: every list is trimmed to its quality's freighters in the slot.
+local function parked_fuel(depot, grade)
+  local slot = trucks_of(depot)
+  local function trimmed(parked, count)
+    table.sort(parked)
+    while #parked > count do
+      table.remove(parked)
+    end
+    return parked
   end
+  depot.fuel = trimmed(depot.fuel or {}, slot.get_item_count(FREIGHTER))
+  local graded = depot.graded_fuel
+  for name, parked in pairs(graded or {}) do
+    if #trimmed(parked, slot.get_item_count(quality.id(quality.key(FREIGHTER, name)))) == 0 and name ~= grade then
+      graded[name] = nil
+    end
+  end
+  if graded and next(graded) == nil then
+    depot.graded_fuel = nil
+  end
+  if grade == nil or grade == QUALITY then
+    return depot.fuel
+  end
+  depot.graded_fuel = depot.graded_fuel or {}
+  local parked = depot.graded_fuel[grade] or {}
+  depot.graded_fuel[grade] = parked
   return parked
+end
+
+-- The quality of the freighter a requesting depot sends next: the highest in its slot (the owner's
+-- choice, November 13, 2026), nil for normal (or none in the slot); with `stack`, also the slot's
+-- first stack of it (nil for none). Read with one count by quality, not stack by stack: reading a
+-- stack's quality makes an object for Lua to collect, and dispatch asks every second. (A field, not
+-- a local: this file has few locals to spare.)
+function logistics.next_freighter(depot, stack)
+  if not (stack or quality.available()) then
+    return nil
+  end
+  local slot = trucks_of(depot)
+  if not quality.available() then
+    -- Normal freighters only (or of a quality whose mod is gone, which then counts as normal).
+    for index = 1, #slot do
+      if slot[index].valid_for_read then
+        return nil, slot[index]
+      end
+    end
+    return nil, nil
+  end
+  local best, best_level
+  for grade in pairs(slot.get_item_quality_counts(FREIGHTER)) do
+    local level = quality.level(grade)
+    if not best or level > best_level or (level == best_level and grade < best) then
+      best, best_level = grade, level
+    end
+  end
+  local grade = best ~= QUALITY and best or nil
+  if not stack then
+    return grade
+  end
+  return grade, best and slot.find_item_stack(quality.id(quality.key(FREIGHTER, best))) or nil
 end
 
 -- The ids of a request depot's trips. Saves from before depots sent several freighters kept one.
@@ -586,6 +666,8 @@ local function repaint(id, trip, position, orientation)
     position = position or old.position,
     force = old.force,
     direction = math.floor(orientation * 16 + 0.5) % 16,
+    -- The same freighter: its quality (and so its health) too (scripts/quality.lua).
+    quality = trip.freighter_quality,
   })
   if not drone then
     return false
@@ -629,10 +711,14 @@ local function request_depot(entity)
   return depot and REQUESTING[depot.role] and depot or nil
 end
 
--- The request of a request depot: { item = name, count = n }, or nil.
+-- The request of a request depot: { item = name, count = n, quality =, comparator = }, or nil. The
+-- quality is there only when not normal, the comparator only when not "=" ("any" for any quality,
+-- with no quality): scripts/quality.lua.
 function logistics.get_request(entity)
   local depot = request_depot(entity)
-  return depot and depot.request and { item = depot.request.item, count = depot.request.count }
+  local request = depot and depot.request
+  return request
+    and { item = request.item, count = request.count, quality = request.quality, comparator = request.comparator }
 end
 
 -- Drop the searches under way for a requesting depot, which were for the old set or order of depots
@@ -742,8 +828,12 @@ end
 -- for anything but a request depot, an item that doesn't exist, or a count that isn't a number.
 -- A request is at most what the depot holds: its tank's size for a liquid depot, and for an item
 -- depot as many of the item as fill every slot of its chest (slots are a startup setting, 48 by
--- default: 4,800 of an item that stacks to 100, 480 of one that stacks to 10).
-function logistics.set_request(entity, item, count)
+-- default: 4,800 of an item that stacks to 100, 480 of one that stacks to 10; more for a better
+-- depot, whose chest the game makes bigger). An item request can name its quality (`grade`, a
+-- quality's name; normal if nil) and how other qualities compare with it (`comparator`: "=", the
+-- default, "≠", ">", "<", "≥", "≤", or "any" for any quality: scripts/quality.lua); a fluid has
+-- neither. False, too, for a quality the game doesn't have or another comparator.
+function logistics.set_request(entity, item, count, grade, comparator)
   local depot = request_depot(entity)
   if not depot then
     return false
@@ -757,30 +847,68 @@ function logistics.set_request(entity, item, count)
     if type(item) ~= "string" or not kinds[item] or not count then
       return false
     end
+    local ok
+    ok, grade, comparator = quality.normalize(grade, comparator)
+    if not ok or (depot.fluid and (grade or comparator)) then
+      return false
+    end
     count = math.max(0, math.floor(count))
     if depot.fluid then
-      -- The tank's size, not a constant: liquid buffer sizes are a startup setting.
-      count = math.min(count, depot.entity.get_fluid_capacity(1))
+      -- The tank's size, not a constant: liquid buffer sizes are a startup setting, and a better
+      -- tank holds more (the game's 1.6 times 25,000 is a hair over 40,000, so whole units).
+      count = math.min(count, math.floor(depot.entity.get_fluid_capacity(1)))
     else
       -- The chest's slots, not a constant, each a stack of this item.
       count = math.min(count, #inventory(depot.entity) * transfer.stack_size_of(item))
     end
-    depot.request = { item = item, count = count }
+    depot.request = { item = item, count = count, quality = grade, comparator = comparator }
   end
   depot.cooldowns = {}
   depot.retry_at = 0
   -- A search under way was for the old request.
   cancel_search(depot)
-  -- Freighters on their way out for another item will load nothing (arrived_at_provider checks
-  -- the request), so their promises no longer hold that provider's stock.
+  -- Freighters on their way out for another item (or for qualities it no longer takes) will load
+  -- nothing of it (arrived_at_provider checks the request), so their promises no longer hold that
+  -- provider's stock; what they promised of qualities it still takes stays promised.
+  local request = depot.request
   for id in pairs(trips_of(depot)) do
     local trip = storage.trips[id]
-    if trip and trip.state == TO_PROVIDER and trip.item ~= (depot.request and depot.request.item) then
-      trip.planned = 0
-      promise(trip)
+    if trip and trip.state == TO_PROVIDER then
+      if trip.item ~= (request and request.item) then
+        trip.planned, trip.mix = 0, nil
+        promise(trip)
+      elseif not trip.fluid and (trip.mix or not quality.plain(request)) then
+        local kept = {}
+        for grade_, amount in pairs(trip.mix or { [QUALITY] = trip.planned or 0 }) do
+          if quality.takes(request, grade_) then
+            kept[quality.key(trip.item, grade_)] = amount
+          end
+        end
+        logistics.set_parts(trip, kept)
+        promise(trip)
+      end
     end
   end
   return true
+end
+
+-- Set what a trip driving out plans to load from amounts by key (scripts/quality.lua): its
+-- `planned` total and `mix` (quality -> amount; none when it is all normal, as before quality).
+-- The caller files its promise.
+function logistics.set_parts(trip, parts)
+  local total, mix, graded = 0, {}, false
+  for key, amount in pairs(parts) do
+    if amount > 0 then
+      total = total + amount
+      local _, grade = quality.split(key)
+      mix[grade] = amount
+      graded = graded or grade ~= QUALITY
+    end
+  end
+  trip.planned, trip.mix = total, (graded and not trip.fluid) and mix or nil
+  if trip.mix then
+    trip.graded = true
+  end
 end
 
 function logistics.get_status(entity)
@@ -791,7 +919,8 @@ end
 -- How many of the requested item a request depot still wants, and how many of those it has room
 -- for, counting what its freighters (except trip `except`) are already bringing. Requests above
 -- what the depot can hold are filled as far as it can hold. Fourth, when it wants nothing more: by
--- how much what it holds and what is coming exceed its request (logistics.release_excess).
+-- how much what it holds and what is coming exceed its request (logistics.release_excess). Fifth,
+-- for a request taking several qualities, where they fit (see logistics.graded_need).
 local function need(depot, except)
   local request = depot.request
   if not request or request.count <= 0 or not exists(depot.fluid, request.item) then
@@ -816,6 +945,9 @@ local function need(depot, except)
   end
   -- (An item's name alone means normal quality.)
   local chest, id = inventory(depot.entity), request.item
+  if request.quality ~= nil or request.comparator ~= nil then
+    return logistics.graded_need(depot, chest, request, except)
+  end
   local coming = ledger.committed(depot, except)
   local wanted = request.count - chest.get_item_count(id) - coming
   if wanted <= 0 then
@@ -824,21 +956,86 @@ local function need(depot, except)
   return wanted, math.max(0, math.min(wanted, chest.get_insertable_count(id) - coming))
 end
 
+-- need() for an item request that isn't for normal quality alone (scripts/quality.lua): what the
+-- depot holds and has coming in the qualities it takes. Room for one quality is the game's
+-- insertable count. Room for several is shared: each quality's part-filled stacks take only that
+-- quality, and empty stacks take any one each. So it is worked out as the game would fill the
+-- chest: the empty stacks (the insertable count of a quality none of its stacks has, which the
+-- game's hidden "quality-unknown" always is), each quality's part-filled room, and what is already
+-- coming of each quality filling its own room first, then empty stacks. Never more than fits, so a
+-- freighter never brings what has to be left on the ground. Fifth: the room left, by quality
+-- (`partial`) and in empty stacks (`empty`, of `size`), for a freighter loading several qualities
+-- (arrived_at_provider). (A field, not a local: this file has few locals to spare.)
+function logistics.graded_need(depot, chest, request, except)
+  local item = request.item
+  local coming = ledger.committed(depot, except)
+  local wanted = request.count - chest.get_item_count_filtered(quality.item_filter(request)) - coming
+  if wanted <= 0 then
+    return 0, 0, nil, -wanted
+  end
+  local grades = quality.matching(request)
+  if #grades == 1 then
+    local room = chest.get_insertable_count(quality.id(quality.key(item, grades[1]))) - coming
+    return wanted, math.max(0, math.min(wanted, room))
+  end
+  local size = transfer.stack_size_of(item)
+  local blank = quality.absent(chest.get_item_quality_counts(item))
+  local stacks_free = blank and math.floor(chest.get_insertable_count(quality.id(quality.key(item, blank))) / size) or 0
+  local empty, partial = stacks_free, {}
+  for _, grade in ipairs(grades) do
+    local key = quality.key(item, grade)
+    local free = math.max(0, chest.get_insertable_count(quality.id(key)) - stacks_free * size)
+    local brought = ledger.committed(depot, except, key)
+    local into = math.min(brought, free)
+    free, brought = free - into, brought - into
+    if brought > 0 then
+      -- The rest takes empty stacks, as far as there are any: a part-filled one among them leaves
+      -- room, but stacks that aren't there leave none (nothing more of it fits; what is coming
+      -- already doesn't).
+      local stacks = math.ceil(brought / size)
+      local got = math.min(stacks, math.max(empty, 0))
+      empty = empty - stacks
+      free = got < stacks and 0 or free + stacks * size - brought
+    end
+    partial[grade] = free
+  end
+  empty = math.max(0, empty)
+  local room = empty * size
+  for _, free in pairs(partial) do
+    room = room + free
+  end
+  return wanted, math.max(0, math.min(wanted, room)), nil, nil, { empty = empty, partial = partial, size = size }
+end
+
 -- What a request or buffer depot still needs of what it requests: its request, less what it holds
 -- and what freighters are bringing (0 with nothing requested). The road network monitor reads it.
 function logistics.missing(depot)
   return (need(depot))
 end
 
--- Provider and buffer depots that can supply `item` (a fluid, for liquid depots) on a surface, to a
--- force: on that surface, of that force and kind, holding the item unpromised, switched on by their
--- circuit condition, and with road at their loading zone. A list of { id, depot, position }.
+-- Provider and buffer depots that can supply what `request` asks for (an item in the qualities it
+-- takes, or a fluid, for liquid depots) on a surface, to a force: on that surface, of that force
+-- and kind, holding some of it unpromised, switched on by their circuit condition, and with road at
+-- their loading zone. A list of { id, depot, position }.
 -- While a tick's depots are checked (`suppliers_cache` is set: checking them changes no provider's
 -- stock or promises), depots asking for the same share one look at every depot.
 local suppliers_cache
 local SUPPLYING = { "provider", "buffer" }
-local function suppliers(surface_index, force_index, fluid, item)
-  local key = suppliers_cache and table.concat({ surface_index, force_index, fluid and "fluid" or "item", item }, " ")
+local function suppliers(surface_index, force_index, fluid, request)
+  -- (Normal quality alone, the usual request, needs nothing more: "", and one stock to read.)
+  local plain = request.quality == nil and request.comparator == nil
+  local stock_of, of = available, request.item
+  if not plain then
+    stock_of, of = ledger.available_for, request
+  end
+  local key = suppliers_cache
+    and table.concat({
+      surface_index,
+      force_index,
+      fluid and "fluid" or "item",
+      request.item,
+      plain and "" or quality.filter_id(request),
+    }, " ")
   if key and suppliers_cache[key] then
     return suppliers_cache[key]
   end
@@ -854,7 +1051,7 @@ local function suppliers(surface_index, force_index, fluid, item)
         and provider.fluid == fluid
         and candidate.valid
         and candidate.force_index == force_index
-        and available(provider, item) > 0
+        and stock_of(provider, of) > 0
         and enabled(provider, true)
       then
         local position, on_road = loading_tile(candidate)
@@ -885,20 +1082,29 @@ end
 -- request and so waits until it is empty enough to take all of it in one trip, rather than send
 -- freighters to top it up a few at a time, which is the small trip this setting exists to stop.
 -- Players who want topping up leave the setting off.
+--
+-- A freighter of a better quality carries more (scripts/quality.lua): a new freighter is the one the
+-- depot sends next, its best (logistics.next_freighter).
 function logistics.full_load(depot, trip)
   local request = depot.request
   if not request or request.count <= 0 or not (depot.full_loads or depot.fluid) then
     return nil
   end
   local force = depot.entity.force
+  local grade
+  if trip then
+    grade = trip.freighter_quality
+  else
+    grade = logistics.next_freighter(depot)
+  end
   if not depot.full_loads then
-    return math.min(logistics.least_fluid, request.count), research.fluid_capacity_of(force)
+    return math.min(logistics.least_fluid, request.count), research.fluid_capacity_of(force, grade)
   end
   local capacity
   if depot.fluid then
-    capacity = research.fluid_capacity_of(force)
+    capacity = research.fluid_capacity_of(force, grade)
   else
-    local stacks = trip and trip.cargo and #trip.cargo or research.cargo_stacks(force)
+    local stacks = trip and trip.cargo and #trip.cargo or research.cargo_stacks(force, grade)
     capacity = stacks * transfer.stack_size_of(request.item)
   end
   return math.min(capacity, request.count), capacity
@@ -914,18 +1120,28 @@ end
 -- full loads only or a liquid depot: logistics.full_load), only those holding that much unpromised.
 -- `passed` (a unit number) is left out: the provider a rerouted freighter gave up on. Also says
 -- whether one was skipped for cooldown, and whether one was skipped for holding less than `full`.
-local function candidates(depot, from, full, passed)
+-- `carries`: what the freighter holds (logistics.full_load), so for a request taking several
+-- qualities of an item, which fill their own cargo stacks, a full load is what fits of them.
+-- `fits`: for such a request, where each quality fits at the depot (logistics.graded_need): a
+-- depot holding only qualities there is no room for is left out too, and fourth, says one was.
+local function candidates(depot, from, full, passed, carries, fits)
   local entity = depot.entity
-  local found, waiting, short = {}, false, false
+  local found, waiting, short, cramped = {}, false, false, false
   local buffers = depot.role == "request"
   -- The kind of depot asked about first.
   local first = buffers and depot.from_buffers and "buffer" or "provider"
   local own = entity.unit_number
-  for _, supplier in ipairs(suppliers(entity.surface_index, entity.force_index, depot.fluid, depot.request.item)) do
+  local request = depot.request
+  local size = full and not depot.fluid and transfer.stack_size_of(request.item)
+  for _, supplier in ipairs(suppliers(entity.surface_index, entity.force_index, depot.fluid, request)) do
     local provider = supplier.depot
     -- (The one passed is neither ready nor waiting: the freighter goes on, or home.)
     if supplier.id ~= passed and (provider.role == "provider" or (buffers and supplier.id ~= own)) then
-      if full and available(provider, depot.request.item) < full then
+      if fits and ledger.allocate(provider, request, math.huge, nil, fits.size, fits) <= 0 then
+        cramped = true
+      elseif
+        full and ledger.allocate(provider, request, full, size and math.floor(carries / size), size, fits) < full
+      then
         short = true
       elseif (depot.cooldowns[supplier.id] or 0) > game.tick then
         waiting = true
@@ -952,7 +1168,7 @@ local function candidates(depot, from, full, passed)
     end
     return a.distance < b.distance or (a.distance == b.distance and a.id < b.id)
   end)
-  return found, waiting, short
+  return found, waiting, short, cramped
 end
 
 -- Every trip out has its own tick of the second, its phase: storage.trip_phases[phase + 1] lists
@@ -1090,12 +1306,16 @@ local function drive(trip, destination, sampled, plan)
   })
 end
 
--- Send one of a request depot's freighters, the one with the most fuel, to `provider` (`length`
--- tiles away by road, through the tunnels `plan` lists, if any: see drive), to load `planned` of the
--- item. Returns whether it set off: one that can't reach the provider on its fuel, with no Fuel
--- depot to fill up at, goes back into the slot.
-local function start_trip(depot, provider, from, planned, length, plan)
-  local slot = a_freighter(depot)
+-- Send one of a request depot's freighters, the best (logistics.next_freighter) and of those the one
+-- with the most fuel, to `provider` (`length` tiles away by road, through the tunnels `plan` lists,
+-- if any: see drive), to load `planned` of the item (of the qualities in `mix`, if any:
+-- scripts/quality.lua). Returns whether it set off: one that can't reach the provider on its fuel,
+-- with no Fuel depot to fill up at, goes back into the slot. The freighter is made at its item's
+-- quality, so the game gives it that quality's health; its cargo, speed and tank are that quality's
+-- too (research.cargo_stacks, research.freighter_speed, fueling.fuel_capacity), and its trip notes
+-- the quality (`freighter_quality`, nil for normal).
+local function start_trip(depot, provider, from, planned, length, plan, mix)
+  local grade, slot = logistics.next_freighter(depot, true)
   if not slot then
     return false
   end
@@ -1103,26 +1323,35 @@ local function start_trip(depot, provider, from, planned, length, plan)
     name = DRONE,
     position = from,
     force = depot.entity.force,
+    quality = grade,
   })
   if not drone then
     return false
   end
-  local parked = parked_fuel(depot)
+  local parked = parked_fuel(depot, grade)
+  local tank = fueling.fuel_capacity(grade)
   local energy
-  if #parked > 0 and (trucks_of(depot).get_item_count() <= #parked or parked[#parked] > fueling.fuel_capacity()) then
+  local count = trucks_of(depot).get_item_count(quality.id(quality.key(FREIGHTER, grade)))
+  if #parked > 0 and (count <= #parked or parked[#parked] > tank) then
     -- The fullest parked one: more than a tank, or (with none full) the most short of one.
     energy = table.remove(parked)
   else
     -- One with a full tank.
-    energy = fueling.fuel_capacity()
+    energy = tank
   end
-  drone.speed = research.freighter_speed(drone.force)
+  drone.speed = research.freighter_speed(drone.force, grade)
   local trip = {
     drone = drone,
     request = depot.entity.unit_number,
     provider = provider.entity.unit_number,
     item = depot.request.item,
-    cargo = not depot.fluid and game.create_inventory(research.cargo_stacks(drone.force)) or nil,
+    -- The qualities it plans to load, if not all normal (scripts/quality.lua), and that it ever did:
+    -- its cargo is then counted by quality all the way home (promises.lua's file_coming).
+    mix = mix,
+    graded = mix and true or nil,
+    -- The freighter's own quality, nil for normal: not what it carries.
+    freighter_quality = grade,
+    cargo = not depot.fluid and game.create_inventory(research.cargo_stacks(drone.force, grade)) or nil,
     fluid = depot.fluid and { amount = 0 } or nil,
     -- The freighter item it was, taken from the depot's slot; it goes back there afterwards.
     truck = game.create_inventory(1),
@@ -1154,7 +1383,7 @@ local function start_trip(depot, provider, from, planned, length, plan)
   depot.next_send = game.tick + SEND_SPACING
   if energy <= 0 and fueling.fuel_per_tile() > 0 then
     trip.dry = true
-    drone.speed = research.freighter_speed(drone.force) * DRY_SPEED
+    drone.speed = research.freighter_speed(drone.force, grade) * DRY_SPEED
   end
   show_fuel(trip)
   -- set_off may send it straight back into the slot (too little fuel, nowhere to fill up), which
@@ -1189,15 +1418,20 @@ end
 -- a provider was skipped for cooldown, if there is nothing to look for.
 local function search_providers(depot, from, trip)
   local rerouted = trip and storage.trips[trip]
-  local found, waiting, short =
-    candidates(depot, from, logistics.full_load(depot, rerouted), rerouted and rerouted.passed)
+  local full, carries = logistics.full_load(depot, rerouted)
+  -- A request taking several qualities: where each fits (logistics.graded_need).
+  local request = depot.request
+  local fits = (request.quality or request.comparator) and select(5, need(depot, trip)) or nil
+  local found, waiting, short, cramped = candidates(depot, from, full, rerouted and rerouted.passed, carries, fits)
   if #found == 0 then
-    return false, waiting, short
+    return false, waiting, short, cramped
   end
   local search = {
     token = new_token(),
     request = depot.entity.unit_number,
     item = depot.request.item,
+    -- The qualities it is for (scripts/quality.lua): a request changed to others makes it stale.
+    filter = quality.filter_id(depot.request),
     from = from,
     -- Where a rerouted freighter last arrived when its search started (see logistics.search_plan).
     origin = rerouted and rerouted.origin,
@@ -1276,6 +1510,8 @@ end
 -- first, and the stock left after earlier promises is all a later freighter may take, even
 -- arriving first. For one freighter (arriving to load); keep_promises works the same out for all of
 -- a provider's in one pass. (A field, not a local: this file has as many locals as Lua allows.)
+-- For a trip planning several qualities (scripts/quality.lua), each is its own stock and queue:
+-- second, what it can load of each, by key.
 --
 -- Many freighters can arrive at a busy provider in one tick, and asking which promises are ahead
 -- of each one's walks all of the provider's promises of its item: arrivals cost the square of them
@@ -1296,7 +1532,6 @@ function logistics.honoured(trip)
     -- A save from before their totals were kept (or before promises were filed): filed afresh.
     ledger.file_promises()
   end
-  local item = trip.item
   local contents = provider.circuit_enabled and provider.circuit_mode == depot_circuit.contents
   -- What it holds, read once: each read builds a signal for every item in it.
   local held = contents and switching.own_signals(provider) or nil
@@ -1304,9 +1539,100 @@ function logistics.honoured(trip)
     -- Switched off now: nothing for anyone, whatever the promises.
     return false
   end
+  if not trip.mix then
+    return logistics.honoured_one(trip, provider, contents, held)
+  end
+  -- What it plans to load, by key: each quality it planned (scripts/quality.lua). Each key is a
+  -- stock and a queue of its own.
+  local parts = ledger.parts_of(trip, trip.planned) or { [trip.item] = 0 }
+  local filed = trip.promise
+  local own = filed
+      and filed.provider == trip.provider
+      and filed.amount == trip.planned
+      and (filed.parts or { [trip.item] = filed.amount })
+    or nil
+  local sums = own and storage.promise_totals[trip.provider]
+  local spares, spare = {}, 0
+  for key, _ in pairs(parts) do
+    local stock = available(provider, key, true)
+    local total = sums and sums[key] or 0
+    if not (own and own[key] and stock >= total) then
+      spares = nil
+      break
+    end
+    spares[key] = stock - total + own[key]
+    spare = spare + spares[key]
+  end
+  if spares and next(parts) then
+    if not contents then
+      return spare, spares
+    end
+    local condition = provider.circuit_condition
+    local reads = depot_circuit.reads(condition)
+    if reads and condition.comparator ~= "=" and condition.comparator ~= "≠" then
+      for key in pairs(parts) do
+        if
+          reads == quality.signal(key, provider.fluid)
+          and logistics.holds_less(provider, { [key] = sums[key] - math.ceil(own[key]) }, held)
+        then
+          return spare, spares
+        end
+      end
+    end
+  end
+  -- What the promises ahead of its own add up to, of each key it plans, and its stock less those.
+  local items = storage.promised[trip.provider]
+  local lefts, left, ahead_of = {}, 0, {}
+  for key in pairs(parts) do
+    local ahead = 0
+    for other, amount in pairs(items and items[key] or {}) do
+      if logistics.ahead(other, trip) then
+        ahead = ahead + amount
+      end
+    end
+    ahead_of[key] = ahead
+    local here = available(provider, key, true) - ahead
+    if here > 0 then
+      lefts[key] = here
+      left = left + here
+    end
+  end
+  if left <= 0 then
+    return false
+  end
+  -- Only a condition reading its contents needs the promises ahead: as in honoured_one, only those of
+  -- the one key whose signal it reads, if it reads one of them alone, else every key's.
+  local claims
+  if contents then
+    local reads = depot_circuit.reads(provider.circuit_condition)
+    for key in pairs(parts) do
+      if reads == quality.signal(key, provider.fluid) then
+        claims = { [key] = ahead_of[key] }
+      end
+    end
+    claims = claims or logistics.claims_ahead(trip.provider, trip)
+  end
+  -- (Its condition holds now, as read at the start.)
+  if claims and not logistics.holds_less(provider, claims, held) then
+    return false
+  end
+  return left, lefts
+end
+
+-- logistics.honoured for a trip of one key, its item's (normal quality, or a fluid: no mix), as
+-- before quality, making no tables on the way: freighters arrive at busy providers many at a time.
+-- Second, what it can load by key, as for a trip of several. (A field, not a local: this file has
+-- few locals to spare.)
+function logistics.honoured_one(trip, provider, contents, held)
+  local item = trip.item
   local stock = available(provider, item, true)
   local filed = trip.promise
-  local own = filed and filed.provider == trip.provider and filed.amount == trip.planned and filed.amount or nil
+  local own = filed
+      and not filed.parts
+      and filed.provider == trip.provider
+      and filed.amount == trip.planned
+      and filed.amount
+    or nil
   local sums = own and storage.promise_totals[trip.provider]
   local total = sums and sums[item] or 0
   if own and stock >= total then
@@ -1398,14 +1724,16 @@ function logistics.keep_promises(id, depot, held)
       return
     end
   end
-  -- Each item's stock as it is (what is unpromised, and every promise), and the trips promised.
-  local stock, queue = {}, {}
+  -- Each key's stock as it is (what is unpromised, and every promise), and the trips promised (a
+  -- trip promising several qualities once: scripts/quality.lua).
+  local stock, queue, queued = {}, {}, {}
   for item, trips in pairs(items) do
     local count = available(depot, item)
     for key, amount in pairs(trips) do
       count = count + amount
       local trip = storage.trips[key]
-      if trip and trip.key == key then
+      if trip and trip.key == key and not queued[key] then
+        queued[key] = true
         queue[#queue + 1] = trip
       end
     end
@@ -1424,9 +1752,10 @@ function logistics.keep_promises(id, depot, held)
   -- provider's promises as they end up, not some still to be let go (Sourcery's review of ac9ab0a).
   local ahead, failed, trimmed = {}, {}, false
   for _, trip in ipairs(queue) do
-    local item = trip.item
     local kept = true
-    if trip.state == TO_PROVIDER and trip.provider == id and not trip.service then
+    if trip.state == TO_PROVIDER and trip.provider == id and not trip.service and not trip.mix then
+      -- One key, its item's (normal quality, or a fluid): as before quality.
+      local item = trip.item
       local left = stock[item] - (ahead[item] or 0)
       if not (on and left > 0 and (not live or logistics.holds_less(depot, ahead, live))) then
         failed[#failed + 1] = trip
@@ -1437,10 +1766,35 @@ function logistics.keep_promises(id, depot, held)
         promise(trip)
         trimmed = true
       end
+    elseif trip.state == TO_PROVIDER and trip.provider == id and not trip.service then
+      -- Several qualities (scripts/quality.lua): what is left of each after those ahead.
+      local parts = ledger.parts_of(trip, trip.planned) or {}
+      local left, short = 0, false
+      for key, amount in pairs(parts) do
+        local here = math.max(0, (stock[key] or 0) - (ahead[key] or 0))
+        left = left + here
+        if here < amount then
+          parts[key], short = here, true
+        end
+      end
+      if not (on and left > 0 and (not live or logistics.holds_less(depot, ahead, live))) then
+        failed[#failed + 1] = trip
+        kept = false
+      elseif short then
+        -- Only part of its load is left: it promises that, and its depot sends for the rest.
+        logistics.set_parts(trip, parts)
+        promise(trip)
+        trimmed = true
+      end
     end
     -- What it still promises here comes before those after it.
-    if kept and trip.promise and trip.promise.provider == id then
-      ahead[item] = (ahead[item] or 0) + trip.promise.amount
+    local filed = kept and trip.promise
+    if filed and filed.provider == id and not filed.parts then
+      ahead[trip.item] = (ahead[trip.item] or 0) + filed.amount
+    elseif filed and filed.provider == id then
+      for key, amount in pairs(filed.parts) do
+        ahead[key] = (ahead[key] or 0) + amount
+      end
     end
   end
   if #failed == 0 then
@@ -1571,7 +1925,26 @@ function logistics.release_excess(depot, excess)
     end
     local cut = math.min(excess, trip.planned)
     excess = excess - cut
-    trip.planned = trip.planned - cut
+    if trip.mix then
+      -- Its lowest qualities go first: freighters take the highest first (scripts/quality.lua).
+      local grades = {}
+      for grade in pairs(trip.mix) do
+        grades[#grades + 1] = grade
+      end
+      table.sort(grades, function(a, b)
+        return quality.level(a) < quality.level(b) or (quality.level(a) == quality.level(b) and a < b)
+      end)
+      local parts = {}
+      for _, grade in ipairs(grades) do
+        local amount = trip.mix[grade]
+        local less = math.min(cut, amount)
+        cut = cut - less
+        parts[quality.key(trip.item, grade)] = amount - less
+      end
+      logistics.set_parts(trip, parts)
+    else
+      trip.planned = trip.planned - cut
+    end
     if trip.planned > 0 then
       promise(trip)
     else
@@ -1649,14 +2022,16 @@ local function dispatch(depot)
   if depot.search and game.tick - depot.search.since < SEARCH_TIMEOUT then
     return
   end
-  local started, waiting, short = search_providers(depot, from)
+  local started, waiting, short, cramped = search_providers(depot, from)
   if started then
     depot.status = out and logistics.status.delivering or logistics.status.searching
   else
     cancel_search(depot)
+    -- (Cramped: the providers hold only qualities this depot has no room left for.)
     depot.status = out and logistics.status.delivering
       or (waiting and logistics.status.unreachable)
       or (short and short_status)
+      or (cramped and logistics.status.full)
       or logistics.status.no_provider
   end
 end
@@ -1678,7 +2053,7 @@ function burn(trip, per_tile)
   if trip.dry and per_tile <= 0 then
     -- Fuel was turned off: nothing to crawl for.
     trip.dry = nil
-    drone.speed = research.freighter_speed(drone.force)
+    drone.speed = research.freighter_speed(drone.force, trip.freighter_quality)
   end
 end
 
@@ -1712,7 +2087,7 @@ local function check_trip(id, trip, per_tile, capacity, polluters)
     drive(trip, trip.planning.to)
   elseif trip.drone.valid and trip.energy <= 0 and not trip.dry and per_tile > 0 then
     trip.dry = true
-    trip.drone.speed = research.freighter_speed(trip.drone.force) * DRY_SPEED
+    trip.drone.speed = research.freighter_speed(trip.drone.force, trip.freighter_quality) * DRY_SPEED
     if not (trip.refuel or trip.search or trip.service) then
       fueling.look_for_fuel(id, trip)
     end
@@ -1927,12 +2302,11 @@ function end_trip(id, trip, lost)
       else
         truck.count = truck.count - inserted
       end
-      -- It parks with what is left in its tank, more than a tank's worth too.
-      if inserted > 0 and trip.energy and trip.energy ~= fueling.fuel_capacity() then
-        local parked = depot.fuel or {}
+      -- It parks with what is left in its tank, more than a tank's worth too (its quality's tank).
+      if inserted > 0 and trip.energy and trip.energy ~= fueling.tank_of(trip) then
+        local parked = parked_fuel(depot, trip.freighter_quality)
         parked[#parked + 1] = trip.energy
-        depot.fuel = parked
-        parked_fuel(depot)
+        parked_fuel(depot, trip.freighter_quality)
       end
     end
     if truck.valid_for_read and trip.drone.valid then
@@ -1958,14 +2332,14 @@ end
 
 -- A freighter destroyed on the way (by enemies, say): it is lost, with its cargo. Its depot is
 -- now one short of the freighters it had (or was being topped up to), so it asks robots for a
--- replacement; one put in by hand counts too.
+-- replacement, of the lost one's quality (scripts/quality.lua); one put in by hand counts too.
 local function lose(id, trip)
   local home = storage.depots[trip.request]
   local entity = home and home.entity.valid and home.entity
   local had = entity and math.max(logistics.freighter_total(entity), robot_requests.target(home) or 0)
   end_trip(id, trip, true)
   if entity then
-    logistics.match_freighters(entity, had)
+    logistics.match_freighters(entity, had, trip.freighter_quality)
   end
 end
 
@@ -1983,8 +2357,11 @@ local function arrived_at_provider(id, trip, depot)
   -- once it is here, bringing what fits beats driving home empty for the same trip.
   if provider and request and request.item == trip.item then
     -- What it promised, as far as the depot (counting its other freighters) still needs it.
-    local _, room = need(depot, id)
-    local left = room > 0 and logistics.honoured(trip)
+    local _, room, _, _, fits = need(depot, id)
+    local left, lefts
+    if room > 0 then
+      left, lefts = logistics.honoured(trip)
+    end
     if room > 0 and not left then
       -- Nothing here for it any more (taken out some other way, or switched off since its
       -- provider's last check): another provider, rather than home empty.
@@ -1993,12 +2370,18 @@ local function arrived_at_provider(id, trip, depot)
     -- No more than is left after the promises made before its own, which are their freighters'.
     local limit = math.min(trip.planned or room, room, left or room)
     if trip.fluid then
-      transfer.load_fluid(provider, trip, math.min(limit, research.fluid_capacity_of(depot.entity.force)))
-    else
+      transfer.load_fluid(
+        provider,
+        trip,
+        math.min(limit, research.fluid_capacity_of(depot.entity.force, trip.freighter_quality))
+      )
+    elseif not trip.mix and quality.plain(request) then
       transfer.load(inventory(provider), trip.cargo, trip.item, limit)
+    else
+      logistics.load_qualities(trip, request, inventory(provider), limit, lefts, fits)
     end
   end
-  trip.planned = nil
+  trip.planned, trip.mix = nil, nil
   lifecycle.mission(trip, TO_REQUEST, promise)
   if not (depot and depot.entity.valid) then
     return end_trip(id, trip)
@@ -2013,6 +2396,43 @@ local function arrived_at_provider(id, trip, depot)
   set_off(id, trip, math.max(trip.leg or 0, math.sqrt((home.x - here.x) ^ 2 + (home.y - here.y) ^ 2)))
 end
 
+-- Load a trip planning qualities other than normal alone (scripts/quality.lua) from a provider's
+-- inventory: each quality it planned that its depot's request still takes, highest first, as far as
+-- it planned, is left of it after the promises ahead (`lefts`, by key: logistics.honoured), and fits
+-- at its depot (`fits`, from logistics.graded_need, for a request taking several qualities: each
+-- quality fills its own part-filled stacks, then empty ones), `limit` in all. (A field, not a
+-- local: this file has few locals to spare.)
+function logistics.load_qualities(trip, request, from, limit, lefts, fits)
+  local mix = trip.mix or { [QUALITY] = trip.planned or limit }
+  local empty, partial, size = fits and fits.empty, fits and fits.partial, fits and fits.size
+  for _, grade in ipairs(quality.matching(request)) do
+    local planned = mix[grade]
+    if limit <= 0 then
+      break
+    end
+    if planned then
+      local key = quality.key(trip.item, grade)
+      -- (A quality with nothing left after the promises ahead isn't in `lefts`: none of it.)
+      local cap = math.min(planned, limit, lefts and (lefts[key] or 0) or planned)
+      if fits then
+        cap = math.min(cap, (partial[grade] or 0) + empty * size)
+      end
+      local moved = cap > 0 and transfer.load(from, trip.cargo, trip.item, cap, nil, grade) or 0
+      limit = limit - moved
+      if fits and moved > 0 then
+        local into = math.min(moved, partial[grade] or 0)
+        local rest = moved - into
+        partial[grade] = (partial[grade] or 0) - into
+        if rest > 0 then
+          local stacks = math.ceil(rest / size)
+          empty = empty - stacks
+          partial[grade] = partial[grade] + stacks * size - rest
+        end
+      end
+    end
+  end
+end
+
 -- Filled up at a Fuel depot (as far as it had fuel): on to where it was going.
 local function arrived_at_fuel(id, trip)
   local fuel = storage.depots[trip.refuel]
@@ -2022,7 +2442,7 @@ local function arrived_at_fuel(id, trip)
   end
   if trip.dry and trip.energy > 0 then
     trip.dry = nil
-    trip.drone.speed = research.freighter_speed(trip.drone.force)
+    trip.drone.speed = research.freighter_speed(trip.drone.force, trip.freighter_quality)
   end
   show_fuel(trip)
   if storage.trips[id] then
@@ -2145,7 +2565,7 @@ end
 function logistics.through_tunnel(trip, tunnel)
   local per_tile = fueling.fuel_per_tile()
   if per_tile > 0 then
-    trip.energy = math.max(0, (trip.energy or fueling.fuel_capacity()) - tunnel.length * per_tile)
+    trip.energy = math.max(0, (trip.energy or fueling.tank_of(trip)) - tunnel.length * per_tile)
   end
   trip.at, trip.at_tick = trip.drone.position, game.tick
   show_fuel(trip)
@@ -2507,29 +2927,49 @@ local function finish_search(depot, search, owner)
   -- Sending full loads only: the provider must still have one, and the depot room for one (for a
   -- rerouted freighter, the full load its cargo holds); a liquid depot, its least load likewise.
   local full, carries = logistics.full_load(depot, search.trip and owner)
-  local still = depot.request
-    and depot.request.item == search.item
+  local request = depot.request
+  local size = request and not depot.fluid and transfer.stack_size_of(request.item)
+  -- The cargo stacks the freighter has (a rerouted one) or will have (the next sent): a request
+  -- taking several qualities fills them quality by quality (scripts/quality.lua).
+  local stacks
+  if size then
+    stacks = search.trip and owner.cargo and owner.cargo.valid and #owner.cargo
+      or research.cargo_stacks(depot.entity.force, logistics.next_freighter(depot))
+  end
+  -- A request taking several qualities: where each fits at the depot (logistics.graded_need), so
+  -- nothing is planned that it has no room for.
+  local fits = request and (request.quality or request.comparator) and select(5, need(depot, search.trip)) or nil
+  local still = request
+    and request.item == search.item
+    and (request.quality == nil and request.comparator == nil and "" or quality.filter_id(request)) == (search.filter or "")
     and provider
     and provider.entity.valid
-    and available(provider, search.item) > 0
-    and (not full or available(provider, search.item) >= full)
+    and ledger.available_for(provider, request) > 0
+    and (not full or ledger.allocate(provider, request, full, stacks, size, fits) >= full)
     and enabled(provider, true)
   if search.trip then
     -- What its depot still has room for, counting its other freighters (not this one).
     local _, room = need(depot, search.trip)
     -- Its depot filled during the search: reroute sends it home. Sending full loads only, it needs
     -- room for this freighter's full load.
+    local planned, mix
     if still and room > 0 and (not full or room >= full) then
-      lifecycle.cancel_search(owner)
       -- Promise only what its depot still has room for (it may have filled in part during the
       -- search: Sourcery's review of ac9ab0a), and the new provider has unpromised (`available`
       -- doesn't count this trip's promise: it gave up on its old provider, logistics.give_up, which
       -- unfiled it, or that one was removed, its entry left under the removed depot's number).
       -- Sending full loads only, a full load: planned afresh, as a freighter sent off now would be,
       -- whatever it set off for. So is a liquid freighter (its least load), rather than keep a load
-      -- keep_promises cut down to almost nothing at the provider it gave up on.
-      local unpromised = available(provider, search.item)
-      owner.planned = full and math.min(room, unpromised, carries) or math.min(owner.planned or 0, room, unpromised)
+      -- keep_promises cut down to almost nothing at the provider it gave up on. Of the qualities it
+      -- takes, as this provider has them and they fit (scripts/quality.lua).
+      local unpromised = ledger.available_for(provider, request)
+      planned = full and math.min(room, unpromised, carries) or math.min(owner.planned or 0, room, unpromised)
+      planned, mix = ledger.allocate(provider, request, planned, stacks, size, fits)
+    end
+    if planned and planned > 0 then
+      lifecycle.cancel_search(owner)
+      owner.planned, owner.mix = planned, mix
+      owner.graded = owner.graded or (mix and true) or nil
       owner.provider = search.best
       -- Last in its new provider's queue, and its one diversion used (reroute). Any provider may be
       -- found again by a later search (the one passed was only for this one).
@@ -2539,7 +2979,8 @@ local function finish_search(depot, search, owner)
       set_off(search.trip, owner, search.best_length, logistics.search_plan(search, owner))
     else
       -- The provider found was emptied or removed meanwhile: look again among the rest. (Or the
-      -- depot no longer has room for a full load: reroute sends it home.)
+      -- depot no longer has room for a full load, or for what that provider has: reroute sends it
+      -- home.)
       reroute(search.trip, owner)
     end
     return
@@ -2561,12 +3002,17 @@ local function finish_search(depot, search, owner)
   end
   -- This freighter promises to load what the depot still needs, as far as the provider has it
   -- unpromised and it can carry; the next freighter covers the rest, from here or elsewhere.
+  -- What it can carry is the next freighter's: its quality's (scripts/quality.lua). A request taking
+  -- several qualities fills its cargo stacks highest quality first, each quality its own stacks.
   local force = depot.entity.force
-  local capacity = depot.fluid and research.fluid_capacity_of(force)
-    or research.cargo_stacks(force) * transfer.stack_size_of(search.item)
-  local planned = math.min(room, available(provider, search.item), capacity)
+  local capacity = depot.fluid and research.fluid_capacity_of(force, logistics.next_freighter(depot)) or stacks * size
+  local planned, mix = ledger.allocate(provider, request, math.min(room, capacity), stacks, size, fits)
+  if planned <= 0 then
+    -- (Only qualities the depot has no room left for: the next dispatch looks again.)
+    return
+  end
   depot.retry_status = nil
-  if start_trip(depot, provider, from, planned, search.best_length, search.best_plan) then
+  if start_trip(depot, provider, from, planned, search.best_length, search.best_plan, mix) then
     depot.status = logistics.status.delivering
   elseif (depot.retry_at or 0) <= game.tick then
     -- (A freighter that stayed home for want of fuel has set the wait and status already.)
@@ -2856,8 +3302,9 @@ function logistics.replaced(old_id, entity)
   depots[old_id], depots[id] = nil, depot
   index_depot(id, depot, true)
   depot.entity = entity
-  -- The old entity's inventory, and its custom status, which the new one doesn't show yet.
-  depot.stock_inventory, depot.shown_off = nil, nil
+  -- The old entity's inventory, and its custom status, which the new one doesn't show yet. A Fuel
+  -- depot's tank follows its quality (fuel_tank), which the new one may not have.
+  depot.stock_inventory, depot.shown_off, depot.tank_graded = nil, nil, nil
   script.register_on_object_destroyed(entity)
   for _, other in pairs(depots) do
     local cooldowns = other.cooldowns
@@ -2872,6 +3319,10 @@ function logistics.replaced(old_id, entity)
     if trip.provider == old_id then
       trip.provider = id
     end
+    -- (A Fuel depot it is heading for: one replaced by itself at another quality, Claude's review.)
+    if trip.refuel == old_id then
+      trip.refuel = id
+    end
     if trip.passed == old_id then
       trip.passed = id
     end
@@ -2885,6 +3336,48 @@ function logistics.replaced(old_id, entity)
   -- The second's plan of depot checks names the old one: planned again.
   if storage.passes then
     storage.passes.depots = nil
+  end
+end
+
+-- Qualities a mod change took away (the Quality mod removed, say: scripts/quality.lua), which the
+-- game's calls would refuse, are forgotten: a depot's request for one becomes a normal one (any
+-- quality stays any), the freighters' fuel parked under one goes (they are full tanks now), robots
+-- bring normal freighters for its freighter target; a trip plans no load of one, and its freighter
+-- counts as normal. (A field, not a local: this file has few locals to spare.)
+function logistics.forget_lost_qualities(depot, trip)
+  local function lost(name)
+    return name ~= nil and not prototypes.quality[name]
+  end
+  if depot then
+    local request = depot.request
+    if request and lost(request.quality) then
+      request.quality = nil
+      request.comparator = request.comparator == quality.any and quality.any or nil
+    end
+    for name in pairs(depot.graded_fuel or {}) do
+      if lost(name) then
+        depot.graded_fuel[name] = nil
+      end
+    end
+    if depot.replenishment and lost(depot.replenishment.quality) then
+      depot.replenishment.quality = nil
+    end
+  end
+  if trip then
+    if lost(trip.freighter_quality) then
+      trip.freighter_quality = nil
+    end
+    local kept, changed = {}, false
+    for name, amount in pairs(trip.mix or {}) do
+      if lost(name) then
+        changed = true
+      else
+        kept[quality.key(trip.item, name)] = amount
+      end
+    end
+    if changed then
+      logistics.set_parts(trip, kept)
+    end
   end
 end
 
@@ -2920,6 +3413,7 @@ function logistics.add_all()
         -- The requested item's or fluid's mod was removed.
         depot.request = nil
       end
+      logistics.forget_lost_qualities(depot)
       if depot.circuit_condition then
         -- Signals whose mod was removed leave the condition (the game can't read them).
         depot.circuit_condition = depot_circuit.condition(depot.circuit_condition)
@@ -2934,6 +3428,7 @@ function logistics.add_all()
   end
   for id, trip in pairs(storage.trips) do
     upgrade(trip)
+    logistics.forget_lost_qualities(nil, trip)
     -- Trips whose freighter, cargo or item is gone end; the engine already removed any cargo of
     -- a removed item from the cargo inventory.
     local kept
@@ -2993,6 +3488,24 @@ function logistics.freighter_counts(entity)
     end
   end
   return trucks_of(depot).get_item_count(), out, FREIGHTER_CAPACITY
+end
+
+-- The freighters in a request depot's slot by quality, best first: a list of { quality, count }.
+-- Nil for anything but a request depot.
+function logistics.freighters_by_quality(entity)
+  local depot = request_depot(entity)
+  if not depot then
+    return nil
+  end
+  local list = {}
+  for grade, count in pairs(trucks_of(depot).get_item_quality_counts(FREIGHTER)) do
+    list[#list + 1] = { quality = grade, count = count }
+  end
+  table.sort(list, function(a, b)
+    local first, second = quality.level(a.quality), quality.level(b.quality)
+    return first > second or (first == second and a.quality < b.quality)
+  end)
+  return list
 end
 
 -- Freighters asked of construction robots, as from remote view (scripts/freighter-robot_requests.lua).
@@ -3260,31 +3773,52 @@ function logistics.describe_freighters(entity)
 end
 
 -- A requesting depot's freighters' fuel, in joules: those in its slot, fullest first, and those
--- out on trips; what a full tank holds; and whether fuel is used at all. Nil for anything else.
+-- out on trips, with each one's full tank beside it (`home_tanks`, `out_tanks`: a better
+-- freighter's holds more, scripts/quality.lua); what a normal full tank holds (`capacity`); and
+-- whether fuel is used at all. Nil for anything else.
 function logistics.freighter_fuel(entity)
   local depot = request_depot(entity)
   if not depot then
     return nil
   end
   local capacity = fueling.fuel_capacity()
-  local parked = parked_fuel(depot)
+  local slot = trucks_of(depot)
   local home, out = {}, {}
-  for _ = 1, trucks_of(depot).get_item_count() - #parked do
-    home[#home + 1] = capacity
-  end
-  for _, energy in ipairs(parked) do
-    home[#home + 1] = energy
+  for name, count in pairs(slot.get_item_quality_counts(FREIGHTER)) do
+    local grade = name ~= QUALITY and name or nil
+    local tank = fueling.fuel_capacity(grade)
+    local parked = parked_fuel(depot, grade)
+    for _ = 1, count - #parked do
+      home[#home + 1] = { tank, tank }
+    end
+    for _, energy in ipairs(parked) do
+      home[#home + 1] = { energy, tank }
+    end
   end
   table.sort(home, function(a, b)
-    return a > b
+    return a[1] > b[1] or (a[1] == b[1] and a[2] > b[2])
   end)
+  local home_tanks = {}
+  for index, entry in ipairs(home) do
+    home[index], home_tanks[index] = entry[1], entry[2]
+  end
+  local out_tanks = {}
   for id in pairs(trips_of(depot)) do
     local trip = storage.trips[id]
     if trip then
-      out[#out + 1] = trip.energy or capacity
+      local tank = fueling.tank_of(trip, capacity)
+      out[#out + 1] = trip.energy or tank
+      out_tanks[#out_tanks + 1] = tank
     end
   end
-  return { home = home, out = out, capacity = capacity, used = fueling.fuel_per_tile() > 0 }
+  return {
+    home = home,
+    out = out,
+    capacity = capacity,
+    home_tanks = home_tanks,
+    out_tanks = out_tanks,
+    used = fueling.fuel_per_tile() > 0,
+  }
 end
 
 -- Give every freighter in a requesting depot's slot `energy` joules of fuel (other mods, tests).
@@ -3294,15 +3828,19 @@ function logistics.set_freighter_fuel(entity, energy)
   if not depot or type(energy) ~= "number" or energy ~= energy then
     return 0
   end
-  local count = trucks_of(depot).get_item_count()
-  local parked = {}
-  if energy ~= fueling.fuel_capacity() then
-    for index = 1, count do
-      parked[index] = math.max(0, energy)
+  local slot = trucks_of(depot)
+  depot.fuel, depot.graded_fuel = {}, nil
+  for name, count in pairs(slot.get_item_quality_counts(FREIGHTER)) do
+    local grade = name ~= QUALITY and name or nil
+    -- (Freighters with exactly a full tank of their quality have no entry.)
+    if energy ~= fueling.fuel_capacity(grade) then
+      local parked = parked_fuel(depot, grade)
+      for index = 1, count do
+        parked[index] = math.max(0, energy)
+      end
     end
   end
-  depot.fuel = parked
-  return count
+  return slot.get_item_count()
 end
 
 -- What a Fuel depot's tank holds, for its panel: { fluid = name or nil, amount, capacity,
@@ -3358,11 +3896,12 @@ function logistics.on_research_changed(event)
     return
   end
   local force = technology.force
-  local speed = research.freighter_speed(force)
   for _, trip in pairs(storage.trips or {}) do
     local drone = trip.drone
     if drone.valid and drone.force.index == force.index then
-      -- A dry one still crawls (DRY_SPEED), at its share of the new speed.
+      -- Its quality's speed (scripts/quality.lua). A dry one still crawls (DRY_SPEED), at its share
+      -- of the new speed.
+      local speed = research.freighter_speed(force, trip.freighter_quality)
       drone.speed = trip.dry and speed * DRY_SPEED or speed
     end
   end
@@ -3383,7 +3922,8 @@ function logistics.register()
   script.on_event(defines.events.on_ai_command_completed, logistics.on_ai_command_completed)
   script.on_event(defines.events.on_script_path_request_finished, logistics.on_script_path_request_finished)
   local interface = {
-    -- For other mods and the tests: read and write a request depot's request and status.
+    -- For other mods and the tests: read and write a request depot's request and status. A request
+    -- can name its quality and comparator (set_request(entity, item, count, quality, comparator)).
     set_request = logistics.set_request,
     get_request = logistics.get_request,
     get_status = logistics.get_status,
@@ -3402,16 +3942,16 @@ function logistics.register()
     -- the default, or "contents").
     set_circuit = logistics.set_circuit,
     get_circuit = logistics.get_circuit,
-    -- Give a request depot new freighters, within its slot's limit (counting freighters out);
-    -- returns how many it took. And read its freighter counts.
-    add_freighters = function(entity, count)
+    -- Give a request depot new freighters (of a quality, if given), within its slot's limit
+    -- (counting freighters out); returns how many it took. And read its freighter counts.
+    add_freighters = function(entity, count, grade)
       local depot = request_depot(entity)
-      if not depot or type(count) ~= "number" then
+      if not depot or type(count) ~= "number" or (grade ~= nil and not prototypes.quality[grade]) then
         return 0
       end
       local in_slot, out, capacity = logistics.freighter_counts(entity)
       local amount = math.max(0, math.min(math.floor(count), capacity - in_slot - out))
-      local added = amount > 0 and trucks_of(depot).insert({ name = FREIGHTER, count = amount }) or 0
+      local added = amount > 0 and trucks_of(depot).insert({ name = FREIGHTER, count = amount, quality = grade }) or 0
       if added > 0 then
         logistics.trim_freighter_requests(entity)
       end

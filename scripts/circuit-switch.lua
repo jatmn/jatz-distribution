@@ -7,6 +7,7 @@
 -- (`logistics.enabled`, `logistics.set_circuit` and the others) and hands this module the helpers
 -- it shares with it once they are defined (switching.install).
 local depot_circuit = require("scripts.depot-circuit")
+local quality = require("scripts.quality")
 
 local switching = {}
 
@@ -81,7 +82,7 @@ end
 -- With `claims`, a depot reading its own contents must also still hold it once freighters on their
 -- way there have loaded what they promised: `true` for every promise filed there (whether to send
 -- it another freighter, so once those already sent would take it below its condition no more go),
--- or a table of amounts by item (logistics.claims_ahead: the promises made before a freighter's,
+-- or a table of amounts by key (logistics.claims_ahead: the promises made before a freighter's,
 -- for whether that one still gets its load). Both, not the second instead of the first: a
 -- condition that taking items switches on (only while below some amount) can hold with promises
 -- taken and not now, and a switched-off depot gives nothing. Without it, what it holds now: its
@@ -128,11 +129,12 @@ local function enabled(depot, claims, held)
 end
 switching.enabled = enabled
 
--- Whether a depot's condition, reading its own contents, holds with `claims` (amounts by item)
--- taken out of `live` (own_signals, read once by the caller; not changed). Freighters load the
--- normal quality. Promises of fluid can be fractions: taken from the exact amount, then floored
--- once, as the tank would send what is left (own_signals has floored it already). (A field, not a
--- local: this file has as many locals as Lua allows.)
+-- Whether a depot's condition, reading its own contents, holds with `claims` (amounts by key, an
+-- item at one quality or a fluid: scripts/quality.lua) taken out of `live` (own_signals, read once
+-- by the caller; not changed): freighters load the qualities promised, each its own signal.
+-- Promises of fluid can be fractions: taken from the exact amount, then floored once, as the tank
+-- would send what is left (own_signals has floored it already). (A field, not a local: this file
+-- has as many locals as Lua allows.)
 function switching.holds_less(depot, claims, live)
   if next(claims) == nil then
     return true
@@ -142,7 +144,7 @@ function switching.holds_less(depot, claims, live)
     counts[signal] = count
   end
   for item, claimed in pairs(claims) do
-    local signal = depot_circuit.key({ type = depot.fluid and "fluid" or "item", name = item })
+    local signal = quality.signal(item, depot.fluid)
     if depot.fluid then
       counts[signal] = math.floor(depot.entity.get_fluid_count(item) - claimed)
     else
@@ -157,7 +159,7 @@ function switching.holds_less(depot, claims, live)
 end
 
 -- The promises filed at a provider (unit number) made before `trip`'s (logistics.ahead), or all of
--- them without one: amounts by item. All of an item depot's are their kept totals
+-- them without one: amounts by key (an item at one quality, or a fluid). All of an item depot's are their kept totals
 -- (storage.promise_totals, exact for items; not to be changed): `enabled(depot, true)` asks for
 -- them whenever a search looks at a provider or ends there, and adding them up afresh each time
 -- made many searches ending at one busy provider cost the square of its promises (Copilot's review

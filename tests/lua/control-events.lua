@@ -264,7 +264,10 @@ prototypes = {
   -- As with one of the Mining Drones mods installed (tests/lua/logistics.lua checks without).
   entity = { ["mining-depot"] = { type = "assembling-machine" } },
   virtual_signal = { ["signal-A"] = {}, ["signal-each"] = {} },
-  quality = { normal = {}, uncommon = {} },
+  quality = {
+    normal = { name = "normal", level = 0, default_multiplier = 1 },
+    uncommon = { name = "uncommon", level = 1, default_multiplier = 1.3 },
+  },
 }
 
 local tiles = {}
@@ -342,12 +345,14 @@ function surface.create_entity(spec)
   for index = 1, 10 do
     stacks[index] = { valid_for_read = false }
   end
+  local grade = spec.quality
   local created = {
     valid = true,
     name = spec.name,
     position = spec.position,
     force = spec.force,
     surface = surface,
+    quality = prototypes.quality[type(grade) == "table" and grade.name or grade or "normal"],
     get_inventory = function()
       return stacks
     end,
@@ -405,6 +410,16 @@ local function script_inventory()
       assert(type(filter) == "table" and filter.name and not filter.quality, "an item filter of any quality")
       return slot.name == filter.name and slot.count or 0
     end,
+    -- Its freighters are all normal here.
+    get_item_quality_counts = function(item)
+      return slot.count > 0 and (item == nil or item == slot.name) and { normal = slot.count } or {}
+    end,
+    find_item_stack = function(item)
+      local name = type(item) == "table" and item.name or item
+      if slot.valid_for_read and slot.name == name then
+        return slot, 1
+      end
+    end,
     is_empty = function()
       return slot.count == 0
     end,
@@ -429,6 +444,13 @@ local function depot(x)
     surface_index = 1,
     force = "player",
     force_index = 1,
+    quality = prototypes.quality.normal,
+    -- Its ground, where a click picks it.
+    selection_box = { left_top = { x = x - 1, y = -1 }, right_bottom = { x = x + 2, y = 2 } },
+    -- Marked for an upgrade only when a check sets `upgrade` ({ name, quality }).
+    to_be_upgraded = function()
+      return false
+    end,
     -- No wires, so no control behavior either.
     get_circuit_network = function()
       return nil
@@ -579,6 +601,128 @@ do -- A request depot mined by a player, robot or platform hands its freighters 
   end
 end
 
+do -- A depot replaced by itself at another quality (scripts/depot-upgrades.lua) carries on: robots
+  -- or a platform carrying out an upgrade order (it is marked for an upgrade to the same depot), or
+  -- a player placing it over itself from their cursor (on_pre_build there, that tick). Its record,
+  -- request, freighters and robot access move to the new one; none are handed to the miner. A depot
+  -- mined by a player holding one in their cursor, with no build there, is a removal.
+  local logistics = require("scripts.logistics")
+  local robot_access = require("scripts.robot-access")
+  local saved = { get = robot_access.get, set = robot_access.set }
+  local access = {}
+  robot_access.get = function(entity)
+    return access[entity.unit_number] or false
+  end
+  robot_access.set = function(entity, enabled)
+    access[entity.unit_number] = enabled
+  end
+  local function upgraded(x, how)
+    local old = depot(x)
+    old.name = "jatz-request-depot"
+    fire("on_built_entity", { entity = old })
+    assert(logistics.set_request(old, "wood", 7))
+    access[old.unit_number] = true
+    local trucks = game.create_inventory(10)
+    trucks[1].transfer_stack({ name = "jatz-quinityn-freighter", count = 3, valid_for_read = true })
+    trucks[1].clear = function()
+      trucks[1].count, trucks[1].valid_for_read = 0, false
+    end
+    trucks.destroy = function() end
+    storage.depots[old.unit_number].trucks = trucks
+    local received = 0
+    local buffer = {
+      insert = function(stack)
+        received = received + stack.count
+        return stack.count
+      end,
+    }
+    local new = depot(x)
+    new.name = "jatz-request-depot"
+    new.quality = prototypes.quality.uncommon
+    if how == "robot" or how == "platform" then
+      old.to_be_upgraded = function()
+        return true
+      end
+      old.get_upgrade_target = function()
+        return { name = "jatz-request-depot" }, prototypes.quality.uncommon
+      end
+      local event = how == "robot" and "on_robot_mined_entity" or "on_space_platform_mined_entity"
+      fire(event, { entity = old, buffer = buffer })
+      fire(how == "robot" and "on_robot_built_entity" or "on_space_platform_built_entity", { entity = new })
+    else
+      local cursor = {
+        valid_for_read = true,
+        prototype = { place_result = { name = how == "player" and "jatz-request-depot" or "jatz-buffer-depot" } },
+      }
+      game.get_player = function()
+        return { cursor_stack = cursor }
+      end
+      fire("on_pre_build", { player_index = 1, tick = game.tick, position = { x = x + 0.3, y = 0.7 } })
+      fire("on_pre_player_mined_item", { entity = old, player_index = 1 })
+      fire("on_player_mined_entity", { entity = old, player_index = 1, buffer = buffer })
+      fire("on_built_entity", { entity = new })
+    end
+    removed(old)
+    return old, new, received
+  end
+  for _, how in ipairs({ "robot", "platform", "player" }) do
+    local old, new, received = upgraded(700 + #how * 10, how)
+    local request = logistics.get_request(new)
+    check(
+      how .. ": a depot upgraded to another quality keeps its request",
+      request and request.item == "wood" and request.count == 7
+    )
+    check(how .. ": and its freighters, none handed over", received == 0 and logistics.freighter_counts(new) == 3)
+    check(how .. ": and its robot access", access[new.unit_number] == true)
+    check(how .. ": the old one is forgotten", storage.depots[old.unit_number] == nil)
+    -- (Its freighters taken out first: this fake surface spills nothing.)
+    storage.depots[new.unit_number].trucks = nil
+    removed(new)
+  end
+  -- A player mining by hand a depot marked for an upgrade (robots not there yet): a removal, its
+  -- freighters handed to the player (Claude's review: they were left on the ground).
+  do
+    local marked = depot(780)
+    marked.name = "jatz-request-depot"
+    fire("on_built_entity", { entity = marked })
+    local trucks = game.create_inventory(10)
+    trucks[1].transfer_stack({ name = "jatz-quinityn-freighter", count = 2, valid_for_read = true })
+    trucks[1].clear = function()
+      trucks[1].count, trucks[1].valid_for_read = 0, false
+    end
+    trucks.destroy = function() end
+    storage.depots[marked.unit_number].trucks = trucks
+    marked.to_be_upgraded = function()
+      return true
+    end
+    marked.get_upgrade_target = function()
+      return { name = "jatz-request-depot" }, prototypes.quality.uncommon
+    end
+    game.get_player = function()
+      return { cursor_stack = { valid_for_read = false } }
+    end
+    local handed = 0
+    fire("on_player_mined_entity", {
+      entity = marked,
+      player_index = 1,
+      buffer = {
+        insert = function(stack)
+          handed = handed + stack.count
+          return stack.count
+        end,
+      },
+    })
+    check("a depot marked for an upgrade, mined by hand, hands its freighters over", handed == 2)
+    removed(marked)
+  end
+  -- A player mining a depot with another depot in their cursor, building nothing there: a removal.
+  local _, new, received = upgraded(760, "other")
+  check("a depot mined with another in the cursor hands its freighters over", received == 3)
+  check("and the depot built is a new one", logistics.get_request(new) == nil)
+  removed(new)
+  robot_access.get, robot_access.set = saved.get, saved.set
+end
+
 do -- The freighter slot's clicks: ghosts request freighters from robots; remote view moves nothing.
   local logistics = require("scripts.logistics")
   local calls = {}
@@ -596,8 +740,8 @@ do -- The freighter slot's clicks: ghosts request freighters from robots; remote
     "cancel_freighter_removal",
   }) do
     saved[name] = logistics[name]
-    logistics[name] = function(_, a, b)
-      calls[#calls + 1] = { name = name, a = a, b = b }
+    logistics[name] = function(_, a, b, c)
+      calls[#calls + 1] = { name = name, a = a, b = b, c = c }
       return 0
     end
   end
@@ -610,10 +754,11 @@ do -- The freighter slot's clicks: ghosts request freighters from robots; remote
   storage.request_gui = { [1] = entity }
   local inner = {}
   local element = { name = "jatz_request_freighters", parent = { parent = inner } }
-  local function click(controller, ghost, held, button)
+  local function click(controller, ghost, held, button, grade)
     calls = {}
     player.controller_type = controller
-    player.cursor_ghost = ghost and { name = { name = ghost } } or nil
+    -- The game gives the ghost's quality as a LuaQualityPrototype.
+    player.cursor_ghost = ghost and { name = { name = ghost }, quality = prototypes.quality[grade or "normal"] } or nil
     player.cursor_stack = held and { valid_for_read = true, name = held, count = 5 } or { valid_for_read = false }
     player.get_main_inventory = function()
       return {
@@ -639,6 +784,11 @@ do -- The freighter slot's clicks: ghosts request freighters from robots; remote
   )
   call = click(remote_view, freighter, nil, defines.mouse_button_type.right)
   check("remote view: right-click asks for one more", call.name == "request_freighters" and call.a == 1)
+  call = click(remote_view, freighter, nil, nil, "uncommon")
+  check(
+    "an uncommon freighter ghost asks for uncommon ones",
+    call.name == "request_freighters" and call.b == "uncommon"
+  )
   call = click(remote_view)
   check("remote view: an empty cursor cancels the requests", call.name == "cancel_freighter_requests")
   call = click(remote_view, nil, freighter)
@@ -716,6 +866,73 @@ local function element(spec, parent)
   return self
 end
 
+do -- With qualities (the Quality mod), an item request's quality is chosen with its item, with a
+  -- drop-down of how other qualities compare with it, "Any quality" among them; a liquid depot's
+  -- isn't; and without qualities the panel is as it was.
+  local logistics = require("scripts.logistics")
+  local quality = require("scripts.quality")
+  local relative = element()
+  local player = { index = 15, valid = true, gui = { relative = relative }, get_main_inventory = function() end }
+  game.get_player = function()
+    return player
+  end
+  local request = depot(240)
+  request.name = "jatz-request-depot"
+  fire("on_built_entity", { entity = request })
+  assert(logistics.set_request(request, "iron-plate", 50, "uncommon", "≥"))
+  fire("on_gui_opened", { player_index = 15, entity = request })
+  local row = relative.jatz_request_frame.children[1].request_row
+  local chooser, comparators = row.jatz_request_item, row.jatz_request_quality_comparator
+  check(
+    "the item chooser takes a quality, showing the request's",
+    chooser.elem_type == "item-with-quality"
+      and chooser["item-with-quality"].name == "iron-plate"
+      and chooser["item-with-quality"].quality == "uncommon"
+  )
+  check(
+    "beside it, how other qualities compare, showing the request's",
+    comparators and comparators.type == "drop-down" and comparators.items[comparators.selected_index] == "≥"
+  )
+  local any = comparators.items[#comparators.items]
+  check("'Any quality' is the last", type(any) == "table" and any[1] == "jatz-gui.any-quality")
+  comparators.selected_index = #comparators.items
+  fire("on_gui_selection_state_changed", { player_index = 15, element = comparators })
+  local got = logistics.get_request(request)
+  check("choosing it asks for any quality", got.comparator == "any" and got.quality == nil and got.count == 50)
+  comparators.selected_index = 1
+  chooser.elem_value = { name = "iron-plate", quality = "uncommon" }
+  fire("on_gui_elem_changed", { player_index = 15, element = chooser })
+  got = logistics.get_request(request)
+  check("an item chosen with its quality, '=': that quality only", got.quality == "uncommon" and got.comparator == nil)
+  row.jatz_request_count.text = "70"
+  fire("on_gui_text_changed", { player_index = 15, element = row.jatz_request_count, text = "70" })
+  got = logistics.get_request(request)
+  check("a new amount keeps the quality", got.count == 70 and got.quality == "uncommon")
+  nth[30]()
+  check("the panel isn't rebuilt for its quality", relative.jatz_request_frame.children[1].request_row == row)
+  local liquid = depot(250)
+  liquid.name = "jatz-liquid-request-depot"
+  fire("on_built_entity", { entity = liquid })
+  fire("on_gui_opened", { player_index = 15, entity = liquid })
+  row = relative.jatz_request_frame.children[1].request_row
+  check(
+    "a liquid depot's fluid has no quality",
+    row.jatz_request_item.elem_type == "fluid" and not row.jatz_request_quality_comparator
+  )
+  local available = quality.available
+  quality.available = function()
+    return false
+  end
+  fire("on_gui_opened", { player_index = 15, entity = request })
+  row = relative.jatz_request_frame.children[1].request_row
+  check(
+    "without qualities, an item alone, as before",
+    row.jatz_request_item.elem_type == "item" and not row.jatz_request_quality_comparator
+  )
+  quality.available = available
+  storage.request_gui = {}
+end
+
 do -- A panel opened before an update that changed its layout is rebuilt, with its status light.
   local entity = depot(70)
   entity.name = "jatz-request-depot"
@@ -772,6 +989,12 @@ do -- Copy and paste: settings, blueprints, and depots built from blueprint ghos
   local copied = logistics.get_request(destination)
   check("pasting settings copies the request", copied and copied.item == "wood" and copied.count == 7)
   check("and asks for the source's freighters", matched and matched.entity == destination and matched.total == 3)
+  -- With its quality and comparator (scripts/quality.lua).
+  assert(logistics.set_request(source, "wood", 7, "uncommon", "≥"))
+  fire("on_entity_settings_pasted", { source = source, destination = destination, player_index = 1 })
+  copied = logistics.get_request(destination)
+  check("pasting copies its quality too", copied.quality == "uncommon" and copied.comparator == "≥")
+  assert(logistics.set_request(source, "wood", 7))
 
   -- A blueprint of the source keeps its request (tag) and freighters (insert plan).
   local saved
@@ -2469,6 +2692,9 @@ do -- Undo: a depot a player removes keeps its settings, as they were when it we
     "on_space_platform_pre_mined",
     "on_pre_player_mined_item",
     "on_player_mined_entity",
+    -- (Every depot: one being upgraded to another quality carries on, scripts/depot-upgrades.lua.)
+    "on_robot_mined_entity",
+    "on_space_platform_mined_entity",
   }) do
     local names, count = {}, 0
     for _, filter in ipairs(filters[event] or {}) do

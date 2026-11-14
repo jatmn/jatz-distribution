@@ -260,7 +260,14 @@ local function contents(members, reading, force)
     if depot and reading == "needs" then
       local wanted = depot.request and logistics.missing(depot) or 0
       if wanted >= 1 then
-        add(unit_number, depot.fluid and "fluid" or "item", depot.request.item, QUALITY, math.floor(wanted))
+        -- As the quality the request names (normal for any quality: scripts/quality.lua).
+        add(
+          unit_number,
+          depot.fluid and "fluid" or "item",
+          depot.request.item,
+          depot.request.quality or QUALITY,
+          math.floor(wanted)
+        )
       end
     elseif depot then
       if depot.fluid then

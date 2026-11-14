@@ -4,6 +4,7 @@
 -- also what a force's freighters carry and how fast they drive (split out of scripts/logistics.lua,
 -- whose main chunk had reached Lua's limit of 200 locals, issue #69).
 local paint = require("scripts.freighter-paint")
+local quality = require("scripts.quality")
 
 local research = {}
 
@@ -93,20 +94,30 @@ end
 -- runs; reading one makes a new object every time).
 local drone_speed
 
--- What a force's freighters carry and how fast they drive, with its research. A trip keeps the
--- cargo size it set off with; speed research also reaches freighters already on the road
--- (logistics.on_research_changed).
-function research.cargo_stacks(force)
-  return research.base_stacks + research_of(force).stacks
+-- What a force's freighters of quality `grade` (nil: normal) carry and how fast they drive, with
+-- its research, times the quality's bonus (scripts/quality.lua): stacks rounded down, as the game
+-- rounds a chest's slots; fluid to the nearest whole unit. A trip keeps the cargo size it set off
+-- with; speed research also reaches freighters already on the road (logistics.on_research_changed).
+function research.cargo_stacks(force, grade)
+  local stacks = research.base_stacks + research_of(force).stacks
+  if grade == nil then
+    return stacks
+  end
+  -- (A hair over, so a product the game holds a hair under a whole number isn't rounded down.)
+  return math.floor(stacks * quality.multiplier(grade) + 1e-9)
 end
 
-function research.fluid_capacity_of(force)
-  return research.base_fluid + research_of(force).fluid
+function research.fluid_capacity_of(force, grade)
+  local capacity = research.base_fluid + research_of(force).fluid
+  if grade == nil then
+    return capacity
+  end
+  return math.floor(capacity * quality.multiplier(grade) + 0.5)
 end
 
-function research.freighter_speed(force)
+function research.freighter_speed(force, grade)
   drone_speed = drone_speed or prototypes.entity[paint.empty].speed
-  return drone_speed * research_of(force).speed
+  return drone_speed * research_of(force).speed * (grade and quality.multiplier(grade) or 1)
 end
 
 -- A new game, or a save the mod is added to, gets its recipes by research.

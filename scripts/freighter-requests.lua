@@ -8,17 +8,19 @@ local requests = {}
 
 -- One target owner, including saves from before replenishment had a named phase. Idle is nil;
 -- outstanding plans live in Factorio, so reconciliation derives whether more chest room is needed.
+-- Second: the quality robots bring for it (scripts/quality.lua; nil for normal): a freighter
+-- ghost's from the panel, a lost freighter's for its replacement.
 function requests.target(depot)
   if depot.freighter_target ~= nil then
     depot.replenishment = { phase = "reconciling", target = depot.freighter_target }
     depot.freighter_target = nil
   end
-  return depot.replenishment and depot.replenishment.target
+  return depot.replenishment and depot.replenishment.target, depot.replenishment and depot.replenishment.quality
 end
 
-function requests.set_target(depot, target)
+function requests.set_target(depot, target, grade)
   depot.freighter_target = nil
-  depot.replenishment = target and { phase = "reconciling", target = target } or nil
+  depot.replenishment = target and { phase = "reconciling", target = target, quality = grade } or nil
 end
 
 local function awaiting(depot, total, target)
@@ -160,8 +162,9 @@ end
 -- requests are for: freighters arriving some other way (put in by hand) count towards it, and
 -- requests beyond it are cancelled. It is kept even when the chest has no free stacks for some or
 -- all of them yet (it also holds the depot's cargo): trim_freighter_requests asks for the rest as
--- stacks free up. Returns how many were requested now.
-local function request_up_to(entity, goal)
+-- stacks free up. Robots bring freighters of quality `grade` (nil: normal). Returns how many were
+-- requested now.
+local function request_up_to(entity, goal, grade)
   local in_slot, out, capacity = logistics.freighter_counts(entity)
   if not in_slot then
     return 0
@@ -173,7 +176,7 @@ local function request_up_to(entity, goal)
   if goal <= have then
     return 0
   end
-  requests.set_target(request_depot(entity), goal)
+  requests.set_target(request_depot(entity), goal, grade)
   -- A stack at a time, into chest stacks that are empty and in no other plan.
   local amount, positions = spread(goal - have, free_chest_stacks(chest, proxies))
   awaiting(request_depot(entity), have + amount, goal)
@@ -181,7 +184,7 @@ local function request_up_to(entity, goal)
     return 0
   end
   add_plan(entity, proxies, {
-    id = { name = FREIGHTER, quality = QUALITY },
+    id = { name = FREIGHTER, quality = grade or QUALITY },
     items = { in_inventory = positions },
   })
   return amount
@@ -189,12 +192,14 @@ end
 
 -- Ask construction robots to bring `count` more freighters (or as many as the slot has room for)
 -- into a request depot's chest: more than it has and has already asked for, including freighters
--- still waiting for a free chest stack (its target). Returns how many were requested now.
-function requests.request_freighters(entity, count)
+-- still waiting for a free chest stack (its target). Of quality `grade` (a name; normal if nil: the
+-- panel passes the freighter ghost's). Returns how many were requested now.
+function requests.request_freighters(entity, count, grade)
   local depot = request_depot(entity)
-  if not depot then
+  if not depot or (grade ~= nil and not (type(grade) == "string" and prototypes.quality[grade])) then
     return 0
   end
+  grade = grade ~= QUALITY and grade or nil
   local have, capacity = logistics.freighter_total(entity)
   local asked = math.max(have, requests.target(depot) or 0)
   local room = capacity - asked
@@ -202,7 +207,7 @@ function requests.request_freighters(entity, count)
   if amount <= 0 then
     return 0
   end
-  return request_up_to(entity, asked + amount)
+  return request_up_to(entity, asked + amount, grade)
 end
 
 -- Have construction robots take `count` freighters (or all) out of a request depot's slot, as
@@ -222,8 +227,9 @@ function requests.remove_freighters(entity, count)
   end
   local chest = freighter_chest(entity)
   local proxies = freighter_requests(entity)
-  -- A stack at a time from the slot into empty chest stacks, each marked for removal.
-  local positions, moved = {}, 0
+  -- A stack at a time from the slot into empty chest stacks, each marked for removal: one plan per
+  -- quality, as a removal plan names its items' quality (scripts/quality.lua).
+  local positions, order, moved = {}, {}, 0
   for _, index in ipairs(free_chest_stacks(chest, proxies)) do
     local from = a_freighter(depot)
     if moved >= wanted or not from then
@@ -232,17 +238,27 @@ function requests.remove_freighters(entity, count)
     local into = chest[index + 1]
     into.transfer_stack(from, math.min(from.count, wanted - moved))
     if into.valid_for_read then
-      positions[#positions + 1] = { inventory = defines.inventory.chest, stack = index, count = into.count }
+      local grade = into.quality.name
+      if not positions[grade] then
+        positions[grade] = {}
+        order[#order + 1] = grade
+      end
+      local list = positions[grade]
+      list[#list + 1] = { inventory = defines.inventory.chest, stack = index, count = into.count }
       moved = moved + into.count
     end
   end
-  if moved > 0 then
+  for _, grade in ipairs(order) do
     add_plan(
       entity,
       proxies,
-      { id = { name = FREIGHTER, quality = QUALITY }, items = { in_inventory = positions } },
+      { id = { name = FREIGHTER, quality = grade }, items = { in_inventory = positions[grade] } },
       true
     )
+    -- A new proxy made for the first plan takes the others.
+    if #proxies == 0 then
+      proxies = freighter_requests(entity)
+    end
   end
   -- The freighters leaving take their fuel entries, as in take_freighters.
   parked_fuel(depot)
@@ -262,20 +278,22 @@ end
 requests.freighter_total = freighter_total
 
 -- Ask robots for as many freighters as it takes for a request depot to have `total` (within its
--- slot's limit). Returns how many were requested.
-function requests.match_freighters(entity, total)
+-- slot's limit), of quality `grade` (nil: normal; a lost freighter's replacement is its quality).
+-- Returns how many were requested.
+function requests.match_freighters(entity, total, grade)
   local depot = request_depot(entity)
   if not depot then
     return 0
   end
   total = math.max(0, math.floor(tonumber(total) or 0))
+  grade = grade ~= QUALITY and type(grade) == "string" and prototypes.quality[grade] and grade or nil
   local have = freighter_total(entity)
   if total > have then
-    return request_up_to(entity, total)
+    return request_up_to(entity, total, grade)
   end
   -- Already as many or more: freighter requests beyond `total` are cancelled. Freighters already
   -- in the depot stay; they are the player's, and taking them away is the player's call.
-  requests.set_target(depot, total)
+  requests.set_target(depot, total, grade)
   logistics.trim_freighter_requests(entity)
   return 0
 end
@@ -416,8 +434,8 @@ function requests.trim_freighter_requests(entity)
     reduce_freighter_requests(entity, total - wanted)
     awaiting(depot, wanted, wanted)
   elseif total < wanted then
-    -- Short, with nothing requested to cover it: ask again for the rest.
-    request_up_to(entity, wanted)
+    -- Short, with nothing requested to cover it: ask again for the rest, of the quality it was for.
+    request_up_to(entity, wanted, select(2, requests.target(depot)))
   else
     awaiting(depot, total, wanted)
   end
