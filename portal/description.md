@@ -95,7 +95,7 @@ Every recipe uses things you can already make when its research finishes. Click 
 
 **Road tunnels** (Road tunnels research): 20 stone brick, 10 steel plate and 10 iron gear wheels make a pair.
 
-The 5 coal in a freighter is its first full tank. With **Space Age**, you can make freighters with 10 carbon instead, for planets without coal. Road is cheap slag: 5 stone and 5 iron ore make 10 tiles.
+The 5 coal in a freighter is its first full tank. With **Space Age**, you can make freighters with 10 carbon instead, for planets without coal. Road is cheap slag: 5 stone and 5 iron ore make 10 tiles. It stacks to 250, and a Space Age rocket carries two stacks of it; both are startup settings.
 
 **Liquid depots** (Liquid freight)
 

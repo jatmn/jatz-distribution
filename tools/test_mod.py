@@ -117,6 +117,8 @@ EXPECTED = {'recipes': RECIPES,
             'cut_returned': 30, 'cut_received': 0, 'cut_status': 'unreachable',
             'spilled': 0, 'bad_item_rejected': True, 'refused_request_kept': True, 'cloned_request': 'wood x5', 'request_cleared': True, 'road_on_grass': True,
             'road_on_water': False,
+            # Road stacks to 250, and a rocket lifts 2 stacks of it: the startup settings' defaults.
+            'road_stack_size': 250, 'road_rocket_capacity': 500,
             # Nothing but belts, pipes, train tracks and vehicles can be placed on road: not depots,
             # nor their ghosts, though their loading zone can be road.
             'depot_on_road': False, 'depot_ghost_on_road': False, 'depot_zone_on_road': True,

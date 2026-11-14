@@ -1,0 +1,2 @@
+  Changes:
+    - Road now stacks to 250 (it was 100), and with Space Age a rocket carries 2 stacks of it (500). Both are startup settings: "Road stack size" and "Road rocket capacity (stacks)".
