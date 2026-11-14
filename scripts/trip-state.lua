@@ -10,6 +10,8 @@ end
 function state.begin_search(owner, kind, token, tick)
   owner.search = { kind = kind, phase = "pending", token = token, since = tick }
   if owner.drone then
+    -- A search decides where it goes: no longer waiting for a plan to drive one (drive).
+    owner.planning = nil
     state.travel(owner)
   end
 end
@@ -44,7 +46,7 @@ end
 
 function state.clear_route_search(trip)
   state.cancel_search(trip)
-  trip.refuel = nil
+  trip.refuel, trip.planning = nil, nil
   state.travel(trip)
 end
 
