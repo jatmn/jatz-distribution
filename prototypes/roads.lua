@@ -54,9 +54,9 @@ local road = {
   },
   walking_sound = stone_path.walking_sound,
   build_sound = stone_path.build_sound,
-  -- A soft light green on the map and minimap (the owner's choice, November 13, 2026; it was
-  -- brown): it stands out from grass and trees without being bright.
-  map_color = { 95, 145, 85 },
+  -- A bright mint green on the map and minimap (the owner's choice, November 14, 2026; it was
+  -- brown, then a softer 95, 145, 85): it stands out from grass and trees.
+  map_color = { 140, 195, 120 },
   scorch_mark_color = stone_path.scorch_mark_color,
   trigger_effect = stone_path.trigger_effect,
 }
