@@ -423,6 +423,11 @@ local function new_inventory(size)
     end
     return removed
   end
+  -- Every item here is normal quality.
+  function inv.get_item_quality_counts(id)
+    local count = inv.get_item_count(id)
+    return count > 0 and { normal = count } or {}
+  end
   function inv.find_item_stack(id)
     local name = item_name(id)
     for index = 1, #inv do
@@ -600,6 +605,7 @@ local function new_surface(index, plan)
       surface_index = surface.index,
       force = parameters.force,
       force_index = parameters.force.index,
+      quality = NORMAL,
     }
     function tank.get_fluid()
       return nil
@@ -629,6 +635,7 @@ local function new_surface(index, plan)
       surface_index = surface.index,
       force = parameters.force,
       force_index = parameters.force.index,
+      quality = NORMAL,
     }
     function truck.get_inventory()
       return chest
@@ -686,6 +693,7 @@ local function new_surface(index, plan)
       surface_index = surface.index,
       force = parameters.force or force,
       force_index = (parameters.force or force).index,
+      quality = NORMAL,
       version = 0,
     }
     -- Drive the rest of `points` from here at the current speed; arrival is scheduled for when
@@ -822,6 +830,7 @@ local function new_depot(surface, name, x, y, direction)
     surface_index = surface.index,
     force = force,
     force_index = force.index,
+    quality = NORMAL,
   }
   function entity.get_inventory()
     return chest

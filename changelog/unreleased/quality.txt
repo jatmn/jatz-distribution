@@ -1,0 +1,6 @@
+  Features:
+    - With the Quality mod, item request and buffer depots can request an item at a quality, at qualities compared with one (=, ≠, >, <, ≥, ≤), or at any quality. Freighters fetch the highest quality first, whatever the quality of the depots and freighters.
+    - Better freighters have more health, cargo stacks, fluid capacity, speed and fuel tank (30% a quality level). Depots send their best freighters first.
+    - A better Fuel depot's liquid fuel tank holds more, as better chests and tanks do.
+    - Upgrading a depot to another quality, with the upgrade planner or by building over it, keeps its request, settings and freighters.
+    - Robots bring freighters of the quality of the ghost in your cursor, and replace a lost freighter with one of its quality.

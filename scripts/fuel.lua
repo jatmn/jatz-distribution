@@ -6,6 +6,7 @@
 -- and hands this module the helpers it shares with it once they are all defined (fueling.install).
 local fueling = {}
 local lifecycle = require("scripts.trip-state")
+local quality = require("scripts.quality")
 
 -- scripts/logistics.lua, and its helpers, from fueling.install.
 local logistics, fuel_tank, inventory, depots_at, loading_tile, new_token, ask_route, drive, end_trip, target
@@ -25,8 +26,19 @@ local FUEL_MARGIN = 1.25
 local FUEL_RESERVE = 0.1
 
 -- Fuel: a full tank and what a tile of driving burns, in joules (runtime settings, settings.lua).
-local function fuel_capacity()
-  return settings.global["jatz-freighter-fuel-capacity"].value * 1000000
+-- A freighter of a better quality (`grade`, nil for normal) holds more: the tank times its quality's
+-- bonus (scripts/quality.lua).
+local function fuel_capacity(grade)
+  local capacity = settings.global["jatz-freighter-fuel-capacity"].value * 1000000
+  return grade and capacity * quality.multiplier(grade) or capacity
+end
+
+-- A trip's full tank, its freighter's quality's: from `capacity`, a normal tank, if the caller has
+-- read it already (reading a setting makes a table each time).
+local function tank_of(trip, capacity)
+  local grade = trip.freighter_quality
+  capacity = capacity or fuel_capacity()
+  return grade and capacity * quality.multiplier(grade) or capacity
 end
 
 -- Below this share of a full tank, a freighter's fuel shows yellow on hover.
@@ -100,7 +112,7 @@ end
 -- that burns into another (a fuel cell into a used one) leaves that in the depot, so only as many
 -- are taken as the depot has room for what they leave.
 local function refuel(trip, depot)
-  local capacity = fuel_capacity()
+  local capacity = tank_of(trip)
   local tank = fuel_tank(depot.entity)
   local held = tank and tank.get_fluid(1)
   local fluid = held and burnable_fluid(held.name)
@@ -116,11 +128,11 @@ local function refuel(trip, depot)
     local stack = chest[index]
     local item = stack.valid_for_read and burnable_item(stack.name)
     if item then
-      local quality = stack.quality.name
+      local grade = stack.quality.name
       local count = math.min(stack.count, math.ceil((capacity - trip.energy) / item.fuel_value))
       local burnt = item.burnt
       if burnt then
-        count = math.min(count, chest.get_insertable_count({ name = burnt, quality = quality }))
+        count = math.min(count, chest.get_insertable_count({ name = burnt, quality = grade }))
       end
       if count > 0 then
         if count >= stack.count then
@@ -129,7 +141,7 @@ local function refuel(trip, depot)
           stack.count = stack.count - count
         end
         if burnt then
-          chest.insert({ name = burnt, count = count, quality = quality })
+          chest.insert({ name = burnt, count = count, quality = grade })
         end
         trip.energy = trip.energy + count * item.fuel_value
       end
@@ -137,12 +149,12 @@ local function refuel(trip, depot)
   end
 end
 
--- Show a freighter's fuel on hover, as its status: green, yellow below LOW_FUEL of a tank, red
+-- Show a freighter's fuel on hover, as its status: green, yellow below LOW_FUEL of its tank, red
 -- once dry. Nothing while fuel is turned off.
 -- Written only when what it shows changes (`trip.fuel_shown`, which names the freighter too, since
 -- a repainted one is a new entity with no status yet).
--- `per_tile` and `capacity` are fuel_per_tile() and fuel_capacity(), given when the caller has read
--- them already (reading a setting makes a table each time).
+-- `per_tile` and `capacity` are fuel_per_tile() and fuel_capacity() (a normal tank), given when the
+-- caller has read them already (reading a setting makes a table each time).
 local FUEL_STATUS = { label = { "jatz-gui.freighter-fuel", {}, {} } }
 local function show_fuel(trip, per_tile, capacity)
   local drone = trip.drone
@@ -161,6 +173,11 @@ local function show_fuel(trip, per_tile, capacity)
     return
   end
   capacity = capacity or fuel_capacity()
+  -- (Inlined tank_of: this runs for every freighter every second.)
+  local grade = trip.freighter_quality
+  if grade then
+    capacity = capacity * quality.multiplier(grade)
+  end
   local energy = trip.energy or capacity
   local diode = energy <= 0 and "red" or energy < capacity * LOW_FUEL and "yellow" or "green"
   local held_key, held = energy_text(energy)
@@ -299,11 +316,12 @@ local function short_of_fuel(trip, length)
   if trip.fuel_check == "checked" or not length or per_tile <= 0 then
     return false
   end
-  local capacity = fuel_capacity()
+  local capacity = tank_of(trip)
   return trip.energy < math.min(length * per_tile * FUEL_MARGIN + capacity * FUEL_RESERVE, capacity)
 end
 
 fueling.fuel_capacity = fuel_capacity
+fueling.tank_of = tank_of
 fueling.fuel_per_tile = fuel_per_tile
 fueling.burnable_fluid = burnable_fluid
 fueling.has_fuel = has_fuel
