@@ -4213,8 +4213,10 @@ do -- A depot marked for deconstruction fetches nothing more: freighters refille
 end
 
 do -- A freighter reaching its provider after its depot was marked loads nothing and goes home.
+  -- (Real stacks at the provider: from the counting chest nothing loads, marked or not.)
   local logistics = reset()
   local request, provider = setup(logistics)
+  local stock = stocked(provider, "a", 20)
   logistics.on_tick()
   answer(logistics, 1, "route")
   local trip = trip_of(request)
@@ -4222,7 +4224,7 @@ do -- A freighter reaching its provider after its depot was marked loads nothing
   arrive(logistics, trip)
   check(
     "it loads nothing there",
-    trip.state == "to-request" and trip.cargo.get_item_count("a") == 0 and provider.chest.contents.a == 20
+    trip.state == "to-request" and trip.cargo.get_item_count("a") == 0 and stock.get_item_count("a") == 20
   )
 end
 

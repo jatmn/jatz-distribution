@@ -10,7 +10,7 @@
 -- - "providers": what provider depots hold;
 -- - "requests": what request depots hold;
 -- - "needs": what request depots still need, their request less what they hold and what
---   freighters are bringing (logistics.missing).
+--   freighters are bringing, none for one marked for deconstruction (logistics.missing).
 -- Request depots are the item and liquid request depots, never buffer depots.
 --
 -- Its road network is the road (road and depot road, the tiles freighters drive on) joined, side

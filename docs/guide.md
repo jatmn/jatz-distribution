@@ -183,7 +183,7 @@ To switch depots on what the road network holds or needs, build a **road network
 - **What provider and buffer depots hold** (the default): what freighters can fetch.
 - **What provider depots hold**: buffer depots left out.
 - **What request depots hold**: item and liquid request depots, not buffer depots.
-- **What request depots still need**: each request depot's request, less what it holds and what freighters are already bringing it.
+- **What request depots still need**: each request depot's request, less what it holds and what freighters are already bringing it. A depot marked for deconstruction needs nothing.
 
 More about it:
 
