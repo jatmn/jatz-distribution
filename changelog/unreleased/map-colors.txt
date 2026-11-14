@@ -1,2 +1,2 @@
   Changes:
-    - Freighters show on the map and minimap in violet, like their paint, instead of blue, and roads in light green instead of brown.
+    - Freighters show on the map and minimap in violet, like their paint, instead of blue, and roads in light green instead of brown. Saves from before redraw their map once, so roads charted earlier change too.
