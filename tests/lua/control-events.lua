@@ -236,7 +236,11 @@ commands = {
 -- Settings, as Factorio gives them: an unknown name fails, as `settings.global[name].value` would
 -- on nil in game, and a name of the other kind too.
 local SETTINGS = { ["jatz-freighter-fuel-capacity"] = 20, ["jatz-freighter-fuel-per-tile"] = 10 }
-local STARTUP = { ["jatz-default-item-request"] = 1, ["jatz-default-fluid-request"] = 1000 }
+local STARTUP = {
+  ["jatz-default-item-request"] = 1,
+  ["jatz-default-fluid-request"] = 1000,
+  ["jatz-default-full-loads"] = false,
+}
 local function setting_kind(values, kind)
   return setmetatable({}, {
     __index = function(_, name)
@@ -1471,6 +1475,44 @@ do -- The "full loads only" checkbox, on buffer and request depots alike, carrie
   check("unticking it turns it off", not logistics.get_full_loads(built))
   local provider = requesting(240, "jatz-provider-depot")
   check("provider depots have no such setting", not logistics.set_full_loads(provider, true))
+  local function blueprinted(entity)
+    logistics.setup_blueprint(blueprint, { [1] = entity })
+    return saved[1].tags or {}
+  end
+  check(
+    "with it off by default, a blueprint of a depot with it off has no tag",
+    blueprinted(built).jatz_full_loads == nil
+  )
+
+  -- The startup setting "Full loads only by default" ticks it on new request and buffer depots,
+  -- item and liquid; a blueprint then keeps a depot's "off" too, so the depot built from it stays off.
+  STARTUP["jatz-default-full-loads"] = true
+  local on_request, on_buffer = requesting(250, "jatz-request-depot"), requesting(260, "jatz-buffer-depot")
+  local on_liquid = requesting(270, "jatz-liquid-request-depot")
+  local on_liquid_buffer = requesting(280, "jatz-liquid-buffer-depot")
+  check(
+    "set on, new request and buffer depots, item and liquid, start with full loads only",
+    logistics.get_full_loads(on_request)
+      and logistics.get_full_loads(on_buffer)
+      and logistics.get_full_loads(on_liquid)
+      and logistics.get_full_loads(on_liquid_buffer)
+  )
+  check(
+    "a new provider depot still has no such setting",
+    not logistics.get_full_loads(requesting(290, "jatz-provider-depot"))
+  )
+  check("a depot built before keeps its own", not logistics.get_full_loads(built))
+  local off_tags = blueprinted(built)
+  check("a blueprint of a depot with it off says so", off_tags.jatz_full_loads == false)
+  check("a blueprint of a depot with it on says so", blueprinted(on_request).jatz_full_loads == true)
+  local rebuilt = requesting(300, "jatz-request-depot")
+  fire("on_robot_built_entity", { entity = rebuilt, tags = off_tags })
+  check("and a depot built from the blueprint with it off has it off", not logistics.get_full_loads(rebuilt))
+  STARTUP["jatz-default-full-loads"] = false
+  check(
+    "set off again, new depots start without it",
+    not logistics.get_full_loads(requesting(310, "jatz-request-depot"))
+  )
 end
 
 do -- The priority slider: provider depots get a panel with it and their circuit condition; buffer

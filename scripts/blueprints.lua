@@ -89,7 +89,14 @@ local function plan_settings(planned, entity)
     planned.tags[REQUEST_TAG] = depot.request and { item = depot.request.item, count = depot.request.count } or nil
     -- Its own tag, so it's kept even with no item requested.
     planned.tags[FROM_BUFFERS_TAG] = depot.from_buffers or nil
-    planned.tags["jatz_full_loads"] = depot.full_loads or nil
+    -- Kept when on, and when off too while new depots start with it on (the startup setting,
+    -- logistics.add), so a depot built from the blueprint keeps it off.
+    local full_loads = depot.full_loads == true
+    if full_loads or settings.startup["jatz-default-full-loads"].value then
+      planned.tags["jatz_full_loads"] = full_loads
+    else
+      planned.tags["jatz_full_loads"] = nil
+    end
     local freighters = freighter_total(entity)
     planned.tags[FREIGHTERS_TAG] = freighters > 0 and freighters or nil
     planned.tags[CIRCUIT_TAG] = circuit_tag(depot)
