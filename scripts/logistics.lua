@@ -1703,8 +1703,9 @@ local function check_trip(id, trip, per_tile, capacity, polluters)
   end
   if trip.search and game.tick - trip.search.since >= SEARCH_TIMEOUT then
     search_again(id, trip)
-  elseif trip.planning and game.tick - trip.planning.since >= SEARCH_TIMEOUT then
-    -- Its roads were never measured (a busy pathfinder, say): it asks again.
+  elseif trip.planning and drone.valid and game.tick - trip.planning.since >= SEARCH_TIMEOUT then
+    -- Its roads were never measured (a busy pathfinder, say): it asks again. (Not one destroyed,
+    -- its on_object_destroyed still to come: Pullfrog's review of 5d10933.)
     drive(trip, trip.planning.to)
   elseif trip.drone.valid and trip.energy <= 0 and not trip.dry and per_tile > 0 then
     trip.dry = true
