@@ -23,6 +23,9 @@ files["control.lua"].globals = {"game", "storage"}
 files["control.lua"].read_globals = {"script", "prototypes", "helpers", "remote", "rendering", "commands"}
 files["scripts/**"].globals = {"game", "storage"}
 files["scripts/**"].read_globals = {"script", "prototypes", "helpers", "remote", "rendering"}
+-- Migration scripts run once in the runtime stage when a save loads the new version.
+files["migrations/**"].globals = {"game", "storage"}
+files["migrations/**"].read_globals = {"script", "prototypes", "helpers", "remote", "rendering"}
 
 -- Lua unit tests run outside Factorio and stand in for its runtime globals.
 files["tests/lua/**"].globals = {"defines", "prototypes", "script", "storage", "game", "remote", "commands", "rendering"}

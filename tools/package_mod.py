@@ -32,8 +32,9 @@ def mod_files(root=REPO):
     files += sorted((root / 'prototypes').glob('*.lua'))
     files += sorted((root / 'scripts').glob('*.lua'))
     files += sorted((root / 'locale').rglob('*.cfg'))
-    # Prototype renames for saves from before (migrations/2026-11-07-logistic-depots.json).
-    files += sorted((root / 'migrations').glob('*.json'))
+    # Prototype renames (migrations/2026-11-07-logistic-depots.json) and one-time scripts
+    # (migrations/2026-11-14-map-colors.lua) for saves from before.
+    files += sorted((root / 'migrations').glob('*.json')) + sorted((root / 'migrations').glob('*.lua'))
     freighter = root / 'assets/quinityn-freighter'
     files += [freighter / 'factorio/freighter-animation.lua', freighter / 'icons/quinityn-freighter.png',
               freighter / 'technology/quinityn-freighter.png']
