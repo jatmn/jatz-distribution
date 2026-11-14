@@ -87,16 +87,27 @@ local function plan_settings(planned, entity)
     planned.tags[PRIORITY_TAG] = supplying and supplying.priority ~= PRIORITY_DEFAULT and supplying.priority or nil
     planned.tags[robot_access.tag] = robot_access.get(entity) or nil
     -- With its quality and comparator when not normal "=" (scripts/quality.lua), so a normal
-    -- request's tag is as it always was.
+    -- request's tag is as it always was. The amount set (a liquid depot's request is that as far as
+    -- it can hold, which can change).
     local request = depot.request
     planned.tags[REQUEST_TAG] = request
-        and { item = request.item, count = request.count, quality = request.quality, comparator = request.comparator }
+        and {
+          item = request.item,
+          count = request.asked or request.count,
+          quality = request.quality,
+          comparator = request.comparator,
+        }
       or nil
     -- Its own tag, so it's kept even with no item requested.
     planned.tags[FROM_BUFFERS_TAG] = depot.from_buffers or nil
     -- Kept off too: the depot built from it starts as the startup setting says where it is built
     -- (logistics.add), which needn't be what it was here.
     planned.tags["jatz_full_loads"] = depot.full_loads == true
+    -- Liquid depots only, kept off too, as full loads are.
+    planned.tags["jatz_freighter_storage"] = nil
+    if depot.fluid then
+      planned.tags["jatz_freighter_storage"] = depot.freighter_storage == true
+    end
     local freighters = freighter_total(entity)
     planned.tags[FREIGHTERS_TAG] = freighters > 0 and freighters or nil
     planned.tags[CIRCUIT_TAG] = circuit_tag(depot)
@@ -247,6 +258,9 @@ function blueprints.apply_tags(entity, tags)
   if type(tags["jatz_full_loads"]) == "boolean" then
     logistics.set_full_loads(entity, tags["jatz_full_loads"])
   end
+  if type(tags["jatz_freighter_storage"]) == "boolean" then
+    logistics.set_freighter_storage(entity, tags["jatz_freighter_storage"])
+  end
   freighters = freighters or tags[FREIGHTERS_TAG]
   if type(freighters) == "number" and freighters >= 0 then
     -- An item depot's ghost from a blueprint from before asked for them by its insert plan too:
@@ -274,12 +288,20 @@ local function copy_request(source, destination)
   if request_depot(source) and request_depot(destination) then
     local request = logistics.get_request(source)
     if request then
-      logistics.set_request(destination, request.item, request.count, request.quality, request.comparator)
+      -- The amount set, as for a blueprint.
+      logistics.set_request(
+        destination,
+        request.item,
+        request.asked or request.count,
+        request.quality,
+        request.comparator
+      )
     else
       logistics.set_request(destination, nil)
     end
     logistics.set_from_buffers(destination, logistics.get_from_buffers(source))
     logistics.set_full_loads(destination, logistics.get_full_loads(source))
+    logistics.set_freighter_storage(destination, logistics.get_freighter_storage(source))
   end
   if supplying_depot(source) and supplying_depot(destination) then
     logistics.set_priority(destination, logistics.get_priority(source))

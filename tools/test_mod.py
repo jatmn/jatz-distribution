@@ -384,6 +384,11 @@ EXPECTED = {'recipes': RECIPES,
             # Not set to request from buffers, with the only liquid provider empty, a liquid request
             # depot falls back to the liquid buffer for its 300 crude oil.
             'fallback_from_buffers': False, 'fallback_delivered': 300, 'fallback_buffer_left': 700,
+            # Freighter storage: a liquid request depot whose 35,000 tank is full asks for its
+            # tank's size, off by default; using its 50 freighters of 750 as storage, 37,500. All
+            # 2,000 water its provider holds comes, and waits in its parked freighters.
+            'storage_default': False, 'storage_request_before': 35000, 'storage_request': 37500,
+            'storage_held': {'tank': 35000, 'freighters': 2000}, 'storage_provider_left': 0,
             # A hand-placed freighter lowers the same request proxy (5 -> 4) instead of replacing
             # it, so an open window keeps showing the request.
             'hand_fill_same_proxy': True, 'hand_fill_requested': 4,
