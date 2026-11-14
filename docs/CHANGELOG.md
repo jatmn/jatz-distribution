@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.1.7](https://github.com/jatmn/jatz-distribution/compare/v0.1.6...v0.1.7) (2026-11-14)
+
+
+### Features
+
+* add a startup setting for "Full loads only" on new depots ([#96](https://github.com/jatmn/jatz-distribution/issues/96)) ([2c7d0a7](https://github.com/jatmn/jatz-distribution/commit/2c7d0a7bae40f6d2fce6f72e716ef4cfb5a428f6))
+* add startup settings for new requests' default amount ([#92](https://github.com/jatmn/jatz-distribution/issues/92)) ([b620fcd](https://github.com/jatmn/jatz-distribution/commit/b620fcdfcf803ae4eb2dab0c38c19632ff5fe691))
+
+
+### Bug Fixes
+
+* plan routes through road tunnels by measured road length ([#97](https://github.com/jatmn/jatz-distribution/issues/97)) ([1fb8f9d](https://github.com/jatmn/jatz-distribution/commit/1fb8f9d133d4fa8bd5b6b7b0ab9c92c62be1d674))
+* show freighters violet and roads light green on the map ([#95](https://github.com/jatmn/jatz-distribution/issues/95)) ([9c4d6f9](https://github.com/jatmn/jatz-distribution/commit/9c4d6f96b33cf9f0815ae401cffb1c69e361a835))
+
+
+### Refactoring
+
+* make runtime lifecycle states explicit ([#89](https://github.com/jatmn/jatz-distribution/issues/89)) ([e5b329a](https://github.com/jatmn/jatz-distribution/commit/e5b329a99cc64b145706f571213b6af5293a2088))
+
+
+### Maintenance
+
+* **deps:** bump actions/github-script from 8.0.0 to 9.0.0 ([#90](https://github.com/jatmn/jatz-distribution/issues/90)) ([f2f6ca2](https://github.com/jatmn/jatz-distribution/commit/f2f6ca288f22b5e587ab526c2f59d19f1bee8891))
+* **deps:** bump pullfrog/pullfrog from 0.1.122 to 0.1.125 ([#91](https://github.com/jatmn/jatz-distribution/issues/91)) ([2ce24b6](https://github.com/jatmn/jatz-distribution/commit/2ce24b6bdb53ee0b57cf7bfbe653c17b2c2f8be9))
+
 ## [0.1.6](https://github.com/jatmn/jatz-distribution/compare/v0.1.5...v0.1.6) (2026-11-09)
 
 

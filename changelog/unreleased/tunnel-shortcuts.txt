@@ -1,2 +1,0 @@
-  Bugfixes:
-    - Fixed road tunnels counting as farther than road: freighters now take the shortest way by road, through any number of tunnels or none, including where road also joins both ends, and pick providers and fuel depots by it.
