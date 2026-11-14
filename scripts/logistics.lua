@@ -59,8 +59,8 @@
 -- portals. A depot whose provider (or Fuel depot, or home) is on another network the tunnels join
 -- sends its freighter through them: it drives to a portal's mouth, goes under (swapped for an
 -- unseen freighter that stands there for as long as the tunnel takes to drive, `into_tunnel`),
--- comes out at the other end (`out_of_tunnel`) and drives on. Routes within one network never use
--- them.
+-- comes out at the other end (`out_of_tunnel`) and drives on. Within one network it goes through
+-- them where that is shorter than the road, as a search measured it (`drive`).
 local loading_zone = require("scripts.loading-zone")
 local paint = require("scripts.freighter-paint")
 local depot_circuit = require("scripts.depot-circuit")
@@ -1024,8 +1024,12 @@ end
 --
 -- A destination on another road network that tunnels join is reached through them: the freighter
 -- drives to the first tunnel's mouth (`trip.tunnel`), and on from where it comes out
--- (logistics.out_of_tunnel). Under ground, it only notes where it is going.
-local function drive(trip, destination, sampled)
+-- (logistics.out_of_tunnel). Under ground, it only notes where it is going. So is one on the same
+-- network when the way through tunnels is shorter than `road`, the road's length from where it last
+-- arrived as a depot's search measured it, and a re-plan keeps to a tunnel it was heading for. With
+-- no road length known (out of a tunnel, a reroute, after a Fuel depot), it drives the road within
+-- a network: as the crow flies, the way on from a tunnel's exit is never shorter through another.
+local function drive(trip, destination, sampled, road)
   if trip.movement == "underground" then
     trip.destination = destination
     lifecycle.travel(trip)
@@ -1036,6 +1040,8 @@ local function drive(trip, destination, sampled)
   end
   trip.destination = destination
   lifecycle.travel(trip)
+  -- The tunnel it was heading for, if any.
+  local tunnel = trip.tunnel
   -- On the road now: no longer standing at home deciding whether it can go.
   lifecycle.move(trip, "road")
   -- From the last place it arrived at (its road network is known there), or where it stands. (Not
@@ -1043,7 +1049,15 @@ local function drive(trip, destination, sampled)
   local hop
   local tunnelled = storage.tunnel_surfaces
   if tunnelled and next(tunnelled) then
-    hop = select(2, tunnels.route(trip.drone.surface_index, trip.origin or trip.drone.position, destination))
+    if not road and tunnel and tunnel.goal and tunnel.goal.x == destination.x and tunnel.goal.y == destination.y then
+      -- On its way to a tunnel for this destination (re-planned, perhaps from where it stands, road
+      -- having been removed somewhere on the surface): it keeps to the way through tunnels.
+      road = math.huge
+    end
+    hop = select(2, tunnels.route(trip.drone.surface_index, trip.origin or trip.drone.position, destination, road))
+    if hop then
+      hop.goal = destination
+    end
   end
   lifecycle.road(trip, hop)
   logistics.command(trip, {
@@ -1123,7 +1137,7 @@ local function start_trip(depot, provider, from, planned, length)
   show_fuel(trip)
   -- set_off may send it straight back into the slot (too little fuel, nowhere to fill up), which
   -- destroys the unit: only its id can be read after.
-  set_off(trip.key, trip, length)
+  set_off(trip.key, trip, length, length)
   return storage.trips[trip.key] ~= nil
 end
 
@@ -1437,8 +1451,8 @@ end
 -- the tank is short for it. The way here is burned first (see drive), so the tank is read as it is:
 -- a freighter turned on the road between its checks was otherwise judged on the fuel it had at the
 -- last one, and could set off for home without the Fuel depot it needed (Copilot's review of
--- be24d17).
-function set_off(id, trip, length)
+-- be24d17). `road`: the road length to its target as a search measured it, if known (see drive).
+function set_off(id, trip, length, road)
   if trip.movement ~= "departing" then
     burn(trip)
   end
@@ -1447,7 +1461,7 @@ function set_off(id, trip, length)
   if fueling.short_of_fuel(trip, length) then
     return fueling.look_for_fuel(id, trip)
   end
-  drive(trip, target(trip), true)
+  drive(trip, target(trip), true, road)
 end
 
 -- Drop a trip's search and start again: for fuel, or for a new provider.
@@ -1967,12 +1981,18 @@ local function arrived_at_provider(id, trip, depot)
   end
   -- Home, loaded or (if there was nothing to load) empty, to unload and park, painted for its load:
   -- as far by road as it came (when it came from home), and never less than the straight line.
+  -- The way back is the way there, through tunnels or by road, when it came from home.
   repaint(id, trip)
   show_cargo(trip)
   -- Painting moves the trip to its new freighter's unit_number.
   id = trip.drone.unit_number
   local home, here = loading_tile(depot.entity), trip.drone.position
-  set_off(id, trip, math.max(trip.leg or 0, math.sqrt((home.x - here.x) ^ 2 + (home.y - here.y) ^ 2)))
+  set_off(
+    id,
+    trip,
+    math.max(trip.leg or 0, math.sqrt((home.x - here.x) ^ 2 + (home.y - here.y) ^ 2)),
+    not trip.diverted and trip.leg or nil
+  )
 end
 
 -- Filled up at a Fuel depot (as far as it had fuel): on to where it was going.
@@ -2519,10 +2539,20 @@ local function route_answered(search, length)
     return
   end
   local candidate = search.candidates[search.index]
-  if not length then
-    -- No road: through tunnels, perhaps, from the origin the search started with (for a rerouted
-    -- freighter, where it had last arrived when it started; searches from before have none).
-    length = tunnels.route(depot.entity.surface_index, search.origin or search.from, candidate.position)
+  -- Through tunnels, perhaps, from the origin the search started with (for a rerouted freighter,
+  -- where it had last arrived when it started; searches from before have none): where there is no
+  -- road, or, for a depot's search, where they are shorter than it. A freighter's own search asks
+  -- the road from where it stands, not from that origin, so the two can't be weighed: only a way to
+  -- another network counts for it (review of 6e563e6: a freighter rerouted mid-road was sent back to
+  -- a tunnel near where it set off).
+  local through = tunnels.route(
+    depot.entity.surface_index,
+    search.origin or search.from,
+    candidate.position,
+    not search.trip and length or nil
+  )
+  if through and (not length or through < length) then
+    length = through
   end
   if length then
     if length < (search.best_length or math.huge) then

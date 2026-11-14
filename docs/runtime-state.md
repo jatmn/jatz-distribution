@@ -16,7 +16,7 @@ and `scripts/routes.lua` use the same transitions when they start, finish or inv
 | Search | `owner.search` (trip or depot) | absent = idle; `{kind = provider/fuel, phase = pending/retry, token, since}`; only pending owns a token |
 | Service | `trip.service` | absent = no service stop; `{kind = loading/unloading/refueling, since}`; the engine's timed command controls completion |
 | Movement | `trip.movement` | `departing`, `road`, `approaching-tunnel`, `waiting-at-tunnel`, `underground`, `exiting-tunnel`, `ended` |
-| Tunnel | `trip.tunnel` | entry/exit, portal IDs, length and orientation, present only during approach/wait/crossing |
+| Tunnel | `trip.tunnel` | entry/exit, portal IDs, length and orientation, and the destination it was planned for (`goal`), present only during approach/wait/crossing |
 | Fuel decision | `trip.fuel_check` | `unchecked` for a new leg; `checked` after refueling or deciding to continue without it; `trip.refuel` identifies the fuel stop |
 
 `entering-tunnel` is a synchronous transition while replacing the visible unit and installing

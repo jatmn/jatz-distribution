@@ -12,9 +12,9 @@
 -- The engine's pathfinder knows nothing of tunnels, so routing through them is worked out here:
 -- which road network a point is on (`net_of`: flooded with LuaSurface.get_connected_tiles over
 -- both road tiles, remembered only for the points the routes start, end or tunnel from), and the
--- shortest way from one network to another through the tunnels (`route`). Freighters still drive
--- every leg on road with the pathfinder; tunnels are only used between networks it can't join, never
--- as shortcuts within one.
+-- shortest way through the tunnels (`route`): from one network to another, or within one when it is
+-- shorter than the road the pathfinder found. Freighters still drive every leg on road with the
+-- pathfinder.
 local tunnels = {}
 
 tunnels.name = "jatz-road-tunnel"
@@ -269,16 +269,22 @@ local function distance(a, b)
   return math.sqrt(dx * dx + dy * dy)
 end
 
--- The way from `from` to `to` on a surface through tunnels, when they are on different road
--- networks: its length, and the first tunnel to go through ({ entry, exit, length, from, to }:
--- where to drive in, where it comes out, how far apart, and the two portals' unit numbers). Nil
--- when there are no tunnels there, both are on the same network (the pathfinder drives that), or
--- no tunnels join them.
+-- Ways through tunnels within one network measured within this of the road are taken: the way
+-- back measures the same as the way there, adding up in another order.
+local SAME_LENGTH = 1e-6
+
+-- The way from `from` to `to` on a surface through tunnels: its length, and the first tunnel to go
+-- through ({ entry, exit, length, from, to }: where to drive in, where it comes out, how far apart,
+-- and the two portals' unit numbers).
+-- Between road networks only tunnels join, whatever its length. Within one, only when it is no
+-- longer than `road`, the length of the way by road if known (the owner's report, November 13,
+-- 2026: a tunnel is road like any other, so a shorter way through one is taken; before, a road
+-- round it always was). Nil when there are no tunnels there, or none give such a way.
 -- Each leg on road counts as the straight line (a road is never shorter), so the length is never
 -- more than the way really is, as the search for the nearest provider needs (a road is never
 -- shorter than the straight line, and this never shorter than the straight line from `from` to
 -- `to`). Few portals are expected, so every one is looked at for each step.
-function tunnels.route(surface_index, from, to)
+function tunnels.route(surface_index, from, to, road)
   if not (has_tunnels(surface_index) and from and to) then
     return nil
   end
@@ -289,40 +295,49 @@ function tunnels.route(surface_index, from, to)
   end
   local surface = game.surfaces[surface_index]
   local start, goal = net_of(nets, surface, from), net_of(nets, surface, to)
-  if not (start and goal) or start == goal then
+  if not (start and goal) or (start == goal and not road) then
     return nil
   end
-  -- Shortest known way to stand at each portal's entry, and the first tunnel taken to get there.
-  local best, first, done = {}, {}, {}
+  -- Shortest known way to stand at each portal's entry, and the first tunnel taken to get there, by
+  -- state: a portal's place in the list before going through any tunnel, that plus `count` after.
+  -- Within one network a way through no tunnel is never longer as the crow flies than one through
+  -- some, so a way to the goal counts only once through one.
+  -- Each portal's network, looked up once.
+  local count = #portals
+  local best, first, done, on = {}, {}, {}, {}
   for index, portal in ipairs(portals) do
-    if net_of(nets, surface, portal.entry) == start then
+    on[index] = net_of(nets, surface, portal.entry)
+    if on[index] == start then
       best[index] = distance(from, portal.entry)
     end
   end
   local length, hop
+  -- Within one network, no way longer than the road is wanted.
+  local longest = start == goal and road + SAME_LENGTH or math.huge
   while true do
     local current, shortest = nil, math.huge
-    for index, cost in pairs(best) do
-      if not done[index] and cost < shortest then
-        current, shortest = index, cost
+    for state, cost in pairs(best) do
+      if not done[state] and cost < shortest then
+        current, shortest = state, cost
       end
     end
-    if not current or (length and shortest >= length) then
+    if not current or (length and shortest >= length) or shortest > longest then
       break
     end
     done[current] = true
-    local portal = portals[current]
-    local net = net_of(nets, surface, portal.entry)
+    local through = current > count
+    local place = through and current - count or current
+    local portal, net = portals[place], on[place]
     -- Arrived there through a tunnel, on the goal's network: drive on to the goal.
-    if first[current] and net == goal then
+    if through and net == goal then
       local total = shortest + distance(portal.entry, to)
       if not length or total < length then
         length, hop = total, first[current]
       end
     end
     -- Through this portal's tunnel, to a mouth on road.
-    local other = portal.other
-    if other and not done[other] and portal.length and net_of(nets, surface, portals[other].entry) then
+    local other = portal.other and count + portal.other
+    if other and not done[other] and portal.length and on[portal.other] then
       local cost = shortest + portal.length
       if not best[other] or cost < best[other] then
         best[other] = cost
@@ -331,16 +346,17 @@ function tunnels.route(surface_index, from, to)
     end
     -- On road to another portal on the same network (a mouth off road is on none).
     for index, next_portal in ipairs(portals) do
-      if net and not done[index] and index ~= current and net_of(nets, surface, next_portal.entry) == net then
+      local state = through and count + index or index
+      if net and not done[state] and state ~= current and on[index] == net then
         local cost = shortest + distance(portal.entry, next_portal.entry)
-        if not best[index] or cost < best[index] then
-          best[index] = cost
-          first[index] = first[current]
+        if not best[state] or cost < best[state] then
+          best[state] = cost
+          first[state] = first[current]
         end
       end
     end
   end
-  if not hop then
+  if not hop or (start == goal and length > road + SAME_LENGTH) then
     return nil
   end
   local entrance = portals[hop]

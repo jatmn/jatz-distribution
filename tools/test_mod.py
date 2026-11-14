@@ -136,6 +136,9 @@ EXPECTED = {'recipes': RECIPES,
             # A road tunnel's two portals pair up and join two road networks under the walls between
             # them: the freighter goes under, unseen, and brings the radars.
             'tunnel_paired': True, 'tunnel_received': 10, 'tunnel_went_under': True,
+            # Where road round the walls joins the two sides too, the shorter way through the tunnel
+            # is taken, there and back: a tunnel counts as road.
+            'shortcut_received': 10, 'shortcut_went_under': True, 'shortcut_drove_round': False,
             # The freighter is drawn at 60% of the artwork's scale (1.5 x 4.5 tiles measured): 0.9 x 2.7,
             # as the engine stores it, in 1/256 tiles rounded towards the centre.
             'freighter_box': [0.8984375, 2.6953125],

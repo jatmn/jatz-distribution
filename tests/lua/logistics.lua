@@ -5442,7 +5442,7 @@ do -- Two tunnels one after another, through a one-tile road between them.
   surface.get_tile = road_tile
 end
 
-do -- Routes within one road network never use tunnels.
+do -- A route within one road network that no tunnel shortens doesn't use one.
   local logistics = reset()
   local request = tunnelled(logistics, true)
   local nearby = entity("jatz-provider-depot", 10.5, 0.5, { a = 20 })
@@ -5452,6 +5452,215 @@ do -- Routes within one road network never use tunnels.
   local trip = trip_of(request)
   local drive = trip.drone.commands[#trip.drone.commands]
   check("a provider on the same network is driven to directly", trip.tunnel == nil and drive.destination.x == 10.5)
+end
+
+-- The tunnel's two sides also joined by road, round the tunnel: one road network.
+local function joined_round(logistics, road)
+  local whole = surface.get_connected_tiles
+  local request, provider, portals, home = tunnelled(logistics, true)
+  function surface.get_connected_tiles(position)
+    local x, y = position[1], position[2]
+    if x < -5 or x > 60 or y < -5 or y > 5 then
+      return {}
+    end
+    local tiles = {}
+    for tx = -5, 60 do
+      for ty = -5, 5 do
+        tiles[#tiles + 1] = { x = tx, y = ty }
+      end
+    end
+    return tiles
+  end
+  logistics.on_roads_changed(1, true, false)
+  logistics.on_tick()
+  -- The pathfinder's road: straight there, or the long way round, 50 tiles south and back.
+  local goal = requests[1].goal
+  logistics.on_script_path_request_finished({
+    id = 1,
+    path = road == "round" and {
+      { position = { x = 0.5, y = 50 } },
+      { position = { x = 40.5, y = 50 } },
+      { position = goal },
+    } or { { position = goal } },
+  })
+  return request, provider, portals, home, whole
+end
+
+do -- A tunnel shorter than the road round it is taken, there and back, like any shorter road.
+  local logistics = reset()
+  local request, provider, _, home, whole = joined_round(logistics, "round")
+  local trip = trip_of(request)
+  local through = math.sqrt(20 ^ 2 + 2 ^ 2) + 10 + math.sqrt(10 ^ 2 + 2 ^ 2)
+  check(
+    "the provider's way counts through the tunnel, not round by road",
+    trip and trip.provider == provider.unit_number and math.abs(trip.leg - through) < 1e-6
+  )
+  local drive = trip.drone.commands[#trip.drone.commands]
+  check("it drives to the west mouth", trip.tunnel and drive.destination.x == 20.5 and drive.destination.y == 0.5)
+  -- Road removed elsewhere: it plans again from where it stands, with no road length to weigh.
+  trip.drone.position = { x = 10.5, y = 0.5 }
+  logistics.on_roads_changed(1, false, true)
+  drive = trip.drone.commands[#trip.drone.commands]
+  check(
+    "road removed elsewhere, it keeps to the tunnel it was heading for",
+    trip.tunnel and drive.destination.x == 20.5 and drive.destination.y == 0.5
+  )
+  trip.drone.position = { x = 20.5, y = 0.5 }
+  arrive(logistics, trip)
+  check("and goes under", trip.drone.name == "jatz-freighter-drone-underground")
+  arrive(logistics, trip)
+  arrive(logistics, trip)
+  drive = trip.drone.commands[#trip.drone.commands]
+  check(
+    "out of the east mouth, on to the provider by road",
+    trip.tunnel == nil and drive.destination.x == 40.5 and drive.destination.y == 2.5
+  )
+  logistics.on_roads_changed(1, true, false)
+  check("road laid meanwhile changes nothing", trip.drone.commands[#trip.drone.commands] == drive)
+  arrive(logistics, trip)
+  check("it loads there", trip.cargo.get_item_count("a") == 10)
+  drive = trip.drone.commands[#trip.drone.commands]
+  check("and heads home through the tunnel", trip.tunnel and drive.destination.x == 30.5 and trip.tunnel.exit.x == 20.5)
+  arrive(logistics, trip)
+  arrive(logistics, trip)
+  arrive(logistics, trip)
+  drive = trip.drone.commands[#trip.drone.commands]
+  check(
+    "out of the west mouth, home by road",
+    trip.tunnel == nil and drive.destination.x == 0.5 and drive.destination.y == 2.5
+  )
+  arrive(logistics, trip)
+  check("the load arrives", home.get_item_count("a") == 10 and not has_trip(request))
+  surface.get_connected_tiles = whole
+end
+
+do -- A road shorter than the way through the tunnel is driven, there and back.
+  local logistics = reset()
+  local request, _, _, _, whole = joined_round(logistics, "straight")
+  local trip = trip_of(request)
+  check("the provider's way is the road", trip and math.abs(trip.leg - 40) < 1e-6)
+  local drive = trip.drone.commands[#trip.drone.commands]
+  check("it drives straight to the provider", trip.tunnel == nil and drive.destination.x == 40.5)
+  arrive(logistics, trip)
+  drive = trip.drone.commands[#trip.drone.commands]
+  check("and straight home", trip.tunnel == nil and drive.destination.x == 0.5)
+  surface.get_connected_tiles = whole
+end
+
+do -- Rerouted mid-road, a freighter weighs no tunnel near where it set off against the road from where it stands.
+  local logistics = reset()
+  local request, provider, _, _, whole = joined_round(logistics, "straight")
+  local trip = trip_of(request)
+  -- Driven on by road, east of the tunnel, when its provider goes; another one nearby.
+  trip.drone.position = { x = 58.5, y = 2.5 }
+  local spare = entity("jatz-provider-depot", 50.5, 0.5, { a = 20 })
+  logistics.add(spare)
+  provider.valid = false
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = provider.unit_number })
+  -- 63 tiles by road from where it stands; through the tunnel from home, about 50.
+  local id = #requests
+  logistics.on_script_path_request_finished({
+    id = id,
+    path = {
+      { position = { x = 58.5, y = 30 } },
+      { position = { x = 50.5, y = 30 } },
+      { position = requests[id].goal },
+    },
+  })
+  local drive = trip.drone.commands[#trip.drone.commands]
+  check(
+    "it takes the road from where it stands, not 38 tiles back west to the tunnel",
+    trip.provider == spare.unit_number and trip.tunnel == nil and drive.destination.x == 50.5 and trip.leg > 60
+  )
+  surface.get_connected_tiles = whole
+end
+
+do -- Just after road joins two networks, their tunnel is no longer than the road the pathfinder found.
+  local logistics = reset()
+  local request, _, _, _, whole = tunnelled(logistics, true)
+  local tunnels = require("scripts.tunnels")
+  check("setup: two networks known", tunnels.route(1, { x = 0.5, y = 2.5 }, { x = 40.5, y = 2.5 }) ~= nil)
+  -- Road laid between them: what is known of the networks is forgotten only a second later.
+  function surface.get_connected_tiles(position)
+    local x, y = position[1], position[2]
+    if x < -5 or x > 60 or y < -5 or y > 5 then
+      return {}
+    end
+    local tiles = {}
+    for tx = -5, 60 do
+      for ty = -5, 5 do
+        tiles[#tiles + 1] = { x = tx, y = ty }
+      end
+    end
+    return tiles
+  end
+  logistics.on_roads_changed(1, true, false)
+  logistics.on_tick()
+  answer(logistics, #requests, "route")
+  local trip = trip_of(request)
+  check("the road found is the way, not the longer one through the tunnel", trip and math.abs(trip.leg - 40) < 1e-6)
+  surface.get_connected_tiles = whole
+end
+
+do -- Out of a shortcut tunnel on one road network, on by road: never back in, nor into another (as the crow
+  -- flies, the way on is never shorter through one).
+  local logistics = reset()
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  local provider = entity("jatz-provider-depot", 40.5, 0.5)
+  stocked(provider, "a", 20)
+  stocked(request)
+  logistics.add(request)
+  logistics.add(provider)
+  assert(logistics.set_request(request, "a", 10))
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+  -- One network: road round both tunnels (not modelled tile by tile).
+  local whole = surface.get_connected_tiles
+  function surface.get_connected_tiles(position)
+    local x, y = position[1], position[2]
+    if x < -5 or x > 60 or y < -5 or y > 5 then
+      return {}
+    end
+    local tiles = {}
+    for tx = -5, 60 do
+      for ty = -5, 5 do
+        tiles[#tiles + 1] = { x = tx, y = ty }
+      end
+    end
+    return tiles
+  end
+  local road_tile = surface.get_tile
+  function surface.get_tile(x)
+    return { valid = true, name = x == 26 and "grass-1" or "jatz-road" }
+  end
+  local tunnels = require("scripts.tunnels")
+  local function portal(x, facing)
+    local made = entity("jatz-road-tunnel", x, 0.5)
+    made.direction = defines.direction[facing]
+    return made
+  end
+  local a, b, c, d = portal(21, "west"), portal(24, "east"), portal(27, "west"), portal(30, "east")
+  a.fluidbox_neighbours, b.fluidbox_neighbours = { { b } }, { { a } }
+  c.fluidbox_neighbours, d.fluidbox_neighbours = { { d } }, { { c } }
+  for _, made in ipairs({ a, b, c, d }) do
+    tunnels.add(made)
+  end
+  logistics.on_roads_changed(1, true, true)
+  logistics.on_tick()
+  -- The road round both: 50 tiles south and back.
+  logistics.on_script_path_request_finished({
+    id = 1,
+    path = { { position = { x = 0.5, y = 50 } }, { position = { x = 40.5, y = 50 } }, { position = requests[1].goal } },
+  })
+  local trip = trip_of(request)
+  check("setup: into the first tunnel", trip and trip.tunnel and trip.tunnel.exit.x == 25.5)
+  arrive(logistics, trip)
+  arrive(logistics, trip)
+  trip.drone.position = { x = 25.5, y = 0.5 }
+  arrive(logistics, trip)
+  local drive = trip.drone.commands[#trip.drone.commands]
+  check("out of the first, on to the provider by road", trip.tunnel == nil and drive.destination.x == 40.5)
+  surface.get_tile = road_tile
+  surface.get_connected_tiles = whole
 end
 
 do -- A failure queued before a new tunnel wait must not complete that new command.
