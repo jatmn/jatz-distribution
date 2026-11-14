@@ -7,7 +7,8 @@ under .local/mod-check/ with the check mod from tests/factorio/, creates a save
 (placing every depot in four directions with pipes, a fuelled, driven freighter
 and road-connected provider and request depots) and runs it until the deliveries
 are done. Then runs the check mod's undo scenario, which has a player (the undo stack is a
-player's). Runs once with the base game only and,
+player's), and its bonuses scenario (the freighter bonuses beside a player's Bonuses window).
+Runs once with the base game only and,
 when the installation includes Space Age and everything it needs, once more with
 Space Age. Also checks that every item, recipe and entity name the game shows has
 an English translation. Works with the free headless server.
@@ -443,6 +444,16 @@ EXPECTED_UNDO_PLATFORM = {
     'platform_removed': True,
     'platform_rebuilt': {'request': {'item': 'water', 'count': 1000}, 'freighters': 2}}
 UNDO_TICKS = 1300
+# The freighter bonuses beside the Bonuses window: none before research; after two speed levels,
+# three item capacity levels and one fluid capacity level, each.
+EXPECTED_BONUSES = {
+    'unresearched': 'none',
+    'researched': {'beside_bonuses': True, 'title': 'jatz-bonus.title', 'lines': [
+        # The game reads a localised string's numbers back as text.
+        ['jatz-bonus.freighter-speed', '40'],
+        ['jatz-bonus.freighter-item-capacity', '3'],
+        ['jatz-bonus.freighter-fluid-capacity', '375']]}}
+BONUS_TICKS = 10
 
 
 def run(command, log, timeout=300):
@@ -577,6 +588,12 @@ def check(binary, data, bundled, enabled_mods, label, extra=None):
     expected_undo = {**EXPECTED_UNDO, **(EXPECTED_UNDO_PLATFORM if 'space-age' in enabled_mods else {})}
     if undo != expected_undo:
         wrong['undo'] = undo
+    bonuses_path = write / 'script-output/jatz-bonuses-check.json'
+    bonused = run(command + ['--test-scenario', f'{CHECK.name.rsplit("_", 1)[0]}/bonuses', '--test-ticks',
+                             str(BONUS_TICKS)], workspace / 'bonuses.log') == 0
+    bonuses = json.loads(bonuses_path.read_text()) if bonused and bonuses_path.exists() else None
+    if bonuses != EXPECTED_BONUSES:
+        wrong['bonuses'] = bonuses
     expected_mods = sorted(enabled_mods | set(OURS) | set(extra) | {'core'})
     translations = locale_keys()
     untranslated = sorted({key for names in report.get('localised_names', {}).values()

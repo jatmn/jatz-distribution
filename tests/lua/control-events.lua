@@ -2411,6 +2411,51 @@ do -- Research finished or undone reaches the freighters (tests/lua/logistics.lu
   check("other research changes nothing", true)
 end
 
+do -- The Bonuses window lists only the game's own modifiers: freighter research shows beside it.
+  local research = require("scripts.research")
+  local technologies = {}
+  prototypes.technology = {}
+  for name, done in pairs({ [research.speed] = 2, [research.item_capacity] = 0, [research.fluid_capacity] = 1 }) do
+    for level = 1, 3 do
+      prototypes.technology[name .. "-" .. level] = {}
+      technologies[name .. "-" .. level] = { researched = level <= done, level = level }
+    end
+  end
+  local relative = element()
+  local player = { index = 16, valid = true, force = { technologies = technologies }, gui = { relative = relative } }
+  game.get_player = function()
+    return player
+  end
+  fire("on_gui_opened", { player_index = 16, gui_type = defines.gui_type.bonus })
+  local frame = relative.jatz_bonus_frame
+  check(
+    "opening the Bonuses window shows the freighter bonuses beside it",
+    frame and frame.anchor.gui == "relative_gui_type.bonus_gui"
+  )
+  local lines = {}
+  for _, child in ipairs(frame.children[1].children) do
+    if child.type == "label" then
+      lines[#lines + 1] = child.caption
+    end
+  end
+  check(
+    "speed and fluid capacity, and no item capacity line with none researched",
+    #lines == 2
+      and lines[1][1] == "jatz-bonus.freighter-speed"
+      and lines[1][2] == 40
+      and lines[2][1] == "jatz-bonus.freighter-fluid-capacity"
+      and lines[2][2] == research.fluid_per_level
+  )
+  for _, technology in pairs(technologies) do
+    technology.researched = false
+  end
+  fire("on_gui_opened", { player_index = 16, gui_type = defines.gui_type.bonus })
+  check("with nothing researched, no panel", relative.jatz_bonus_frame == nil and #relative.children == 0)
+  fire("on_gui_opened", { player_index = 16, gui_type = defines.gui_type.production })
+  check("other windows get none", #relative.children == 0)
+  prototypes.technology = nil
+end
+
 do -- A save from before research keeps its recipes; a new game, or a save the mod is added to, doesn't.
   local research = require("scripts.research")
   -- Each force's unlocking technologies, unresearched, as Factorio leaves them after resetting the
