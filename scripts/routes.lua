@@ -7,6 +7,7 @@
 -- this module the helpers it shares with it once they are defined (routes.install).
 local routes = {}
 local lifecycle = require("scripts.trip-state")
+local tunnels = require("scripts.tunnels")
 
 -- scripts/logistics.lua's helpers, from routes.install.
 local owner_of, cancel_search, route_answered
@@ -62,6 +63,14 @@ end
 -- Ask the pathfinder for the road route from the search's start to its current candidate, as the
 -- freighter would drive it, unless its length is known. Only a depot's searches are remembered:
 -- they start from its loading zone, while a freighter's start wherever it stands.
+function routes.drone_shape()
+  if not drone_shape then
+    local drone = prototypes.entity[DRONE]
+    drone_shape = { box = drone.collision_box, mask = drone.collision_mask }
+  end
+  return drone_shape
+end
+
 local function ask_route(search, surface, force)
   local goal = search.candidates[search.index].position
   if not search.trip then
@@ -83,13 +92,10 @@ local function ask_route(search, surface, force)
     search.road_key, search.surface_index = key, surface_index
     search.road_version = (storage.road_versions or {})[surface_index]
   end
-  if not drone_shape then
-    local drone = prototypes.entity[DRONE]
-    drone_shape = { box = drone.collision_box, mask = drone.collision_mask }
-  end
+  local shape = routes.drone_shape()
   local id = surface.request_path({
-    bounding_box = drone_shape.box,
-    collision_mask = drone_shape.mask,
+    bounding_box = shape.box,
+    collision_mask = shape.mask,
     start = search.from,
     goal = goal,
     force = force,
@@ -111,7 +117,27 @@ local function path_length(from, path)
   return length
 end
 
+-- A road leg of a way through tunnels (scripts/tunnels.lua, plan), asked as a search's road is.
+function tunnels.ask(surface, force, from, to)
+  local shape = routes.drone_shape()
+  return surface.request_path({
+    bounding_box = shape.box,
+    collision_mask = shape.mask,
+    start = from,
+    goal = to,
+    force = force,
+    radius = ARRIVAL_RADIUS,
+    pathfind_flags = { no_break = true },
+  })
+end
+
 function routes.on_script_path_request_finished(event)
+  local leg = storage.tunnel_leg_asks and storage.tunnel_leg_asks[event.id]
+  if leg then
+    local length = event.path and path_length(leg.from, event.path) or nil
+    tunnels.answered(event.id, length, event.try_again_later)
+    return
+  end
   local search = storage.searches and storage.searches[event.id]
   if not search then
     return

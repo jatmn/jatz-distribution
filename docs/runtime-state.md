@@ -16,7 +16,8 @@ and `scripts/routes.lua` use the same transitions when they start, finish or inv
 | Search | `owner.search` (trip or depot) | absent = idle; `{kind = provider/fuel, phase = pending/retry, token, since}`; only pending owns a token |
 | Service | `trip.service` | absent = no service stop; `{kind = loading/unloading/refueling, since}`; the engine's timed command controls completion |
 | Movement | `trip.movement` | `departing`, `road`, `approaching-tunnel`, `waiting-at-tunnel`, `underground`, `exiting-tunnel`, `ended` |
-| Tunnel | `trip.tunnel` | entry/exit, portal IDs, length and orientation, and the destination it was planned for (`goal`), present only during approach/wait/crossing |
+| Tunnel | `trip.tunnel` | entry/exit, portal IDs, length and orientation, present only during approach/wait/crossing |
+| Plan | `trip.plan`, `trip.planning` | `plan = {to, hops, step}`: the tunnels to its destination in turn (scripts/tunnels.lua, `plan`), absent for no tunnels or unknown; `planning = {to, token, since}` while it stands waiting for road lengths to be measured, cleared by `drive`, `begin_search` and `clear_route_search` |
 | Fuel decision | `trip.fuel_check` | `unchecked` for a new leg; `checked` after refueling or deciding to continue without it; `trip.refuel` identifies the fuel stop |
 
 `entering-tunnel` is a synchronous transition while replacing the visible unit and installing
@@ -81,6 +82,7 @@ second framework or duplicate saved state.
 | Reservations, incoming cargo and spoilage | `promises.lua` | File on trip changes; release before rerouting; refresh spoiled cargo at its recorded deadline; rebuild on configuration change |
 | Path answers and road-length cache | `routes.lua` | Pending/cached answers carry ownership tokens; cache writes require the same road version; cached positives and negatives expire |
 | Tunnel topology and flood cache | `tunnels.lua` | Added road marks topology stale, removal invalidates it; route construction owns rebuilding; the trip owns an in-progress crossing |
+| Measured tunnel-route roads | `tunnels.lua` (`storage.tunnel_legs`, `tunnel_leg_asks`, `tunnel_waiters`) | Any road change (the surface's road version) forgets lengths; unanswered questions are asked again after 10 s; waiters (searches, planning trips) are resumed on each answer and drop themselves when stale; configuration changes clear all three |
 | Depot admission and cooldowns | `logistics.lua` dispatch | Current demand, room, circuit gate, fleet, road, fuel and retry deadline determine eligibility and displayed status |
 | Circuit snapshots and monitor output | `circuit-switch.lua`, `road-monitor.lua` | Snapshot/previous output belongs to its tick; subtract the depot's own contribution; dirty topology rebuilds before publishing |
 | Robot access | `robot-access.lua` | Explicit user setting, subject to the engine's circuit override; separate from delivery admission |

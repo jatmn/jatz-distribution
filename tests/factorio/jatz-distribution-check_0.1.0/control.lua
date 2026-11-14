@@ -769,6 +769,54 @@ local function setup_deliveries(surface, result)
   assert(shortcut.provider.insert({ name = "small-lamp", count = 10 }) == 10, "lamp: cannot stock")
   assert(remote.call("jatz-distribution", "set_request", shortcut.request, "small-lamp", 10), "lamp: request refused")
   deliveries.shortcut = shortcut
+  -- Two tunnels one after the other on one road network (the owner, November 14, 2026: no penalty
+  -- for going under, even several in series): road at y -73 from the provider (x 20) to the first
+  -- tunnel's west mouth (x 28), the one tile x 37 between the two tunnels, and from the second's
+  -- east mouth (x 46) to the request depot (x 56); every part also joined by a road round to the
+  -- north (y -78, and x 37 up to it). Through both is 36 tiles; any way using the road round, 46 or
+  -- more. The freighter goes under at both outer mouths and the middle one, and never drives round.
+  assert(
+    surface.count_entities_filtered({ area = { { 18, -80 }, { 58, -70 } } }) == 0,
+    "series: something stands where the tunnels go"
+  )
+  local series = {
+    provider = depot(surface, "provider", free(surface, 20.5, -74.5)[1], -74.5),
+    request = depot(surface, "request", free(surface, 56.5, -74.5)[1], -74.5),
+  }
+  lay_road(surface, 20, -73, 28, -73)
+  lay_road(surface, 37, -73, 37, -78)
+  lay_road(surface, 46, -73, 56, -73)
+  lay_road(surface, 24, -73, 24, -78)
+  lay_road(surface, 24, -78, 52, -78)
+  lay_road(surface, 52, -78, 52, -73)
+  for _, walls in ipairs({ 31, 40 }) do
+    for x = walls, walls + 3 do
+      for y = -75, -71 do
+        surface.create_entity({ name = "stone-wall", position = { x + 0.5, y + 0.5 }, force = "player" })
+      end
+    end
+  end
+  for _, mouth in ipairs({
+    { 30, defines.direction.west },
+    { 36, defines.direction.east },
+    { 39, defines.direction.west },
+    { 45, defines.direction.east },
+  }) do
+    surface.create_entity({
+      name = TUNNEL,
+      position = { mouth[1], -72.5 },
+      direction = mouth[2],
+      force = "player",
+      raise_built = true,
+    })
+  end
+  assert(series.provider.insert({ name = "medium-electric-pole", count = 10 }) == 10, "series: cannot stock")
+  assert(
+    remote.call("jatz-distribution", "set_request", series.request, "medium-electric-pole", 10),
+    "series: request refused"
+  )
+  series.under = {}
+  deliveries.series = series
   local biter = surface.create_entity({ name = "medium-biter", position = { 1.5, 66.5 }, force = "enemy" })
   biter.commandable.set_command({ type = defines.command.stop, distraction = defines.distraction.none })
   deliveries.runover.biter_id = biter.unit_number
@@ -1850,12 +1898,22 @@ local function check_freighters_on_road(surface)
     end
     deliveries.road_samples = deliveries.road_samples + 1
     if drone.name == UNDERGROUND then
-      -- The shortcut's tunnel is east of x 0, the other west of it.
-      if drone.position.x > 0 then
+      -- The series' tunnels are north of y -70; the shortcut's east of x 0; the first west of it.
+      if drone.position.y < -70 then
+        -- By mouth: the first tunnel's west one (x 28), the middle one (x 37) or the second's east
+        -- one (x 46); it stands where it arrived, within reach of the mouth's tile.
+        local x = drone.position.x
+        deliveries.series.under[x < 33 and "west" or x < 42 and "middle" or "east"] = true
+      elseif drone.position.x > 0 then
         deliveries.shortcut_under = true
       else
         deliveries.tunnel_under = true
       end
+    end
+    -- On the road round the series' tunnels: everything there north of its road at y -73.
+    local x, y = drone.position.x, drone.position.y
+    if x > 23 and x < 54 and y > -79 and y < -73.3 then
+      deliveries.series_round = true
     end
     -- On the road round the shortcut's tunnel.
     if drone.position.y > -59 and drone.position.y < -58 and drone.position.x > 35 and drone.position.x < 52 then
@@ -2475,6 +2533,7 @@ local function deliveries_finished(surface, tick, result)
     and count(deliveries.shortest.request, "coal") == 10
     and count(deliveries.tunnel.request, "radar") == 10
     and count(deliveries.shortcut.request, "small-lamp") == 10
+    and count(deliveries.series.request, "medium-electric-pole") == 10
     and count(storage.depot_roads.request, "small-electric-pole") == 5
     and count(deliveries.multi.request, "iron-stick") == 60
     and count(deliveries.minimum.first, "iron-chest") + count(deliveries.minimum.second, "iron-chest") >= 10
@@ -2673,6 +2732,10 @@ local function deliveries_finished(surface, tick, result)
   result.shortcut_received = count(deliveries.shortcut.request, "small-lamp")
   result.shortcut_went_under = deliveries.shortcut_under == true
   result.shortcut_drove_round = deliveries.shortcut_round == true
+  result.series_received = count(deliveries.series.request, "medium-electric-pole")
+  local under = deliveries.series.under
+  result.series_went_under = under.west == true and under.middle == true and under.east == true
+  result.series_drove_round = deliveries.series_round == true
   result.island_freighter_sent = deliveries.island_sent == true
   local roads = storage.depot_roads
   result.connected_by_depot_roads = count(roads.request, "small-electric-pole")
