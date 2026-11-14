@@ -126,6 +126,8 @@ EXPECTED = {'recipes': RECIPES,
             # Nor can road be laid under any of them, a gate included while it stands open.
             'road_under': {'open_gate': 'grass-1', 'closed_gate': 'grass-1', 'pole': 'grass-1',
                            'gate_still_open': True, 'gate_closed': True},
+            # Nor through a cliff, though a road tunnel goes under one.
+            'road_through_cliff': {'laid': False, 'from_ghost': False, 'tunnel_under': True},
             # Road and depot changes take effect at once: a mended road is used, a removed provider
             # is replaced by the next one, a removed request depot's freighter leaves.
             'rerouted_received': 10, 'rerouted_from_farther': 10, 'orphaned_provider_left': 10,
