@@ -20,6 +20,12 @@ and `scripts/routes.lua` use the same transitions when they start, finish or inv
 | Plan | `trip.plan`, `trip.planning` | `plan = {to, hops, step}`: the tunnels to its destination in turn (scripts/tunnels.lua, `plan`), absent for no tunnels or unknown; `planning = {to, token, since}` while it stands waiting for road lengths to be measured, cleared by `drive`, `begin_search` and `clear_route_search` |
 | Fuel decision | `trip.fuel_check` | `unchecked` for a new leg; `checked` after refueling or deciding to continue without it; `trip.refuel` identifies the fuel stop |
 
+Quality (`scripts/quality.lua`) adds data, not states: `trip.freighter_quality` (the freighter's
+own quality, nil for normal: its unit's quality, cargo stacks, speed and tank) and `trip.mix`
+(quality -> amount it plans to load, adding up to `trip.planned`; nil when it is all normal, as
+every trip before quality). `logistics.set_parts` sets both from amounts by key. A depot's
+`request` gains `quality` and `comparator` (nil for normal `=`, so older requests are unchanged).
+
 `entering-tunnel` is a synchronous transition while replacing the visible unit and installing
 its timed command. It is never left at an event boundary. Fuel amount, the crawl speed latch
 `dry`, the one-reroute allowance `diverted`, and provider exclusion `passed` are orthogonal
@@ -68,10 +74,11 @@ the logical trip key used by reservations. Status text never drives a mission tr
 
 | Concern | Owner and states | Reconciliation |
 | --- | --- | --- |
-| Fleet replenishment | `freighter-requests.lua`: absent = idle; `replenishment = {phase, target}`, phases `reconciling`, `waiting-for-space`, `requested` | `trim_freighter_requests` compares home/out/waiting trucks and real proxy plans with the target. Fulfillment or deliberate cancellation clears it. `waiting-for-space` may also have partial requests outstanding. Removal plans remain owned by Factorio. |
+| Fleet replenishment | `freighter-requests.lua`: absent = idle; `replenishment = {phase, target, quality, waiting}`, phases `reconciling`, `waiting-for-space`, `requested`; `quality` (nil for normal) is what robots bring for the latest ask; `waiting` lists `{quality, count}` still waiting for a free chest stack, first asked first, each kept at the quality it was asked for at | `trim_freighter_requests` compares home/out/waiting trucks and real proxy plans with the target. Fulfillment or deliberate cancellation clears it. `waiting-for-space` may also have partial requests outstanding. Removal plans remain owned by Factorio. |
 | Marked undo action | `undo.lua`: `locating`, `located`, `unlocated`; a located record has an action index | The removal mark identifies the action across moving history items. Failed mining retains the mark; cancellation/destruction forgets it. |
 | Undo snapshot | `undo.lua`: `captured`, `pending`, `tagged`, `consumed`, `expired` | A successful matching removal moves the captured snapshot to pending. Tagging or an early undo consumes it; timeout discards it. Engine undo tags retain the settings after the transient record leaves storage. |
 | Depot road ownership | `depot-road.lua`: absent = untracked, `owned`, `released` | All owners of a tile release together. Mining restores recorded layers once; covering preserves the player's tile. Shared ownership is derived from matching owned records, so it cannot become a stale flag. |
+| Quality upgrade | `depot-upgrades.lua`: `storage.depot_upgrades[spot] = {id, tick, robot_access}` and `storage.depot_builds[player]`, both for one tick | A depot mined because it is being replaced by itself at another quality is noted instead of refunded; the new one built at its spot that tick takes over its unit-number records (`logistics.replaced`, `depot_road.replaced`, `road_monitor.replaced`), trips' filed promises (`trip.promise.provider`) with the ledger they name. Unmatched, the old one's `on_object_destroyed` cleans up as for any removed depot. |
 
 The following machines already have domain owners and retain their existing representations.
 Their lifecycle contracts explain when they are updated or invalidated; they do not need a
@@ -79,7 +86,7 @@ second framework or duplicate saved state.
 
 | Concern | Owner | Contract |
 | --- | --- | --- |
-| Reservations, incoming cargo and spoilage | `promises.lua` | File on trip changes; release before rerouting; refresh spoiled cargo at its recorded deadline; rebuild on configuration change |
+| Reservations, incoming cargo and spoilage | `promises.lua` | File on trip changes, by key (an item at one quality, or a fluid); release before rerouting; refresh spoiled cargo at its recorded deadline; rebuild on configuration change |
 | Path answers and road-length cache | `routes.lua` | Pending/cached answers carry ownership tokens; cache writes require the same road version; cached positives and negatives expire |
 | Tunnel topology and flood cache | `tunnels.lua` | Added road marks topology stale, removal invalidates it; route construction owns rebuilding; the trip owns an in-progress crossing |
 | Measured tunnel-route roads | `tunnels.lua` (`storage.tunnel_legs`, `tunnel_leg_asks`, `tunnel_waiters`) | Road removed forgets lengths at once and drops answers asked before, with their questions and waiters; road laid marks them for measuring again at most once a second and keeps answers, plans meanwhile counting them as measured so they wait only for roads never measured; other tiles change nothing; all expire after five minutes, with questions unanswered for 10 s and their waiters; unanswered questions are asked again after 10 s; only a leg's current question resumes its waiters (searches, by their wait; planning trips, by their token), which drop themselves when stale; configuration changes clear all three |
@@ -100,13 +107,17 @@ outstanding searches while preserving the engine's current service/tunnel comman
 removes `searching`, `search_token`, `fuel_search`, `loading`, `departing`, `coming_out`,
 `refueled`, `tunnel.under` and `tunnel.started`. The trip version prevents repeated conversion.
 Legacy `freighter_target` becomes a replenishment record; old road `false` tombstones become
-released records; undo queue membership and action indexes identify their old phases.
+released records; undo queue membership and action indexes identify their old phases. A quality a
+mod change removed is forgotten (`logistics.forget_lost_qualities`): requests for it become
+normal, trips plan none of it, a freighter of it counts as normal and drives at normal speed
+(dry ones still crawl), its parked fuel and robot quality go.
 All migrations are idempotent and retain quantities, inventory objects, tags and ground layers.
 The normal release configuration change runs them; no migration is performed in `on_load`.
 
 ## Regression protection
 
-`tests/lua/logistics.lua` checks lifecycle invariants at each behavioral checkpoint alongside
+`tests/lua/logistics.lua` and `tests/lua/quality.lua` (through the shared `check` of
+`tests/lua/harness.lua`) check lifecycle invariants at each behavioral checkpoint alongside
 its reservation/incoming-cargo accounting checks. Live trips have unique logical identities,
 consistent entity/home indexes, valid search ownership, no search/service overlap, matching
 tunnel payloads and no retired flags. Event-sequence tests cover migration while loading and
@@ -116,5 +127,6 @@ saved representations as well as their existing cancellation/removal races.
 
 The Lua harness controls callback order and simulates Factorio objects; it does not prove
 engine behavior alone. `tools/test_mod.py` checks the installed package in Factorio with and
-without Space Age, including deliveries, fuel, tunnels, robots and undo. `benchmark_ups.py`
+without Space Age, including deliveries, fuel, tunnels, robots and undo, and with the Quality mod
+its quality scenario (requests by quality, better freighters and depots, quality upgrades). `benchmark_ups.py`
 compares unchanged gameplay and tick cost against the base on the same machine.

@@ -20,6 +20,10 @@
 -- right-click has robots take the slot's freighters away (again: cancel that). Pipette (Q) over
 -- the slot picks up a freighter, or its ghost, as over any inventory slot.
 --
+-- With the Quality mod (scripts/quality.lua), an item request also has a quality, chosen with the item
+-- as in the game's own item choosers, and a drop-down of how other qualities compare with it, as the
+-- game's logistic requests have, "Any quality" among them. Without it the panel is as it was.
+--
 -- Every panel ends with the depot's circuit condition, like a logistic chest's: "Enable/disable",
 -- what the condition reads (the circuit network without the depot's own contents, or its own
 -- contents) and the condition (a signal compared with another signal or a constant), with a light
@@ -27,6 +31,7 @@
 local logistics = require("scripts.logistics")
 local depot_circuit = require("scripts.depot-circuit")
 local robot_access = require("scripts.robot-access")
+local quality = require("scripts.quality")
 -- The road network monitor's panel gets the GUI events first (scripts/road-monitor-gui.lua).
 local monitor_gui = require("scripts.road-monitor-gui")
 
@@ -35,6 +40,7 @@ local request_gui = {}
 local FRAME = "jatz_request_frame"
 local ITEM = "jatz_request_item"
 local COUNT = "jatz_request_count"
+local QUALITY_COMPARATOR = "jatz_request_quality_comparator"
 local STATUS = "jatz_request_status"
 local SLOT = "jatz_request_freighters"
 local SLOT_LABEL = "jatz_request_freighters_label"
@@ -144,6 +150,15 @@ local function show_freighters(inner, entity)
   end
   local coming, leaving = logistics.requested_freighters(entity)
   local breakdown = { "jatz-gui.freighters", in_slot, out, coming, leaving, capacity }
+  -- Which qualities are in the slot, best first, when there are others than normal.
+  local by_quality = quality.available() and logistics.freighters_by_quality(entity)
+  if by_quality and #by_quality > 0 then
+    local list = { "" }
+    for index, entry in ipairs(by_quality) do
+      list[#list + 1] = (index > 1 and "  " or "") .. quality.icon(entry.quality) .. " " .. entry.count
+    end
+    breakdown = { "", breakdown, "\n", { "jatz-gui.freighters-by-quality", list } }
+  end
   row[SLOT].number = in_slot > 0 and in_slot or nil
   row[SLOT].tooltip = { "", breakdown, "\n\n", { "jatz-gui.freighter-slot-tooltip" } }
   row[SLOT_LABEL].caption = request_gui.freighter_caption(out, coming)
@@ -178,18 +193,31 @@ local function show_freighter_fuel(inner, entity)
     return
   end
   local home, full = fuel.home, 0
-  for _, energy in ipairs(home) do
-    if energy >= fuel.capacity then
+  for index, energy in ipairs(home) do
+    -- (Each against its own tank: a better freighter's holds more.)
+    if energy >= (fuel.home_tanks and fuel.home_tanks[index] or fuel.capacity) then
       full = full + 1
     end
   end
   label.caption = #home > 0 and { "jatz-gui.freighter-fuel-home", full, #home, logistics.energy_caption(home[#home]) }
     or { "jatz-gui.freighter-fuel-none" }
+  -- What a full tank holds: each size these freighters have, smallest first (a better freighter's
+  -- holds more), or a normal one's when there are none.
+  local tanks, seen = {}, {}
+  for _, list in ipairs({ fuel.home_tanks or {}, fuel.out_tanks or {} }) do
+    for _, tank in ipairs(list) do
+      if not seen[tank] then
+        seen[tank], tanks[#tanks + 1] = true, tank
+      end
+    end
+  end
+  table.sort(tanks)
   label.tooltip = {
     "jatz-gui.freighter-fuel-tooltip",
     #home > 0 and energy_list(home) or "-",
     #fuel.out > 0 and energy_list(fuel.out) or "-",
-    logistics.energy_caption(fuel.capacity),
+    #tanks > 1 and { "jatz-gui.freighter-fuel-tanks", energy_list(tanks) }
+      or { "jatz-gui.freighter-fuel-tank", logistics.energy_caption(tanks[1] or fuel.capacity) },
   }
 end
 
@@ -486,15 +514,38 @@ local function open(player, entity)
   local request = logistics.get_request(entity) or {}
   local row = inner.add({ type = "flow", name = "request_row", direction = "horizontal" })
   row.style.vertical_align = "center"
+  -- With qualities to choose from, an item comes with its quality (scripts/quality.lua).
+  local graded = not LIQUID[entity.name] and quality.available()
   row.add({
     type = "choose-elem-button",
     name = ITEM,
-    elem_type = LIQUID[entity.name] and "fluid" or "item",
-    item = not LIQUID[entity.name] and request.item or nil,
+    elem_type = LIQUID[entity.name] and "fluid" or graded and "item-with-quality" or "item",
+    item = not (LIQUID[entity.name] or graded) and request.item or nil,
+    ["item-with-quality"] = graded and request.item and {
+      name = request.item,
+      quality = request.quality or quality.normal,
+    } or nil,
     fluid = LIQUID[entity.name] and request.item or nil,
     elem_filters = LIQUID[entity.name] and FLUID_FILTERS or ITEM_FILTERS,
     tooltip = { LIQUID[entity.name] and "jatz-gui.request-fluid-tooltip" or "jatz-gui.request-item-tooltip" },
   })
+  if graded then
+    local items, selected = {}, 1
+    for index, comparator in ipairs(quality.comparators) do
+      items[index] = comparator == quality.any and { "jatz-gui.any-quality" } or comparator
+      if comparator == (request.comparator or "=") then
+        selected = index
+      end
+    end
+    local comparators = row.add({
+      type = "drop-down",
+      name = QUALITY_COMPARATOR,
+      items = items,
+      selected_index = selected,
+      tooltip = { "jatz-gui.request-quality-tooltip" },
+    })
+    comparators.style.width = 56
+  end
   local count = row.add({
     type = "textfield",
     name = COUNT,
@@ -641,7 +692,13 @@ local function on_gui_elem_changed(event)
   if not entity then
     return
   end
-  local item = event.element.elem_value
+  -- An item with its quality (a table) where qualities can be chosen, else its name.
+  local item, grade = event.element.elem_value, nil
+  if type(item) == "table" then
+    item, grade = item.name, item.quality
+  end
+  local comparators = event.element.parent[QUALITY_COMPARATOR]
+  local comparator = comparators and quality.comparators[comparators.selected_index] or nil
   local field = event.element.parent[COUNT]
   local amount = tonumber(field.text) or 0
   -- A newly chosen item starts at the default request (startup settings, settings.lua: stacks of
@@ -652,7 +709,7 @@ local function on_gui_elem_changed(event)
       or settings.startup["jatz-default-item-request"].value * prototypes.item[item].stack_size
     field.text = tostring(amount)
   end
-  logistics.set_request(entity, item, amount)
+  logistics.set_request(entity, item, amount, comparator ~= quality.any and grade or nil, comparator)
   show_count(field, entity, amount)
 end
 
@@ -681,7 +738,7 @@ local function on_gui_text_changed(event)
   local request = entity and logistics.get_request(entity)
   if request then
     local amount = tonumber(event.text) or 0
-    logistics.set_request(entity, request.item, amount)
+    logistics.set_request(entity, request.item, amount, request.quality, request.comparator)
     show_count(event.element, entity, amount)
   end
 end
@@ -708,8 +765,9 @@ local function on_gui_click(event)
   local ghost = player.cursor_ghost
   local ghost_name = ghost and (type(ghost.name) == "string" and ghost.name or ghost.name.name)
   if ghost_name == logistics.freighter then
-    -- A freighter ghost in the cursor: robots bring them.
-    logistics.request_freighters(entity, right and 1 or nil)
+    -- A freighter ghost in the cursor: robots bring them, of its quality.
+    local grade = ghost.quality and (type(ghost.quality) == "string" and ghost.quality or ghost.quality.name) or nil
+    logistics.request_freighters(entity, right and 1 or nil, grade)
   elseif player.controller_type == defines.controllers.remote then
     -- Remote view: no items move by hand from afar. Robots do it: right-click has them take the
     -- slot's freighters away (or cancels that), a click cancels freighters requested.
@@ -865,6 +923,18 @@ local function on_gui_value_changed(event)
 end
 
 local function on_gui_selection_state_changed(event)
+  if event.element.name == QUALITY_COMPARATOR then
+    -- How other qualities compare with the chosen one: the request takes those (scripts/quality.lua).
+    local entity = opened_depot(game.get_player(event.player_index), true)
+    local request = entity and logistics.get_request(entity)
+    local comparator = quality.comparators[event.element.selected_index]
+    if request then
+      local chosen = event.element.parent[ITEM].elem_value
+      local grade = type(chosen) == "table" and chosen.quality or request.quality
+      logistics.set_request(entity, request.item, request.count, comparator ~= quality.any and grade or nil, comparator)
+    end
+    return
+  end
   if event.element.name ~= CIRCUIT_COMPARATOR then
     return
   end
@@ -895,6 +965,8 @@ local function refresh()
       elseif
         not (inner.priority_row or ROLES[entity.name] == "request")
         or (requesting and not (inner.request_row and inner.request_row[STATUS] and inner.freighter_fuel and inner[FULL_LOADS]))
+        -- (Qualities came, or went, with a change of mods.)
+        or (requesting and (inner.request_row[QUALITY_COMPARATOR] ~= nil) ~= (not LIQUID[entity.name] and quality.available()))
         or not inner.circuit_mode_row
         or (robot_access.get(entity) ~= nil and not inner[ROBOT_ACCESS])
       then

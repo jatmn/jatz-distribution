@@ -121,7 +121,7 @@ Upgrade levels add science packs as they climb, from red and green up to utility
 
 ## Fuel that works like fuel
 
-- A new freighter comes with a full tank: 20 MJ, about 2,000 tiles of driving.
+- A new freighter comes with a full tank: 20 MJ for a normal freighter, about 2,000 tiles of driving. With Quality, a better freighter's tank holds more.
 - Before every leg of a trip (setting off from home, leaving the provider, or heading for a new provider after a reroute) a freighter checks its tank against that leg's road distance, plus 25% to spare and a 10% reserve.
 - If it's short, it **re-routes to the fuel depot nearest by road** from where it stands, fills up, then carries on to where it was going, cargo and all.
 - Freighters that can't reach a provider on what they have wait at home until there is fuel to get, rather than queueing at an empty fuel depot. The request depot's light tells you why.
@@ -139,6 +139,7 @@ Upgrade levels add science packs as they climb, from red and green up to utility
 ## Compatibility
 
 - **Space Age:** optional. Adds the carbon freighter recipe. Depots don't lay road on space platforms.
+- **Quality:** optional. Requests can name a quality, compare qualities or take any quality, whatever the quality of the depots and freighters carrying them. Better freighters carry more, drive faster and hold more fuel; better depots hold more. Upgrading a depot's quality keeps its settings and freighters.
 - **[Mining Drones](https://mods.factorio.com/mod/Mining_Drones)**, **[Mining Drones 2 Remastered](https://mods.factorio.com/mod/Mining_Drones_Remastered)** and **[Mining Drones Mod](https://mods.factorio.com/mod/Mining_Drones_Mod)**: every mining depot becomes a provider depot for whatever its drones mine.
 - **[Milestones](https://mods.factorio.com/mod/Milestones):** tracks your first freighter, 100 freighters and 1,000 road, whichever preset you use.
 

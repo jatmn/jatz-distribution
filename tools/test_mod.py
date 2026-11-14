@@ -439,6 +439,31 @@ EXPECTED_UNDO_PLATFORM = {
     'platform_removed': True,
     'platform_rebuilt': {'request': {'item': 'water', 'count': 1000}, 'freighters': 2}}
 UNDO_TICKS = 1300
+# The quality scenario (tests/factorio/jatz-distribution-check_0.1.0/scenarios/quality), run when the
+# Quality mod is on: requests by quality whatever the depots' and freighters' quality (rare only,
+# any quality highest first, at least rare), a rare freighter's health, speed, cargo and tank, rare
+# depots' chest and tanks, a depot upgraded to rare by robots and one replaced by a player keeping
+# their settings, and a blueprint keeping a request's quality.
+EXPECTED_QUALITY = {
+    'rare_received': {'rare': 15},
+    'rare_left': {'normal': 40, 'epic': 5},
+    'any_first': {'legendary': 30, 'rare': 15},
+    'any_received': {'legendary': 30, 'rare': 15, 'normal': 40},
+    'at_least_received': {'rare': 10, 'epic': 10},
+    'at_least_left': {'normal': 20},
+    'freighter': {'health': 800, 'speed': 1.6},
+    'freighter_first_load': 150,
+    'freighter_tank': 32,
+    'rare_request_slots': True,
+    'rare_liquid_capacity': 40000,
+    'rare_liquid_request_capped': 40000,
+    'rare_fuel_tank': True,
+    'upgraded_by_robots': {'quality': 'rare', 'request': 'wood x7', 'freighters': 3},
+    'replaced_by_player': {'quality': 'rare', 'new': True, 'priority': 7, 'robot_access': True},
+    'blueprint_tag': {'quality': 'rare', 'comparator': '≥'},
+    'blueprint_settings': {'quality': 'rare', 'comparator': '≥'},
+    'blueprint_built': {'quality': 'rare', 'comparator': '≥'}}
+QUALITY_TICKS = 1900
 
 
 def run(command, log, timeout=300):
@@ -573,6 +598,13 @@ def check(binary, data, bundled, enabled_mods, label, extra=None):
     expected_undo = {**EXPECTED_UNDO, **(EXPECTED_UNDO_PLATFORM if 'space-age' in enabled_mods else {})}
     if undo != expected_undo:
         wrong['undo'] = undo
+    if 'quality' in enabled_mods:
+        quality_path = write / 'script-output/jatz-quality-check.json'
+        graded = run(command + ['--test-scenario', f'{CHECK.name.rsplit("_", 1)[0]}/quality',
+                                '--test-ticks', str(QUALITY_TICKS)], workspace / 'quality.log') == 0
+        quality = json.loads(quality_path.read_text()) if graded and quality_path.exists() else None
+        if quality != EXPECTED_QUALITY:
+            wrong['quality'] = quality
     expected_mods = sorted(enabled_mods | set(OURS) | set(extra) | {'core'})
     translations = locale_keys()
     untranslated = sorted({key for names in report.get('localised_names', {}).values()

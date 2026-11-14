@@ -23,6 +23,10 @@ local SOURCE_TAG = "jatz_settings_of"
 -- can't be a condition, so the settings hold it as a tag instead (not parametrisable), and the
 -- blueprint can still be made.
 local COUNT_MAX = 2147483647
+-- An item request's quality is its signal's quality, which parametrising can change too; how other
+-- qualities compare with it (scripts/quality.lua) has no place in a condition, so it is a tag of
+-- the settings', only when not "=" ("any" for any quality).
+local COMPARATOR_TAG = "jatz_quality_comparator"
 
 local function key(position)
   return (position.x or position[1]) .. "," .. (position.y or position[2])
@@ -51,10 +55,11 @@ function depot_settings.plan(entities, requests)
     local request = depot.request
     if request and request.count <= COUNT_MAX then
       conditions[#conditions + 1] = {
-        first_signal = { type = depot.fluid and "fluid" or "item", name = request.item },
+        first_signal = { type = depot.fluid and "fluid" or "item", name = request.item, quality = request.quality },
         comparator = "=",
         constant = request.count,
       }
+      tags[COMPARATOR_TAG] = request.comparator
     elseif request then
       tags[logistics.request_tag] = request
     end
@@ -89,14 +94,20 @@ local function settings_of(entity, tags)
   for _, condition in ipairs(parameters and parameters.conditions or {}) do
     local signal = condition.first_signal
     if signal and type(signal.name) == "string" then
-      request = request or { item = signal.name, count = condition.constant or 0 }
+      request = request
+        or {
+          item = signal.name,
+          count = condition.constant or 0,
+          quality = signal.quality ~= "normal" and signal.quality or nil,
+          comparator = tags[COMPARATOR_TAG],
+        }
     elseif not condition.second_signal and condition.constant then
       freighters = freighters or math.max(0, condition.constant)
     end
   end
   local tagged = tags[logistics.request_tag]
   if not request and type(tagged) == "table" and type(tagged.item) == "string" and type(tagged.count) == "number" then
-    request = { item = tagged.item, count = tagged.count }
+    request = { item = tagged.item, count = tagged.count, quality = tagged.quality, comparator = tagged.comparator }
   end
   if request then
     local kinds = logistics.liquid[depot] and prototypes.fluid or prototypes.item
@@ -173,7 +184,7 @@ function depot_settings.built(entity, tags)
         return
       elseif found.name == settings.depot then
         if request then
-          logistics.set_request(found, request.item, request.count)
+          logistics.set_request(found, request.item, request.count, request.quality, request.comparator)
         elseif request == false then
           logistics.set_request(found, nil)
         end

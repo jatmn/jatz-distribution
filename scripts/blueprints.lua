@@ -86,7 +86,12 @@ local function plan_settings(planned, entity)
     planned.tags = planned.tags or {}
     planned.tags[PRIORITY_TAG] = supplying and supplying.priority ~= PRIORITY_DEFAULT and supplying.priority or nil
     planned.tags[robot_access.tag] = robot_access.get(entity) or nil
-    planned.tags[REQUEST_TAG] = depot.request and { item = depot.request.item, count = depot.request.count } or nil
+    -- With its quality and comparator when not normal "=" (scripts/quality.lua), so a normal
+    -- request's tag is as it always was.
+    local request = depot.request
+    planned.tags[REQUEST_TAG] = request
+        and { item = request.item, count = request.count, quality = request.quality, comparator = request.comparator }
+      or nil
     -- Its own tag, so it's kept even with no item requested.
     planned.tags[FROM_BUFFERS_TAG] = depot.from_buffers or nil
     -- Kept off too: the depot built from it starts as the startup setting says where it is built
@@ -232,7 +237,9 @@ function blueprints.apply_tags(entity, tags)
   if request == false then
     logistics.set_request(entity, nil)
   elseif type(request) == "table" and type(request.item) == "string" and type(request.count) == "number" then
-    logistics.set_request(entity, request.item, request.count)
+    -- (A quality or comparator that isn't well formed, or a quality the game no longer has, makes
+    -- set_request refuse it, leaving the depot's request as it is.)
+    logistics.set_request(entity, request.item, request.count, request.quality, request.comparator)
   end
   if type(tags[FROM_BUFFERS_TAG]) == "boolean" then
     logistics.set_from_buffers(entity, tags[FROM_BUFFERS_TAG])
@@ -266,7 +273,11 @@ local function copy_request(source, destination)
   end
   if request_depot(source) and request_depot(destination) then
     local request = logistics.get_request(source)
-    logistics.set_request(destination, request and request.item, request and request.count)
+    if request then
+      logistics.set_request(destination, request.item, request.count, request.quality, request.comparator)
+    else
+      logistics.set_request(destination, nil)
+    end
     logistics.set_from_buffers(destination, logistics.get_from_buffers(source))
     logistics.set_full_loads(destination, logistics.get_full_loads(source))
   end

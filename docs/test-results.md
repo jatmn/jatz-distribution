@@ -2,6 +2,46 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Quality: passed (automated)
+
+**November 14, 2026.** Quality support rebased onto `1fb8f9d133d4fa8bd5b6b7b0ab9c92c62be1d674`
+(after road tunnels by measured road length, #97), Factorio 2.1.24 headless on Linux (build 87808),
+base game and Space Age with Quality.
+
+- `tools/test_mod.py`: packaged mod passed with the base game and Space Age, including the new
+  quality scenario. That covers requests by quality, better freighters and depots, a robot upgrade
+  and a player's fast replace, and blueprints. Against the base the same scenario fails: normal items
+  arrive instead of rare, a rare freighter brings 100 with a 20 MJ tank, and an upgraded depot loses
+  its request and freighters.
+- `tools/test_mod_setup.py`: all 15 setup tests passed, including the new `tests/lua/quality.lua`
+  (93 checks) on the shared `tests/lua/harness.lua`, the logistics harness's 760 the same as on
+  `main`, and the control-event checks for upgrades, the quality panel and its fuel tooltip.
+- An independent review found four defects: room by quality when planning, rare cargo refiled as
+  normal, a hand-mined upgrade-marked depot, and a Fuel depot's refuel stop. All are fixed, each with
+  a check that fails before its fix.
+- A second review (of `7145d36`) found two more, both fixed with checks that fail before the fix: a
+  provider upgraded while a freighter was on its way kept that freighter's promise filed under the
+  old depot, so it was never let go (in the engine, 30 plates restocked after the first 30 were never
+  fetched; now all 60 arrive); and freighters waiting for a free truck chest stack took the quality
+  of the next one asked for (21 normal and 1 rare asked for brought 2 rare; now 1 normal and 1 rare).
+- A third review (of `690429b`) found a freighter on the road kept its quality's speed after a mod
+  change removed that quality (on 2.1.24, a rare freighter kept 0.1056 after the save was loaded
+  without Quality; now 0.066, a normal one's), and the depot's fuel tooltip said a full tank holds a
+  normal freighter's 20 MJ beside a full rare freighter's 32 MJ. Both are fixed, with checks that fail
+  before the fix; the fuel descriptions now give 20 MJ as a normal freighter's tank and say a depot
+  sends its best freighters first.
+- StyLua 2.5.2, Luacheck 1.2.0 and Ruff 0.17.3 passed; the emulator tests passed.
+- Not checked: the request panel and freighter slot tooltip in the graphical client.
+
+The deterministic quick emulator comparison reports +3.8% mean Lua instructions (+7.2% p99,
++5.8% worst tick), +0.6% API calls, and identical paths, commands, vehicles and deliveries (standard
+preset: +2.7% mean, +3.5% worst tick). In game, standard preset, five alternating runs per revision:
+
+| | Mean update (ms) | UPS | Script (ms) | Pathfinder (ms) | p99 (ms) | Max (ms) | Run spread (ms) | Vehicles out | Delivered/min |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Before | 1.352 | 740 | 0.546 | 0.053 | 3.854 | 7.306 | 0.049 | 1510 | 264720 |
+| After | 1.388 | 721 | 0.565 | 0.055 | 3.892 | 7.354 | 0.074 | 1510 | 264720 |
+
 ## Explicit runtime states: passed (automated)
 
 **November 9, 2026.** Refactor against `af0429cd7673a3674e3b8a50d301616fd572a3de`,

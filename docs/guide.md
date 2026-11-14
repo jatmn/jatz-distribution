@@ -95,16 +95,16 @@ If there's no road route to a depot, no freighter is sent there. The depot that 
 
 Freighters burn fuel as they drive, and fill up at **fuel depots** by themselves.
 
-- A new freighter comes with a full tank (20 MJ, about 2,000 tiles of driving). A freighter keeps what is left in its tank when it parks, and sets off on the next trip with it: the depot sends the one with the most fuel.
+- A new freighter comes with a full tank (20 MJ for a normal freighter, about 2,000 tiles of driving; a better freighter's tank holds more). A freighter keeps what is left in its tank when it parks, and sets off on the next trip with it: the depot sends its best freighters first (see [Quality](#quality)), and of those the one with the most fuel.
 - Hover a freighter on the road to see its fuel: green, yellow when low, red when it has run dry. The request depot's window shows the fuel of the freighters in its slot under the freighter slot; hover that line for every freighter's fuel, at home and out.
-- Load a fuel depot with **any fuel item** (coal, solid fuel, rocket fuel, a mod's fuel, anything that burns), by hand, inserter or robot, or **pipe in any fluid that burns**. Freighters take the fluid first, then items, a whole item at a time. An item worth more than a tank (some mods have fuel worth 10 GJ) goes in whole, and the freighter keeps all of it, so one such item lasts a very long way. In the base game, **petroleum gas** burns for freighters: 50 fill a tank, as with Transport Drones (unless another mod already gives it a fuel value). Fuel that burns into something (a fuel cell, say) leaves that in the depot.
+- Load a fuel depot with **any fuel item** (coal, solid fuel, rocket fuel, a mod's fuel, anything that burns), by hand, inserter or robot, or **pipe in any fluid that burns**. Freighters take the fluid first, then items, a whole item at a time. An item worth more than a tank (some mods have fuel worth 10 GJ) goes in whole, and the freighter keeps all of it, so one such item lasts a very long way. In the base game, **petroleum gas** burns for freighters: 50 fill a normal freighter's tank, as with Transport Drones (unless another mod already gives it a fuel value). Fuel that burns into something (a fuel cell, say) leaves that in the depot.
 - Before every leg of a trip (leaving home, leaving the provider) a freighter checks whether its tank will last to where it's going, with some to spare. If not, it first drives to the **fuel depot nearest by road**, stops about a second to fill up, then carries on where it was going, cargo and all.
 - If its tank runs dry anyway, it crawls on at a tenth of its speed to a fuel depot, or to where it was going if it can't reach one.
 - Freighters only fill up at fuel depots, and are only sent when there is fuel to get. Fuel in provider, request or buffer depots is ordinary cargo: freighters deliver it like anything else and never burn it.
 - A freighter that can't even reach the provider on what it has stays home rather than being sent to wait at an empty fuel depot. If there are fuel depots but none has fuel, the request depot's light turns yellow, and the freighter sets off as soon as one does. If no fuel depot is connected by road, the light turns red, and the freighter sets off as soon as you build one or connect it by road (and it has fuel).
 - The fuel depot's window shows the fluid in it. If a fluid that doesn't burn got in, the **flush** button beside it empties it (and the pipes joined to it).
 - A fuel depot has 48 slots for fuel items and a tank of 25,000 for liquid fuel by default. You can change both under **Settings → Mod settings → Startup**. Making either smaller on an existing save can lose what no longer fits.
-- How big the tank is and how much a tile of driving burns are **Settings → Mod settings → Map** options. Setting the use to 0 turns fuel off.
+- How big a normal freighter's tank is and how much a tile of driving burns are **Settings → Mod settings → Map** options. Setting the use to 0 turns fuel off.
 
 ## The status light
 
@@ -153,6 +153,20 @@ Liquid depots work the same way for fluids. Research **Liquid freight** to unloc
 - A liquid depot whose tank holds a different fluid waits until it is emptied.
 - Freighters never set off for less than **100** of a fluid, so the last drops pumps leave in a tank, or a little drained out of the requesting tank by pipes, don't keep them driving back and forth. The requesting depot waits until it has room for 100 and a depot it fetches from has 100 to give. A request below 100 is fetched whole once there is room for all of it. **Full loads only** still raises this to a whole load.
 - Items and fluids never mix: item depots only deal with item depots, liquid depots with liquid depots.
+
+## Quality
+
+With the Quality mod (it comes with Space Age), depots and freighters can be of any quality, and requests can name the quality they want. Without it, everything is normal quality and nothing here changes.
+
+- **Requesting by quality.** In an item request or buffer depot's panel, the item chooser also chooses a quality, as the game's own item choosers do. Beside it, a drop-down says which qualities count, as in the game's logistic requests: **=** that quality only, **≠** every other, **>**, **<**, **≥** or **≤** compared with it, or **Any quality**. A request for *iron plate ≥ rare* fetches rare, epic and legendary plates and counts all of them towards the amount. Fluids have no quality.
+- **What a freighter carries doesn't depend on its quality, or the depots'.** A normal depot and a normal freighter can fetch epic items; an epic depot with a normal freighter can fetch rare items. Only the request decides.
+- **Highest first.** Where a request takes several qualities, freighters take the highest quality the provider has first. Each quality fills its own cargo stacks, as stacks of different qualities never merge.
+- **Better freighters**, as with any quality bonus in the game, are 30% better per quality level (uncommon 1.3×, rare 1.6×, epic 1.9×, legendary 2.5×): more health (the game's own bonus), more cargo stacks (rounded down, as the game rounds chest slots: two stacks become 3 for rare and 5 for legendary), more fluid, more speed and a bigger fuel tank. A depot sends its best freighters first. The freighter slot's tooltip lists its freighters by quality.
+- **Better depots** have the game's bigger chests and tanks, so they can request and hold more. A better Fuel depot's liquid fuel tank is bigger too.
+- **Upgrading a depot** to another quality, with the upgrade planner or by placing the better depot over it, keeps everything: its request and settings, its freighters (home and out on the road), and what they are bringing.
+- Robots asked for freighters bring the quality of the freighter ghost in your cursor. A depot replacing a lost freighter asks for one of the same quality.
+- A road network monitor reading **What request depots still need** shows each need as the quality the request names (normal for **Any quality**).
+- Copy and paste, blueprints (including parametrisation of the item and its quality) and undo keep a request's quality.
 
 ## Mining Drones
 
@@ -215,6 +229,6 @@ With [Milestones](https://mods.factorio.com/mod/Milestones) installed, its list 
 - Freighters out on deliveries make a little pollution.
 - Cargo keeps its data on the way: armor keeps its equipment, food how far it has spoiled.
 - In alt mode, a loaded freighter shows the icon of the item or fluid it carries, as machines show their recipe. Empty freighters show nothing.
-- Requests are for normal-quality items.
+- Requests are for normal-quality items unless you choose otherwise (see [Quality](#quality)).
 - Provider, request, buffer and fuel depots have 48 slots each by default, like a steel chest. You can change each kind's slot count separately (1 to 1,000) under **Settings → Mod settings → Startup**. Making it smaller on an existing save can lose the items in the slots taken away.
 - By default, provider depots are red, request depots blue, buffer depots green and the fuel depot amber. Every color can be changed.
