@@ -1,2 +1,0 @@
-  Features:
-    - Added the startup settings "Default item request" (in stacks, 1 by default) and "Default fluid request" (1,000 by default). They set what a request or buffer depot's request starts at when you choose an item or fluid without typing an amount.

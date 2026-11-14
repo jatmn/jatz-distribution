@@ -1,4 +1,15 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.7
+Date: 2026-11-14
+  Features:
+    - Added the startup setting "Full loads only by default" (off by default). When it's on, new request and buffer depots, item and liquid, start with "Full loads only" ticked. Depots already built keep their own setting.
+    - Added the startup settings "Default item request" (in stacks, 1 by default) and "Default fluid request" (1,000 by default). They set what a request or buffer depot's request starts at when you choose an item or fluid without typing an amount.
+  Changes:
+    - Freighters show on the map and minimap in violet, like their paint, instead of blue, and roads in light green instead of brown. Saves from before redraw their map once, so roads charted earlier change too.
+  Bugfixes:
+    - Fixed an old path command failure ending a freighter's newer road-tunnel crossing early.
+    - Fixed road tunnels counting as farther than road: freighters now take the shortest way by road, through any number of tunnels or none, including where road also joins both ends, and pick providers and fuel depots by it.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.6
 Date: 2026-11-09
   Changes:
