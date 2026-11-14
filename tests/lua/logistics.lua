@@ -251,7 +251,8 @@ local PLAYER = { name = "player", index = 1 }
 local function entity(name, x, y, contents)
   next_unit = next_unit + 1
   local chest = inventory(contents)
-  return {
+  local self
+  self = {
     valid = true,
     name = name,
     unit_number = next_unit,
@@ -272,7 +273,12 @@ local function entity(name, x, y, contents)
     get_control_behavior = function()
       return nil
     end,
+    -- Marked for deconstruction only once a check sets `marked`.
+    to_be_deconstructed = function()
+      return self.marked == true
+    end,
   }
+  return self
 end
 
 -- A liquid depot: a storage tank of 25,000 holding one fluid, as far as deliveries use it.
@@ -4177,6 +4183,47 @@ do -- A depot filled some other way lets its freighters' promises go at once, ra
   logistics.on_tick()
   check("filled by hand, its promise goes", storage.promised[provider.unit_number] == nil)
   check("and its freighter, with nothing to fetch, goes home", trip.state == "to-request" and #requests == asked)
+end
+
+do -- A depot marked for deconstruction fetches nothing more: freighters refilled what construction
+  -- robots took out, for ever (the owner's report, November 14, 2026).
+  local logistics = reset()
+  local request, provider = setup(logistics)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  check("setup: 10 promised at the provider", storage.promised[provider.unit_number].a[trip.key] == 10)
+  request.marked = true
+  game.tick = 60
+  local asked = #requests
+  logistics.on_tick()
+  check("marked, its promise goes", storage.promised[provider.unit_number] == nil)
+  check("and its freighter, with nothing to fetch, goes home", trip.state == "to-request" and #requests == asked)
+  arrive(logistics, trip)
+  check("setup: it parks", not has_trip(request))
+  game.tick = 120
+  logistics.on_tick()
+  check("emptied by robots, it sends no freighter", not has_trip(request) and #requests == asked)
+  check("nor counts as needing anything", logistics.missing(storage.depots[request.unit_number]) == 0)
+  request.marked = false
+  game.tick = 180
+  logistics.on_tick()
+  settle(logistics)
+  check("its deconstruction cancelled, it fetches again", has_trip(request))
+end
+
+do -- A freighter reaching its provider after its depot was marked loads nothing and goes home.
+  local logistics = reset()
+  local request, provider = setup(logistics)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trip_of(request)
+  request.marked = true
+  arrive(logistics, trip)
+  check(
+    "it loads nothing there",
+    trip.state == "to-request" and trip.cargo.get_item_count("a") == 0 and provider.chest.contents.a == 20
+  )
 end
 
 do -- A pickup cancelled on the road burns the way out and the way back, though it turns without

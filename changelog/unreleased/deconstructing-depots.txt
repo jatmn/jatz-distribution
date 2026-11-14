@@ -1,0 +1,2 @@
+  Bugfixes:
+    - Fixed freighters refilling request and buffer depots marked for deconstruction while construction robots were emptying them. A marked depot now fetches nothing, and its freighters still on the way out turn home empty.
