@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.8](https://github.com/jatmn/jatz-distribution/compare/v0.1.7...v0.1.8) (2026-11-15)
+
+
+### Features
+
+* add a freighter network window to the shortcut bar ([#105](https://github.com/jatmn/jatz-distribution/issues/105)) ([99d5261](https://github.com/jatmn/jatz-distribution/commit/99d5261c55660d44656dc1ca9ea5508e96a2436f))
+* let request and buffer depots replace each other in place ([#103](https://github.com/jatmn/jatz-distribution/issues/103)) ([be2531b](https://github.com/jatmn/jatz-distribution/commit/be2531b84502c9bbbbf07d486981eb166c29c79f))
+* liquid request depot tank size, and freighter storage for liquid depots ([#102](https://github.com/jatmn/jatz-distribution/issues/102)) ([9668de2](https://github.com/jatmn/jatz-distribution/commit/9668de296d2400c00a0a4c40d8d80b0d4259a2ed))
+* stack road to 250 and send 2 stacks of it a rocket, as startup settings ([#98](https://github.com/jatmn/jatz-distribution/issues/98)) ([8a1a1db](https://github.com/jatmn/jatz-distribution/commit/8a1a1dbc7cf71905684e17939add21e3ac0bb6df))
+* support quality for requests, freighters and depots ([#94](https://github.com/jatmn/jatz-distribution/issues/94)) ([1e4a5b6](https://github.com/jatmn/jatz-distribution/commit/1e4a5b643efeb7e90d8a2a2acaa11cd10ac4fa8d))
+
+
+### Bug Fixes
+
+* keep road from being laid through cliffs ([#99](https://github.com/jatmn/jatz-distribution/issues/99)) ([4bad29b](https://github.com/jatmn/jatz-distribution/commit/4bad29b00f7fce4c92809ddc4ddc4bb9e0b2212c))
+* show freighter research bonuses beside the Bonuses window ([#101](https://github.com/jatmn/jatz-distribution/issues/101)) ([016bc60](https://github.com/jatmn/jatz-distribution/commit/016bc60fc762a541be01dec1cfaa5946c271bb7e))
+* stop refilling request and buffer depots marked for deconstruction ([#100](https://github.com/jatmn/jatz-distribution/issues/100)) ([26a2ee2](https://github.com/jatmn/jatz-distribution/commit/26a2ee23fef495fc6baa096007b3f49500ebef90))
+
 ## [0.1.7](https://github.com/jatmn/jatz-distribution/compare/v0.1.6...v0.1.7) (2026-11-14)
 
 
