@@ -1,4 +1,23 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.8
+Date: 2026-11-15
+  Features:
+    - A "Freighter network" button on the shortcut bar (after Freight system research) opens a window showing your freighters, how many are out on the road, your depots of each kind, and the items and fluids provider and buffer depots hold. With Space Age, or depots on more than one surface, pick a planet or space platform to see its numbers alone.
+    - Added the startup setting "Liquid request depot tank size" (25,000 by default), like the liquid provider and liquid buffer ones. A liquid request depot's freighters only set off for what still fits in its tank (or, with freighter storage, in what all its freighters carry when that is more), counting what is already on its way, so a bigger tank lets more of them out at once. A request set in an older version at as much as the depot could then ask for (25,000 for a liquid request depot; a liquid buffer depot's tank size, if that hasn't changed since) asks to fill the depot, and any other keeps its amount.
+    - Added "Use freighter storage" to liquid request and liquid buffer depots (off by default). Ticked, a depot can hold, and request, as much as all its freighters carry when that is more than its tank. Fluid the tank has no room for stays in the parked freighters and goes into the tank as soon as there is room. A liquid depot's request now keeps the amount you typed and asks for as much of it as the depot can hold, so it follows the limit. The road network monitor's "What request depots hold" counts fluid waiting in their parked freighters.
+    - With the Quality mod, item request and buffer depots can request an item at a quality, at qualities compared with one (=, ≠, >, <, ≥, ≤), or at any quality. Freighters fetch the highest quality first, whatever the quality of the depots and freighters.
+    - Better freighters have more health, cargo stacks, fluid capacity, speed and fuel tank (30% a quality level). Depots send their best freighters first.
+    - A better Fuel depot's liquid fuel tank holds more, as better chests and tanks do.
+    - Upgrading a depot to another quality, with the upgrade planner or by building over it, keeps its request, settings and freighters (a request stays within what the new depot holds).
+    - Robots bring freighters of the quality of the ghost in your cursor, and replace a lost freighter with one of its quality.
+    - Request and buffer depots can replace each other in place, like chests: place a buffer depot over a request depot, or a request depot over a buffer depot, by hand, or let robots do it from a ghost, a blueprint or an upgrade planner. The depot keeps what is in its chest, its request (at most what the new chest holds) and settings, and its freighters, including any out on trips. Undo and redo swap it back and forth in place too.
+  Changes:
+    - Road now stacks to 250 (it was 100), and with Space Age a rocket carries 2 stacks of it (500). Both are startup settings: "Road stack size" and "Road rocket capacity (stacks)".
+  Bugfixes:
+    - Fixed freighters refilling request and buffer depots marked for deconstruction while construction robots were emptying them. A marked depot now fetches nothing, and its freighters still on the way out turn home empty.
+    - The Bonuses window now shows researched freighter speed, item capacity and fluid capacity, in a "Freighters" panel beside it.
+    - Fixed road being placeable under and through cliffs. Road tunnels still go under them.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.7
 Date: 2026-11-14
   Features:
