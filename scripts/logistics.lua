@@ -521,9 +521,17 @@ local function freighter_stack_size()
 end
 
 -- A request depot's freighter slot: room for FREIGHTER_CAPACITY freighters, as real items, in as
--- many stacks as that takes. Slots from saves when it held one stack are made bigger.
+-- many stacks as that takes. Stacks of different qualities never merge, so each quality the game
+-- has gets a stack more than that (but one): however a fleet within the limit is split by quality,
+-- every freighter out has room to come back, whatever was added while it was out. Slots from saves
+-- with fewer stacks are made bigger. Worked out once a session (prototypes don't change while it
+-- runs), as every dispatch reads the slot. (A field, not a local: this file has few locals to spare.)
 local function trucks_of(depot)
-  local stacks = math.ceil(FREIGHTER_CAPACITY / freighter_stack_size())
+  local stacks = logistics.slot_stacks
+  if not stacks then
+    stacks = math.ceil(FREIGHTER_CAPACITY / freighter_stack_size()) + quality.count() - 1
+    logistics.slot_stacks = stacks
+  end
   if not (depot.trucks and depot.trucks.valid) then
     depot.trucks = game.create_inventory(stacks)
   elseif #depot.trucks < stacks then
@@ -3622,6 +3630,7 @@ function logistics.cancel_freighter_requests(entity)
     return 0
   end
   robot_requests.set_target(depot, nil)
+  depot.freighter_asks = nil
   local proxies, requested = robot_requests.freighter_requests(entity)
   for _, proxy in ipairs(proxies) do
     local kept = {}

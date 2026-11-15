@@ -883,9 +883,11 @@ local function element(spec, parent)
   return self
 end
 
-do -- With qualities (the Quality mod), an item request's quality is chosen with its item, with a
-  -- drop-down of how other qualities compare with it, "Any quality" among them; a liquid depot's
-  -- isn't; and without qualities the panel is as it was.
+do -- With qualities (the Quality mod), an item request's quality has its own row under the item and
+  -- amount: "Quality", how qualities compare ("Any quality" among them) and the quality compared with,
+  -- so the comparator never sits between the item and its amount (the owner's report, November 14,
+  -- 2026: "[uncommon wood] [>] [9600]" read as wood greater than 9600). A liquid depot's fluid has
+  -- none, and without qualities the panel is as it was.
   local logistics = require("scripts.logistics")
   local quality = require("scripts.quality")
   local relative = element()
@@ -898,17 +900,31 @@ do -- With qualities (the Quality mod), an item request's quality is chosen with
   fire("on_built_entity", { entity = request })
   assert(logistics.set_request(request, "iron-plate", 50, "uncommon", "≥"))
   fire("on_gui_opened", { player_index = 15, entity = request })
-  local row = relative.jatz_request_frame.children[1].request_row
-  local chooser, comparators = row.jatz_request_item, row.jatz_request_quality_comparator
+  local inner = relative.jatz_request_frame.children[1]
+  local row, graded = inner.request_row, inner.quality_row
+  local chooser = row.jatz_request_item
   check(
-    "the item chooser takes a quality, showing the request's",
-    chooser.elem_type == "item-with-quality"
-      and chooser["item-with-quality"].name == "iron-plate"
-      and chooser["item-with-quality"].quality == "uncommon"
+    "the item and its amount stand together, with no quality between them",
+    chooser.elem_type == "item"
+      and chooser.item == "iron-plate"
+      and row.children[2] == row.jatz_request_count
+      and not row.jatz_request_quality_comparator
+  )
+  check("the quality row comes straight under them", graded and inner.children[2] == graded)
+  local comparators, levels = graded.jatz_request_quality_comparator, graded.jatz_request_quality
+  check(
+    "it reads 'Quality', how qualities compare, then the quality: the request's",
+    graded.children[1].type == "label"
+      and graded.children[1].caption[1] == "jatz-gui.request-quality"
+      and graded.children[2] == comparators
+      and graded.children[3] == levels
+      and comparators.items[comparators.selected_index] == "≥"
+      and quality.names()[levels.selected_index] == "uncommon"
+      and levels.visible
   )
   check(
-    "beside it, how other qualities compare, showing the request's",
-    comparators and comparators.type == "drop-down" and comparators.items[comparators.selected_index] == "≥"
+    "the qualities are listed lowest first, with their icons",
+    quality.names()[1] == "normal" and levels.items[1][2] == "[quality=normal] " and #levels.items == #quality.names()
   )
   local any = comparators.items[#comparators.items]
   check("'Any quality' is the last", type(any) == "table" and any[1] == "jatz-gui.any-quality")
@@ -916,35 +932,55 @@ do -- With qualities (the Quality mod), an item request's quality is chosen with
   fire("on_gui_selection_state_changed", { player_index = 15, element = comparators })
   local got = logistics.get_request(request)
   check("choosing it asks for any quality", got.comparator == "any" and got.quality == nil and got.count == 50)
+  check("with no quality to compare with shown", levels.visible == false)
   comparators.selected_index = 1
-  chooser.elem_value = { name = "iron-plate", quality = "uncommon" }
+  fire("on_gui_selection_state_changed", { player_index = 15, element = comparators })
+  got = logistics.get_request(request)
+  check(
+    "'=' again: the quality shown, and that quality only",
+    levels.visible and got.quality == "uncommon" and got.comparator == nil
+  )
+  local function choose(name)
+    for index, known in ipairs(quality.names()) do
+      if known == name then
+        levels.selected_index = index
+      end
+    end
+    fire("on_gui_selection_state_changed", { player_index = 15, element = levels })
+    return logistics.get_request(request)
+  end
+  got = choose("normal")
+  check("another quality chosen: that one", got.quality == nil and got.comparator == nil and got.count == 50)
+  got = choose("uncommon")
+  check("and back", got.quality == "uncommon" and got.comparator == nil and got.count == 50)
+  chooser.elem_value = "wood"
   fire("on_gui_elem_changed", { player_index = 15, element = chooser })
   got = logistics.get_request(request)
-  check("an item chosen with its quality, '=': that quality only", got.quality == "uncommon" and got.comparator == nil)
+  check("another item keeps the quality shown", got.item == "wood" and got.quality == "uncommon")
   row.jatz_request_count.text = "70"
   fire("on_gui_text_changed", { player_index = 15, element = row.jatz_request_count, text = "70" })
   got = logistics.get_request(request)
   check("a new amount keeps the quality", got.count == 70 and got.quality == "uncommon")
   nth[30]()
-  check("the panel isn't rebuilt for its quality", relative.jatz_request_frame.children[1].request_row == row)
+  check("the panel isn't rebuilt for its quality", relative.jatz_request_frame.children[1].quality_row == graded)
   local liquid = depot(250)
   liquid.name = "jatz-liquid-request-depot"
   fire("on_built_entity", { entity = liquid })
   fire("on_gui_opened", { player_index = 15, entity = liquid })
-  row = relative.jatz_request_frame.children[1].request_row
+  inner = relative.jatz_request_frame.children[1]
   check(
     "a liquid depot's fluid has no quality",
-    row.jatz_request_item.elem_type == "fluid" and not row.jatz_request_quality_comparator
+    inner.request_row.jatz_request_item.elem_type == "fluid" and not inner.quality_row
   )
   local available = quality.available
   quality.available = function()
     return false
   end
   fire("on_gui_opened", { player_index = 15, entity = request })
-  row = relative.jatz_request_frame.children[1].request_row
+  inner = relative.jatz_request_frame.children[1]
   check(
     "without qualities, an item alone, as before",
-    row.jatz_request_item.elem_type == "item" and not row.jatz_request_quality_comparator
+    inner.request_row.jatz_request_item.elem_type == "item" and not inner.quality_row
   )
   quality.available = available
   storage.request_gui = {}

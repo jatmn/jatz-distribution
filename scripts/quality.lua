@@ -103,6 +103,20 @@ function quality.available()
   return any_other
 end
 
+-- How many qualities items can have (1 without the Quality mod or another's).
+function quality.count()
+  return #qualities()
+end
+
+-- The qualities items can have, lowest first, as the game lists them in its quality choosers.
+function quality.names()
+  local names, known = {}, qualities()
+  for index = #known, 1, -1 do
+    names[#names + 1] = known[index].name
+  end
+  return names
+end
+
 local function level(name)
   local prototype = prototypes.quality[name or NORMAL]
   return prototype and prototype.level or 0

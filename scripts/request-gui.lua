@@ -20,9 +20,11 @@
 -- right-click has robots take the slot's freighters away (again: cancel that). Pipette (Q) over
 -- the slot picks up a freighter, or its ghost, as over any inventory slot.
 --
--- With the Quality mod (scripts/quality.lua), an item request also has a quality, chosen with the item
--- as in the game's own item choosers, and a drop-down of how other qualities compare with it, as the
--- game's logistic requests have, "Any quality" among them. Without it the panel is as it was.
+-- With the Quality mod (scripts/quality.lua), an item request also has a quality, on its own row under
+-- the item and amount: "Quality", a drop-down of how qualities compare ("=", "≠", ">", "<", "≥", "≤",
+-- as the game's logistic requests have, or "Any quality"), then the quality compared with, so it
+-- reads "Quality ≥ rare". Kept apart from the amount, so a comparator never reads as comparing it.
+-- Without it the panel is as it was.
 --
 -- Every panel ends with the depot's circuit condition, like a logistic chest's: "Enable/disable",
 -- what the condition reads (the circuit network without the depot's own contents, or its own
@@ -43,6 +45,7 @@ local FRAME = "jatz_request_frame"
 local ITEM = "jatz_request_item"
 local COUNT = "jatz_request_count"
 local QUALITY_COMPARATOR = "jatz_request_quality_comparator"
+local QUALITY_LEVEL = "jatz_request_quality"
 local STATUS = "jatz_request_status"
 local SLOT = "jatz_request_freighters"
 local SLOT_LABEL = "jatz_request_freighters_label"
@@ -516,38 +519,15 @@ local function open(player, entity)
   local request = logistics.get_request(entity) or {}
   local row = inner.add({ type = "flow", name = "request_row", direction = "horizontal" })
   row.style.vertical_align = "center"
-  -- With qualities to choose from, an item comes with its quality (scripts/quality.lua).
-  local graded = not LIQUID[entity.name] and quality.available()
   row.add({
     type = "choose-elem-button",
     name = ITEM,
-    elem_type = LIQUID[entity.name] and "fluid" or graded and "item-with-quality" or "item",
-    item = not (LIQUID[entity.name] or graded) and request.item or nil,
-    ["item-with-quality"] = graded and request.item and {
-      name = request.item,
-      quality = request.quality or quality.normal,
-    } or nil,
+    elem_type = LIQUID[entity.name] and "fluid" or "item",
+    item = not LIQUID[entity.name] and request.item or nil,
     fluid = LIQUID[entity.name] and request.item or nil,
     elem_filters = LIQUID[entity.name] and FLUID_FILTERS or ITEM_FILTERS,
     tooltip = { LIQUID[entity.name] and "jatz-gui.request-fluid-tooltip" or "jatz-gui.request-item-tooltip" },
   })
-  if graded then
-    local items, selected = {}, 1
-    for index, comparator in ipairs(quality.comparators) do
-      items[index] = comparator == quality.any and { "jatz-gui.any-quality" } or comparator
-      if comparator == (request.comparator or "=") then
-        selected = index
-      end
-    end
-    local comparators = row.add({
-      type = "drop-down",
-      name = QUALITY_COMPARATOR,
-      items = items,
-      selected_index = selected,
-      tooltip = { "jatz-gui.request-quality-tooltip" },
-    })
-    comparators.style.width = 56
-  end
   local count = row.add({
     type = "textfield",
     name = COUNT,
@@ -560,6 +540,46 @@ local function open(player, entity)
   })
   count.style.width = 80
   show_status(row.add({ type = "sprite", name = STATUS, style = "status_image" }), entity)
+  -- With qualities to choose from (scripts/quality.lua), an item request's quality, on its own row:
+  -- "Quality", how qualities compare, and the quality compared with (none for any quality).
+  if not LIQUID[entity.name] and quality.available() then
+    local graded = inner.add({ type = "flow", name = "quality_row", direction = "horizontal" })
+    graded.style.vertical_align = "center"
+    graded.add({
+      type = "label",
+      caption = { "jatz-gui.request-quality" },
+      tooltip = { "jatz-gui.request-quality-tooltip" },
+    })
+    local comparators, chosen = {}, 1
+    for index, comparator in ipairs(quality.comparators) do
+      comparators[index] = comparator == quality.any and { "jatz-gui.any-quality" } or comparator
+      if comparator == (request.comparator or "=") then
+        chosen = index
+      end
+    end
+    graded.add({
+      type = "drop-down",
+      name = QUALITY_COMPARATOR,
+      items = comparators,
+      selected_index = chosen,
+      tooltip = { "jatz-gui.request-quality-tooltip" },
+    })
+    local levels, level = {}, 1
+    for index, name in ipairs(quality.names()) do
+      levels[index] = { "", "[quality=" .. name .. "] ", prototypes.quality[name].localised_name }
+      if name == (request.quality or quality.normal) then
+        level = index
+      end
+    end
+    graded.add({
+      type = "drop-down",
+      name = QUALITY_LEVEL,
+      items = levels,
+      selected_index = level,
+      visible = request.comparator ~= quality.any,
+      tooltip = { "jatz-gui.request-quality-level-tooltip" },
+    })
+  end
   if ROLES[entity.name] == "request" then
     -- Like a requester chest's "request from buffer chests".
     inner.add({
@@ -667,6 +687,17 @@ local function on_gui_closed(event)
   end
 end
 
+-- The quality and comparator a request panel's quality row shows (nil, nil without one): the quality
+-- compared with, nil for any quality.
+local function chosen_quality(inner)
+  local graded = inner.quality_row
+  if not graded then
+    return nil, nil
+  end
+  local comparator = quality.comparators[graded[QUALITY_COMPARATOR].selected_index]
+  return comparator ~= quality.any and quality.names()[graded[QUALITY_LEVEL].selected_index] or nil, comparator
+end
+
 -- After a request is set from the panel: a request stops at what the depot holds (a liquid
 -- depot's tank, an item depot's chest full of the item), so show that rather than the larger
 -- amount typed.
@@ -694,13 +725,9 @@ local function on_gui_elem_changed(event)
   if not entity then
     return
   end
-  -- An item with its quality (a table) where qualities can be chosen, else its name.
-  local item, grade = event.element.elem_value, nil
-  if type(item) == "table" then
-    item, grade = item.name, item.quality
-  end
-  local comparators = event.element.parent[QUALITY_COMPARATOR]
-  local comparator = comparators and quality.comparators[comparators.selected_index] or nil
+  local item = event.element.elem_value
+  -- The quality its row shows, where qualities can be chosen.
+  local grade, comparator = chosen_quality(event.element.parent.parent)
   local field = event.element.parent[COUNT]
   local amount = tonumber(field.text) or 0
   -- A newly chosen item starts at the default request (startup settings, settings.lua: stacks of
@@ -711,7 +738,7 @@ local function on_gui_elem_changed(event)
       or settings.startup["jatz-default-item-request"].value * prototypes.item[item].stack_size
     field.text = tostring(amount)
   end
-  logistics.set_request(entity, item, amount, comparator ~= quality.any and grade or nil, comparator)
+  logistics.set_request(entity, item, amount, grade, comparator)
   show_count(field, entity, amount)
 end
 
@@ -925,15 +952,16 @@ local function on_gui_value_changed(event)
 end
 
 local function on_gui_selection_state_changed(event)
-  if event.element.name == QUALITY_COMPARATOR then
-    -- How other qualities compare with the chosen one: the request takes those (scripts/quality.lua).
+  if event.element.name == QUALITY_COMPARATOR or event.element.name == QUALITY_LEVEL then
+    -- How qualities compare, or the quality compared with: the request takes those
+    -- (scripts/quality.lua). Any quality compares with none, so that one is hidden.
+    local row = event.element.parent
+    row[QUALITY_LEVEL].visible = quality.comparators[row[QUALITY_COMPARATOR].selected_index] ~= quality.any
     local entity = opened_depot(game.get_player(event.player_index), true)
     local request = entity and logistics.get_request(entity)
-    local comparator = quality.comparators[event.element.selected_index]
     if request then
-      local chosen = event.element.parent[ITEM].elem_value
-      local grade = type(chosen) == "table" and chosen.quality or request.quality
-      logistics.set_request(entity, request.item, request.count, comparator ~= quality.any and grade or nil, comparator)
+      local grade, comparator = chosen_quality(row.parent)
+      logistics.set_request(entity, request.item, request.count, grade, comparator)
     end
     return
   end
@@ -968,7 +996,7 @@ local function refresh()
         not (inner.priority_row or ROLES[entity.name] == "request")
         or (requesting and not (inner.request_row and inner.request_row[STATUS] and inner.freighter_fuel and inner[FULL_LOADS]))
         -- (Qualities came, or went, with a change of mods.)
-        or (requesting and (inner.request_row[QUALITY_COMPARATOR] ~= nil) ~= (not LIQUID[entity.name] and quality.available()))
+        or (requesting and (inner.quality_row ~= nil) ~= (not LIQUID[entity.name] and quality.available()))
         or not inner.circuit_mode_row
         or (robot_access.get(entity) ~= nil and not inner[ROBOT_ACCESS])
       then

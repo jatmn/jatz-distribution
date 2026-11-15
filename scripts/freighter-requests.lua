@@ -135,6 +135,24 @@ local function spread(amount, stacks)
   return placed, positions
 end
 
+-- The freighters a request depot asked robots for, a chest stack at a time, in the order asked:
+-- `depot.freighter_asks`, a list of { stack (0-based), quality (nil for normal) }. The game sorts a
+-- proxy's insert plans by quality and joins plans of one quality (probed on 2.1.24: rare then
+-- normal reads back normal, rare), so the plans can't tell which was asked for last; this list can.
+-- A chest stack is in one plan at a time, so a stack asked for again replaces its older ask.
+local function note_asks(depot, positions, grade)
+  local asks = depot.freighter_asks or {}
+  for _, position in ipairs(positions) do
+    for index = #asks, 1, -1 do
+      if asks[index].stack == position.stack then
+        table.remove(asks, index)
+      end
+    end
+    asks[#asks + 1] = { stack = position.stack, quality = grade }
+  end
+  depot.freighter_asks = asks
+end
+
 -- Add an insert or removal plan to a depot's request proxy, making one if it has none.
 local function add_plan(entity, proxies, plan, removal)
   entity = truck_chest(entity)
@@ -219,6 +237,7 @@ local function request_up_to(entity, goal, grade)
         id = { name = FREIGHTER, quality = part.quality or QUALITY },
         items = { in_inventory = positions },
       })
+      note_asks(depot, positions, part.quality)
       -- A new proxy made for the first plan takes the others.
       if #proxies == 0 then
         proxies = freighter_requests(entity)
@@ -344,45 +363,89 @@ function requests.match_freighters(entity, total, grade)
 end
 
 -- Lower a depot's freighter requests by `excess`, editing its request proxies' plans in place,
--- from the last position back, rather than replacing them. An open container window keeps showing
--- the requests of the proxy it opened with: replacing the proxy (cancel, then request anew) left
--- the chest slot's ghost hidden until the window was reopened.
+-- rather than replacing them. An open container window keeps showing the requests of the proxy it
+-- opened with: replacing the proxy (cancel, then request anew) left the chest slot's ghost hidden
+-- until the window was reopened. The last asked go first, as freighters put in by hand count for
+-- the last ask: by `depot.freighter_asks` (see note_asks), as the game reads plans back by quality.
+-- Plans it has no ask for (a blueprint's, another mod's, a save's from before) then go from the
+-- last position back.
 local function reduce_freighter_requests(entity, excess)
+  local depot = request_depot(entity)
   local proxies = freighter_requests(entity)
-  for index = #proxies, 1, -1 do
-    if excess <= 0 then
-      break
-    end
-    local proxy = proxies[index]
-    local plans = proxy.insert_plan
-    for plan_index = #plans, 1, -1 do
-      local plan = plans[plan_index]
-      if excess > 0 and item_name(plan.id.name) == FREIGHTER then
-        local positions = plan.items.in_inventory or {}
-        for position_index = #positions, 1, -1 do
-          if excess <= 0 then
-            break
-          end
-          local count = positions[position_index].count or 1
-          local cut = math.min(count, excess)
-          excess = excess - cut
-          if cut >= count then
-            table.remove(positions, position_index)
-          else
-            positions[position_index].count = count - cut
-          end
-        end
-        if #positions == 0 then
-          table.remove(plans, plan_index)
-        else
-          plan.items.in_inventory = positions
+  -- Each proxy's plans, read once (each read is a copy), and where each chest stack's are.
+  local lists, at, cut = {}, {}, {}
+  for index, proxy in ipairs(proxies) do
+    lists[index] = proxy.insert_plan
+    for _, plan in ipairs(lists[index]) do
+      if item_name(plan.id.name) == FREIGHTER then
+        for _, position in ipairs(plan.items.in_inventory or {}) do
+          at[position.stack] = { proxy = index, plan = plan, position = position }
         end
       end
     end
-    if #plans == 0 and #proxy.removal_plan == 0 then
-      proxy.destroy()
-    else
-      proxy.insert_plan = plans
+  end
+  local function lower(planned)
+    local count = planned.position.count or 1
+    local taken = math.min(count, excess)
+    if taken > 0 then
+      excess = excess - taken
+      planned.position.count = count - taken
+      cut[planned.proxy] = true
+    end
+  end
+  -- The last asked first; asks whose freighters are all brought or cancelled are forgotten.
+  local asks, kept = depot.freighter_asks or {}, {}
+  for index = #asks, 1, -1 do
+    local ask = asks[index]
+    local planned = at[ask.stack]
+    local grade = planned and planned.plan.id.quality
+    grade = type(grade) == "table" and grade.name or grade
+    if planned and (grade ~= QUALITY and grade or nil) == ask.quality then
+      lower(planned)
+      if (planned.position.count or 1) > 0 then
+        table.insert(kept, 1, ask)
+      end
+    end
+  end
+  depot.freighter_asks = #kept > 0 and kept or nil
+  -- Then any others, from the last position back.
+  for index = #lists, 1, -1 do
+    local plans = lists[index]
+    for plan_index = #plans, 1, -1 do
+      local plan = plans[plan_index]
+      if item_name(plan.id.name) == FREIGHTER then
+        local positions = plan.items.in_inventory or {}
+        for position_index = #positions, 1, -1 do
+          lower({ proxy = index, position = positions[position_index] })
+        end
+      end
+    end
+  end
+  -- Write back the proxies changed: without the positions and plans left with none.
+  for index, proxy in ipairs(proxies) do
+    if cut[index] then
+      local plans = lists[index]
+      for plan_index = #plans, 1, -1 do
+        local plan = plans[plan_index]
+        if item_name(plan.id.name) == FREIGHTER then
+          local positions = plan.items.in_inventory or {}
+          for position_index = #positions, 1, -1 do
+            if (positions[position_index].count or 1) <= 0 then
+              table.remove(positions, position_index)
+            end
+          end
+          if #positions == 0 then
+            table.remove(plans, plan_index)
+          else
+            plan.items.in_inventory = positions
+          end
+        end
+      end
+      if #plans == 0 and #proxy.removal_plan == 0 then
+        proxy.destroy()
+      else
+        proxy.insert_plan = plans
+      end
     end
   end
 end

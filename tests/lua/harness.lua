@@ -354,18 +354,44 @@ local function script_inventory(size)
       end
     end
   end
-  -- A stack, or a table with a name, count and quality (normal if none).
+  -- A stack, or a table with a name, count and quality (normal if none). As in the game, a stack
+  -- holds at most its item's stack size: stacks of the item at that quality fill first, then empty
+  -- ones. Returns how many went in.
   function self.insert(from)
     local grade = grade_of(from)
-    for index = 1, size do
-      local slot = self[index]
-      if not slot.valid_for_read or (slot.name == from.name and grade_of(slot) == grade) then
-        slot.name, slot.count, slot.valid_for_read = from.name, slot.count + from.count, true
-        slot.quality = { name = grade }
-        return from.count
+    local item = prototypes.item[from.name]
+    local limit = item and item.stack_size or math.huge
+    local left = from.count
+    for _, empty in ipairs({ false, true }) do
+      for index = 1, size do
+        local slot = self[index]
+        if
+          left > 0
+          and (
+            empty and not slot.valid_for_read
+            or not empty and slot.valid_for_read and slot.name == from.name and grade_of(slot) == grade
+          )
+        then
+          local moved = math.min(left, limit - slot.count)
+          if moved > 0 then
+            slot.name, slot.count, slot.valid_for_read = from.name, slot.count + moved, true
+            slot.quality = { name = grade }
+            left = left - moved
+          end
+        end
       end
     end
-    return 0
+    return from.count - left
+  end
+  -- Only an inventory made by game.create_inventory can be resized, as in the game.
+  function self.resize(stacks)
+    for index = size + 1, stacks do
+      self[index] = stack()
+    end
+    for index = stacks + 1, size do
+      self[index] = nil
+    end
+    size = stacks
   end
   function self.destroy()
     self.valid = false

@@ -290,6 +290,42 @@ do -- A better freighter: sent first, made at its quality (the game gives it tha
   check("its tank shows as its quality's", fuel.home[1] == 30000000 and fuel.home_tanks[1] == 32000000)
 end
 
+do -- A freighter sent out has room to come back, however its fleet is split by quality (stacks of
+  -- different qualities never merge): with 90 normal and 1 rare, the rare one goes first, and an
+  -- epic one put in while it was out took its stack, the slot's last; the rare one came home to no
+  -- room and was spilled (the review of 0e0a596, in the engine too). A slot saved with 10 stacks is
+  -- made bigger.
+  local logistics = reset()
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  local provider = entity("jatz-provider-depot", 10.5, 0.5, { a = 1 })
+  logistics.add(request)
+  logistics.add(provider)
+  assert(logistics.set_request(request, "a", 1))
+  storage.depots[request.unit_number].trucks = script_inventory(10)
+  for _ = 1, 9 do
+    assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 10)) == 10)
+  end
+  assert(logistics.put_freighters(request, graded("jatz-quinityn-freighter", 1, "rare")) == 1)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(request)[1]
+  check("setup: the rare one goes first", trip.freighter_quality == "rare")
+  check(
+    "an epic one put in while it is out goes in",
+    logistics.put_freighters(request, graded("jatz-quinityn-freighter", 1, "epic")) == 1
+  )
+  arrive(logistics, trip)
+  arrive(logistics, trip)
+  local slot = storage.depots[request.unit_number].trucks
+  check(
+    "the rare one comes back into the slot, nothing spilled",
+    storage.trips[trip.key] == nil
+      and slot.get_item_count({ name = "jatz-quinityn-freighter", quality = "rare" }) == 1
+      and slot.get_item_count() == 92
+      and #surface.spilled == 0
+  )
+end
+
 do -- A rare freighter lost on the way: robots are asked for a rare one.
   local logistics = reset()
   local request = supplied(logistics, 0)
@@ -314,10 +350,32 @@ do -- A rare freighter lost on the way: robots are asked for a rare one.
   )
 end
 
+-- Insert plans as the game keeps them (probed on 2.1.24): sorted by quality, lowest first, plans of
+-- one item at one quality joined into one, and a copy handed back each time they are read.
+local function native_plans(plans)
+  local joined, order = {}, {}
+  for _, plan in ipairs(plans) do
+    local grade = plan.id.quality or "normal"
+    local key = plan.id.name .. "/" .. grade
+    if not joined[key] then
+      joined[key] = { id = { name = plan.id.name, quality = grade }, items = { in_inventory = {} } }
+      order[#order + 1] = joined[key]
+    end
+    for _, position in ipairs(plan.items.in_inventory) do
+      local list = joined[key].items.in_inventory
+      list[#list + 1] = { inventory = position.inventory, stack = position.stack, count = position.count }
+    end
+  end
+  table.sort(order, function(a, b)
+    return prototypes.quality[a.id.quality].level < prototypes.quality[b.id.quality].level
+  end)
+  return order
+end
+
 -- A request depot's truck chest of `stacks` stacks, all full of item b, whose item request proxies
 -- are found as in the game: what they ask for counts, and their plans' stacks are taken. The
--- freighter plans of every proxy made for it, as { quality, count } in order, and a function that
--- empties chest stack `index` (1-based).
+-- freighter plans of every proxy made for it, as { quality, count }, and a function that empties
+-- chest stack `index` (1-based).
 local function full_truck_chest(request, stacks)
   local truck = storage.depots[request.unit_number].chest
   local chest = script_inventory(stacks)
@@ -332,17 +390,27 @@ local function full_truck_chest(request, stacks)
   function surface.create_entity(parameters)
     local made = create(parameters)
     if parameters.name == "item-request-proxy" then
-      made.proxy_target, made.insert_plan, made.removal_plan = truck, parameters.modules, {}
+      made.proxy_target, made.removal_plan = truck, {}
+      local plans = native_plans(parameters.modules)
       setmetatable(made, {
         __index = function(_, key)
-          if key == "item_requests" then
+          if key == "insert_plan" then
+            return native_plans(plans)
+          elseif key == "item_requests" then
             local list = {}
-            for _, plan in ipairs(made.insert_plan) do
+            for _, plan in ipairs(plans) do
               for _, position in ipairs(plan.items.in_inventory) do
-                list[#list + 1] = { name = plan.id.name, quality = plan.id.quality, count = position.count }
+                list[#list + 1] = { name = plan.id.name, quality = plan.id.quality, count = position.count or 1 }
               end
             end
             return list
+          end
+        end,
+        __newindex = function(_, key, value)
+          if key == "insert_plan" then
+            plans = native_plans(value)
+          else
+            rawset(made, key, value)
           end
         end,
       })
@@ -351,12 +419,19 @@ local function full_truck_chest(request, stacks)
     end
     return made
   end
+  -- (Destroyed proxies are no longer found.)
   function surface.find_entities_filtered(filter)
-    return filter.name == "item-request-proxy" and proxies or {}
+    local found = {}
+    for _, proxy in ipairs(filter.name == "item-request-proxy" and proxies or {}) do
+      if proxy.valid then
+        found[#found + 1] = proxy
+      end
+    end
+    return found
   end
   local function planned()
     local list = {}
-    for _, proxy in ipairs(proxies) do
+    for _, proxy in ipairs(surface.find_entities_filtered({ name = "item-request-proxy" })) do
       for _, plan in ipairs(proxy.insert_plan) do
         for _, position in ipairs(plan.items.in_inventory) do
           list[#list + 1] = { plan.id.quality, position.count }
@@ -370,17 +445,18 @@ local function full_truck_chest(request, stacks)
   end
   return planned, free
 end
+-- Whether the plans are `expected`, { quality, count } each, in any order: the game reads them back
+-- sorted by quality, not in the order asked.
 local function plans_are(planned, expected)
-  local got = planned()
-  if #got ~= #expected then
-    return false
-  end
-  for index, plan in ipairs(expected) do
-    if got[index][1] ~= plan[1] or got[index][2] ~= plan[2] then
-      return false
+  local function sorted(list)
+    local copy = {}
+    for index, plan in ipairs(list) do
+      copy[index] = plan[1] .. " " .. plan[2]
     end
+    table.sort(copy)
+    return table.concat(copy, ", ")
   end
-  return true
+  return sorted(planned()) == sorted(expected)
 end
 
 do -- Freighters asked for while the truck chest has no free stack keep the quality each was asked
@@ -441,6 +517,39 @@ do -- A quality asked for again after another keeps its place: rare, normal and 
     "a rare one put in by hand: robots bring the first rare and the normal",
     plans_are(planned, { { "rare", 1 }, { "normal", 1 } })
   )
+end
+
+do -- Freighters asked for with free stacks are requested at once, and the game reads their plans back
+  -- sorted by quality and joined by quality; freighters put in by hand still count for the last
+  -- asks, whatever their own quality (the review of 0e0a596: rare then normal asked, a normal put in
+  -- by hand cancelled the rare, and robots still brought a normal).
+  for _, case in ipairs({
+    { asks = { "rare", "normal" }, by_hand = { "normal" }, left = { { "rare", 1 } } },
+    { asks = { "normal", "rare" }, by_hand = { "normal" }, left = { { "normal", 1 } } },
+    { asks = { "rare", "normal" }, by_hand = { "rare" }, left = { { "rare", 1 } } },
+    { asks = { "rare", "normal", "rare" }, by_hand = { "normal" }, left = { { "rare", 1 }, { "normal", 1 } } },
+    { asks = { "rare", "normal", "rare" }, by_hand = { "normal", "normal" }, left = { { "rare", 1 } } },
+  }) do
+    local logistics = reset()
+    local request = supplied(logistics, 0)
+    local planned, free = full_truck_chest(request, 3)
+    for index = 1, 3 do
+      free(index)
+    end
+    for _, grade in ipairs(case.asks) do
+      assert(logistics.request_freighters(request, 1, grade) == 1)
+    end
+    for _, grade in ipairs(case.by_hand) do
+      assert(logistics.put_freighters(request, graded("jatz-quinityn-freighter", 1, grade)) == 1)
+    end
+    check(
+      table.concat(case.asks, ", ")
+        .. " asked, "
+        .. table.concat(case.by_hand, " and ")
+        .. " by hand: the first asks are left",
+      plans_are(planned, case.left)
+    )
+  end
 end
 
 do -- Freighters waiting for a free stack at a quality a mod change took away are asked for as normal.
