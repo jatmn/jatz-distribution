@@ -5333,4 +5333,6 @@ do -- A saved search and underground crossing are independent; configuration res
   )
 end
 
+-- A large group's checks spread over several ticks (tests/lua/group-spread.lua, for this file's size).
+require("tests.lua.group-spread")
 print("all logistics checks passed")

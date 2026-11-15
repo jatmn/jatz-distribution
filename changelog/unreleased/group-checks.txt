@@ -1,0 +1,2 @@
+  Bugfixes:
+    - Fixed a stutter once a second with many request or buffer depots asking for the same item or fluid on one surface: their once-a-second checks are now spread over several ticks instead of all running in one.
