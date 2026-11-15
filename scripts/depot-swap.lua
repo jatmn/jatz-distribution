@@ -126,27 +126,34 @@ end
 -- but not its chest). So, once the game has applied the undo or redo, a depot of the pair standing
 -- marked for deconstruction under a ghost of the other, where that item removed one and built the
 -- other, is marked for upgrade to it instead, for robots to swap in place (probed: they do, with
--- its request, freighters and chest). It is upgraded to the ghost's quality, the depot the undo or
--- redo brings back, which need not be the standing one's. Without `player`, which would add the
--- order to the player's undo queue.
-local function swap_back(surface, position)
+-- its request, freighters and chest). It is upgraded to the ghost's quality and facing, the depot
+-- the undo or redo brings back, which need not be the standing one's: an upgrade keeps the
+-- standing depot's facing (order_upgrade takes none), so it is turned to the ghost's first, as a
+-- player turning it (`turned`, control.lua's: its road, loading zone and trips follow). Without
+-- `player`, which would add the order to the player's undo queue.
+local function swap_back(surface, position, turned)
   for _, depot in pairs(surface.find_entities_filtered({ name = swap.names, position = position })) do
     local partner = PARTNER[depot.name]
     local ghosts = depot.to_be_deconstructed()
       and surface.find_entities_filtered({ ghost_name = partner, position = position })
     if ghosts and #ghosts > 0 and depot.position.x == position.x and depot.position.y == position.y then
-      local quality = ghosts[1].quality
+      local quality, direction = ghosts[1].quality, ghosts[1].direction
       depot.cancel_deconstruction(depot.force)
       for _, ghost in pairs(ghosts) do
         ghost.destroy()
+      end
+      if turned and depot.direction ~= direction then
+        depot.direction = direction
+        turned(depot)
       end
       depot.order_upgrade({ target = { name = partner, quality = quality }, force = depot.force })
     end
   end
 end
 
--- on_undo_applied and on_redo_applied (after scripts/undo.lua's): the actions applied.
-function swap.on_undo_applied(event)
+-- on_undo_applied and on_redo_applied (after scripts/undo.lua's): the actions applied. `turned`
+-- is called with a depot turned to its ghost's facing.
+function swap.on_undo_applied(event, turned)
   local removed, built = {}, {}
   for _, action in pairs(event.actions or {}) do
     local target = action.target
@@ -169,7 +176,7 @@ function swap.on_undo_applied(event)
         and from.position.x == to.position.x
         and from.position.y == to.position.y
       then
-        swap_back(surface, from.position)
+        swap_back(surface, from.position, turned)
       end
     end
   end

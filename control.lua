@@ -211,11 +211,16 @@ script.on_event(defines.events.on_pre_player_mined_item, function(event)
 end, filters)
 -- Undoing a request or buffer depot replaced by hand swaps it back in place (scripts/depot-swap.lua),
 -- once its removal's settings went on any ghost undo brought back; redoing it swaps it again.
+local function swap_turned(depot)
+  on_turned({ entity = depot })
+end
 script.on_event(defines.events.on_undo_applied, function(event)
   undo.on_undo_applied(event)
-  depot_swap.on_undo_applied(event)
+  depot_swap.on_undo_applied(event, swap_turned)
 end)
-script.on_event(defines.events.on_redo_applied, depot_swap.on_undo_applied)
+script.on_event(defines.events.on_redo_applied, function(event)
+  depot_swap.on_undo_applied(event, swap_turned)
+end)
 -- One about to be destroyed (died, or removed by a script that says so) leaves all its freighters,
 -- including any still in its chest, where it stands.
 for _, event in ipairs({ defines.events.on_entity_died, defines.events.script_raised_destroy }) do
