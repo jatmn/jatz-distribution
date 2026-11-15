@@ -1003,6 +1003,7 @@ function request_gui.register()
   script.on_event(defines.events.on_gui_hover, on_gui_hover)
   script.on_event(defines.events.on_gui_leave, on_gui_leave)
   script.on_event(defines.events.on_gui_inventory_action, on_inventory_action)
+  script.on_event(defines.events.on_player_changed_force, bonus_gui.on_player_changed_force)
   script.on_event("jatz-pipette", on_pipette)
   script.on_nth_tick(30, refresh)
 end

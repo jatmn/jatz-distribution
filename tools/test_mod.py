@@ -447,7 +447,8 @@ UNDO_TICKS = 1300
 # The freighter bonuses beside the Bonuses window, kept open while research changes: none before
 # research; after two speed levels, three item capacity levels and one fluid capacity level, each;
 # with an item capacity level undone, one stack fewer, and the same opened again; none once the force
-# is reset; and a closed window's left alone when research finishes.
+# is reset; a closed window's left alone when research finishes; and, open, another force's once the
+# player is moved to it, and the first force's again once that force is merged back into it.
 def bonus_panel(stacks):
     return {'beside_bonuses': True, 'title': 'jatz-bonus.title', 'lines': [
         # The game reads a localised string's numbers back as text.
@@ -462,7 +463,11 @@ EXPECTED_BONUSES = {
     'reversed': bonus_panel('2'),
     'reopened': bonus_panel('2'),
     'reset': 'none',
-    'closed': 'none'}
+    'closed': 'none',
+    'moved': {'beside_bonuses': True, 'title': 'jatz-bonus.title', 'lines': [
+        ['jatz-bonus.freighter-item-capacity', '1']]},
+    'merged': {'beside_bonuses': True, 'title': 'jatz-bonus.title', 'lines': [
+        ['jatz-bonus.freighter-speed', '20']]}}
 BONUS_TICKS = 10
 
 

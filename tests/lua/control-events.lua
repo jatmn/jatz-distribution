@@ -2489,6 +2489,24 @@ do -- The Bonuses window lists only the game's own modifiers: freighter research
   check("a closed window's panel is left until it opens", relative.jatz_bonus_frame == nil)
   opened(defines.gui_type.bonus)
   check("and built when it does", #lines() == 1)
+  -- Moved to another force (a script, or game.merge_forces): the open panel shows that one's.
+  local other_technologies = {}
+  for key in pairs(technologies) do
+    other_technologies[key] = { name = key, researched = key == research.speed .. "-1", level = 1 }
+  end
+  player.force = { index = 2, technologies = other_technologies, players = { player } }
+  fire("on_player_changed_force", { player_index = 16, force = force })
+  shown = lines()
+  check(
+    "a player moved to another force with the window open sees its bonuses",
+    #shown == 1 and shown[1][1] == "jatz-bonus.freighter-speed" and shown[1][2] == 20
+  )
+  player.force = force
+  opened(nil)
+  fire("on_player_changed_force", { player_index = 16, force = player.force })
+  check("with it closed, the panel is left until it opens", #lines() == 1 and lines()[1][2] == 20)
+  opened(defines.gui_type.bonus)
+  check("and shows its force's when it does", #lines() == 1 and lines()[1][2] == 375)
   technologies[research.fluid_capacity .. "-1"].researched = false
   opened(defines.gui_type.bonus)
   check("with nothing researched, no panel", relative.jatz_bonus_frame == nil and #relative.children == 0)

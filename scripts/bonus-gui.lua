@@ -3,10 +3,10 @@
 -- scripted (`nothing` modifiers, scripts/research.lua), and the window lists only the game's own
 -- modifiers, so this panel, anchored to it, lists ours: built afresh for the player's force each
 -- time the window opens (on_gui_opened with defines.gui_type.bonus, probed on 2.1.24), and again
--- for every player with it open when the force's freighter research changes, and left out while
--- nothing is researched, as the game leaves out bonuses it doesn't have.
--- scripts/request-gui.lua passes it the opened event, scripts/logistics.lua research finished,
--- undone or reset (control.lua keeps one handler per event).
+-- for every player with it open when the force's freighter research changes or the player moves to
+-- another force, and left out while nothing is researched, as the game leaves out bonuses it doesn't
+-- have. scripts/request-gui.lua passes it the opened event and registers its force change handler,
+-- scripts/logistics.lua research finished, undone or reset (control.lua keeps one handler per event).
 local research = require("scripts.research")
 
 local bonus_gui = {}
@@ -67,13 +67,27 @@ function bonus_gui.on_gui_opened(event)
   return true
 end
 
--- A force's research changed: the panel of each of its players with the Bonuses window open shows
--- it now (a closed window's is built again when it opens).
+-- A player's Bonuses window open: its panel shows their force's research now (a closed window's is
+-- built again when it opens).
+local function refresh(player)
+  if player.opened_gui_type == defines.gui_type.bonus then
+    show(player)
+  end
+end
+
+-- A force's research changed: each of its players' open panels shows it.
 function bonus_gui.on_research_changed(force)
   for _, player in pairs(force.players) do
-    if player.opened_gui_type == defines.gui_type.bonus then
-      show(player)
-    end
+    refresh(player)
+  end
+end
+
+-- A player moved to another force (a script setting LuaPlayer.force, or game.merge_forces): their
+-- open panel shows that force's research.
+function bonus_gui.on_player_changed_force(event)
+  local player = game.get_player(event.player_index)
+  if player then
+    refresh(player)
   end
 end
 
