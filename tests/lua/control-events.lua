@@ -655,7 +655,7 @@ do -- A depot replaced by itself at another quality (scripts/depot-upgrades.lua)
     else
       local cursor = {
         valid_for_read = true,
-        prototype = { place_result = { name = how == "player" and "jatz-request-depot" or "jatz-provider-depot" } },
+        prototype = { place_result = { name = how == "other" and "jatz-provider-depot" or "jatz-request-depot" } },
       }
       game.get_player = function()
         -- (No buffer depot stands there to be replaced by a request depot: scripts/depot-swap.lua.)
@@ -669,6 +669,10 @@ do -- A depot replaced by itself at another quality (scripts/depot-upgrades.lua)
         }
       end
       fire("on_pre_build", { player_index = 1, tick = game.tick, position = { x = x + 0.3, y = 0.7 } })
+      if how == "last" then
+        -- The last one in the cursor placed: it is empty when the old one is mined (0.1.8 crashed).
+        cursor.valid_for_read, cursor.prototype = false, nil
+      end
       fire("on_pre_player_mined_item", { entity = old, player_index = 1 })
       fire("on_player_mined_entity", { entity = old, player_index = 1, buffer = buffer })
       fire("on_built_entity", { entity = new })
@@ -676,7 +680,7 @@ do -- A depot replaced by itself at another quality (scripts/depot-upgrades.lua)
     removed(old)
     return old, new, received
   end
-  for _, how in ipairs({ "robot", "platform", "player" }) do
+  for _, how in ipairs({ "robot", "platform", "player", "last" }) do
     local old, new, received = upgraded(700 + #how * 10, how)
     local request = logistics.get_request(new)
     check(
@@ -686,7 +690,7 @@ do -- A depot replaced by itself at another quality (scripts/depot-upgrades.lua)
     check(how .. ": and its freighters, none handed over", received == 0 and logistics.freighter_counts(new) == 3)
     check(how .. ": and its robot access", access[new.unit_number] == true)
     check(how .. ": the old one is forgotten", storage.depots[old.unit_number] == nil)
-    if how == "player" then
+    if how == "player" or how == "last" then
       -- The game puts the player's removal of the old one on their undo stack, as any removal by
       -- hand: its settings wait for that action like any other's (scripts/undo.lua).
       local waiting = storage.undo_pending and storage.undo_pending[1]

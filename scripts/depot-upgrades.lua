@@ -28,11 +28,16 @@ local function spot(entity)
   return entity.surface_index .. " " .. position.x .. " " .. position.y .. " " .. entity.name
 end
 
--- A player's build: noted (`storage.depot_builds[player index]`, this tick only), for telling a
--- fast replace from a player mining a depot with one in their cursor.
+-- A player's build: noted (`storage.depot_builds[player index]`, this tick only), with what their
+-- cursor places, for telling a fast replace from a player mining a depot with one in their cursor.
+-- Read now: by the time the old depot is mined the cursor can be empty (0.1.8 crashed on that).
 function upgrades.pre_build(event)
+  local player = game.get_player(event.player_index)
+  local cursor = player and player.cursor_stack
+  local placed = cursor and cursor.valid_for_read and cursor.prototype.place_result
   storage.depot_builds = storage.depot_builds or {}
-  storage.depot_builds[event.player_index] = { tick = event.tick, position = event.position }
+  storage.depot_builds[event.player_index] =
+    { tick = event.tick, position = event.position, name = placed and placed.name or nil }
 end
 
 -- Whether `position` lies on `entity`'s ground (its selection box: where a click picks it).
@@ -58,13 +63,7 @@ local function replacing(entity, player_index)
     return target ~= nil and target.name == entity.name
   end
   local build = storage.depot_builds and storage.depot_builds[player_index]
-  if not (build and build.tick == game.tick and on(entity, build.position)) then
-    return false
-  end
-  local player = game.get_player(player_index)
-  local cursor = player and player.cursor_stack
-  local placed = cursor and cursor.valid_for_read and cursor.prototype.place_result
-  return placed ~= nil and placed.name == entity.name
+  return build ~= nil and build.tick == game.tick and build.name == entity.name and on(entity, build.position)
 end
 
 -- A delivery or Fuel depot mined: if it is being replaced by itself at another quality, note it
