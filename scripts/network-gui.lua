@@ -5,10 +5,10 @@
 -- many depots of each kind, and what provider and buffer depots hold, items and fluids, as the
 -- logistic network window shows what its chests hold. All surfaces together, or one: with Space
 -- Age, or whenever the force has depots on more than one surface, a drop-down picks a planet or a
--- space platform. Counted when it opens and again once a second while it is open (control.lua's
--- on_nth_tick calls `refresh`), and never while nobody has it open. It is the player's opened GUI,
--- so E and Esc close it too. scripts/request-gui.lua passes the GUI events on to it (control.lua
--- keeps one handler per event).
+-- space platform. Counted when it opens, when its player changes force, and again once a second
+-- while it is open (control.lua's on_nth_tick calls `refresh`), and never while nobody has it
+-- open. It is the player's opened GUI, so E and Esc close it too. scripts/request-gui.lua passes
+-- the GUI events on to it (control.lua keeps one handler per event).
 local logistics = require("scripts.logistics")
 
 local network_gui = {}
@@ -180,6 +180,8 @@ local function show(player, frame, counts)
   end
 
   -- What provider and buffer depots hold, most first, one slot button each, reused as they are.
+  -- Intentional: less than 1 (a fluid's leftover in a tank) isn't listed; it would read 0, as a
+  -- tank's circuit output floors it, and no freighter loads it (logistics.least_fluid).
   local held = {}
   for _, item in pairs(shown.items) do
     if item.count >= 1 then
@@ -349,6 +351,16 @@ function network_gui.on_gui_selection_state_changed(event)
   return true
 end
 
+-- A player moved to another force (a script setting LuaPlayer.force, or game.merge_forces): their
+-- open window shows that force's network at once, not the old one's until the next count.
+function network_gui.on_player_changed_force(event)
+  local player = game.get_player(event.player_index)
+  local frame = player and frame_of(player)
+  if frame and storage.network_gui and storage.network_gui[player.index] then
+    show(player, frame, network_gui.count(player.force))
+  end
+end
+
 -- Once a second: every open window of a player in the game shows the numbers as they are now,
 -- counted once per force.
 function network_gui.refresh()
@@ -360,7 +372,13 @@ function network_gui.refresh()
     local player = game.get_player(index)
     local frame = player and player.valid and frame_of(player)
     if not frame then
-      storage.network_gui[index] = nil
+      -- Gone without passing through `close` (another mod's script destroyed it, and an
+      -- on_gui_closed for it, if any, has only an invalid element): closed now, button unlit too.
+      if player and player.valid then
+        close(player)
+      else
+        storage.network_gui[index] = nil
+      end
     elseif player.connected then
       local force = player.force
       local counts = by_force[force.index]

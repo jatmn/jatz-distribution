@@ -2973,7 +2973,7 @@ do -- The Bonuses window lists only the game's own modifiers: freighter research
     end
   end
   local relative = element()
-  local player = { index = 16, valid = true, force = force, gui = { relative = relative } }
+  local player = { index = 16, valid = true, force = force, gui = { relative = relative, screen = element() } }
   force.players = { player }
   game.get_player = function()
     return player
@@ -4206,7 +4206,7 @@ do -- The freighter network window, which the shortcut bar opens: the player's f
   check("a renamed platform is renamed in the drop-down", dropdown.items[4] == "Platform 2")
   -- Another force, with depots on one surface only: no drop-down without Space Age.
   player.force = other
-  nth[60]()
+  fire("on_player_changed_force", { player_index = 30, force = force })
   seen = shown()
   check(
     "a player's own force's network only, the surface chosen elsewhere forgotten",
@@ -4228,6 +4228,17 @@ do -- The freighter network window, which the shortcut bar opens: the player's f
   frame = screen.jatz_network_frame
   fire("on_gui_click", { player_index = 30, element = frame.children[1].jatz_network_close })
   check("so does its close button", screen.jatz_network_frame == nil and not toggled["jatz-network"])
+  fire("on_player_changed_force", { player_index = 30, force = other })
+  check("a force change with it closed opens nothing", screen.jatz_network_frame == nil)
+  -- Taken away by another mod's script, which raises no on_gui_closed: once a second it is noticed,
+  -- the button unlit and nothing counted for it any more.
+  press()
+  screen.jatz_network_frame.destroy()
+  nth[60]()
+  check(
+    "a window taken away by a script unlights the button",
+    not toggled["jatz-network"] and next(storage.network_gui) == nil
+  )
   nth[60]()
   for _, key in ipairs(trips) do
     storage.trips[key] = nil
