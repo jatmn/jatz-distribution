@@ -2,6 +2,82 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Quality: passed (automated)
+
+**November 14, 2026.** Quality support rebased onto `016bc60fc762a541be01dec1cfaa5946c271bb7e`
+(after the freighter bonuses beside the Bonuses window, #101), Factorio 2.1.24 headless on Linux
+(build 87808), base game and Space Age with Quality.
+
+- `tools/test_mod.py`: packaged mod passed with the base game and Space Age, including the new
+  quality scenario and #101's bonuses scenario. That covers requests by quality, better freighters and depots, a robot upgrade
+  and a player's fast replace, and blueprints. Against the base the same scenario fails: normal items
+  arrive instead of rare, a rare freighter brings 100 with a 20 MJ tank, and an upgraded depot loses
+  its request and freighters.
+- `tools/test_mod_setup.py`: all 15 setup tests passed, including the new `tests/lua/quality.lua`
+  (133 checks) on the shared `tests/lua/harness.lua`, the logistics harness's 768 the same as on
+  `main`, and the control-event checks for upgrades, the quality panel and its fuel tooltip.
+- An independent review found four defects: room by quality when planning, rare cargo refiled as
+  normal, a hand-mined upgrade-marked depot, and a Fuel depot's refuel stop. All are fixed, each with
+  a check that fails before its fix.
+- A second review (of `7145d36`) found two more, both fixed with checks that fail before the fix: a
+  provider upgraded while a freighter was on its way kept that freighter's promise filed under the
+  old depot, so it was never let go (in the engine, 30 plates restocked after the first 30 were never
+  fetched; now all 60 arrive); and freighters waiting for a free truck chest stack took the quality
+  of the next one asked for (21 normal and 1 rare asked for brought 2 rare; now 1 normal and 1 rare).
+- A third review (of `690429b`) found a freighter on the road kept its quality's speed after a mod
+  change removed that quality (on 2.1.24, a rare freighter kept 0.1056 after the save was loaded
+  without Quality; now 0.066, a normal one's), and the depot's fuel tooltip said a full tank holds a
+  normal freighter's 20 MJ beside a full rare freighter's 32 MJ. Both are fixed, with checks that fail
+  before the fix; the fuel descriptions now give 20 MJ as a normal freighter's tank and say a depot
+  sends its best freighters first.
+- A fourth review (of `52f7016`) found four more, all fixed with checks that fail before the fix:
+  cargo of a quality the request no longer takes (changed after it was loaded) had no room kept for
+  it, so another freighter took the stack and it was spilled (in the engine, with one stack, an epic,
+  a "≥ epic" and a normal request all spilled the rare plate; now it goes in); a player's fast
+  replace at another quality left the removal's undo action without the depot's settings (now the
+  quality scenario finds them there); a quality asked for again from robots joined its earlier ask,
+  so a freighter put in by hand cancelled the wrong one (rare, normal, rare and a rare by hand
+  brought 2 rare; now 1 rare and 1 normal); and a freighter whose promise a request change dropped
+  searched for a provider again after every answer (now it goes home empty).
+- A fifth review (of `0e0a596`) found two more, and the owner one in the panel, all fixed with
+  checks that fail before the fix: freighters asked of robots at several qualities were cancelled
+  in the order the game reads plans back (sorted by quality), not the order asked (in the engine,
+  rare then normal asked and a normal put in by hand left a normal asked and dropped the rare; now
+  the rare stays asked); a freighter out had no stack kept to come back to (in the engine, 90 normal
+  and 1 rare, the rare sent and an epic put in meanwhile: the rare was spilled; now all 92 are home);
+  and the panel's comparator stood between the item and its amount, reading "uncommon wood > 9600"
+  (now a "Quality" row under them reads "Quality > uncommon"). `info.json` now lists `quality` as an
+  optional dependency.
+- A sixth review (of `9e4e25f`) found two more, both fixed with checks that fail before the fix: a
+  depot replaced by itself at a lower quality kept a request for more than its smaller chest holds, so
+  with "Full loads only" it waited for a load that never fits (in the engine, a rare request depot a
+  player builds a normal one over kept its rare chest's request; now it is cut to the normal chest,
+  `logistics.replaced` using `set_request`'s limit for every replacement, role swaps included); and a
+  request panel still open in a save kept its quality drop-down's index while the qualities changed,
+  so the request took another quality than the one shown (now open panels are built again at a mod
+  change; checked with the real handlers, a save and load of the panel in the engine was not).
+  The branch now includes `main` with the request and buffer depots replacing each other (#103,
+  `be2531b`): `tools/test_mod.py` passes again with base game and Space Age, the quality and undo
+  scenarios included, and all 16 setup tests pass.
+- A seventh review (of `aaaa62e`) found one more, fixed with a check that fails before the fix: an
+  open request panel's Quality row never followed a quality set outside it (another player, Copy and
+  Paste settings, the remote interface), so choosing another item put the row's old quality back over
+  the request's (with the real handlers, an `uncommon ≥` request became normal `=`). The row now
+  follows the request at each refresh, and choosing another item keeps the request's quality (checked
+  with the real handlers; the panel was not checked in the engine).
+- StyLua 2.5.2, Luacheck 1.2.0 and Ruff 0.17.3 passed; the emulator tests passed.
+- Not checked: the request panel and freighter slot tooltip in the graphical client.
+
+The deterministic standard emulator comparison against `016bc60` reports +2.7% mean Lua
+instructions (+3.6% p99, +3.7% worst tick), +0.4% API calls, and identical paths, commands, vehicles
+and deliveries. In game, standard preset, five alternating runs per revision against `016bc60`, on
+an AMD Ryzen 9 6900HX (Linux):
+
+| | Mean update (ms) | UPS | Script (ms) | Pathfinder (ms) | p99 (ms) | Max (ms) | Run spread (ms) | Vehicles out | Delivered/min |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Before | 1.983 | 504 | 0.676 | 0.069 | 5.626 | 11.380 | 0.086 | 1510 | 264720 |
+| After | 1.953 | 512 | 0.668 | 0.063 | 5.514 | 9.283 | 0.108 | 1510 | 264720 |
+
 ## Explicit runtime states: passed (automated)
 
 **November 9, 2026.** Refactor against `af0429cd7673a3674e3b8a50d301616fd572a3de`,

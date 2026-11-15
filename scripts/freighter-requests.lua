@@ -8,21 +8,29 @@ local requests = {}
 
 -- One target owner, including saves from before replenishment had a named phase. Idle is nil;
 -- outstanding plans live in Factorio, so reconciliation derives whether more chest room is needed.
+-- Second: the quality robots bring for it (scripts/quality.lua; nil for normal): a freighter
+-- ghost's from the panel, a lost freighter's for its replacement, the latest asked for. Those still
+-- waiting for a free chest stack keep the quality each was asked for at
+-- (`replenishment.waiting`, see request_up_to).
 function requests.target(depot)
   if depot.freighter_target ~= nil then
     depot.replenishment = { phase = "reconciling", target = depot.freighter_target }
     depot.freighter_target = nil
   end
-  return depot.replenishment and depot.replenishment.target
+  return depot.replenishment and depot.replenishment.target, depot.replenishment and depot.replenishment.quality
 end
 
-function requests.set_target(depot, target)
+function requests.set_target(depot, target, grade)
   depot.freighter_target = nil
-  depot.replenishment = target and { phase = "reconciling", target = target } or nil
+  depot.replenishment = target and { phase = "reconciling", target = target, quality = grade } or nil
 end
 
 local function awaiting(depot, total, target)
-  depot.replenishment.phase = total < target and "waiting-for-space" or "requested"
+  local short = total < target
+  depot.replenishment.phase = short and "waiting-for-space" or "requested"
+  if not short then
+    depot.replenishment.waiting = nil
+  end
 end
 
 -- scripts/logistics.lua, and its helpers, from requests.install.
@@ -114,20 +122,35 @@ local function free_chest_stacks(chest, proxies)
   return free
 end
 
--- Positions for `amount` freighters, a stack at a time, in the given chest stacks (0-based); the
--- amount that fits, and the positions.
+-- Positions for `amount` freighters, a stack at a time, in the given chest stacks (0-based), which
+-- are taken off the list; the amount that fits, and the positions.
 local function spread(amount, stacks)
   local stack_size = freighter_stack_size()
   local positions, placed = {}, 0
-  for _, stack in ipairs(stacks) do
-    if placed >= amount then
-      break
-    end
+  while placed < amount and #stacks > 0 do
     local count = math.min(stack_size, amount - placed)
-    positions[#positions + 1] = { inventory = defines.inventory.chest, stack = stack, count = count }
+    positions[#positions + 1] = { inventory = defines.inventory.chest, stack = table.remove(stacks, 1), count = count }
     placed = placed + count
   end
   return placed, positions
+end
+
+-- The freighters a request depot asked robots for, a chest stack at a time, in the order asked:
+-- `depot.freighter_asks`, a list of { stack (0-based), quality (nil for normal) }. The game sorts a
+-- proxy's insert plans by quality and joins plans of one quality (probed on 2.1.24: rare then
+-- normal reads back normal, rare), so the plans can't tell which was asked for last; this list can.
+-- A chest stack is in one plan at a time, so a stack asked for again replaces its older ask.
+local function note_asks(depot, positions, grade)
+  local asks = depot.freighter_asks or {}
+  for _, position in ipairs(positions) do
+    for index = #asks, 1, -1 do
+      if asks[index].stack == position.stack then
+        table.remove(asks, index)
+      end
+    end
+    asks[#asks + 1] = { stack = position.stack, quality = grade }
+  end
+  depot.freighter_asks = asks
 end
 
 -- Add an insert or removal plan to a depot's request proxy, making one if it has none.
@@ -160,8 +183,10 @@ end
 -- requests are for: freighters arriving some other way (put in by hand) count towards it, and
 -- requests beyond it are cancelled. It is kept even when the chest has no free stacks for some or
 -- all of them yet (it also holds the depot's cargo): trim_freighter_requests asks for the rest as
--- stacks free up. Returns how many were requested now.
-local function request_up_to(entity, goal)
+-- stacks free up. Robots bring freighters of quality `grade` (nil: normal), except those still
+-- waiting for a free stack from before, which keep the quality they were asked for at. Returns how
+-- many were requested now.
+local function request_up_to(entity, goal, grade)
   local in_slot, out, capacity = logistics.freighter_counts(entity)
   if not in_slot then
     return 0
@@ -173,28 +198,72 @@ local function request_up_to(entity, goal)
   if goal <= have then
     return 0
   end
-  requests.set_target(request_depot(entity), goal)
-  -- A stack at a time, into chest stacks that are empty and in no other plan.
-  local amount, positions = spread(goal - have, free_chest_stacks(chest, proxies))
-  awaiting(request_depot(entity), have + amount, goal)
-  if amount <= 0 then
-    return 0
+  local depot = request_depot(entity)
+  -- What to ask for, by quality, those asked for first first: the ones still waiting from before
+  -- (as many as its earlier target still lacks; freighters put in by hand count for the last
+  -- asked), then the rest of the way to `goal`, of `grade`.
+  local owed, left = {}, math.min(goal, depot.replenishment and depot.replenishment.target or 0) - have
+  -- (A quality asked for again straight after itself shares its entry; asked for again after
+  -- another, it is a new one, so the order asked stays and the last asked stays last.)
+  local function owe(name, count)
+    if count <= 0 then
+      return
+    end
+    local last = owed[#owed]
+    if last and last.quality == name then
+      last.count = last.count + count
+    else
+      owed[#owed + 1] = { quality = name, count = count }
+    end
   end
-  add_plan(entity, proxies, {
-    id = { name = FREIGHTER, quality = QUALITY },
-    items = { in_inventory = positions },
-  })
-  return amount
+  for _, part in ipairs(depot.replenishment and depot.replenishment.waiting or {}) do
+    local count = math.min(part.count, left)
+    owe(part.quality, count)
+    left = left - math.max(count, 0)
+  end
+  local earlier = 0
+  for _, part in ipairs(owed) do
+    earlier = earlier + part.count
+  end
+  owe(grade, goal - have - earlier)
+  requests.set_target(depot, goal, grade)
+  -- A stack at a time, into chest stacks that are empty and in no other plan; a plan for each
+  -- quality, as a plan names its items' quality. What doesn't fit waits, by quality.
+  local free, placed, waiting = free_chest_stacks(chest, proxies), 0, nil
+  for _, part in ipairs(owed) do
+    local amount, positions = spread(part.count, free)
+    if amount > 0 then
+      add_plan(entity, proxies, {
+        id = { name = FREIGHTER, quality = part.quality or QUALITY },
+        items = { in_inventory = positions },
+      })
+      note_asks(depot, positions, part.quality)
+      -- A new proxy made for the first plan takes the others.
+      if #proxies == 0 then
+        proxies = freighter_requests(entity)
+      end
+      placed = placed + amount
+    end
+    if amount < part.count then
+      waiting = waiting or {}
+      waiting[#waiting + 1] = { quality = part.quality, count = part.count - amount }
+    end
+  end
+  depot.replenishment.waiting = waiting
+  awaiting(depot, have + placed, goal)
+  return placed
 end
 
 -- Ask construction robots to bring `count` more freighters (or as many as the slot has room for)
 -- into a request depot's chest: more than it has and has already asked for, including freighters
--- still waiting for a free chest stack (its target). Returns how many were requested now.
-function requests.request_freighters(entity, count)
+-- still waiting for a free chest stack (its target). Of quality `grade` (a name; normal if nil: the
+-- panel passes the freighter ghost's). Returns how many were requested now.
+function requests.request_freighters(entity, count, grade)
   local depot = request_depot(entity)
-  if not depot then
+  if not depot or (grade ~= nil and not (type(grade) == "string" and prototypes.quality[grade])) then
     return 0
   end
+  grade = grade ~= QUALITY and grade or nil
   local have, capacity = logistics.freighter_total(entity)
   local asked = math.max(have, requests.target(depot) or 0)
   local room = capacity - asked
@@ -202,7 +271,7 @@ function requests.request_freighters(entity, count)
   if amount <= 0 then
     return 0
   end
-  return request_up_to(entity, asked + amount)
+  return request_up_to(entity, asked + amount, grade)
 end
 
 -- Have construction robots take `count` freighters (or all) out of a request depot's slot, as
@@ -222,8 +291,9 @@ function requests.remove_freighters(entity, count)
   end
   local chest = freighter_chest(entity)
   local proxies = freighter_requests(entity)
-  -- A stack at a time from the slot into empty chest stacks, each marked for removal.
-  local positions, moved = {}, 0
+  -- A stack at a time from the slot into empty chest stacks, each marked for removal: one plan per
+  -- quality, as a removal plan names its items' quality (scripts/quality.lua).
+  local positions, order, moved = {}, {}, 0
   for _, index in ipairs(free_chest_stacks(chest, proxies)) do
     local from = a_freighter(depot)
     if moved >= wanted or not from then
@@ -232,17 +302,27 @@ function requests.remove_freighters(entity, count)
     local into = chest[index + 1]
     into.transfer_stack(from, math.min(from.count, wanted - moved))
     if into.valid_for_read then
-      positions[#positions + 1] = { inventory = defines.inventory.chest, stack = index, count = into.count }
+      local grade = into.quality.name
+      if not positions[grade] then
+        positions[grade] = {}
+        order[#order + 1] = grade
+      end
+      local list = positions[grade]
+      list[#list + 1] = { inventory = defines.inventory.chest, stack = index, count = into.count }
       moved = moved + into.count
     end
   end
-  if moved > 0 then
+  for _, grade in ipairs(order) do
     add_plan(
       entity,
       proxies,
-      { id = { name = FREIGHTER, quality = QUALITY }, items = { in_inventory = positions } },
+      { id = { name = FREIGHTER, quality = grade }, items = { in_inventory = positions[grade] } },
       true
     )
+    -- A new proxy made for the first plan takes the others.
+    if #proxies == 0 then
+      proxies = freighter_requests(entity)
+    end
   end
   -- The freighters leaving take their fuel entries, as in take_freighters.
   parked_fuel(depot)
@@ -262,64 +342,110 @@ end
 requests.freighter_total = freighter_total
 
 -- Ask robots for as many freighters as it takes for a request depot to have `total` (within its
--- slot's limit). Returns how many were requested.
-function requests.match_freighters(entity, total)
+-- slot's limit), of quality `grade` (nil: normal; a lost freighter's replacement is its quality).
+-- Returns how many were requested.
+function requests.match_freighters(entity, total, grade)
   local depot = request_depot(entity)
   if not depot then
     return 0
   end
   total = math.max(0, math.floor(tonumber(total) or 0))
+  grade = grade ~= QUALITY and type(grade) == "string" and prototypes.quality[grade] and grade or nil
   local have = freighter_total(entity)
   if total > have then
-    return request_up_to(entity, total)
+    return request_up_to(entity, total, grade)
   end
   -- Already as many or more: freighter requests beyond `total` are cancelled. Freighters already
   -- in the depot stay; they are the player's, and taking them away is the player's call.
-  requests.set_target(depot, total)
+  requests.set_target(depot, total, grade)
   logistics.trim_freighter_requests(entity)
   return 0
 end
 
 -- Lower a depot's freighter requests by `excess`, editing its request proxies' plans in place,
--- from the last position back, rather than replacing them. An open container window keeps showing
--- the requests of the proxy it opened with: replacing the proxy (cancel, then request anew) left
--- the chest slot's ghost hidden until the window was reopened.
+-- rather than replacing them. An open container window keeps showing the requests of the proxy it
+-- opened with: replacing the proxy (cancel, then request anew) left the chest slot's ghost hidden
+-- until the window was reopened. The last asked go first, as freighters put in by hand count for
+-- the last ask: by `depot.freighter_asks` (see note_asks), as the game reads plans back by quality.
+-- Plans it has no ask for (a blueprint's, another mod's, a save's from before) then go from the
+-- last position back.
 local function reduce_freighter_requests(entity, excess)
+  local depot = request_depot(entity)
   local proxies = freighter_requests(entity)
-  for index = #proxies, 1, -1 do
-    if excess <= 0 then
-      break
-    end
-    local proxy = proxies[index]
-    local plans = proxy.insert_plan
-    for plan_index = #plans, 1, -1 do
-      local plan = plans[plan_index]
-      if excess > 0 and item_name(plan.id.name) == FREIGHTER then
-        local positions = plan.items.in_inventory or {}
-        for position_index = #positions, 1, -1 do
-          if excess <= 0 then
-            break
-          end
-          local count = positions[position_index].count or 1
-          local cut = math.min(count, excess)
-          excess = excess - cut
-          if cut >= count then
-            table.remove(positions, position_index)
-          else
-            positions[position_index].count = count - cut
-          end
-        end
-        if #positions == 0 then
-          table.remove(plans, plan_index)
-        else
-          plan.items.in_inventory = positions
+  -- Each proxy's plans, read once (each read is a copy), and where each chest stack's are.
+  local lists, at, cut = {}, {}, {}
+  for index, proxy in ipairs(proxies) do
+    lists[index] = proxy.insert_plan
+    for _, plan in ipairs(lists[index]) do
+      if item_name(plan.id.name) == FREIGHTER then
+        for _, position in ipairs(plan.items.in_inventory or {}) do
+          at[position.stack] = { proxy = index, plan = plan, position = position }
         end
       end
     end
-    if #plans == 0 and #proxy.removal_plan == 0 then
-      proxy.destroy()
-    else
-      proxy.insert_plan = plans
+  end
+  local function lower(planned)
+    local count = planned.position.count or 1
+    local taken = math.min(count, excess)
+    if taken > 0 then
+      excess = excess - taken
+      planned.position.count = count - taken
+      cut[planned.proxy] = true
+    end
+  end
+  -- The last asked first; asks whose freighters are all brought or cancelled are forgotten.
+  local asks, kept = depot.freighter_asks or {}, {}
+  for index = #asks, 1, -1 do
+    local ask = asks[index]
+    local planned = at[ask.stack]
+    local grade = planned and planned.plan.id.quality
+    grade = type(grade) == "table" and grade.name or grade
+    if planned and (grade ~= QUALITY and grade or nil) == ask.quality then
+      lower(planned)
+      if (planned.position.count or 1) > 0 then
+        table.insert(kept, 1, ask)
+      end
+    end
+  end
+  depot.freighter_asks = #kept > 0 and kept or nil
+  -- Then any others, from the last position back.
+  for index = #lists, 1, -1 do
+    local plans = lists[index]
+    for plan_index = #plans, 1, -1 do
+      local plan = plans[plan_index]
+      if item_name(plan.id.name) == FREIGHTER then
+        local positions = plan.items.in_inventory or {}
+        for position_index = #positions, 1, -1 do
+          lower({ proxy = index, position = positions[position_index] })
+        end
+      end
+    end
+  end
+  -- Write back the proxies changed: without the positions and plans left with none.
+  for index, proxy in ipairs(proxies) do
+    if cut[index] then
+      local plans = lists[index]
+      for plan_index = #plans, 1, -1 do
+        local plan = plans[plan_index]
+        if item_name(plan.id.name) == FREIGHTER then
+          local positions = plan.items.in_inventory or {}
+          for position_index = #positions, 1, -1 do
+            if (positions[position_index].count or 1) <= 0 then
+              table.remove(positions, position_index)
+            end
+          end
+          if #positions == 0 then
+            table.remove(plans, plan_index)
+          else
+            plan.items.in_inventory = positions
+          end
+        end
+      end
+      if #plans == 0 and #proxy.removal_plan == 0 then
+        proxy.destroy()
+      else
+        proxy.insert_plan = plans
+      end
     end
   end
 end
@@ -416,8 +542,8 @@ function requests.trim_freighter_requests(entity)
     reduce_freighter_requests(entity, total - wanted)
     awaiting(depot, wanted, wanted)
   elseif total < wanted then
-    -- Short, with nothing requested to cover it: ask again for the rest.
-    request_up_to(entity, wanted)
+    -- Short, with nothing requested to cover it: ask again for the rest, of the quality it was for.
+    request_up_to(entity, wanted, select(2, requests.target(depot)))
   else
     awaiting(depot, total, wanted)
   end

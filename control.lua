@@ -13,6 +13,7 @@ local road_monitor = require("scripts.road-monitor")
 local tunnels = require("scripts.tunnels")
 local undo = require("scripts.undo")
 local legacy_depots = require("scripts.legacy-depots")
+local depot_upgrades = require("scripts.depot-upgrades")
 local depot_swap = require("scripts.depot-swap")
 
 -- Road laid (`added`) or removed or covered (`removed`) on a surface: deliveries re-plan, and road
@@ -70,8 +71,10 @@ local function on_built(event)
     if not entity then
       return
     end
-    -- A request depot replacing a buffer depot, or a buffer depot a request depot: it carries on as
-    -- that depot (scripts/depot-swap.lua).
+    -- A depot replacing itself at another quality takes over all the old one had
+    -- (scripts/depot-upgrades.lua), before anything looks at it; so does a request depot replacing a
+    -- buffer depot, or a buffer depot a request depot, as that depot (scripts/depot-swap.lua).
+    depot_upgrades.built(entity)
     depot_swap.built(entity)
     if loading_zone.depots[entity.name] then
       settle(entity)
@@ -168,28 +171,39 @@ for name in pairs(logistics.requesting) do
   requesting_filters[#requesting_filters + 1] = { filter = "name", name = name }
 end
 -- A request depot mined by a player, robot or platform hands its freighters (in its slot and out
--- on trips) to the miner; the mining buffer goes to their inventory. Not when it is mined to be
--- replaced by a buffer depot, or a buffer depot by a request depot: the new one keeps them
--- (scripts/depot-swap.lua).
+-- on trips) to the miner; the mining buffer goes to their inventory. Not one being replaced by
+-- itself at another quality: that one carries on as the new one (scripts/depot-upgrades.lua). Nor
+-- when it is mined to be replaced by a buffer depot, or a buffer depot by a request depot: the new
+-- one keeps them (scripts/depot-swap.lua).
 for _, event in ipairs({
   defines.events.on_robot_mined_entity,
   defines.events.on_space_platform_mined_entity,
 }) do
   script.on_event(event, function(mined)
-    if not depot_swap.replacing(mined.entity) then
+    if not depot_upgrades.mined(mined.entity) and not depot_swap.replacing(mined.entity) then
       logistics.on_depot_mined(mined)
     end
-  end, requesting_filters)
+  end, filters)
 end
--- Mined by a player: also the removal undo.player_removing's settings were read for (below).
+-- Mined by a player: also the removal undo.player_removing's settings were read for (below). A
+-- player replacing a depot by itself at another quality removes it too: the game puts that
+-- removal on their undo stack, so its settings go on it like any other's, though its freighters
+-- stay with the new one.
 script.on_event(defines.events.on_player_mined_entity, function(event)
   undo.player_removed(event.entity, event.player_index)
-  if not depot_swap.replacing(event.entity, event.player_index) then
-    logistics.on_depot_mined(event)
+  if
+    depot_upgrades.mined(event.entity, event.player_index) or depot_swap.replacing(event.entity, event.player_index)
+  then
+    return
   end
+  logistics.on_depot_mined(event)
 end, filters)
--- A player placing a request or buffer depot over the other (scripts/depot-swap.lua).
-script.on_event(defines.events.on_pre_build, depot_swap.on_pre_build)
+-- A player's builds, for telling a depot placed over itself at another quality, or over the other
+-- of a request and buffer depot, from one mined.
+script.on_event(defines.events.on_pre_build, function(event)
+  depot_upgrades.pre_build(event)
+  depot_swap.on_pre_build(event)
+end)
 -- A depot or road network monitor a player removes keeps its settings on the removal's undo action
 -- (scripts/undo.lua), read just before it goes, freighters in its chest still counted: marked for
 -- deconstruction (as cutting does) by a player, then taken by robots or a space platform; or mined
@@ -365,6 +379,8 @@ end)
 script.on_configuration_changed(function()
   research.on_configuration_changed()
   setup()
+  -- Panels open in the save show today's qualities (after setup: removed ones are forgotten there).
+  request_gui.on_configuration_changed()
 end)
 
 -- Milestones (optional) calls every remote interface with this function, on a new game and when

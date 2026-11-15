@@ -1,11 +1,12 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
--- The fake Factorio runtime the delivery checks run against (tests/lua/logistics.lua, and the
--- request and buffer depot replacement checks, tests/lua/depot-swap.lua), with their shared helpers:
--- Factorio's globals as far as scripts/logistics.lua and its modules use them, inventories and item
--- stacks, entities and a surface that records path requests, `reset` for fresh modules and storage,
--- and `check`, which also verifies what freighters bring is filed as the trips say. Split out of
--- tests/lua/logistics.lua, which reached the 256 KiB a text file may have in CI (AGENTS.md,
--- "Downloads stay small").
+-- The fake Factorio runtime the delivery checks run against (tests/lua/logistics.lua, the quality
+-- checks, tests/lua/quality.lua, and the request and buffer depot replacement checks,
+-- tests/lua/depot-swap.lua), with their shared helpers: Factorio's globals as far as
+-- scripts/logistics.lua and its modules use them, quality-aware inventories and item stacks (a name
+-- alone is normal quality, as in the game), entities and a surface that records path requests,
+-- `reset` for fresh modules and storage, and `check`, which also verifies what freighters bring is
+-- filed as the trips say. Split out of tests/lua/logistics.lua, which reached the 256 KiB a text
+-- file may have in CI (AGENTS.md, "Downloads stay small").
 
 defines = {
   direction = { north = 0, east = 4, south = 8, west = 12 },
@@ -67,8 +68,65 @@ prototypes = {
     ["signal-anything"] = {},
     ["signal-each"] = {},
   },
-  quality = { normal = {} },
+  -- As the game lists them (with the Quality mod: levels, and the default bonus each gives), and its
+  -- hidden quality items never have.
+  quality = {
+    normal = { name = "normal", level = 0, default_multiplier = 1, order = "a" },
+    uncommon = { name = "uncommon", level = 1, default_multiplier = 1.3, order = "b" },
+    rare = { name = "rare", level = 2, default_multiplier = 1.6, order = "c" },
+    epic = { name = "epic", level = 3, default_multiplier = 1.9, order = "d" },
+    legendary = { name = "legendary", level = 5, default_multiplier = 2.5, order = "e" },
+    ["quality-unknown"] = { name = "quality-unknown", level = 0, default_multiplier = 1, hidden = true, order = "z" },
+  },
 }
+-- An item id's name and quality, as the game reads an ItemWithQualityID: a name alone is normal.
+local function id_of(id)
+  if type(id) == "table" then
+    local grade = id.quality
+    return id.name, type(grade) == "table" and grade.name or grade or "normal"
+  end
+  return id, "normal"
+end
+-- A stack's quality name (stacks made here without one are normal).
+local function grade_of(stack)
+  local grade = stack.quality
+  return type(grade) == "table" and grade.name or grade or "normal"
+end
+-- Whether an item of quality `grade` passes an ItemFilter's quality (none: any; comparators by level,
+-- as the game compares them, probed on 2.1.24).
+local COMPARE = {
+  ["="] = function(a, b)
+    return a == b
+  end,
+  ["!="] = function(a, b)
+    return a ~= b
+  end,
+  [">"] = function(a, b)
+    return a > b
+  end,
+  ["<"] = function(a, b)
+    return a < b
+  end,
+  [">="] = function(a, b)
+    return a >= b
+  end,
+  ["<="] = function(a, b)
+    return a <= b
+  end,
+}
+COMPARE["≠"], COMPARE["≥"], COMPARE["≤"] = COMPARE["!="], COMPARE[">="], COMPARE["<="]
+local function passes(filter, grade)
+  if filter.quality == nil then
+    return true
+  end
+  local compare = COMPARE[filter.comparator or "="]
+  assert(compare, "no comparator " .. tostring(filter.comparator))
+  return compare(prototypes.quality[grade].level, prototypes.quality[filter.quality].level)
+end
+-- An inventory's stock by quality: `contents` is keyed by name for normal, "name/quality" otherwise.
+local function key_of(name, grade)
+  return grade == "normal" and name or name .. "/" .. grade
+end
 -- Entity prototypes by type, as far as prototypes.get_entity_filtered's "type" filter is asked.
 local ENTITY_TYPES =
   { ["small-biter"] = "unit", ["jatz-freighter-drone"] = "unit", ["jatz-request-depot"] = "container" }
@@ -96,24 +154,62 @@ for _, item in pairs(prototypes.item) do
 end
 script = { register_on_object_destroyed = function() end }
 
+-- A depot's chest as far as deliveries read it: `contents` by key (key_of: normal items by name).
 local function inventory(contents)
   local self = { contents = contents or {} }
-  function self.get_item_count(id)
-    return self.contents[type(id) == "table" and id.name or id] or 0
+  -- Each key's item and quality.
+  local function each(visit)
+    for key, count in pairs(self.contents) do
+      local name, grade = key:match("^(.-)/(.+)$")
+      visit(name or key, grade or "normal", count)
+    end
   end
-  function self.get_insertable_count()
+  -- An ItemWithQualityID: a name alone is normal quality, as in the game.
+  function self.get_item_count(id)
+    if id == nil then
+      local total = 0
+      each(function(_, _, count)
+        total = total + count
+      end)
+      return total
+    end
+    local name, grade = id_of(id)
+    return self.contents[key_of(name, grade)] or 0
+  end
+  -- Room for 1000 of any item, unless a check sets `room` (by key, or `room.empty` for a quality it
+  -- holds none of: its empty stacks).
+  function self.get_insertable_count(id)
+    local name, grade = id_of(id)
+    if self.room then
+      return self.room[key_of(name, grade)] or self.room.empty or 0
+    end
     return 1000
   end
-  -- An ItemFilter table: without a quality, items of any quality match (all are normal here).
+  -- An ItemFilter table: without a quality, items of any quality match.
   function self.get_item_count_filtered(filter)
-    assert(type(filter) == "table" and filter.name and not filter.quality, "an item filter of any quality")
-    return self.contents[filter.name] or 0
+    assert(type(filter) == "table" and filter.name, "an ItemFilter table")
+    local total = 0
+    each(function(name, grade, count)
+      if name == filter.name and passes(filter, grade) then
+        total = total + count
+      end
+    end)
+    return total
+  end
+  function self.get_item_quality_counts(item)
+    local counts = {}
+    each(function(name, grade, count)
+      if (item == nil or name == item) and count > 0 then
+        counts[grade] = (counts[grade] or 0) + count
+      end
+    end)
+    return counts
   end
   function self.get_contents()
     local list = {}
-    for name, count in pairs(self.contents) do
-      list[#list + 1] = { name = name, quality = "normal", count = count }
-    end
+    each(function(name, grade, count)
+      list[#list + 1] = { name = name, quality = grade, count = count }
+    end)
     return list
   end
   -- A depot's 48 slots, so #inventory (LuaInventory's length operator) counts them. Their stacks
@@ -178,7 +274,10 @@ local function stack(name, count)
   end
   function self.transfer_stack(from, amount)
     amount = math.min(amount or from.count, from.count)
-    if self.valid_for_read and (self.name ~= from.name or self.health ~= from.health) then
+    if
+      self.valid_for_read
+      and (self.name ~= from.name or self.health ~= from.health or grade_of(self) ~= grade_of(from))
+    then
       return false
     end
     local item = prototypes.item[from.name]
@@ -209,36 +308,91 @@ local function script_inventory(size)
   function self.is_empty()
     return self.get_item_count() == 0
   end
-  -- Of one item (by name), or of all.
+  -- Of one item at one quality (an ItemWithQualityID: a name alone is normal, as in the game), or of
+  -- all.
   function self.get_item_count(item)
-    local name = type(item) == "table" and item.name or item
     local total = 0
+    if item == nil then
+      for index = 1, size do
+        total = total + self[index].count
+      end
+      return total
+    end
+    local name, grade = id_of(item)
     for index = 1, size do
-      if name == nil or self[index].name == name then
+      if self[index].name == name and grade_of(self[index]) == grade then
         total = total + self[index].count
       end
     end
     return total
   end
   function self.get_item_count_filtered(filter)
-    assert(type(filter) == "table" and filter.name and not filter.quality, "an item filter of any quality")
+    assert(type(filter) == "table" and filter.name, "an ItemFilter table")
     local total = 0
     for index = 1, size do
-      if self[index].name == filter.name then
+      if self[index].name == filter.name and passes(filter, grade_of(self[index])) then
         total = total + self[index].count
       end
     end
     return total
   end
-  function self.insert(from)
+  function self.get_item_quality_counts(item)
+    local counts = {}
     for index = 1, size do
-      local slot = self[index]
-      if not slot.valid_for_read or slot.name == from.name then
-        slot.name, slot.count, slot.valid_for_read = from.name, slot.count + from.count, true
-        return from.count
+      local held = self[index]
+      if held.valid_for_read and (item == nil or held.name == item) then
+        counts[grade_of(held)] = (counts[grade_of(held)] or 0) + held.count
       end
     end
-    return 0
+    return counts
+  end
+  function self.find_item_stack(item)
+    local name, grade = id_of(item)
+    for index = 1, size do
+      local held = self[index]
+      if held.valid_for_read and held.name == name and grade_of(held) == grade then
+        return held, index
+      end
+    end
+  end
+  -- A stack, or a table with a name, count and quality (normal if none). As in the game, a stack
+  -- holds at most its item's stack size: stacks of the item at that quality fill first, then empty
+  -- ones. Returns how many went in.
+  function self.insert(from)
+    local grade = grade_of(from)
+    local item = prototypes.item[from.name]
+    local limit = item and item.stack_size or math.huge
+    local left = from.count
+    for _, empty in ipairs({ false, true }) do
+      for index = 1, size do
+        local slot = self[index]
+        if
+          left > 0
+          and (
+            empty and not slot.valid_for_read
+            or not empty and slot.valid_for_read and slot.name == from.name and grade_of(slot) == grade
+          )
+        then
+          local moved = math.min(left, limit - slot.count)
+          if moved > 0 then
+            slot.name, slot.count, slot.valid_for_read = from.name, slot.count + moved, true
+            slot.quality = { name = grade }
+            left = left - moved
+          end
+        end
+      end
+    end
+    return from.count - left
+  end
+  -- Only an inventory made by game.create_inventory can be resized, as in the game.
+  function self.resize(stacks)
+    for index = size + 1, stacks do
+      self[index] = stack()
+    end
+    for index = stacks + 1, size do
+      self[index] = nil
+    end
+    size = stacks
   end
   function self.destroy()
     self.valid = false
@@ -263,6 +417,8 @@ local function entity(name, x, y, contents)
     surface_index = 1,
     force = PLAYER,
     force_index = 1,
+    -- Its LuaQualityPrototype (normal unless made at another quality).
+    quality = prototypes.quality.normal,
     get_inventory = function()
       return chest
     end,
@@ -361,6 +517,10 @@ local function reset()
     local drone = make(parameters.name, parameters.position.x, parameters.position.y)
     drone.target = parameters.target
     drone.parameters = parameters
+    -- Made at a quality (a name, or a LuaQualityPrototype), normal by default, as in the game.
+    local grade = parameters.quality
+    drone.quality = prototypes.quality[type(grade) == "table" and grade.name or grade or "normal"]
+    assert(drone.quality, "no quality " .. tostring(grade))
     surface.created[#surface.created + 1] = drone
     drone.commands = {}
     drone.commandable = {
@@ -430,12 +590,14 @@ local function reset()
   -- Fresh modules, with no cache from an earlier check (scripts/impact.lua keeps the names of what
   -- freighters run over, scripts/research.lua the freighter's speed, read from its prototype once,
   -- scripts/fuel.lua what burns, scripts/routes.lua the freighter's shape, scripts/cargo.lua
-  -- items' stack sizes, and scripts/promises.lua which items spoil).
+  -- items' stack sizes, scripts/promises.lua which items spoil, and scripts/quality.lua the
+  -- qualities and their item ids).
   package.loaded["scripts.research"] = nil
   package.loaded["scripts.fuel"] = nil
   package.loaded["scripts.routes"] = nil
   package.loaded["scripts.cargo"] = nil
   package.loaded["scripts.promises"] = nil
+  package.loaded["scripts.quality"] = nil
   package.loaded["scripts.logistics"] = nil
   package.loaded["scripts.impact"] = nil
   local logistics = require("scripts.logistics")
@@ -443,8 +605,6 @@ local function reset()
   return logistics
 end
 
--- Answer path request `id`: "route" (straight to the goal), "none" or "busy". A question never asked
--- (the depot remembered that road's length, and has had its answer) has nothing to answer.
 -- The road between two points, for the roads a way through tunnels asks the pathfinder about
 -- (scripts/tunnels.lua, plan): `leg_road(start, goal)` gives its waypoints, or nil for none. Straight
 -- unless a check sets it: a check file that does hands `roads` a function returning its current one.
@@ -486,6 +646,8 @@ local function plan_of(logistics, from, to, road)
   error("tunnel plan never decided")
 end
 
+-- Answer path request `id`: "route" (straight to the goal), "none" or "busy". A question never asked
+-- (the depot remembered that road's length, and has had its answer) has nothing to answer.
 local function answer(logistics, id, result)
   if not requests[id] then
     return
@@ -547,14 +709,23 @@ local function coming_filed()
   end
   local expected = {}
   for _, trip in pairs(storage.trips) do
-    local amount = 0
+    -- By key (scripts/quality.lua): the item's name for normal quality, "item/quality" otherwise.
+    local amounts = {}
     if trip.state == "to-provider" then
-      amount = trip.planned or 0
+      if trip.mix then
+        for grade, part in pairs(trip.mix) do
+          amounts[key_of(trip.item, grade)] = part
+        end
+      else
+        amounts[trip.item] = trip.planned or 0
+      end
     elseif trip.state == "to-request" then
       if trip.fluid then
-        amount = trip.fluid.amount
+        amounts[trip.item] = trip.fluid.amount
       elseif type(trip.cargo) == "table" and trip.cargo.valid then
-        amount = trip.cargo.get_item_count(trip.item)
+        for grade, count in pairs(trip.cargo.get_item_quality_counts(trip.item)) do
+          amounts[key_of(trip.item, grade)] = count
+        end
         for index = 1, #trip.cargo do
           local cargo = trip.cargo[index]
           local filed = spoiling[trip.request] and spoiling[trip.request][trip.item]
@@ -565,15 +736,18 @@ local function coming_filed()
         end
       end
     end
-    if amount ~= 0 then
-      local key = trip.request .. " " .. trip.item .. " " .. trip.key
-      expected[key] = { amount = amount, request = trip.request, item = trip.item }
+    for stock, amount in pairs(amounts) do
+      if amount ~= 0 then
+        local key = trip.request .. " " .. stock .. " " .. trip.key
+        expected[key] = { amount = amount, request = trip.request, item = trip.item }
+      end
     end
   end
   for request, items in pairs(storage.coming) do
-    for item, trips in pairs(items) do
+    for stock, trips in pairs(items) do
+      local item = stock:match("^(.-)/") or stock
       for key, amount in pairs(trips) do
-        local id = request .. " " .. item .. " " .. key
+        local id = request .. " " .. stock .. " " .. key
         local has = expected[id] and expected[id].amount
         if has ~= amount and not due(request, item) then
           return false, id .. " filed " .. amount .. ", trip has " .. tostring(has)

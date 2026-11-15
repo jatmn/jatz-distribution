@@ -26,11 +26,13 @@ local function stack_size_of(item)
   return size
 end
 
--- Move up to `limit` items of `item` (normal quality) from one inventory into another, stack by
--- stack, keeping each stack's data. Returns how many moved.
--- `leave`, if given, maps `from` stack indices to how many items to leave in that stack. With
--- `any_quality`, items of every quality move (freighters do), not only normal quality (cargo).
-function load(from, to, item, limit, leave, any_quality)
+-- Move up to `limit` items of `item` from one inventory into another, stack by stack, keeping each
+-- stack's data. Returns how many moved.
+-- `leave`, if given, maps `from` stack indices to how many items to leave in that stack. `grade`:
+-- the quality that moves (cargo of a request's quality, scripts/quality.lua), normal if nil, or
+-- true for every quality (freighters into a depot's slot).
+function load(from, to, item, limit, leave, grade)
+  local wanted = grade == nil and QUALITY or grade
   local moved = 0
   local size = stack_size_of(item)
   -- Each `to` stack looked at is an object for Lua to collect, so later stacks start after the
@@ -43,7 +45,7 @@ function load(from, to, item, limit, leave, any_quality)
       break
     end
     local stack = from[index]
-    if stack.valid_for_read and stack.name == item and (any_quality or stack.quality.name == QUALITY) then
+    if stack.valid_for_read and stack.name == item and (wanted == true or stack.quality.name == wanted) then
       local kept = leave and leave[index] or 0
       for slot = first, #to do
         local movable = (stack.valid_for_read and stack.count or 0) - kept
