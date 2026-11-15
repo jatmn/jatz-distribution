@@ -2326,9 +2326,11 @@ local function check_trip(id, trip, per_tile, capacity, polluters)
   end
   if trip.search and game.tick - trip.search.since >= SEARCH_TIMEOUT then
     search_again(id, trip)
-  elseif trip.planning and drone.valid and game.tick - trip.planning.since >= SEARCH_TIMEOUT then
+  elseif trip.planning and drone.valid and not trip.road_cut and game.tick - trip.planning.since >= SEARCH_TIMEOUT then
     -- Its roads were never measured (a busy pathfinder, say): it asks again. (Not one destroyed,
-    -- its on_object_destroyed still to come: Pullfrog's review of 5d10933.)
+    -- its on_object_destroyed still to come: Pullfrog's review of 5d10933. Nor one whose road was
+    -- cut, still being removed: what it waited on went with the roads measured, tunnels.forget,
+    -- and logistics.replan_cut plans its way once the removing stops.)
     drive(trip, trip.planning.to)
   elseif trip.drone.valid and trip.energy <= 0 and not trip.dry and per_tile > 0 then
     trip.dry = true

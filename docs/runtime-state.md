@@ -18,7 +18,7 @@ and `scripts/routes.lua` use the same transitions when they start, finish or inv
 | Movement | `trip.movement` | `departing`, `road`, `approaching-tunnel`, `waiting-at-tunnel`, `underground`, `exiting-tunnel`, `ended` |
 | Tunnel | `trip.tunnel` | entry/exit, portal IDs, length and orientation, present only during approach/wait/crossing |
 | Plan | `trip.plan`, `trip.planning` | `plan = {to, hops, step}`: the tunnels to its destination in turn (scripts/tunnels.lua, `plan`), absent for no tunnels or unknown; `planning = {to, token, since}` while it stands waiting for road lengths to be measured, cleared by `drive`, `begin_search` and `clear_route_search` |
-| Road cut | `trip.road_cut` | `true` from road removed on its surface (`on_roads_changed`, which also clears `plan` and `origin`) until the check at which it plans its way again (`logistics.replan_cut`, once no road has been removed there for `cut_quiet` ticks); absent otherwise |
+| Road cut | `trip.road_cut` | `true` from road removed on its surface (`on_roads_changed`, which also clears `plan` and `origin`) until the check at which it plans its way again (`logistics.replan_cut`, once no road has been removed there for `cut_quiet` ticks), a `planning` trip's `SEARCH_TIMEOUT` re-plan waiting for it meanwhile; absent otherwise |
 | Fuel decision | `trip.fuel_check` | `unchecked` for a new leg; `checked` after refueling or deciding to continue without it; `trip.refuel` identifies the fuel stop |
 
 Quality (`scripts/quality.lua`) adds data, not states: `trip.freighter_quality` (the freighter's

@@ -78,6 +78,38 @@ return function(h)
     check("and only once", not flagged)
   end
 
+  do -- A freighter standing until the roads of its way through a tunnel are measured, past the
+    -- time it would ask again, while road is removed tile after tile: the questions it waited on
+    -- went with the roads measured (scripts/tunnels.lua: forget), and it plans its way again once
+    -- the road is left alone, as every other freighter does, not at a check during the removing.
+    local logistics = reset()
+    local request, _, _, _, restore = h.joined_round(logistics, "round")
+    local trip = trip_of(request)
+    trip.drone.position = { x = 10.5, y = 0.5 }
+    h.road_removed(logistics)
+    local planning = trip.planning
+    check("setup: it stands until its roads are measured", planning ~= nil)
+    local commands = #trip.drone.commands
+    -- Past its search timeout (scripts/logistics.lua: SEARCH_TIMEOUT), every check in the stroke.
+    local tick = planning.since + 10 * 60
+    local stood = true
+    for _ = 1, 2 * 60 do
+      tick = tick + 1
+      game.tick = tick
+      logistics.on_roads_changed(1, false, true)
+      logistics.on_tick_share(tick)
+      stood = stood and #trip.drone.commands == commands and trip.planning == planning
+    end
+    check("while road is removed tile after tile, it plans nothing", stood)
+    for _ = 1, 60 + logistics.cut_quiet do
+      tick = tick + 1
+      game.tick = tick
+      logistics.on_tick_share(tick)
+    end
+    check("left alone, it plans its way again", not trip.road_cut and #trip.drone.commands > commands)
+    restore()
+  end
+
   do -- A road network flooded to plan one freighter's way from where it stands serves the next
     -- plan too, on a later tick, until road is removed again.
     local logistics = reset()
