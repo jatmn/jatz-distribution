@@ -29,6 +29,8 @@ local depot_circuit = require("scripts.depot-circuit")
 local robot_access = require("scripts.robot-access")
 -- The road network monitor's panel gets the GUI events first (scripts/road-monitor-gui.lua).
 local monitor_gui = require("scripts.road-monitor-gui")
+-- And the freighter bonuses beside the game's Bonuses window (scripts/bonus-gui.lua).
+local bonus_gui = require("scripts.bonus-gui")
 
 local request_gui = {}
 
@@ -586,7 +588,7 @@ local function account_carried(player, move)
 end
 
 local function on_gui_opened(event)
-  if monitor_gui.on_gui_opened(event) then
+  if monitor_gui.on_gui_opened(event) or bonus_gui.on_gui_opened(event) then
     return
   end
   local entity = event.entity
@@ -1001,6 +1003,7 @@ function request_gui.register()
   script.on_event(defines.events.on_gui_hover, on_gui_hover)
   script.on_event(defines.events.on_gui_leave, on_gui_leave)
   script.on_event(defines.events.on_gui_inventory_action, on_inventory_action)
+  script.on_event(defines.events.on_player_changed_force, bonus_gui.on_player_changed_force)
   script.on_event("jatz-pipette", on_pipette)
   script.on_nth_tick(30, refresh)
 end

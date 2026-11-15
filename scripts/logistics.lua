@@ -76,6 +76,7 @@ local transfer = require("scripts.cargo")
 local switching = require("scripts.circuit-switch")
 local ledger = require("scripts.promises")
 local lifecycle = require("scripts.trip-state")
+local bonus_gui = require("scripts.bonus-gui")
 
 local logistics = {}
 
@@ -3355,11 +3356,15 @@ logistics.monitor_tag = nil
 logistics.plan_request_settings = nil
 logistics.take_request_settings = nil
 
--- Speed research finished (or undone): the force's freighters on the road drive at the new speed.
+-- Freighter research finished (or undone): open Bonuses windows show it (scripts/bonus-gui.lua),
+-- and for speed, the force's freighters on the road drive at the new speed.
 function logistics.on_research_changed(event)
   local technology = event.research
   if storage.research_levels then
     storage.research_levels[technology.force.index] = nil
+  end
+  if research.is_upgrade(technology) then
+    bonus_gui.on_research_changed(technology.force)
   end
   if not research.is_speed(technology) then
     return
@@ -3376,8 +3381,13 @@ function logistics.on_research_changed(event)
 end
 
 -- Forces reset, made or merged: forget every force's research (scripts/research.lua's research_of).
-function logistics.on_forces_changed()
+-- A reset force has none left (LuaForce.reset raises no research reversed, probed on 2.1.24), so
+-- its open Bonuses windows show that.
+function logistics.on_forces_changed(event)
   storage.research_levels = nil
+  if event and event.name == defines.events.on_force_reset then
+    bonus_gui.on_research_changed(event.force)
+  end
 end
 
 function logistics.register()

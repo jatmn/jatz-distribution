@@ -2414,6 +2414,108 @@ do -- Research finished or undone reaches the freighters (tests/lua/logistics.lu
   check("other research changes nothing", true)
 end
 
+do -- The Bonuses window lists only the game's own modifiers: freighter research shows beside it, and
+  -- stays current while the window is open.
+  local research = require("scripts.research")
+  local technologies = {}
+  local force = { index = 1, technologies = technologies }
+  prototypes.technology = {}
+  for name, done in pairs({ [research.speed] = 2, [research.item_capacity] = 0, [research.fluid_capacity] = 1 }) do
+    for level = 1, 3 do
+      local key = name .. "-" .. level
+      prototypes.technology[key] = {}
+      technologies[key] = { name = key, force = force, researched = level <= done, level = level }
+    end
+  end
+  local relative = element()
+  local player = { index = 16, valid = true, force = force, gui = { relative = relative } }
+  force.players = { player }
+  game.get_player = function()
+    return player
+  end
+  local function lines()
+    local frame = relative.jatz_bonus_frame
+    local shown = {}
+    for _, child in ipairs(frame and frame.children[1].children or {}) do
+      if child.type == "label" then
+        shown[#shown + 1] = child.caption
+      end
+    end
+    return shown
+  end
+  local function opened(gui_type)
+    player.opened_gui_type = gui_type
+    fire("on_gui_opened", { player_index = 16, gui_type = gui_type })
+  end
+  local function researched(name, done)
+    technologies[name].researched = done
+    fire(done and "on_research_finished" or "on_research_reversed", { research = technologies[name] })
+  end
+  -- With bonuses researched, so a handler that ignored which window opened would show one here.
+  opened(defines.gui_type.production)
+  check("other windows get none, with bonuses researched", #relative.children == 0)
+  opened(defines.gui_type.bonus)
+  local frame = relative.jatz_bonus_frame
+  check(
+    "opening the Bonuses window shows the freighter bonuses beside it",
+    frame and frame.anchor.gui == "relative_gui_type.bonus_gui"
+  )
+  local shown = lines()
+  check(
+    "speed and fluid capacity, and no item capacity line with none researched",
+    #shown == 2
+      and shown[1][1] == "jatz-bonus.freighter-speed"
+      and shown[1][2] == 40
+      and shown[2][1] == "jatz-bonus.freighter-fluid-capacity"
+      and shown[2][2] == research.fluid_per_level
+  )
+  researched(research.item_capacity .. "-1", true)
+  shown = lines()
+  check(
+    "an item capacity level finished with the window open shows at once",
+    #shown == 3 and shown[2][1] == "jatz-bonus.freighter-item-capacity" and shown[2][2] == 1
+  )
+  researched(research.item_capacity .. "-1", false)
+  check("and undoing it takes its line away", #lines() == 2)
+  for _, technology in pairs(technologies) do
+    technology.researched = false
+  end
+  fire("on_force_reset", { force = force })
+  check("a reset force's open panel goes", relative.jatz_bonus_frame == nil and #relative.children == 0)
+  researched(research.fluid_capacity .. "-1", true)
+  shown = lines()
+  check("the first bonus researched with the window open shows it", #shown == 1 and shown[1][2] == 375)
+  researched(research.fluid_capacity .. "-1", false)
+  check("and undoing the last takes it away", relative.jatz_bonus_frame == nil and #relative.children == 0)
+  opened(nil)
+  researched(research.fluid_capacity .. "-1", true)
+  check("a closed window's panel is left until it opens", relative.jatz_bonus_frame == nil)
+  opened(defines.gui_type.bonus)
+  check("and built when it does", #lines() == 1)
+  -- Moved to another force (a script, or game.merge_forces): the open panel shows that one's.
+  local other_technologies = {}
+  for key in pairs(technologies) do
+    other_technologies[key] = { name = key, researched = key == research.speed .. "-1", level = 1 }
+  end
+  player.force = { index = 2, technologies = other_technologies, players = { player } }
+  fire("on_player_changed_force", { player_index = 16, force = force })
+  shown = lines()
+  check(
+    "a player moved to another force with the window open sees its bonuses",
+    #shown == 1 and shown[1][1] == "jatz-bonus.freighter-speed" and shown[1][2] == 20
+  )
+  player.force = force
+  opened(nil)
+  fire("on_player_changed_force", { player_index = 16, force = player.force })
+  check("with it closed, the panel is left until it opens", #lines() == 1 and lines()[1][2] == 20)
+  opened(defines.gui_type.bonus)
+  check("and shows its force's when it does", #lines() == 1 and lines()[1][2] == 375)
+  technologies[research.fluid_capacity .. "-1"].researched = false
+  opened(defines.gui_type.bonus)
+  check("with nothing researched, no panel", relative.jatz_bonus_frame == nil and #relative.children == 0)
+  prototypes.technology = nil
+end
+
 do -- A save from before research keeps its recipes; a new game, or a save the mod is added to, doesn't.
   local research = require("scripts.research")
   -- Each force's unlocking technologies, unresearched, as Factorio leaves them after resetting the
