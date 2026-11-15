@@ -128,6 +128,11 @@ local SLOT_SETTINGS = {
 -- migration (migrations/) renames the ones in older saves, ghosts and blueprints to these legacy
 -- containers instead, which scripts/legacy-depots.lua replaces with the depot as it was.
 local LOGISTIC_MODES = { provider = "passive-provider", buffer = "buffer" }
+-- Item request and buffer depots replace each other in place, as Factorio's chests do: placed over
+-- one by hand, or by robots from a blueprint or ghost over it (an upgrade order). The chest's
+-- contents stay, and scripts/depot-swap.lua hands the new depot the old one's settings, freighters
+-- and trips. No other depots replace anything.
+local FAST_REPLACEABLE = { request = true, buffer = true }
 
 -- A depot's storage tank: its ports, drawing their connectors, and the given artwork.
 local function tank(role, definition, artwork)
@@ -153,7 +158,7 @@ local function tank(role, definition, artwork)
   return entity
 end
 
--- Every depot's 3x3 footprint, and no circuit connections or fast replacing.
+-- Every depot's 3x3 footprint, and no circuit connections or fast replacing (but see FAST_REPLACEABLE).
 local function footprint(entity)
   entity.circuit_connector = nil
   entity.fast_replaceable_group = nil
@@ -207,6 +212,9 @@ for index, role in ipairs(ORDER) do
     entity.logistic_mode = LOGISTIC_MODES[role]
     -- Most depots are off the logistic network (robot access is off by default): no warning icon.
     entity.render_not_in_network_icon = false
+  end
+  if FAST_REPLACEABLE[role] then
+    entity.fast_replaceable_group = "jatz-cargo-depot"
   end
 
   data:extend({
