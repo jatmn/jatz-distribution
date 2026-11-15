@@ -740,11 +740,22 @@ function logistics.queue_place()
   return storage.promise_order
 end
 
+-- The most a request depot can request of `item`: what it holds, its tank's size for a liquid
+-- depot, and for an item depot as many of the item as fill every slot of its chest (slots are a
+-- startup setting per kind of depot, 48 by default: 4,800 of an item that stacks to 100, 480 of one
+-- that stacks to 10).
+local function request_limit(depot, item)
+  if depot.fluid then
+    -- The tank's size, not a constant: liquid buffer sizes are a startup setting.
+    return depot.entity.get_fluid_capacity(1)
+  end
+  -- The chest's slots, not a constant, each a stack of this item.
+  return #inventory(depot.entity) * transfer.stack_size_of(item)
+end
+
 -- Set a request depot's request, or clear it with a nil item. Returns false, changing nothing,
 -- for anything but a request depot, an item that doesn't exist, or a count that isn't a number.
--- A request is at most what the depot holds: its tank's size for a liquid depot, and for an item
--- depot as many of the item as fill every slot of its chest (slots are a startup setting, 48 by
--- default: 4,800 of an item that stacks to 100, 480 of one that stacks to 10).
+-- A request is at most what the depot holds (request_limit).
 function logistics.set_request(entity, item, count)
   local depot = request_depot(entity)
   if not depot then
@@ -759,14 +770,7 @@ function logistics.set_request(entity, item, count)
     if type(item) ~= "string" or not kinds[item] or not count then
       return false
     end
-    count = math.max(0, math.floor(count))
-    if depot.fluid then
-      -- The tank's size, not a constant: liquid buffer sizes are a startup setting.
-      count = math.min(count, depot.entity.get_fluid_capacity(1))
-    else
-      -- The chest's slots, not a constant, each a stack of this item.
-      count = math.min(count, #inventory(depot.entity) * transfer.stack_size_of(item))
-    end
+    count = math.min(math.max(0, math.floor(count)), request_limit(depot, item))
     depot.request = { item = item, count = count }
   end
   depot.cooldowns = {}
@@ -2867,9 +2871,17 @@ function logistics.replaced(old_id, entity)
   depots[old_id], depots[id] = nil, depot
   -- It does what the new one does: a buffer depot supplies request depots and fetches from
   -- providers only, a request depot supplies no one. Freighters already sent finish their trips.
-  depot.role = logistics.depots[entity.name] or depot.role
+  local role = logistics.depots[entity.name] or depot.role
+  local changed_role = role ~= depot.role
+  depot.role = role
   index_depot(id, depot, true)
   depot.entity = entity
+  local request = depot.request
+  if changed_role and request then
+    -- Request and buffer depots' slots are separate startup settings: its request is at most what
+    -- the new chest holds, as set_request makes any request, so "Full loads only" can still be met.
+    request.count = math.min(request.count, request_limit(depot, request.item))
+  end
   -- The old entity's inventory, and its custom status, which the new one doesn't show yet.
   depot.stock_inventory, depot.shown_off = nil, nil
   script.register_on_object_destroyed(entity)
@@ -2888,6 +2900,12 @@ function logistics.replaced(old_id, entity)
     end
     if trip.passed == old_id then
       trip.passed = id
+    end
+    -- Where its promise is filed (scripts/promises.lua), moved with the promises below: it is
+    -- taken back from there when the trip loads, ends or changes its plan.
+    local filed = trip.promise
+    if filed and filed.provider == old_id then
+      filed.provider = id
     end
   end
   for _, name in ipairs({ "promised", "promise_totals", "coming", "spoiling", "circuit_watch" }) do

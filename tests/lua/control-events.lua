@@ -3349,12 +3349,19 @@ end
 do -- Undoing a request depot replaced by a buffer depot by hand (one undo item: the request depot
   -- removed, the buffer depot built) leaves the buffer depot marked for deconstruction under a
   -- ghost of the request depot: scripts/depot-swap.lua marks it for upgrade to the request depot
-  -- instead, for robots to swap in place. Redo the same, the other way. A removal undone alone
-  -- over such a depot is left as the game made it.
+  -- instead, for robots to swap in place. Redo the same, the other way. The upgrade is to the
+  -- ghost's quality, the depot the undo or redo brings back, not the standing one's. A removal
+  -- undone alone over such a depot is left as the game made it.
   local search = surface.find_entities_filtered
-  local function spot(standing_name, ghost_name)
+  local function spot(standing_name, standing_quality, ghost_name, ghost_quality)
     local calls = {}
-    local ghost = { valid = true, name = "entity-ghost", type = "entity-ghost", ghost_name = ghost_name }
+    local ghost = {
+      valid = true,
+      name = "entity-ghost",
+      type = "entity-ghost",
+      ghost_name = ghost_name,
+      quality = ghost_quality,
+    }
     function ghost.destroy()
       ghost.valid = false
       calls.destroyed = true
@@ -3364,7 +3371,7 @@ do -- Undoing a request depot replaced by a buffer depot by hand (one undo item:
       name = standing_name,
       position = { x = 900.5, y = 0.5 },
       force = "player",
-      quality = "normal",
+      quality = standing_quality,
       to_be_deconstructed = function()
         return true
       end,
@@ -3373,7 +3380,7 @@ do -- Undoing a request depot replaced by a buffer depot by hand (one undo item:
       end,
       order_upgrade = function(order)
         calls.upgrade = order.target.name == ghost_name
-          and order.target.quality == "normal"
+          and order.target.quality == ghost_quality
           and order.force == "player"
           and order.player == nil
         return true
@@ -3400,22 +3407,26 @@ do -- Undoing a request depot replaced by a buffer depot by hand (one undo item:
   local function action(kind, name)
     return { type = kind, surface_index = 1, target = { name = name, position = { x = 900.5, y = 0.5 } } }
   end
-  local calls = spot("jatz-buffer-depot", "jatz-request-depot")
+  -- A normal request depot replaced by hand by an uncommon buffer depot.
+  local calls = spot("jatz-buffer-depot", "uncommon", "jatz-request-depot", "normal")
   fire("on_undo_applied", {
     player_index = 20,
     actions = { action("removed-entity", "jatz-request-depot"), action("built-entity", "jatz-buffer-depot") },
   })
   check(
-    "undoing a swap by hand marks the depot for upgrade back instead of deconstruction",
+    "undoing a swap by hand marks the depot for upgrade back, to the ghost's quality, instead of deconstruction",
     calls.cancelled and calls.destroyed and calls.upgrade
   )
-  calls = spot("jatz-request-depot", "jatz-buffer-depot")
+  calls = spot("jatz-request-depot", "normal", "jatz-buffer-depot", "uncommon")
   fire("on_redo_applied", {
     player_index = 20,
     actions = { action("removed-entity", "jatz-request-depot"), action("built-entity", "jatz-buffer-depot") },
   })
-  check("and redoing it marks it for upgrade again", calls.cancelled and calls.destroyed and calls.upgrade)
-  calls = spot("jatz-buffer-depot", "jatz-request-depot")
+  check(
+    "and redoing it marks it for upgrade again, to the ghost's quality",
+    calls.cancelled and calls.destroyed and calls.upgrade
+  )
+  calls = spot("jatz-buffer-depot", "normal", "jatz-request-depot", "normal")
   fire("on_undo_applied", { player_index = 20, actions = { action("removed-entity", "jatz-request-depot") } })
   check("a removal undone alone is left as the game made it", next(calls) == nil)
   surface.find_entities_filtered = search
