@@ -3093,8 +3093,9 @@ function logistics.set_priority(entity, priority)
   return true
 end
 
--- Road was laid (`added`) or removed or covered (`removed`) on a surface.
-function logistics.on_roads_changed(surface_index, added, removed)
+-- Road was laid (`added`) or removed or covered (`removed`) on a surface. `tiles`: the tiles that
+-- changed (each with its `position`), where the caller knows them.
+function logistics.on_roads_changed(surface_index, added, removed, tiles)
   if not storage.depots then
     return
   end
@@ -3104,9 +3105,10 @@ function logistics.on_roads_changed(surface_index, added, removed)
   end
   storage.road_versions = storage.road_versions or {}
   storage.road_versions[surface_index] = (storage.road_versions[surface_index] or 0) + 1
-  -- Which road networks tunnels join may have changed too: at once if road was removed, which can
-  -- split one.
-  tunnels.changed(surface_index, removed)
+  -- Which road networks tunnels join may have changed too: the tiles are put on and taken off
+  -- the networks known, or, not given, those are forgotten (at once if road was removed, which
+  -- can split one).
+  tunnels.changed(surface_index, removed, tiles)
   -- The roads measured for ways through tunnels, where road was laid or removed (not for a tile
   -- such as concrete laid elsewhere).
   if added or removed then
@@ -3139,9 +3141,10 @@ end
 -- A freighter's check after road was removed on its surface (on_roads_changed): it plans its way
 -- again from where it stands, so within a second or so. Not while road is still being removed
 -- there (`cut_quiet` ticks since the last tile, storage.road_cuts): each removal forgets the
--- surface's road networks, and the first plan after it floods them again (scripts/tunnels.lua),
--- so freighters planning between the tiles of one stroke flooded them every tick. It waits for its
--- next check then. (Fields: check_trip comes before replan in this file.)
+-- roads measured for ways through tunnels, and a removal that may have cut a road network in two
+-- that network (scripts/tunnels.lua), so freighters planning between the tiles of one stroke
+-- asked for those roads, and flooded that network, again each time. It waits for its next check
+-- then. (Fields: check_trip comes before replan in this file.)
 logistics.cut_quiet = 10
 function logistics.replan_cut(trip)
   local cut = trip.drone.valid and storage.road_cuts and storage.road_cuts[trip.drone.surface_index]

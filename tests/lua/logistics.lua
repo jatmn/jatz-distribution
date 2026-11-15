@@ -4690,6 +4690,7 @@ do -- Road laid joining two networks before their numbers are forgotten: they be
     "every point remembered on either joins the one network, with the new one",
     one and joined and now == remembered + 1
   )
+  check("under one flood, which holds the tiles of both", #storage.tunnel_nets[1].floods == 1)
   surface.get_connected_tiles = split
 end
 
