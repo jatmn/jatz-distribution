@@ -444,15 +444,25 @@ EXPECTED_UNDO_PLATFORM = {
     'platform_removed': True,
     'platform_rebuilt': {'request': {'item': 'water', 'count': 1000}, 'freighters': 2}}
 UNDO_TICKS = 1300
-# The freighter bonuses beside the Bonuses window: none before research; after two speed levels,
-# three item capacity levels and one fluid capacity level, each.
-EXPECTED_BONUSES = {
-    'unresearched': 'none',
-    'researched': {'beside_bonuses': True, 'title': 'jatz-bonus.title', 'lines': [
+# The freighter bonuses beside the Bonuses window, kept open while research changes: none before
+# research; after two speed levels, three item capacity levels and one fluid capacity level, each;
+# with an item capacity level undone, one stack fewer, and the same opened again; none once the force
+# is reset; and a closed window's left alone when research finishes.
+def bonus_panel(stacks):
+    return {'beside_bonuses': True, 'title': 'jatz-bonus.title', 'lines': [
         # The game reads a localised string's numbers back as text.
         ['jatz-bonus.freighter-speed', '40'],
-        ['jatz-bonus.freighter-item-capacity', '3'],
-        ['jatz-bonus.freighter-fluid-capacity', '375']]}}
+        ['jatz-bonus.freighter-item-capacity', stacks],
+        ['jatz-bonus.freighter-fluid-capacity', '375']]}
+
+
+EXPECTED_BONUSES = {
+    'unresearched': 'none',
+    'researched': bonus_panel('3'),
+    'reversed': bonus_panel('2'),
+    'reopened': bonus_panel('2'),
+    'reset': 'none',
+    'closed': 'none'}
 BONUS_TICKS = 10
 
 

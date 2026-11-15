@@ -131,9 +131,21 @@ function research.on_configuration_changed()
   storage.recipes_by_research = true
 end
 
+-- Whether a technology is a level of `name`.
+local function is_level_of(technology, name)
+  return technology.name:sub(1, #name + 1) == name .. "-"
+end
+
 -- Whether a finished or reversed research changes freighter speed.
 function research.is_speed(technology)
-  return technology.name:sub(1, #research.speed + 1) == research.speed .. "-"
+  return is_level_of(technology, research.speed)
+end
+
+-- Whether a finished or reversed research changes any freighter bonus (speed, items or fluid).
+function research.is_upgrade(technology)
+  return is_level_of(technology, research.speed)
+    or is_level_of(technology, research.item_capacity)
+    or is_level_of(technology, research.fluid_capacity)
 end
 
 return research

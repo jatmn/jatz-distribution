@@ -1,8 +1,10 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- The freighter bonuses beside the game's Bonuses window (scripts/bonus-gui.lua), against the real
 -- engine with a player: tools/test_mod.py runs it with `--test-scenario jatz-distribution-check/bonuses`.
--- Opened with nothing researched, the window gets no panel; opened again after two speed levels,
--- three item capacity levels and one fluid capacity level, the panel beside it lists each.
+-- Opened with nothing researched, the window gets no panel. Kept open while two speed levels, three
+-- item capacity levels and one fluid capacity level finish, the panel beside it lists each; while
+-- an item capacity level is undone, one stack fewer; opened again, the same; while the force is
+-- reset, none. Closed, it is left alone when research finishes.
 -- Writes script-output/jatz-bonuses-check.json.
 local FRAME = "jatz_bonus_frame"
 
@@ -28,30 +30,35 @@ end
 
 script.on_event(defines.events.on_tick, function(event)
   local player = game.get_player(1)
-  if not player then
+  if not (player and event.tick == 1) then
     return
   end
-  if event.tick == 1 then
-    storage.result = {}
-    player.opened = defines.gui_type.bonus
-    storage.result.unresearched = panel(player)
-    player.opened = nil
-    local technologies = player.force.technologies
-    for _, name in ipairs({
-      "jatz-freighter-speed-1",
-      "jatz-freighter-speed-2",
-      "jatz-freighter-item-capacity-1",
-      "jatz-freighter-item-capacity-2",
-      "jatz-freighter-item-capacity-3",
-      "jatz-freighter-fluid-capacity-1",
-    }) do
-      technologies[name].researched = true
-    end
-  elseif storage.result and event.tick == 2 then
-    player.opened = defines.gui_type.bonus
-    storage.result.researched = panel(player)
-    player.opened = nil
-    helpers.write_file("jatz-bonuses-check.json", helpers.table_to_json(storage.result))
-    script.finish_test(true)
+  local result = {}
+  local technologies = player.force.technologies
+  player.opened = defines.gui_type.bonus
+  result.unresearched = panel(player)
+  -- Each one raises on_research_finished (by script) while the window stays open.
+  for _, name in ipairs({
+    "jatz-freighter-speed-1",
+    "jatz-freighter-speed-2",
+    "jatz-freighter-item-capacity-1",
+    "jatz-freighter-item-capacity-2",
+    "jatz-freighter-item-capacity-3",
+    "jatz-freighter-fluid-capacity-1",
+  }) do
+    technologies[name].researched = true
   end
+  result.researched = panel(player)
+  technologies["jatz-freighter-item-capacity-3"].researched = false
+  result.reversed = panel(player)
+  player.opened = nil
+  player.opened = defines.gui_type.bonus
+  result.reopened = panel(player)
+  player.force.reset()
+  result.reset = panel(player)
+  player.opened = nil
+  technologies["jatz-freighter-speed-1"].researched = true
+  result.closed = panel(player)
+  helpers.write_file("jatz-bonuses-check.json", helpers.table_to_json(result))
+  script.finish_test(true)
 end)

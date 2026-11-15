@@ -4404,7 +4404,7 @@ end
 -- `level` is the next one to research. `done` gives how many levels of each are researched.
 local SPEED, ITEMS, FLUIDS = "jatz-freighter-speed", "jatz-freighter-item-capacity", "jatz-freighter-fluid-capacity"
 local function researching(done)
-  local force = { name = "player", index = 1, technologies = {} }
+  local force = { name = "player", index = 1, technologies = {}, players = {} }
   prototypes.technology = {}
   for name, levels in pairs({ [SPEED] = 5, [ITEMS] = 10, [FLUIDS] = 10 }) do
     for level = 1, levels do
