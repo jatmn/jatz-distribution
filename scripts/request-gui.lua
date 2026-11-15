@@ -473,6 +473,38 @@ local function show_player_inventory(player, liquid)
   slots.inventory = pockets
 end
 
+-- A request panel's quality row (scripts/quality.lua) as `request` has it: how qualities compare,
+-- and the quality compared with, which any quality has none of, so that drop-down is hidden. The one
+-- place a request becomes the row: when the panel is built and at each refresh.
+local function show_quality(graded, request)
+  local comparator = request.comparator or "="
+  local chosen = 1
+  for index, known in ipairs(quality.comparators) do
+    if known == comparator then
+      chosen = index
+    end
+  end
+  local grade = request.quality or quality.normal
+  local level = 1
+  for index, name in ipairs(quality.names()) do
+    if name == grade then
+      level = index
+    end
+  end
+  -- Written only when it differs, so a drop-down the player has open is left alone.
+  local comparators, levels = graded[QUALITY_COMPARATOR], graded[QUALITY_LEVEL]
+  if comparators.selected_index ~= chosen then
+    comparators.selected_index = chosen
+  end
+  if levels.selected_index ~= level then
+    levels.selected_index = level
+  end
+  local visible = comparator ~= quality.any
+  if levels.visible ~= visible then
+    levels.visible = visible
+  end
+end
+
 local function open(player, entity)
   local old = frame_of(player)
   if old then
@@ -550,35 +582,27 @@ local function open(player, entity)
       caption = { "jatz-gui.request-quality" },
       tooltip = { "jatz-gui.request-quality-tooltip" },
     })
-    local comparators, chosen = {}, 1
+    local comparators = {}
     for index, comparator in ipairs(quality.comparators) do
       comparators[index] = comparator == quality.any and { "jatz-gui.any-quality" } or comparator
-      if comparator == (request.comparator or "=") then
-        chosen = index
-      end
     end
     graded.add({
       type = "drop-down",
       name = QUALITY_COMPARATOR,
       items = comparators,
-      selected_index = chosen,
       tooltip = { "jatz-gui.request-quality-tooltip" },
     })
-    local levels, level = {}, 1
+    local levels = {}
     for index, name in ipairs(quality.names()) do
       levels[index] = { "", "[quality=" .. name .. "] ", prototypes.quality[name].localised_name }
-      if name == (request.quality or quality.normal) then
-        level = index
-      end
     end
     graded.add({
       type = "drop-down",
       name = QUALITY_LEVEL,
       items = levels,
-      selected_index = level,
-      visible = request.comparator ~= quality.any,
       tooltip = { "jatz-gui.request-quality-level-tooltip" },
     })
+    show_quality(graded, request)
   end
   if ROLES[entity.name] == "request" then
     -- Like a requester chest's "request from buffer chests".
@@ -726,8 +750,16 @@ local function on_gui_elem_changed(event)
     return
   end
   local item = event.element.elem_value
-  -- The quality its row shows, where qualities can be chosen.
-  local grade, comparator = chosen_quality(event.element.parent.parent)
+  -- The quality stays what the request has, which another player, Copy and Paste settings or a mod
+  -- may have changed since the row last showed it; with no request (the item was cleared), what
+  -- its row shows, where qualities can be chosen, waits for the next item.
+  local current = logistics.get_request(entity)
+  local grade, comparator
+  if current then
+    grade, comparator = current.quality, current.comparator
+  else
+    grade, comparator = chosen_quality(event.element.parent.parent)
+  end
   local field = event.element.parent[COUNT]
   local amount = tonumber(field.text) or 0
   -- A newly chosen item starts at the default request (startup settings, settings.lua: stacks of
@@ -974,8 +1006,8 @@ local function on_gui_selection_state_changed(event)
   end
 end
 
--- Keep the status line, the checkboxes, priority and circuit light current while the
--- window is open: other players, Copy and Paste settings and mods change them too.
+-- Keep the status line, the checkboxes, the quality row, priority and circuit light current while
+-- the window is open: other players, Copy and Paste settings and mods change them too.
 local function refresh()
   if not storage.request_gui then
     return
@@ -1009,6 +1041,11 @@ local function refresh()
         show_freighters(inner, entity)
         show_freighter_fuel(inner, entity)
         inner[FULL_LOADS].state = logistics.get_full_loads(entity)
+        -- With no request (the item was cleared), the row is as the player left it for the next item.
+        local graded, request = inner.quality_row, logistics.get_request(entity)
+        if graded and request then
+          show_quality(graded, request)
+        end
         -- Request depots only; every layout that passes the check above has it (it predates
         -- freighter_fuel).
         local from_buffers = inner[FROM_BUFFERS]

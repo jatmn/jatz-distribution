@@ -59,6 +59,12 @@ Latest in-game results for the current artwork. The full screenshots and reports
   The branch now includes `main` with the request and buffer depots replacing each other (#103,
   `be2531b`): `tools/test_mod.py` passes again with base game and Space Age, the quality and undo
   scenarios included, and all 16 setup tests pass.
+- A seventh review (of `aaaa62e`) found one more, fixed with a check that fails before the fix: an
+  open request panel's Quality row never followed a quality set outside it (another player, Copy and
+  Paste settings, the remote interface), so choosing another item put the row's old quality back over
+  the request's (with the real handlers, an `uncommon ≥` request became normal `=`). The row now
+  follows the request at each refresh, and choosing another item keeps the request's quality (checked
+  with the real handlers; the panel was not checked in the engine).
 - StyLua 2.5.2, Luacheck 1.2.0 and Ruff 0.17.3 passed; the emulator tests passed.
 - Not checked: the request panel and freighter slot tooltip in the graphical client.
 

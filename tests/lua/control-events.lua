@@ -971,6 +971,66 @@ do -- With qualities (the Quality mod), an item request's quality has its own ro
   check("a new amount keeps the quality", got.count == 70 and got.quality == "uncommon")
   nth[30]()
   check("the panel isn't rebuilt for its quality", relative.jatz_request_frame.children[1].quality_row == graded)
+  -- Another player, Copy and Paste settings or the remote interface set the quality while the panel
+  -- stays open: the row follows at the next refresh, as the checkboxes do, and editing another field
+  -- never puts the old quality back over the request's.
+  local function shown()
+    return comparators.items[comparators.selected_index], quality.names()[levels.selected_index], levels.visible
+  end
+  assert(logistics.set_request(request, "wood", 70, nil, "≠"))
+  nth[30]()
+  local comparator, grade, visible = shown()
+  check(
+    "an open panel follows a quality set outside it",
+    comparator == "≠"
+      and grade == "normal"
+      and visible
+      and relative.jatz_request_frame.children[1].quality_row == graded
+  )
+  chooser.elem_value = "iron-plate"
+  fire("on_gui_elem_changed", { player_index = 15, element = chooser })
+  got = logistics.get_request(request)
+  check(
+    "another item then keeps the quality the request has now",
+    got.item == "iron-plate" and got.quality == nil and got.comparator == "≠"
+  )
+  -- Not yet refreshed: the request's quality still wins over the one the row last showed.
+  assert(logistics.set_request(request, "iron-plate", 70, "uncommon", "≤"))
+  chooser.elem_value = "wood"
+  fire("on_gui_elem_changed", { player_index = 15, element = chooser })
+  got = logistics.get_request(request)
+  check(
+    "even before the refresh, another item keeps the request's quality",
+    got.item == "wood" and got.quality == "uncommon" and got.comparator == "≤"
+  )
+  nth[30]()
+  comparator, grade, visible = shown()
+  check("and the row follows", comparator == "≤" and grade == "uncommon" and visible)
+  assert(logistics.set_request(request, "wood", 70, nil, "any"))
+  nth[30]()
+  comparator = shown()
+  check(
+    "any quality set outside it: 'Any quality', with no quality to compare with shown",
+    type(comparator) == "table" and comparator[1] == "jatz-gui.any-quality" and not levels.visible
+  )
+  assert(logistics.set_request(request, "wood", 70))
+  nth[30]()
+  comparator, grade, visible = shown()
+  check("normal set outside it: '=' and normal", comparator == "=" and grade == "normal" and visible)
+  assert(logistics.set_request(request, "wood", 70, "uncommon", "<"))
+  nth[30]()
+  chooser.elem_value = nil
+  fire("on_gui_elem_changed", { player_index = 15, element = chooser })
+  nth[30]()
+  comparator, grade, visible = shown()
+  check(
+    "a cleared item leaves the row as chosen for the next one",
+    comparator == "<" and grade == "uncommon" and visible
+  )
+  chooser.elem_value = "wood"
+  fire("on_gui_elem_changed", { player_index = 15, element = chooser })
+  got = logistics.get_request(request)
+  check("which the item chosen next takes", got.item == "wood" and got.quality == "uncommon" and got.comparator == "<")
   local liquid = depot(250)
   liquid.name = "jatz-liquid-request-depot"
   fire("on_built_entity", { entity = liquid })
