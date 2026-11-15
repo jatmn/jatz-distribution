@@ -863,13 +863,53 @@ do -- Every status the dispatcher can report has a status light, one of the game
   end
 end
 
+-- LuaGuiElement's attributes and methods as Factorio 2.1 has them (runtime-api.json 2.1.24): the
+-- game refuses a child named like one ("Invalid name ... contains a property or method with the
+-- same name"), so the fake does too.
+local GUI_MEMBERS = {}
+for name in
+  ([[
+  add add_item add_tab allow_decimal allow_negative allow_none_state anchor auto_center
+  auto_toggle badge_text bring_to_front caption children children_names clear clear_items
+  clicked_sprite close_dropdown column_count destroy direction drag_target
+  draw_horizontal_line_after_headers draw_horizontal_lines draw_vertical_lines elem_filters
+  elem_tooltip elem_type elem_value empty_slot_info enabled entity focus force force_auto_center
+  game_controller_interaction get_index_in_parent get_item get_mod get_slider_discrete_values
+  get_slider_maximum get_slider_minimum get_slider_value_step gui handle_cursor_split
+  handle_cursor_transfer handle_open_item handle_open_mod_item handle_send_stack_to_trash
+  handle_send_stacks_to_trash horizontal_scroll_policy hovered_sprite icon_selector
+  ignored_by_interaction index inventory is_password items left_label_caption left_label_tooltip
+  location locked lose_focus_on_confirm minimap_player_index mouse_button_filter name number
+  numeric object_name parent player_index position quality raise_hover_events read_only
+  remove_item remove_tab resize_to_sprite right_label_caption right_label_tooltip scroll_to_bottom
+  scroll_to_element scroll_to_item scroll_to_left scroll_to_right scroll_to_top secondary_number
+  select select_all selectable selected_index selected_tab_index set_item
+  set_slider_discrete_values set_slider_minimum_maximum set_slider_value_step
+  show_percent_for_small_numbers slider_value slots_per_row sprite state style surface_index
+  swap_children switch_state tabs tags text toggled tooltip type valid value vertical_centering
+  vertical_scroll_policy visible word_wrap zoom
+]]):gmatch("%S+")
+do
+  GUI_MEMBERS[name] = true
+end
 -- A minimal GUI: elements with children by name, add and destroy.
 local function element(spec, parent)
   local self = { children = {}, style = {}, parent = parent, valid = true }
   for key, value in pairs(spec or {}) do
     self[key] = value
   end
+  -- As in game, an element's style reads back as a style (here, a table), even when it was added
+  -- with a style's name.
+  if type(self.style) ~= "table" then
+    self.style = { name = self.style }
+  end
   function self.add(child_spec)
+    if child_spec.name and GUI_MEMBERS[child_spec.name] then
+      error(
+        'Invalid name "' .. child_spec.name .. '": LuaGuiElement contains a property or method with the same name.',
+        2
+      )
+    end
     local child = element(child_spec, self)
     self.children[#self.children + 1] = child
     if child.name then
@@ -3977,6 +4017,221 @@ do -- Undoing a request depot replaced by a buffer depot by hand (one undo item:
   fire("on_undo_applied", { player_index = 20, actions = { action(930, "removed-entity", "jatz-request-depot") } })
   check("a removal undone alone is left as the game made it", calls.cancelled == nil and calls.upgrade == nil)
   surface.find_entities_filtered = search
+end
+
+do -- The freighter network window, which the shortcut bar opens: the player's force's freighters
+  -- (in slots and out), those out, its depots of each kind and what its provider and buffer depots
+  -- hold, on all surfaces or on the planet or space platform chosen (scripts/network-gui.lua).
+  local logistics = require("scripts.logistics")
+  local force, other = { index = 30 }, { index = 31 }
+  surface.valid, surface.name = true, "nauvis"
+  surface.planet = { name = "nauvis", prototype = { localised_name = { "space-location-name.nauvis" } } }
+  game.surfaces[2] = {
+    valid = true,
+    index = 2,
+    name = "vulcanus",
+    planet = { name = "vulcanus", prototype = { localised_name = { "space-location-name.vulcanus" } } },
+  }
+  game.surfaces[3] = { valid = true, index = 3, name = "platform-1", platform = { name = "Platform 1" } }
+  for _, name in ipairs({
+    "jatz-provider-depot",
+    "jatz-request-depot",
+    "jatz-buffer-depot",
+    "jatz-liquid-provider-depot",
+    "jatz-liquid-request-depot",
+    "jatz-liquid-buffer-depot",
+    "jatz-fuel-depot",
+  }) do
+    prototypes.entity[name] = { localised_name = { "entity-name." .. name } }
+  end
+  script.active_mods = { base = "2.1.24" }
+  local function placed(name, x, surface_index, contents, owner)
+    local entity = depot(x)
+    entity.name, entity.force, entity.surface_index = name, owner or force, surface_index
+    entity.get_inventory = function()
+      return {
+        get_item_count = function()
+          return 0
+        end,
+        get_contents = function()
+          return contents or {}
+        end,
+      }
+    end
+    logistics.add(entity)
+    return entity
+  end
+  -- Freighters in a requesting depot's slot, and trips out.
+  local trips = {}
+  local function freighters(entity, home, out)
+    local depot_ = storage.depots[entity.unit_number]
+    local slot = script_inventory()
+    slot[1].name, slot[1].count, slot[1].valid_for_read = "jatz-quinityn-freighter", home, home > 0
+    depot_.trucks = slot
+    for index = 1, out do
+      local key = entity.unit_number * 100 + index
+      storage.trips[key] = {
+        truck = {
+          valid = true,
+          is_empty = function()
+            return false
+          end,
+        },
+      }
+      depot_.trips[key] = true
+      trips[#trips + 1] = key
+    end
+  end
+  -- Nauvis: a provider with 10 normal and 2 uncommon iron, a request depot holding wood with 3
+  -- freighters home and 2 out, a Fuel depot. Vulcanus: a buffer depot with 3 iron and a liquid
+  -- request depot with one freighter home. A platform: a liquid provider with 1500.5 water.
+  -- Another force's provider, with copper, on Nauvis.
+  placed("jatz-provider-depot", 1000, 1, {
+    { name = "iron-plate", quality = "normal", count = 10 },
+    { name = "iron-plate", quality = "uncommon", count = 2 },
+  })
+  local request = placed("jatz-request-depot", 1004, 1, { { name = "wood", quality = "normal", count = 5 } })
+  freighters(request, 3, 2)
+  placed("jatz-fuel-depot", 1008, 1)
+  local buffer_contents = { { name = "iron-plate", quality = "normal", count = 3 } }
+  placed("jatz-buffer-depot", 1012, 2, buffer_contents)
+  freighters(placed("jatz-liquid-request-depot", 1016, 2), 1, 0)
+  local water = placed("jatz-liquid-provider-depot", 1020, 3)
+  water.get_fluid_contents = function()
+    return { water = 1500.5 }
+  end
+  placed("jatz-provider-depot", 1024, 1, { { name = "copper-plate", quality = "normal", count = 7 } }, other)
+
+  local screen = element()
+  local toggled = {}
+  local player = {
+    index = 30,
+    valid = true,
+    connected = true,
+    force = force,
+    gui = { screen = screen, relative = element() },
+    set_shortcut_toggled = function(name, on)
+      toggled[name] = on
+    end,
+  }
+  game.get_player = function()
+    return player
+  end
+  local function press(name)
+    fire("on_lua_shortcut", { player_index = 30, prototype_name = name or "jatz-network" })
+  end
+  local function shown()
+    local inner = screen.jatz_network_frame.inner
+    local depots = {}
+    for name in pairs(prototypes.entity) do
+      depots[name] = inner.depots[name] and inner.depots[name].caption
+    end
+    local items = {}
+    for position, button in ipairs(inner.items_frame.items_pane.item_slots.children) do
+      items[position] = button.sprite .. ":" .. tostring(button.quality) .. "=" .. button.number
+    end
+    return {
+      total = inner.freighters.total.caption,
+      active = inner.freighters.active.caption,
+      depots = depots,
+      items = table.concat(items, " "),
+      none = inner.no_items.visible,
+    }
+  end
+
+  press("toggle-alt-mode")
+  check("another shortcut opens nothing", screen.jatz_network_frame == nil)
+  press()
+  local frame = screen.jatz_network_frame
+  check("the shortcut opens the window, toggled on", frame and player.opened == frame and toggled["jatz-network"])
+  local seen = shown()
+  check("every freighter of the force's depots, home and out", seen.total == "6" and seen.active == "2")
+  check(
+    "its depots of each kind, on every surface",
+    seen.depots["jatz-provider-depot"] == "1"
+      and seen.depots["jatz-request-depot"] == "1"
+      and seen.depots["jatz-buffer-depot"] == "1"
+      and seen.depots["jatz-liquid-provider-depot"] == "1"
+      and seen.depots["jatz-liquid-request-depot"] == "1"
+      and seen.depots["jatz-liquid-buffer-depot"] == "0"
+      and seen.depots["jatz-fuel-depot"] == "1"
+  )
+  check(
+    "what provider and buffer depots hold, most first: no request depot's wood, no other force's copper",
+    seen.items == "fluid/water:nil=1500 item/iron-plate:normal=13 item/iron-plate:uncommon=2" and not seen.none
+  )
+  local slot = frame.inner.items_frame.items_pane.item_slots.children[3]
+  check(
+    "an item's slot names it with its quality",
+    slot.elem_tooltip.type == "item-with-quality" and slot.elem_tooltip.quality == "uncommon"
+  )
+  local dropdown = frame.inner.jatz_network_surface
+  check(
+    "a drop-down lists all surfaces, then each planet and platform with depots",
+    dropdown.visible
+      and #dropdown.items == 4
+      and dropdown.items[1][1] == "jatz-network.all-surfaces"
+      and dropdown.items[2][2] == "[planet=nauvis] "
+      and dropdown.items[3][3][1] == "space-location-name.vulcanus"
+      and dropdown.items[4] == "Platform 1"
+      and dropdown.selected_index == 1
+  )
+  dropdown.selected_index = 3
+  fire("on_gui_selection_state_changed", { player_index = 30, element = dropdown })
+  seen = shown()
+  check(
+    "choosing Vulcanus shows only its depots and freighters",
+    seen.total == "1"
+      and seen.active == "0"
+      and seen.depots["jatz-buffer-depot"] == "1"
+      and seen.depots["jatz-provider-depot"] == "0"
+      and seen.items == "item/iron-plate:normal=3"
+  )
+  buffer_contents[1].count = 8
+  nth[60]()
+  seen = shown()
+  check("once a second it counts again, on the surface chosen", seen.items == "item/iron-plate:normal=8")
+  check("which stays chosen", dropdown.selected_index == 3 and screen.jatz_network_frame == frame)
+  -- Out of the game, the window isn't counted; back, it is again.
+  player.connected = false
+  buffer_contents[1].count = 9
+  nth[60]()
+  check("a player out of the game isn't counted for", shown().items == "item/iron-plate:normal=8")
+  player.connected = true
+  nth[60]()
+  check("and is again once back", shown().items == "item/iron-plate:normal=9")
+  -- A space platform renamed: the drop-down says so.
+  game.surfaces[3].platform.name = "Platform 2"
+  nth[60]()
+  check("a renamed platform is renamed in the drop-down", dropdown.items[4] == "Platform 2")
+  -- Another force, with depots on one surface only: no drop-down without Space Age.
+  player.force = other
+  nth[60]()
+  seen = shown()
+  check(
+    "a player's own force's network only, the surface chosen elsewhere forgotten",
+    seen.total == "0" and seen.items == "item/copper-plate:normal=7" and dropdown.selected_index == 1
+  )
+  check("one surface: no drop-down", not dropdown.visible)
+  script.active_mods["space-age"] = "2.1.24"
+  nth[60]()
+  check("with Space Age, the drop-down still, to show it is per planet", dropdown.visible)
+  player.force = force
+  press()
+  check("the shortcut again closes it, toggled off", screen.jatz_network_frame == nil and not toggled["jatz-network"])
+  check("and nothing is counted for it any more", next(storage.network_gui) == nil)
+  press()
+  frame = screen.jatz_network_frame
+  fire("on_gui_closed", { player_index = 30, element = frame })
+  check("E or Esc closes it", screen.jatz_network_frame == nil and not toggled["jatz-network"])
+  press()
+  frame = screen.jatz_network_frame
+  fire("on_gui_click", { player_index = 30, element = frame.children[1].jatz_network_close })
+  check("so does its close button", screen.jatz_network_frame == nil and not toggled["jatz-network"])
+  nth[60]()
+  for _, key in ipairs(trips) do
+    storage.trips[key] = nil
+  end
 end
 
 print("all control event checks passed")

@@ -38,6 +38,8 @@ local quality = require("scripts.quality")
 local monitor_gui = require("scripts.road-monitor-gui")
 -- And the freighter bonuses beside the game's Bonuses window (scripts/bonus-gui.lua).
 local bonus_gui = require("scripts.bonus-gui")
+-- And the freighter network window, which the shortcut bar opens (scripts/network-gui.lua).
+local network_gui = require("scripts.network-gui")
 
 local request_gui = {}
 
@@ -700,7 +702,7 @@ local function on_gui_opened(event)
 end
 
 local function on_gui_closed(event)
-  if monitor_gui.on_gui_closed(event) then
+  if monitor_gui.on_gui_closed(event) or network_gui.on_gui_closed(event) then
     return
   end
   if event.entity and storage.request_gui then
@@ -806,6 +808,9 @@ end
 
 -- The freighter slot clicked: put freighters in from the cursor, or take them out.
 local function on_gui_click(event)
+  if network_gui.on_gui_click(event) then
+    return
+  end
   if event.element.name == FLUSH then
     local entity = opened_depot(game.get_player(event.player_index))
     if entity and logistics.flush_fuel(entity) then
@@ -984,6 +989,9 @@ local function on_gui_value_changed(event)
 end
 
 local function on_gui_selection_state_changed(event)
+  if network_gui.on_gui_selection_state_changed(event) then
+    return
+  end
   if event.element.name == QUALITY_COMPARATOR or event.element.name == QUALITY_LEVEL then
     -- How qualities compare, or the quality compared with: the request takes those
     -- (scripts/quality.lua). Any quality compares with none, so that one is hidden.
@@ -1156,6 +1164,7 @@ function request_gui.register()
   script.on_event(defines.events.on_gui_leave, on_gui_leave)
   script.on_event(defines.events.on_gui_inventory_action, on_inventory_action)
   script.on_event(defines.events.on_player_changed_force, bonus_gui.on_player_changed_force)
+  script.on_event(defines.events.on_lua_shortcut, network_gui.on_lua_shortcut)
   script.on_event("jatz-pipette", on_pipette)
   script.on_nth_tick(30, refresh)
 end

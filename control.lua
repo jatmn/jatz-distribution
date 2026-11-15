@@ -2,7 +2,8 @@
 -- Jat'z Distribution runtime: loading zones (scripts/loading-zone.lua), the road each depot lays
 -- under its loading zone (scripts/depot-road.lua), deliveries between provider and request depots
 -- (scripts/logistics.lua), the request panel (scripts/request-gui.lua), the road network
--- monitor (scripts/road-monitor.lua) and road tunnels (scripts/tunnels.lua).
+-- monitor (scripts/road-monitor.lua), road tunnels (scripts/tunnels.lua) and the freighter network
+-- window (scripts/network-gui.lua).
 local loading_zone = require("scripts.loading-zone")
 local depot_road = require("scripts.depot-road")
 local logistics = require("scripts.logistics")
@@ -15,6 +16,7 @@ local undo = require("scripts.undo")
 local legacy_depots = require("scripts.legacy-depots")
 local depot_upgrades = require("scripts.depot-upgrades")
 local depot_swap = require("scripts.depot-swap")
+local network_gui = require("scripts.network-gui")
 
 -- Road laid (`added`) or removed or covered (`removed`) on a surface: deliveries re-plan, and road
 -- network monitors there work out their networks again.
@@ -346,7 +348,12 @@ script.on_event(defines.events.on_tick, function(event)
     undo.tag_pending(event.tick)
   end
 end)
-script.on_nth_tick(logistics.dispatch_interval, road_monitor.update)
+-- Once a second: road network monitors show their networks, and open freighter network windows
+-- their numbers (scripts/network-gui.lua).
+script.on_nth_tick(logistics.dispatch_interval, function()
+  road_monitor.update()
+  network_gui.refresh()
+end)
 -- Freighters ctrl+ or shift+clicked from a player's inventory into a request depot fill its
 -- freighter slot (scripts/request-gui.lua).
 script.on_event(defines.events.on_player_main_inventory_changed, request_gui.on_player_main_inventory_changed)
