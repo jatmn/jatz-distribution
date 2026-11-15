@@ -3346,4 +3346,79 @@ do -- A liquid depot shows the player's inventory, so a freighter can be picked 
   check("remote view shows no inventory to take freighters from", relative.jatz_depot_inventory == nil)
 end
 
+do -- Undoing a request depot replaced by a buffer depot by hand (one undo item: the request depot
+  -- removed, the buffer depot built) leaves the buffer depot marked for deconstruction under a
+  -- ghost of the request depot: scripts/depot-swap.lua marks it for upgrade to the request depot
+  -- instead, for robots to swap in place. Redo the same, the other way. A removal undone alone
+  -- over such a depot is left as the game made it.
+  local search = surface.find_entities_filtered
+  local function spot(standing_name, ghost_name)
+    local calls = {}
+    local ghost = { valid = true, name = "entity-ghost", type = "entity-ghost", ghost_name = ghost_name }
+    function ghost.destroy()
+      ghost.valid = false
+      calls.destroyed = true
+    end
+    local standing = {
+      valid = true,
+      name = standing_name,
+      position = { x = 900.5, y = 0.5 },
+      force = "player",
+      quality = "normal",
+      to_be_deconstructed = function()
+        return true
+      end,
+      cancel_deconstruction = function(force, player)
+        calls.cancelled = force == "player" and player == nil
+      end,
+      order_upgrade = function(order)
+        calls.upgrade = order.target.name == ghost_name
+          and order.target.quality == "normal"
+          and order.force == "player"
+          and order.player == nil
+        return true
+      end,
+    }
+    surface.find_entities_filtered = function(filter)
+      local found = {}
+      if filter.position and filter.position.x == 900.5 and filter.position.y == 0.5 then
+        for _, entity in ipairs({ standing, ghost }) do
+          local names = type(filter.name) == "table" and filter.name or { filter.name }
+          local named = filter.name == nil
+          for _, name in ipairs(names) do
+            named = named or entity.name == name
+          end
+          if entity.valid and named and (filter.ghost_name == nil or entity.ghost_name == filter.ghost_name) then
+            found[#found + 1] = entity
+          end
+        end
+      end
+      return found
+    end
+    return calls
+  end
+  local function action(kind, name)
+    return { type = kind, surface_index = 1, target = { name = name, position = { x = 900.5, y = 0.5 } } }
+  end
+  local calls = spot("jatz-buffer-depot", "jatz-request-depot")
+  fire("on_undo_applied", {
+    player_index = 20,
+    actions = { action("removed-entity", "jatz-request-depot"), action("built-entity", "jatz-buffer-depot") },
+  })
+  check(
+    "undoing a swap by hand marks the depot for upgrade back instead of deconstruction",
+    calls.cancelled and calls.destroyed and calls.upgrade
+  )
+  calls = spot("jatz-request-depot", "jatz-buffer-depot")
+  fire("on_redo_applied", {
+    player_index = 20,
+    actions = { action("removed-entity", "jatz-request-depot"), action("built-entity", "jatz-buffer-depot") },
+  })
+  check("and redoing it marks it for upgrade again", calls.cancelled and calls.destroyed and calls.upgrade)
+  calls = spot("jatz-buffer-depot", "jatz-request-depot")
+  fire("on_undo_applied", { player_index = 20, actions = { action("removed-entity", "jatz-request-depot") } })
+  check("a removal undone alone is left as the game made it", next(calls) == nil)
+  surface.find_entities_filtered = search
+end
+
 print("all control event checks passed")

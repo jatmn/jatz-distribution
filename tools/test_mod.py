@@ -427,8 +427,8 @@ TICKS = 2600
 # mined by hand and a bare replacement marked at its spot in the same tick each keep their own, and
 # two mined by hand at one spot in a tick at the undo history's limit (100 items) too, and in
 # adjacent ticks. A request depot replaced by a buffer depot from the player's hand, and a buffer
-# depot by a request depot from a ghost robots build, keep their request, freighters and chest, and
-# the player is handed no freighters.
+# depot by a request depot from a ghost robots build, and a request depot by a buffer depot from an
+# upgrade planner, keep their request, freighters and chest, and the player is handed no freighters.
 EXPECTED_UNDO = {
     'cut_removed': True,
     'cut_settings': {'request': {'item': 'wood', 'count': 8}, 'freighters': 5},
@@ -445,7 +445,8 @@ EXPECTED_UNDO = {
     'mined_rebuilt': {'freighters': 3},
     'hand_freighters_given': 0,
     'by_hand': {'request': {'item': 'wood', 'count': 4}, 'freighters': 2, 'iron': 7},
-    'by_robots': {'request': {'item': 'wood', 'count': 6}, 'freighters': 3, 'iron': 9}}
+    'by_robots': {'request': {'item': 'wood', 'count': 6}, 'freighters': 3, 'iron': 9},
+    'by_planner': {'request': {'item': 'wood', 'count': 3}, 'freighters': 1, 'iron': 5}}
 # With Space Age, also a liquid request depot cut on a space platform, which takes it at once, and
 # rebuilt there by the platform from the ghost given its settings.
 EXPECTED_UNDO_PLATFORM = {

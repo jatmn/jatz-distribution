@@ -24,6 +24,7 @@ local swap = {}
 
 -- What each depot is replaced with.
 local PARTNER = { ["jatz-request-depot"] = "jatz-buffer-depot", ["jatz-buffer-depot"] = "jatz-request-depot" }
+swap.names = { "jatz-buffer-depot", "jatz-request-depot" }
 
 -- A player about to place a request or buffer depot from their hand over the other one: noted
 -- (storage.depot_swap_hands[player_index]) for its mining, which comes next in the same tick.
@@ -114,6 +115,62 @@ function swap.built(entity)
   road_monitor.replaced(old_id, entity.unit_number)
   -- Robots stay out of a buffer depot until it lets them, as of every new depot.
   robot_access.set(entity, false)
+end
+
+-- Undo and redo. Robots' replacements are recorded as upgrades ("upgraded-entity", with the
+-- original name), which undo and redo as upgrade orders, so robots swap the depot back in place as
+-- above. A player's replacement by hand is recorded as the old depot removed and the new one built
+-- in one undo item (probed on 2.1.24), and undoing that marks the new depot for deconstruction and
+-- puts a ghost of the old one over it: robots would empty it and take it, freighters and all, and
+-- build a bare depot from the ghost (the removal's undo action keeps its settings, scripts/undo.lua,
+-- but not its chest). So, once the game has applied the undo or redo, a depot of the pair standing
+-- marked for deconstruction under a ghost of the other, where that item removed one and built the
+-- other, is marked for upgrade to it instead, for robots to swap in place (probed: they do, with
+-- its request, freighters and chest). Without `player`, which would add the order to the player's
+-- undo queue.
+local function swap_back(surface, position)
+  for _, depot in pairs(surface.find_entities_filtered({ name = swap.names, position = position })) do
+    local partner = PARTNER[depot.name]
+    local ghosts = depot.to_be_deconstructed()
+      and surface.find_entities_filtered({ ghost_name = partner, position = position })
+    if ghosts and #ghosts > 0 and depot.position.x == position.x and depot.position.y == position.y then
+      depot.cancel_deconstruction(depot.force)
+      for _, ghost in pairs(ghosts) do
+        ghost.destroy()
+      end
+      depot.order_upgrade({ target = { name = partner, quality = depot.quality }, force = depot.force })
+    end
+  end
+end
+
+-- on_undo_applied and on_redo_applied (after scripts/undo.lua's): the actions applied.
+function swap.on_undo_applied(event)
+  local removed, built = {}, {}
+  for _, action in pairs(event.actions or {}) do
+    local target = action.target
+    if target and PARTNER[target.name] and action.surface_index then
+      if action.type == "removed-entity" then
+        removed[#removed + 1] = action
+      elseif action.type == "built-entity" then
+        built[#built + 1] = action
+      end
+    end
+  end
+  for _, gone in ipairs(removed) do
+    for _, made in ipairs(built) do
+      local from, to = gone.target, made.target
+      local surface = game.surfaces[gone.surface_index]
+      if
+        surface
+        and gone.surface_index == made.surface_index
+        and PARTNER[from.name] == to.name
+        and from.position.x == to.position.x
+        and from.position.y == to.position.y
+      then
+        swap_back(surface, from.position)
+      end
+    end
+  end
 end
 
 return swap
