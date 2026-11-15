@@ -1,0 +1,2 @@
+  Bugfixes:
+    - Fixed road being placeable under and through cliffs. Road tunnels still go under them.
