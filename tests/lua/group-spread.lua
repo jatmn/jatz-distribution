@@ -7,9 +7,9 @@ local entity, stack, check, trips_from = harness.entity, harness.stack, harness.
 
 -- Ten request depots for 100 of item a, with a near provider holding one freighter's load and a
 -- far one holding plenty. The pathfinder answers each question in the tick it is asked, after the
--- tick's depot checks, as in the game.
+-- tick's depot checks, as in the game. `freighted(request)`, if given, says which have freighters.
 local logistics, requests, near, far, depots
-local function setup()
+local function setup(freighted)
   logistics = harness.reset()
   local _
   _, requests = harness.state()
@@ -22,7 +22,9 @@ local function setup()
     local request = entity("jatz-request-depot", 0.5 + 3 * index, 20.5)
     logistics.add(request)
     assert(logistics.set_request(request, "a", 100))
-    assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 2)) == 2)
+    if not freighted or freighted(request) then
+      assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 2)) == 2)
+    end
     depots[index] = request
   end
 end
@@ -157,4 +159,46 @@ end)
 check(
   "the near provider given to another force between the group's ticks, every depot checked after fetches from the far one",
   after == #depots - logistics.group_share and right == after
+)
+
+-- Stock a depot of the group lets go of between the group's ticks (filled some other way, it lets
+-- its freighter's promise go: release_excess) goes to the depots checked after it, as in one tick:
+-- its check drops the group's kept look (logistics.look_afresh), made while that stock was promised.
+-- (`asked` holds each depot's tick from the first second; setup numbers the depots the same.)
+local middle
+setup(function(request)
+  if not middle and asked[request.unit_number] == first + 1 then
+    middle = request
+    return true
+  end
+  return false
+end)
+second(0)
+local fetching = trips_from(middle)
+assert(#fetching == 1 and fetching[1].provider == near.unit_number, "the middle depot fetches the near stock")
+for _, request in ipairs(depots) do
+  local at = asked[request.unit_number]
+  if at == first or at > first + 1 then
+    assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 2)) == 2)
+  end
+end
+second(60, function(tick)
+  if tick == 60 + first + 1 then
+    middle.chest.contents.a = 100
+  end
+end)
+local before_near, after_near = 0, 0
+for _, request in ipairs(depots) do
+  local at = asked[request.unit_number]
+  for _, trip in ipairs(trips_from(request)) do
+    if trip.provider == near.unit_number and at == first then
+      before_near = before_near + 1
+    elseif trip.provider == near.unit_number and at > first + 1 then
+      after_near = after_near + 1
+    end
+  end
+end
+check(
+  "stock a depot lets go of between the group's ticks goes to a depot checked after it",
+  before_near == 0 and after_near == 1
 )

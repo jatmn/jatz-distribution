@@ -1255,7 +1255,11 @@ local function suppliers(surface_index, force_index, fluid, request)
   -- is admitted again as below: what it holds, its circuit condition, its force and its loading
   -- zone can change between ticks (Pullfrog's review of 773be46: one emptied since kept the depots
   -- after it from the stocked one farther away, one given to another force was still sent to). One
-  -- found only since waits for the next second, as when the group was checked in one tick.
+  -- found only since waits for the next second, as when the group was checked in one tick, unless
+  -- a depot's check in between changes what the depots hold unpromised, or which depots there are
+  -- (logistics.look_afresh): the group's ticks after it look at every depot again, as the depots
+  -- checked after such a check in one tick did, so stock a depot lets go of (release_excess) goes
+  -- to the depots of its group checked after it, not to the farther providers.
   local ends = key and routes.hold_until
   local looks = ends and storage.passes.looks
   local kept = looks and looks[key]
@@ -1297,7 +1301,9 @@ local function suppliers(surface_index, force_index, fluid, request)
 end
 
 -- A depot's check changed what suppliers hold unpromised, or which depots there are: the depots
--- checked after it this tick look at the depots afresh. (A field: few locals to spare.)
+-- checked after it this tick look at the depots afresh, and so do those of a group checked over
+-- several ticks in its ticks after this one (its kept look goes too: suppliers). (A field: few
+-- locals to spare.)
 function logistics.look_afresh()
   if suppliers_cache then
     suppliers_cache = {}
@@ -2439,10 +2445,11 @@ local function check_phase(depot, index)
 end
 
 -- A group's checks are spread too: at most `group_share` of its depots are checked in a tick, the
--- rest in the ticks after its own, up to `group_ticks` of them (a quarter of a second, which
--- still larger groups share evenly). The owner's report, November 15, 2026: dozens of depots
--- asking for one fluid, each ranking every depot holding it, made one tick of every second many
--- times longer than the rest, a stutter. (Fields: this file's main chunk has few locals to spare.)
+-- rest in the ticks after its own, up to `group_ticks` of them (a quarter of a second). A group
+-- too large for that (over 60 depots) is shared evenly over those ticks, more than `group_share`
+-- in each. The owner's report, November 15, 2026: dozens of depots asking for one fluid, each
+-- ranking every depot holding it, made one tick of every second many times longer than the rest,
+-- a stutter. (Fields: this file's main chunk has few locals to spare.)
 logistics.group_share = 4
 logistics.group_ticks = 15
 
