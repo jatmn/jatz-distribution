@@ -4643,6 +4643,19 @@ do -- Road laid joining two networks before their numbers are forgotten: they be
   local tunnels = require("scripts.tunnels")
   -- West, then east, positions remembered (east's number is the higher).
   plan_of(logistics, { x = 5.5, y = 2.5 }, { x = 35.5, y = 2.5 })
+  -- (By the points' own keys, whatever tunnels.lua makes them.)
+  local points = storage.tunnel_nets[1].points
+  local before, nets_before, remembered = {}, {}, 0
+  for point, net in pairs(points) do
+    before[point] = net
+    if net then
+      nets_before[net] = true
+      remembered = remembered + 1
+    end
+  end
+  local west = next(nets_before)
+  local east = west and next(nets_before, west)
+  check("setup: points remembered on two networks", east and next(nets_before, east) == nil)
   local split = surface.get_connected_tiles
   function surface.get_connected_tiles(position)
     local x, y = position[1], position[2]
@@ -4661,10 +4674,21 @@ do -- Road laid joining two networks before their numbers are forgotten: they be
   game.tick = game.tick + 1
   -- Asked about within a second of the change, a new position floods the joined network.
   plan_of(logistics, { x = 25.5, y = 2.5 }, { x = 0.5, y = 2.5 })
-  local points = storage.tunnel_nets[1].points
+  points = storage.tunnel_nets[1].points
+  local one, joined, now = nil, true, 0
+  for _, net in pairs(points) do
+    if net then
+      one = one or net
+      joined = joined and net == one
+      now = now + 1
+    end
+  end
+  for point, net in pairs(before) do
+    joined = joined and points[point] == (net and one)
+  end
   check(
-    "every point remembered on either joins the one network",
-    points["5,2"] == points["35,2"] and points["35,2"] == points["25,2"] and points["20,0"] == points["30,0"]
+    "every point remembered on either joins the one network, with the new one",
+    one and joined and now == remembered + 1
   )
   surface.get_connected_tiles = split
 end

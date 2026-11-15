@@ -1250,25 +1250,20 @@ local function suppliers(surface_index, force_index, fluid, request)
     return suppliers_cache[key]
   end
   local depots = storage.depots
-  -- A group checked over several ticks (depots_due) shares the look of its first tick, kept in
-  -- storage until its last (so every player's game agrees), less the depots gone since.
+  -- A group checked over several ticks (depots_due) looks only at the depots its first tick found,
+  -- kept in storage until its last (so every player's game agrees), not at every depot again. Each
+  -- is admitted again as below: what it holds, its circuit condition, its force and its loading
+  -- zone can change between ticks (Pullfrog's review of 773be46: one emptied since kept the depots
+  -- after it from the stocked one farther away, one given to another force was still sent to). One
+  -- found only since waits for the next second, as when the group was checked in one tick.
   local ends = key and routes.hold_until
   local looks = ends and storage.passes.looks
   local kept = looks and looks[key]
-  if kept and kept.ends == ends then
-    local found = kept.found
-    for index = #found, 1, -1 do
-      local supplier = found[index]
-      if depots[supplier.id] ~= supplier.depot or not supplier.depot.entity.valid then
-        table.remove(found, index)
-      end
-    end
-    suppliers_cache[key] = found
-    return found
-  end
+  local ids = kept and kept.ends == ends and kept.ids
   local found = {}
-  for _, role in ipairs(SUPPLYING) do
-    for unit_number in pairs(depots_at(surface_index, role)) do
+  -- (The depots kept are one set, of both roles.)
+  for _, role in ipairs(ids and { ids } or SUPPLYING) do
+    for unit_number in pairs(ids or depots_at(surface_index, role)) do
       local provider = depots[unit_number]
       local candidate = provider and provider.entity
       if
@@ -1289,9 +1284,13 @@ local function suppliers(surface_index, force_index, fluid, request)
   end
   if key then
     suppliers_cache[key] = found
-    if ends then
+    if ends and not ids then
+      ids = {}
+      for _, supplier in ipairs(found) do
+        ids[supplier.id] = true
+      end
       storage.passes.looks = looks or {}
-      storage.passes.looks[key] = { found = found, ends = ends }
+      storage.passes.looks[key] = { ids = ids, ends = ends }
     end
   end
   return found

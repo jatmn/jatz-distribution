@@ -3,25 +3,30 @@
 -- ticks, a few depots each, and still decides together (scripts/logistics.lua: depots_due). Run by
 -- tests/lua/logistics.lua, which is at the size CI downloads.
 local harness = require("tests.lua.harness")
-local entity, stack, check = harness.entity, harness.stack, harness.check
+local entity, stack, check, trips_from = harness.entity, harness.stack, harness.check, harness.trips_from
 
 -- Ten request depots for 100 of item a, with a near provider holding one freighter's load and a
 -- far one holding plenty. The pathfinder answers each question in the tick it is asked, after the
 -- tick's depot checks, as in the game.
-local logistics = harness.reset()
-local _, requests = harness.state()
-local near = entity("jatz-provider-depot", 10.5, 0.5, { a = 100 })
-local far = entity("jatz-provider-depot", 200.5, 0.5, { a = 100000 })
-logistics.add(near)
-logistics.add(far)
-local depots = {}
-for index = 1, 10 do
-  local request = entity("jatz-request-depot", 0.5 + 3 * index, 20.5)
-  logistics.add(request)
-  assert(logistics.set_request(request, "a", 100))
-  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 2)) == 2)
-  depots[index] = request
+local logistics, requests, near, far, depots
+local function setup()
+  logistics = harness.reset()
+  local _
+  _, requests = harness.state()
+  near = entity("jatz-provider-depot", 10.5, 0.5, { a = 100 })
+  far = entity("jatz-provider-depot", 200.5, 0.5, { a = 100000 })
+  logistics.add(near)
+  logistics.add(far)
+  depots = {}
+  for index = 1, 10 do
+    local request = entity("jatz-request-depot", 0.5 + 3 * index, 20.5)
+    logistics.add(request)
+    assert(logistics.set_request(request, "a", 100))
+    assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 2)) == 2)
+    depots[index] = request
+  end
 end
+setup()
 
 local function trips()
   local list = {}
@@ -31,12 +36,16 @@ local function trips()
   return list
 end
 
--- A second of spread checks from `from`. Returns the tick each depot asked the pathfinder in (by
--- unit number), how many asked in each tick, and the freighters out after each tick.
-local function second(from)
+-- A second of spread checks from `from` (`ahead`, if given, runs before each tick's). Returns the
+-- tick each depot asked the pathfinder in (by unit number), how many asked in each tick, and the
+-- freighters out after each tick.
+local function second(from, ahead)
   local asked, in_tick, out = {}, {}, {}
   for tick = from, from + 59 do
     game.tick = tick
+    if ahead then
+      ahead(tick)
+    end
     local before = #requests
     logistics.on_tick_share(tick)
     for id = before + 1, #requests do
@@ -111,4 +120,41 @@ end
 check(
   "a provider gone between the group's ticks is left out by the depots checked after",
   to_far > 0 and to_far == #requests - 10
+)
+
+-- What makes a provider one to fetch from can change between the group's ticks with no event: an
+-- inserter empties it, a script gives it to another force. The depots checked after the change look
+-- at it again, as depots checked in a later tick always did (Pullfrog's review of 773be46: they were
+-- given the group's first look, and fetched nothing, or from the other force's depot).
+local function changed_between(change)
+  setup()
+  local looked = second(0, function(tick)
+    if tick == first + 1 then
+      change()
+    end
+  end)
+  local after, right = 0, 0
+  for _, request in ipairs(depots) do
+    if looked[request.unit_number] > first then
+      after = after + 1
+      local fetching = trips_from(request)
+      right = right + ((#fetching == 1 and fetching[1].provider == far.unit_number) and 1 or 0)
+    end
+  end
+  return after, right
+end
+
+local after, right = changed_between(function()
+  near.chest.contents.a = 0
+end)
+check(
+  "the near provider emptied between the group's ticks, every depot checked after fetches from the far one",
+  after == #depots - logistics.group_share and right == after
+)
+after, right = changed_between(function()
+  near.force_index = 2
+end)
+check(
+  "the near provider given to another force between the group's ticks, every depot checked after fetches from the far one",
+  after == #depots - logistics.group_share and right == after
 )
