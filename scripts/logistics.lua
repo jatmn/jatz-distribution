@@ -1249,10 +1249,25 @@ local function suppliers(surface_index, force_index, fluid, request)
   if key and suppliers_cache[key] then
     return suppliers_cache[key]
   end
-  local found = {}
   local depots = storage.depots
-  for _, role in ipairs(SUPPLYING) do
-    for unit_number in pairs(depots_at(surface_index, role)) do
+  -- A group checked over several ticks (depots_due) looks only at the depots its first tick found,
+  -- kept in storage until its last (so every player's game agrees), not at every depot again. Each
+  -- is admitted again as below: what it holds, its circuit condition, its force and its loading
+  -- zone can change between ticks (Pullfrog's review of 773be46: one emptied since kept the depots
+  -- after it from the stocked one farther away, one given to another force was still sent to). One
+  -- found only since waits for the next second, as when the group was checked in one tick, unless
+  -- a depot's check in between changes what the depots hold unpromised, or which depots there are
+  -- (logistics.look_afresh): the group's ticks after it look at every depot again, as the depots
+  -- checked after such a check in one tick did, so stock a depot lets go of (release_excess) goes
+  -- to the depots of its group checked after it, not to the farther providers.
+  local ends = key and routes.hold_until
+  local looks = ends and storage.passes.looks
+  local kept = looks and looks[key]
+  local ids = kept and kept.ends == ends and kept.ids
+  local found = {}
+  -- (The depots kept are one set, of both roles.)
+  for _, role in ipairs(ids and { ids } or SUPPLYING) do
+    for unit_number in pairs(ids or depots_at(surface_index, role)) do
       local provider = depots[unit_number]
       local candidate = provider and provider.entity
       if
@@ -1273,8 +1288,29 @@ local function suppliers(surface_index, force_index, fluid, request)
   end
   if key then
     suppliers_cache[key] = found
+    if ends and not ids then
+      ids = {}
+      for _, supplier in ipairs(found) do
+        ids[supplier.id] = true
+      end
+      storage.passes.looks = looks or {}
+      storage.passes.looks[key] = { ids = ids, ends = ends }
+    end
   end
   return found
+end
+
+-- A depot's check changed what suppliers hold unpromised, or which depots there are: the depots
+-- checked after it this tick look at the depots afresh, and so do those of a group checked over
+-- several ticks in its ticks after this one (its kept look goes too: suppliers). (A field: few
+-- locals to spare.)
+function logistics.look_afresh()
+  if suppliers_cache then
+    suppliers_cache = {}
+    if storage.passes then
+      storage.passes.looks = nil
+    end
+  end
 end
 
 -- For a depot set to send full loads only, the least a freighter of it may set off (or be rerouted)
@@ -2011,8 +2047,8 @@ function logistics.keep_promises(id, depot, held)
     -- A promise made smaller changes what this provider has unpromised, and what its condition
     -- reads with promises taken: the depots checked before it this tick saw it as it was (Sourcery's
     -- review of 2559152).
-    if trimmed and suppliers_cache then
-      suppliers_cache = {}
+    if trimmed then
+      logistics.look_afresh()
     end
     return
   end
@@ -2023,9 +2059,7 @@ function logistics.keep_promises(id, depot, held)
   end
   -- The depots checked before it this tick saw it among their suppliers, with those promises (and
   -- any made smaller): the searches look at the depots afresh.
-  if suppliers_cache then
-    suppliers_cache = {}
-  end
+  logistics.look_afresh()
   for _, trip in ipairs(failed) do
     logistics.give_up(trip.key, trip)
   end
@@ -2088,8 +2122,8 @@ local function absorb_freighters(depot)
     end
     -- (A buffer depot's freighters could be another depot's cargo: the depots checked with it look
     -- again.)
-    if moved > 0 and suppliers_cache then
-      suppliers_cache = {}
+    if moved > 0 then
+      logistics.look_afresh()
     end
   end
   -- What the chest a player puts freighters in holds now, so those put in later can be told apart.
@@ -2165,8 +2199,8 @@ function logistics.release_excess(depot, excess)
     end
   end
   -- The providers have more unpromised now: depots checked after this one this tick look afresh.
-  if #outbound > 0 and suppliers_cache then
-    suppliers_cache = {}
+  if #outbound > 0 then
+    logistics.look_afresh()
   end
 end
 
@@ -2293,11 +2327,16 @@ local function check_trip(id, trip, per_tile, capacity, polluters)
     -- Where burn just found it.
     pollute(trip.at, POLLUTION_PER_SECOND * DISPATCH_INTERVAL / 60, DRONE)
   end
+  if trip.road_cut then
+    logistics.replan_cut(trip)
+  end
   if trip.search and game.tick - trip.search.since >= SEARCH_TIMEOUT then
     search_again(id, trip)
-  elseif trip.planning and drone.valid and game.tick - trip.planning.since >= SEARCH_TIMEOUT then
+  elseif trip.planning and drone.valid and not trip.road_cut and game.tick - trip.planning.since >= SEARCH_TIMEOUT then
     -- Its roads were never measured (a busy pathfinder, say): it asks again. (Not one destroyed,
-    -- its on_object_destroyed still to come: Pullfrog's review of 5d10933.)
+    -- its on_object_destroyed still to come: Pullfrog's review of 5d10933. Nor one whose road was
+    -- cut, still being removed: what it waited on went with the roads measured, tunnels.forget,
+    -- and logistics.replan_cut plans its way once the removing stops.)
     drive(trip, trip.planning.to)
   elseif trip.drone.valid and trip.energy <= 0 and not trip.dry and per_tile > 0 then
     trip.dry = true
@@ -2338,9 +2377,7 @@ local function check_depot(id, depot)
   if not depot.entity.valid then
     logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = id })
     -- The depots checked with it saw it among their suppliers, with its promises.
-    if suppliers_cache then
-      suppliers_cache = {}
-    end
+    logistics.look_afresh()
     return
   end
   -- A condition reading the depot's own contents reads them once for its status and its promises
@@ -2382,13 +2419,14 @@ end
 
 -- The tick of the second (0 to DISPATCH_INTERVAL - 1) at which a depot is checked; `index` is its
 -- place in this pass. Requesting depots that fetch the same thing from the same depots (same
--- surface, the same item or fluid) are checked in the same tick, as every depot was before the
--- checks were spread: their searches then all see the stock as it was before any of them promised
--- a load, and near stock is shared among them before anyone drives farther. Checked one after
--- another, later depots found the near providers' stock promised to earlier ones and drove past
--- them to farther ones (in the UPS emulator, 14% fewer items delivered with the same freighters).
--- Each such group gets its own tick, the next group the golden ratio of a second further on, so
--- groups spread evenly over the second; every other depot is checked at the tick of its place.
+-- surface, the same item or fluid) decide together, as every depot did before the checks were
+-- spread: their searches all see the stock as it was before any of them promised a load, and near
+-- stock is shared among them before anyone drives farther. Deciding one after another, later
+-- depots found the near providers' stock promised to earlier ones and drove past them to farther
+-- ones (in the UPS emulator, 14% fewer items delivered with the same freighters). Each such group
+-- starts at its own tick, the next group the golden ratio of a second further on, so groups spread
+-- evenly over the second (and second, says which group); every other depot is checked at the tick
+-- of its place.
 local GROUP_STRIDE = 37
 local function check_phase(depot, index)
   local request = REQUESTING[depot.role] and depot.request
@@ -2403,25 +2441,64 @@ local function check_phase(depot, index)
     phase = storage.check_groups * GROUP_STRIDE % DISPATCH_INTERVAL
     storage.check_phases[group] = phase
   end
-  return phase
+  return phase, group
 end
+
+-- A group's checks are spread too: at most `group_share` of its depots are checked in a tick, the
+-- rest in the ticks after its own, up to `group_ticks` of them (a quarter of a second). A group
+-- too large for that (over 60 depots) is shared evenly over those ticks, more than `group_share`
+-- in each. The owner's report, November 15, 2026: dozens of depots asking for one fluid, each
+-- ranking every depot holding it, made one tick of every second many times longer than the rest,
+-- a stutter. (Fields: this file's main chunk has few locals to spare.)
+logistics.group_share = 4
+logistics.group_ticks = 15
 
 -- The depots (unit numbers) to check at `tick`, from a plan made at the start of each second and
 -- kept in storage, so every player's game agrees. Depots added during a second wait for the next.
+-- A group's depots still decide together though checked over several ticks: the searches of those
+-- checked before its last tick get no answer until that tick (`depot.group_ends`, its tick of the
+-- second; routes.hold_until), so none sends a freighter, and promises stock, before the last has
+-- looked. A group never runs past the end of its second, into the next plan: one starting too
+-- late for its ticks starts earlier.
 local function depots_due(tick)
   local phase = tick % DISPATCH_INTERVAL
   storage.passes = storage.passes or {}
   local plan = storage.passes.depots
   if phase == 0 or not plan then
     plan = {}
-    local index = 0
-    for id, depot in pairs(storage.depots) do
-      local at = check_phase(depot, index) + 1
-      plan[at] = plan[at] or {}
-      plan[at][#plan[at] + 1] = id
+    local depots = storage.depots
+    local index, groups = 0, {}
+    for id, depot in pairs(depots) do
+      local at, group = check_phase(depot, index)
+      depot.group_ends = nil
+      if group then
+        local members = groups[group]
+        if not members then
+          members = { first = at }
+          groups[group], groups[#groups + 1] = members, members
+        end
+        members[#members + 1] = id
+      else
+        plan[at + 1] = plan[at + 1] or {}
+        plan[at + 1][#plan[at + 1] + 1] = id
+      end
       index = index + 1
     end
-    storage.passes.depots = plan
+    for _, members in ipairs(groups) do
+      local ticks = math.min(math.ceil(#members / logistics.group_share), logistics.group_ticks)
+      local each = math.ceil(#members / ticks)
+      local first = math.min(members.first, DISPATCH_INTERVAL - ticks)
+      local last = first + math.ceil(#members / each) - 1
+      for place, id in ipairs(members) do
+        local at = first + math.floor((place - 1) / each)
+        plan[at + 1] = plan[at + 1] or {}
+        plan[at + 1][#plan[at + 1] + 1] = id
+        if last > first then
+          depots[id].group_ends = last
+        end
+      end
+    end
+    storage.passes.depots, storage.passes.looks = plan, nil
   end
   return plan[phase + 1] or {}
 end
@@ -2454,14 +2531,19 @@ function logistics.on_tick_share(tick)
   end
   repaint_now(pending)
   local depots = storage.depots
+  local phase = tick % DISPATCH_INTERVAL
   suppliers_cache = {}
   routes.checking_depots = true
   for _, id in ipairs(depots_due(tick)) do
     local depot = depots[id]
     if depot then
+      -- One of a group checked over several ticks, before the last: its search waits for that.
+      local ends = depot.group_ends
+      routes.hold_until = ends and ends >= phase and tick + ends - phase or nil
       check_depot(id, depot)
     end
   end
+  routes.hold_until = nil
   suppliers_cache = nil
   routes.checking_depots = false
   logistics.answer_remembered()
@@ -2959,8 +3041,8 @@ function target(trip)
   return depot and (loading_tile(depot)) or trip.destination
 end
 
--- Plan a freighter's route again from where it stands. A route that no longer exists fails at
--- once (on_ai_command_completed), instead of after the freighter stands stuck for seconds.
+-- Plan a freighter's route again from where it stands. A route that no longer exists fails then
+-- (on_ai_command_completed), instead of after the freighter stands stuck for seconds.
 local function replan(trip)
   -- A freighter waiting for a reroute search stays put; the search decides where it goes. One
   -- loading or unloading finishes first, then plans its next route afresh.
@@ -3036,22 +3118,38 @@ function logistics.on_roads_changed(surface_index, added, removed)
     -- their origin from it (Pullfrog's review of fa62744).
     for _, trip in pairs(storage.trips) do
       if trip.drone.valid and trip.drone.surface_index == surface_index then
-        -- Its plan was worked out on the road as it was.
+        -- Its plan was worked out on the road as it was. It plans its way again at a check of
+        -- its own (check_trip, logistics.replan_cut), not here with every other freighter: road
+        -- mined or covered a tile at a time raises this for each tile, and on a large network
+        -- with tunnels planning every freighter's way took over 100 ms each time (a player's
+        -- report, November 15, 2026: removing road froze the game for seconds).
         trip.origin, trip.plan = nil, nil
+        trip.road_cut = true
       end
     end
+    storage.road_cuts = storage.road_cuts or {}
+    storage.road_cuts[surface_index] = game.tick
   end
   restart_searches(surface_index)
   if added then
     retry_now(surface_index)
   end
-  if removed then
-    for _, trip in pairs(storage.trips) do
-      if trip.drone.valid and trip.drone.surface_index == surface_index then
-        replan(upgrade(trip))
-      end
-    end
+end
+
+-- A freighter's check after road was removed on its surface (on_roads_changed): it plans its way
+-- again from where it stands, so within a second or so. Not while road is still being removed
+-- there (`cut_quiet` ticks since the last tile, storage.road_cuts): each removal forgets the
+-- surface's road networks, and the first plan after it floods them again (scripts/tunnels.lua),
+-- so freighters planning between the tiles of one stroke flooded them every tick. It waits for its
+-- next check then. (Fields: check_trip comes before replan in this file.)
+logistics.cut_quiet = 10
+function logistics.replan_cut(trip)
+  local cut = trip.drone.valid and storage.road_cuts and storage.road_cuts[trip.drone.surface_index]
+  if cut and game.tick - cut < logistics.cut_quiet then
+    return
   end
+  trip.road_cut = nil
+  replan(upgrade(trip))
 end
 
 -- A depot was built, turned or flipped: routes to and from it changed.
@@ -3235,6 +3333,9 @@ local function finish_search(depot, search, owner)
   depot.retry_status = nil
   if start_trip(depot, provider, from, planned, search.best_length, search.best_plan, mix) then
     depot.status = logistics.status.delivering
+    -- The ticks its search waited for the last of its group to look (routes.hold_until) don't
+    -- count: it may send its next freighter a second after it decided to send this one.
+    depot.next_send = depot.next_send - (search.held or 0)
   elseif (depot.retry_at or 0) <= game.tick then
     -- (A freighter that stayed home for want of fuel has set the wait and status already.)
     depot.retry_at = game.tick + RETRY_TICKS

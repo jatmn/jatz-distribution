@@ -29,6 +29,20 @@ local function reset()
   return logistics
 end
 
+-- Road removed or covered on the surface (`added`: road laid too). The freighters there plan their
+-- way again at a check of their own, once the road has been left alone a moment
+-- (logistics.replan_cut), not in the event: this is that check for each, without the rest of a
+-- tick's checks.
+local function road_removed(logistics, added)
+  logistics.on_roads_changed(1, added or false, true)
+  game.tick = game.tick + logistics.cut_quiet
+  for _, trip in pairs(storage.trips) do
+    if trip.road_cut then
+      logistics.replan_cut(trip)
+    end
+  end
+end
+
 -- A request depot for 10 of item a, and a provider holding 20.
 local function setup(logistics)
   local request = entity("jatz-request-depot", 0.5, 0.5)
@@ -1464,7 +1478,7 @@ do -- A freighter stands at each loading zone for a moment before it loads or un
   local stop = last_command()
   check("at the provider it stops for one second", stop.type == defines.command.stop and stop.ticks_to_wait == 60)
   check("before pumping anything", provider.held.amount == 1000 and trip.fluid.amount == 0)
-  logistics.on_roads_changed(1, false, true)
+  road_removed(logistics)
   check("a road change doesn't cut its stop short", last_command() == stop)
   reached()
   check("then it loads", provider.held.amount == 250 and trip.fluid.amount == 750)
@@ -4437,7 +4451,7 @@ do -- Through a tunnel to a provider on another road network, and back.
   -- The unseen freighter has one direction: the game turns it north.
   trip.drone.orientation = 0
   local commands = #trip.drone.commands
-  logistics.on_roads_changed(1, false, true)
+  road_removed(logistics)
   check("re-planning waits until it is out", #trip.drone.commands == commands)
   local sprites = #surface.sprites
   arrive(logistics, trip)
@@ -4512,7 +4526,7 @@ do -- A portal removed while a freighter is under ground: it still comes out at 
   arrive(logistics, trip)
   portals.west.valid = false
   require("scripts.tunnels").removed(portals.west.unit_number)
-  logistics.on_roads_changed(1, false, true)
+  road_removed(logistics)
   arrive(logistics, trip)
   check(
     "out at the far end",
@@ -4629,6 +4643,19 @@ do -- Road laid joining two networks before their numbers are forgotten: they be
   local tunnels = require("scripts.tunnels")
   -- West, then east, positions remembered (east's number is the higher).
   plan_of(logistics, { x = 5.5, y = 2.5 }, { x = 35.5, y = 2.5 })
+  -- (By the points' own keys, whatever tunnels.lua makes them.)
+  local points = storage.tunnel_nets[1].points
+  local before, nets_before, remembered = {}, {}, 0
+  for point, net in pairs(points) do
+    before[point] = net
+    if net then
+      nets_before[net] = true
+      remembered = remembered + 1
+    end
+  end
+  local west = next(nets_before)
+  local east = west and next(nets_before, west)
+  check("setup: points remembered on two networks", east and next(nets_before, east) == nil)
   local split = surface.get_connected_tiles
   function surface.get_connected_tiles(position)
     local x, y = position[1], position[2]
@@ -4647,10 +4674,21 @@ do -- Road laid joining two networks before their numbers are forgotten: they be
   game.tick = game.tick + 1
   -- Asked about within a second of the change, a new position floods the joined network.
   plan_of(logistics, { x = 25.5, y = 2.5 }, { x = 0.5, y = 2.5 })
-  local points = storage.tunnel_nets[1].points
+  points = storage.tunnel_nets[1].points
+  local one, joined, now = nil, true, 0
+  for _, net in pairs(points) do
+    if net then
+      one = one or net
+      joined = joined and net == one
+      now = now + 1
+    end
+  end
+  for point, net in pairs(before) do
+    joined = joined and points[point] == (net and one)
+  end
   check(
-    "every point remembered on either joins the one network",
-    points["5,2"] == points["35,2"] and points["35,2"] == points["25,2"] and points["20,0"] == points["30,0"]
+    "every point remembered on either joins the one network, with the new one",
+    one and joined and now == remembered + 1
   )
   surface.get_connected_tiles = split
 end
@@ -4682,7 +4720,7 @@ do -- Road cut behind a freighter on its way home: it plans from where it stands
   -- Home past x 25, where the road is then cut, leaving it on its home's network.
   trip.drone.position = { x = 10.5, y = 2.5 }
   surface.get_connected_tiles = split
-  logistics.on_roads_changed(1, false, true)
+  road_removed(logistics)
   settle(logistics)
   local drive = trip.drone.commands[#trip.drone.commands]
   check(
@@ -4945,7 +4983,7 @@ do -- A tunnel shorter than the road round it is taken, there and back, like any
   check("it drives to the west mouth", trip.tunnel and drive.destination.x == 20.5 and drive.destination.y == 0.5)
   -- Road removed elsewhere: it plans again from where it stands, the roads measured again.
   trip.drone.position = { x = 10.5, y = 0.5 }
-  logistics.on_roads_changed(1, false, true)
+  road_removed(logistics)
   check("road removed elsewhere, it waits for its roads to be measured", trip.planning ~= nil)
   settle(logistics)
   drive = trip.drone.commands[#trip.drone.commands]
@@ -5092,7 +5130,7 @@ do -- A freighter waiting for its roads to be measured, the pathfinder busy: it 
   local request, _, _, _, restore = joined_round(logistics, "round")
   local trip = trip_of(request)
   trip.drone.position = { x = 10.5, y = 0.5 }
-  logistics.on_roads_changed(1, false, true)
+  road_removed(logistics)
   check("setup: waiting for its roads", trip.planning ~= nil)
   local asked = {}
   for asked_id in pairs(storage.tunnel_leg_asks) do
@@ -5143,12 +5181,13 @@ end
 
 -- The measured roads' questions, answers and waits (tests/lua/tunnel-legs.lua: this file is at the
 -- size CI downloads), with this file's helpers.
-require("tests.lua.tunnel-legs")({
+local shared = {
   reset = reset,
   check = check,
   settle = settle,
   trip_of = trip_of,
   has_trip = has_trip,
+  road_removed = road_removed,
   tunnelled = tunnelled,
   joined_round = joined_round,
   one_network = one_network,
@@ -5165,7 +5204,10 @@ require("tests.lua.tunnel-legs")({
   straight = function()
     leg_road = nil
   end,
-})
+}
+require("tests.lua.tunnel-legs")(shared)
+-- Road removed while freighters are out (tests/lua/road-cuts.lua, for this file's size).
+require("tests.lua.road-cuts")(shared)
 
 do -- Just after road joins two networks, their tunnel is no longer than the road the pathfinder found.
   local logistics = reset()
@@ -5253,7 +5295,7 @@ do -- A failure queued before a new tunnel wait must not complete that new comma
   answer(logistics, 1, "none")
   local trip = trip_of(request)
   logistics.on_ai_command_completed({ unit_number = trip.id, result = defines.behavior_result.fail })
-  logistics.on_roads_changed(1, false, true) -- replaces the failed approach command
+  road_removed(logistics) -- replaces the failed approach command
   settle(logistics) -- once its roads are measured again
   arrive(logistics, trip) -- the replacement reaches the mouth and begins its timed crossing
   local crossing, command = trip.tunnel, trip.command_id
@@ -5333,4 +5375,6 @@ do -- A saved search and underground crossing are independent; configuration res
   )
 end
 
+-- A large group's checks spread over several ticks (tests/lua/group-spread.lua, for this file's size).
+require("tests.lua.group-spread")
 print("all logistics checks passed")

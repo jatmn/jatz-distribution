@@ -33,6 +33,10 @@ local drone_shape
 -- (storage.road_versions[surface index], counted up by each change): it would be about old road.
 -- Whether a tick's depot checks are under way (they are when a depot's search asks first).
 routes.checking_depots = false
+-- While a depot of a group checked over several ticks is checked (scripts/logistics.lua,
+-- depots_due): the tick its group's last depots are, which its search's answer waits for. Lua only,
+-- set and cleared within one tick's checks; the search keeps it (`search.hold`, in storage).
+routes.hold_until = nil
 -- The search answer_remembered is giving its remembered answers to, and the next of them, taken at
 -- once (ask_route) rather than queued: Lua only, set and used within one call.
 local answering, chained, chained_length = nil, false, nil
@@ -45,7 +49,9 @@ end
 -- come: after the tick's depot checks for a question one of them asked (the pathfinder answers
 -- those in the same tick, after every depot has decided), the next tick for any other. Given
 -- during the checks, a depot's freighter would promise stock before the others of its group had
--- looked (check_phase).
+-- looked (check_phase). For the same reason the first answer to a search of a group checked over
+-- several ticks, remembered or the pathfinder's, waits there until the group's last tick
+-- (`search.hold`).
 local function remember_road(search, length)
   if not search.road_key or search.road_version ~= (storage.road_versions or {})[search.surface_index] then
     return
@@ -74,6 +80,13 @@ end
 local function ask_route(search, surface, force)
   local goal = search.candidates[search.index].position
   if not search.trip then
+    -- Asked by a depot of a group checked over several ticks, before the group's last: the answer
+    -- waits for that tick (`search.hold`), and those ticks (`search.held`) don't count against the
+    -- depot's next freighter (finish_search). Later questions are asked after it, with no wait.
+    local hold = routes.hold_until
+    if hold and hold > game.tick then
+      search.hold, search.held = hold, hold - game.tick
+    end
     local key = road_key(search.from, goal)
     local surface_index = surface.index
     local known = storage.road_lengths and storage.road_lengths[surface_index]
@@ -85,8 +98,11 @@ local function ask_route(search, surface, force)
       end
       storage.road_answers = storage.road_answers or {}
       local answers = storage.road_answers
-      answers[#answers + 1] =
-        { search = search, length = length or nil, tick = routes.checking_depots and game.tick or game.tick + 1 }
+      answers[#answers + 1] = {
+        search = search,
+        length = length or nil,
+        tick = hold or (routes.checking_depots and game.tick or game.tick + 1),
+      }
       return
     end
     search.road_key, search.surface_index = key, surface_index
@@ -160,6 +176,13 @@ function routes.on_script_path_request_finished(event)
   end
   local length = event.path and path_length(search.from, event.path) or nil
   remember_road(search, length)
+  if (search.hold or 0) > game.tick then
+    -- Its group's last depots haven't looked yet: the answer waits for them with the remembered ones.
+    storage.road_answers = storage.road_answers or {}
+    local answers = storage.road_answers
+    answers[#answers + 1] = { search = search, length = length, tick = search.hold }
+    return
+  end
   route_answered(search, length)
 end
 
