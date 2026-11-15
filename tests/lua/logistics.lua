@@ -5,7 +5,8 @@
 -- which the headless check mod can't mine or click without a player.
 -- Run from the repository root with Lua 5.2 (tools/test_mod_setup.py does): lua5.2 tests/lua/logistics.lua
 package.path = "./?.lua;" .. package.path
--- The fake runtime and the helpers (tests/lua/harness.lua), shared with tests/lua/quality.lua.
+-- The fake runtime and the helpers (tests/lua/harness.lua), shared with tests/lua/quality.lua and
+-- tests/lua/depot-swap.lua.
 local harness = require("tests.lua.harness")
 local SETTINGS, ENTITY_TYPES, never_spoils = harness.SETTINGS, harness.ENTITY_TYPES, harness.never_spoils
 local stack, script_inventory = harness.stack, harness.script_inventory

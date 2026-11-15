@@ -169,6 +169,15 @@ class LogisticsSearchTests(unittest.TestCase):
         self.assertIn('all quality checks passed', result.stdout)
 
     @unittest.skipUnless(shutil.which('lua5.2'), 'the Mod CI job installs Lua 5.2')
+    def test_request_and_buffer_depots_replace_each_other(self):
+        # tests/lua/depot-swap.lua: a depot's new role, promises of freighters on their way to load
+        # there, and its request capped at the new chest, against the same fake runtime
+        # (tests/lua/harness.lua).
+        result = subprocess.run(['lua5.2', 'tests/lua/depot-swap.lua'], cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('all depot swap checks passed', result.stdout)
+
+    @unittest.skipUnless(shutil.which('lua5.2'), 'the Mod CI job installs Lua 5.2')
     def test_depot_road_is_laid_and_lifted_only_where_the_depot_owns_it(self):
         # tests/lua/depot-road.lua: turning, mining and covering by hand, shared tiles, upgrades.
         result = subprocess.run(['lua5.2', 'tests/lua/depot-road.lua'], cwd=ROOT, capture_output=True, text=True)

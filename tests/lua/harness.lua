@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
--- The fake Factorio runtime the delivery checks run against (tests/lua/logistics.lua, and the
--- quality checks, tests/lua/quality.lua), with their shared helpers: Factorio's globals as far as
+-- The fake Factorio runtime the delivery checks run against (tests/lua/logistics.lua, the quality
+-- checks, tests/lua/quality.lua, and the request and buffer depot replacement checks,
+-- tests/lua/depot-swap.lua), with their shared helpers: Factorio's globals as far as
 -- scripts/logistics.lua and its modules use them, quality-aware inventories and item stacks (a name
 -- alone is normal quality, as in the game), entities and a surface that records path requests,
 -- `reset` for fresh modules and storage, and `check`, which also verifies what freighters bring is

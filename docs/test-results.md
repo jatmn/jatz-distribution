@@ -48,6 +48,17 @@ Latest in-game results for the current artwork. The full screenshots and reports
   and the panel's comparator stood between the item and its amount, reading "uncommon wood > 9600"
   (now a "Quality" row under them reads "Quality > uncommon"). `info.json` now lists `quality` as an
   optional dependency.
+- A sixth review (of `9e4e25f`) found two more, both fixed with checks that fail before the fix: a
+  depot replaced by itself at a lower quality kept a request for more than its smaller chest holds, so
+  with "Full loads only" it waited for a load that never fits (in the engine, a rare request depot a
+  player builds a normal one over kept its rare chest's request; now it is cut to the normal chest,
+  `logistics.replaced` using `set_request`'s limit for every replacement, role swaps included); and a
+  request panel still open in a save kept its quality drop-down's index while the qualities changed,
+  so the request took another quality than the one shown (now open panels are built again at a mod
+  change; checked with the real handlers, a save and load of the panel in the engine was not).
+  The branch now includes `main` with the request and buffer depots replacing each other (#103,
+  `be2531b`): `tools/test_mod.py` passes again with base game and Space Age, the quality and undo
+  scenarios included, and all 16 setup tests pass.
 - StyLua 2.5.2, Luacheck 1.2.0 and Ruff 0.17.3 passed; the emulator tests passed.
 - Not checked: the request panel and freighter slot tooltip in the graphical client.
 

@@ -13,13 +13,19 @@
 -- ghost with its request and freighters. A depot mined by hand and a bare replacement at its spot
 -- marked for deconstruction in the same tick each keep their own settings on their own action, and
 -- so do two depots mined by hand at one spot in a tick with the undo history at its limit, and in
--- adjacent ticks.
+-- adjacent ticks. And, needing a player too, request and buffer depots replaced in place
+-- (scripts/depot-swap.lua): a request depot by a buffer depot from the player's hand, and a buffer
+-- depot by a request depot from a ghost the player places over it, which robots build, and a request
+-- depot by a buffer depot from an upgrade planner mapping each to the other; each keeps its request,
+-- freighters and chest, and the player is handed no freighters.
 -- Writes script-output/jatz-undo-check.json.
 local FREIGHTER = "jatz-quinityn-freighter"
 local DEPOT = "jatz-request-depot"
 local CUT, MINED, KEPT = { x = 6.5, y = 0.5 }, { x = 6.5, y = -6.5 }, { x = 14.5, y = 0.5 }
 local PLATFORM_DEPOT, AFLOAT = "jatz-liquid-request-depot", { x = 8.5, y = 0.5 }
 local SWAPPED, AT_LIMIT, NEXT_TICK = { x = -2.5, y = -6.5 }, { x = -2.5, y = 6.5 }, { x = 2.5, y = -12.5 }
+local BUFFER, BY_HAND, BY_ROBOTS = "jatz-buffer-depot", { x = 2.5, y = 6.5 }, { x = 2.5, y = -6.5 }
+local BY_PLANNER = { x = 8.5, y = 6.5 }
 
 -- The freighters kept on every undo action for the removal of a request depot at `position`,
 -- newest first (0 for none).
@@ -137,6 +143,49 @@ script.on_event(defines.events.on_tick, function(event)
       and kept.to_be_deconstructed()
     pockets.remove({ name = "stone", count = pockets.get_item_count("stone") })
     assert(remote.call("jatz-distribution", "set_request", kept, "wood", 9))
+    -- Replaced in place (after the failed mining, which needs no depot in the player's pockets): a
+    -- request depot (2 freighters, 7 iron plates) by a buffer depot from the player's hand, at once;
+    -- a buffer depot (3 freighters, 9 iron plates) by a request depot from a ghost placed over it,
+    -- which marks it for upgrade, for robots to build.
+    local by_hand =
+      surface.create_entity({ name = DEPOT, position = BY_HAND, force = player.force, raise_built = true })
+    assert(remote.call("jatz-distribution", "set_request", by_hand, "wood", 4))
+    assert(remote.call("jatz-distribution", "add_freighters", by_hand, 2) == 2)
+    by_hand.get_inventory(defines.inventory.chest).insert({ name = "iron-plate", count = 7 })
+    local before = player.get_main_inventory().get_item_count(FREIGHTER)
+    player.cursor_stack.set_stack({ name = BUFFER, count = 1 })
+    player.build_from_cursor({ position = BY_HAND })
+    storage.result.hand_freighters_given = player.get_main_inventory().get_item_count(FREIGHTER) - before
+    local by_robots =
+      surface.create_entity({ name = BUFFER, position = BY_ROBOTS, force = player.force, raise_built = true })
+    assert(remote.call("jatz-distribution", "set_request", by_robots, "wood", 6))
+    assert(remote.call("jatz-distribution", "add_freighters", by_robots, 3) == 3)
+    by_robots.get_inventory(defines.inventory.chest).insert({ name = "iron-plate", count = 9 })
+    storage.store.insert({ name = DEPOT, count = 1 })
+    player.cursor_ghost = DEPOT
+    player.build_from_cursor({ position = BY_ROBOTS })
+    player.cursor_ghost = nil
+    -- A request depot (1 freighter, 5 iron plates) under an upgrade planner mapping request depots to
+    -- buffer depots and buffer depots to request depots.
+    local by_planner =
+      surface.create_entity({ name = DEPOT, position = BY_PLANNER, force = player.force, raise_built = true })
+    assert(remote.call("jatz-distribution", "set_request", by_planner, "wood", 3))
+    assert(remote.call("jatz-distribution", "add_freighters", by_planner, 1) == 1)
+    by_planner.get_inventory(defines.inventory.chest).insert({ name = "iron-plate", count = 5 })
+    storage.store.insert({ name = BUFFER, count = 1 })
+    local planner = game.create_inventory(1)
+    planner[1].set_stack({ name = "upgrade-planner" })
+    planner[1].set_mapper(1, "from", { type = "entity", name = DEPOT })
+    planner[1].set_mapper(1, "to", { type = "entity", name = BUFFER })
+    planner[1].set_mapper(2, "from", { type = "entity", name = BUFFER })
+    planner[1].set_mapper(2, "to", { type = "entity", name = DEPOT })
+    surface.upgrade_area({
+      area = { { BY_PLANNER.x - 1, BY_PLANNER.y - 1 }, { BY_PLANNER.x + 1, BY_PLANNER.y + 1 } },
+      force = player.force,
+      player = player,
+      item = planner[1],
+    })
+    planner.destroy()
     -- With Space Age: a liquid request depot on a space platform (gravity stops the item depots
     -- there), cut; the platform takes it within the tick.
     if script.active_mods["space-age"] then
@@ -255,6 +304,20 @@ script.on_event(defines.events.on_tick, function(event)
       result[name] = depot
           and { request = remote.call("jatz-distribution", "get_request", depot), freighters = freighters(depot) }
         or "not rebuilt"
+    end
+    for name, spot in pairs({
+      by_hand = { BY_HAND, BUFFER },
+      by_robots = { BY_ROBOTS, DEPOT },
+      by_planner = { BY_PLANNER, BUFFER },
+    }) do
+      local depot = depot_at(spot[1], spot[2])
+      result[name] = depot
+          and {
+            request = remote.call("jatz-distribution", "get_request", depot),
+            freighters = freighters(depot),
+            iron = depot.get_inventory(defines.inventory.chest).get_item_count("iron-plate"),
+          }
+        or "not replaced"
     end
     helpers.write_file("jatz-undo-check.json", helpers.table_to_json(result))
     script.finish_test(true)

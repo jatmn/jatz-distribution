@@ -14,6 +14,7 @@ local tunnels = require("scripts.tunnels")
 local undo = require("scripts.undo")
 local legacy_depots = require("scripts.legacy-depots")
 local depot_upgrades = require("scripts.depot-upgrades")
+local depot_swap = require("scripts.depot-swap")
 
 -- Road laid (`added`) or removed or covered (`removed`) on a surface: deliveries re-plan, and road
 -- network monitors there work out their networks again.
@@ -71,8 +72,10 @@ local function on_built(event)
       return
     end
     -- A depot replacing itself at another quality takes over all the old one had
-    -- (scripts/depot-upgrades.lua), before anything looks at it.
+    -- (scripts/depot-upgrades.lua), before anything looks at it; so does a request depot replacing a
+    -- buffer depot, or a buffer depot a request depot, as that depot (scripts/depot-swap.lua).
     depot_upgrades.built(entity)
+    depot_swap.built(entity)
     if loading_zone.depots[entity.name] then
       settle(entity)
     end
@@ -169,13 +172,15 @@ for name in pairs(logistics.requesting) do
 end
 -- A request depot mined by a player, robot or platform hands its freighters (in its slot and out
 -- on trips) to the miner; the mining buffer goes to their inventory. Not one being replaced by
--- itself at another quality: that one carries on as the new one (scripts/depot-upgrades.lua).
+-- itself at another quality: that one carries on as the new one (scripts/depot-upgrades.lua). Nor
+-- when it is mined to be replaced by a buffer depot, or a buffer depot by a request depot: the new
+-- one keeps them (scripts/depot-swap.lua).
 for _, event in ipairs({
   defines.events.on_robot_mined_entity,
   defines.events.on_space_platform_mined_entity,
 }) do
   script.on_event(event, function(mined)
-    if not depot_upgrades.mined(mined.entity) then
+    if not depot_upgrades.mined(mined.entity) and not depot_swap.replacing(mined.entity) then
       logistics.on_depot_mined(mined)
     end
   end, filters)
@@ -186,13 +191,19 @@ end
 -- stay with the new one.
 script.on_event(defines.events.on_player_mined_entity, function(event)
   undo.player_removed(event.entity, event.player_index)
-  if depot_upgrades.mined(event.entity, event.player_index) then
+  if
+    depot_upgrades.mined(event.entity, event.player_index) or depot_swap.replacing(event.entity, event.player_index)
+  then
     return
   end
   logistics.on_depot_mined(event)
 end, filters)
--- A player's builds, for telling a depot placed over itself at another quality from one mined.
-script.on_event(defines.events.on_pre_build, depot_upgrades.pre_build)
+-- A player's builds, for telling a depot placed over itself at another quality, or over the other
+-- of a request and buffer depot, from one mined.
+script.on_event(defines.events.on_pre_build, function(event)
+  depot_upgrades.pre_build(event)
+  depot_swap.on_pre_build(event)
+end)
 -- A depot or road network monitor a player removes keeps its settings on the removal's undo action
 -- (scripts/undo.lua), read just before it goes, freighters in its chest still counted: marked for
 -- deconstruction (as cutting does) by a player, then taken by robots or a space platform; or mined
@@ -212,7 +223,18 @@ end
 script.on_event(defines.events.on_pre_player_mined_item, function(event)
   undo.player_removing(event.entity, event.player_index)
 end, filters)
-script.on_event(defines.events.on_undo_applied, undo.on_undo_applied)
+-- Undoing a request or buffer depot replaced by hand swaps it back in place (scripts/depot-swap.lua),
+-- once its removal's settings went on any ghost undo brought back; redoing it swaps it again.
+local function swap_turned(depot)
+  on_turned({ entity = depot })
+end
+script.on_event(defines.events.on_undo_applied, function(event)
+  undo.on_undo_applied(event)
+  depot_swap.on_undo_applied(event, swap_turned)
+end)
+script.on_event(defines.events.on_redo_applied, function(event)
+  depot_swap.on_undo_applied(event, swap_turned)
+end)
 -- One about to be destroyed (died, or removed by a script that says so) leaves all its freighters,
 -- including any still in its chest, where it stands.
 for _, event in ipairs({ defines.events.on_entity_died, defines.events.script_raised_destroy }) do

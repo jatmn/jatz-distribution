@@ -655,10 +655,18 @@ do -- A depot replaced by itself at another quality (scripts/depot-upgrades.lua)
     else
       local cursor = {
         valid_for_read = true,
-        prototype = { place_result = { name = how == "player" and "jatz-request-depot" or "jatz-buffer-depot" } },
+        prototype = { place_result = { name = how == "player" and "jatz-request-depot" or "jatz-provider-depot" } },
       }
       game.get_player = function()
-        return { cursor_stack = cursor }
+        -- (No buffer depot stands there to be replaced by a request depot: scripts/depot-swap.lua.)
+        return {
+          cursor_stack = cursor,
+          surface = {
+            find_entities_filtered = function()
+              return {}
+            end,
+          },
+        }
       end
       fire("on_pre_build", { player_index = 1, tick = game.tick, position = { x = x + 0.3, y = 0.7 } })
       fire("on_pre_player_mined_item", { entity = old, player_index = 1 })
@@ -3780,6 +3788,135 @@ do -- A liquid depot shows the player's inventory, so a freighter can be picked 
   player.controller_type = defines.controllers.remote
   fire("on_gui_opened", { player_index = 21, entity = request })
   check("remote view shows no inventory to take freighters from", relative.jatz_depot_inventory == nil)
+end
+
+do -- Undoing a request depot replaced by a buffer depot by hand (one undo item: the request depot
+  -- removed, the buffer depot built) leaves the buffer depot marked for deconstruction under a
+  -- ghost of the request depot: scripts/depot-swap.lua marks it for upgrade to the request depot
+  -- instead, for robots to swap in place. Redo the same, the other way. The upgrade is to the
+  -- ghost's quality and facing, the depot the undo or redo brings back, not the standing one's: an
+  -- upgrade keeps the standing depot's facing, so it is turned to the ghost's first, as a player
+  -- turning it (its road follows its loading zone). A removal undone alone over such a depot is
+  -- left as the game made it.
+  local search = surface.find_entities_filtered
+  local NORTH, EAST, SOUTH = defines.direction.north, defines.direction.east, defines.direction.south
+  -- The road tile of a depot at x facing each way (the tile 2 away on its loading side).
+  local function loading_tile(x, facing)
+    if facing == EAST then
+      return cell(x - 2, 0)
+    elseif facing == SOUTH then
+      return cell(x, -2)
+    end
+    return cell(x, 2)
+  end
+  -- A depot standing at tile x, built, facing `standing_facing`, marked for deconstruction under a
+  -- ghost of its partner.
+  local function spot(x, standing_name, standing_quality, ghost_name, ghost_quality, standing_facing, ghost_facing)
+    local calls = {}
+    local standing = depot(x)
+    standing.name = standing_name
+    standing.direction = standing_facing
+    standing.quality = standing_quality
+    fire("on_built_entity", { entity = standing })
+    local ghost = {
+      valid = true,
+      name = "entity-ghost",
+      type = "entity-ghost",
+      ghost_name = ghost_name,
+      quality = ghost_quality,
+      direction = ghost_facing,
+    }
+    function ghost.destroy()
+      ghost.valid = false
+      calls.destroyed = true
+    end
+    standing.to_be_deconstructed = function()
+      return true
+    end
+    standing.cancel_deconstruction = function(force, player)
+      calls.cancelled = force == "player" and player == nil
+    end
+    standing.order_upgrade = function(order)
+      calls.upgrade = order.target.name == ghost_name
+        and order.target.quality == ghost_quality
+        and order.force == "player"
+        and order.player == nil
+      -- What robots' upgrade keeps: the facing the standing depot has when it is ordered.
+      calls.facing_at_order = standing.direction
+      return true
+    end
+    surface.find_entities_filtered = function(filter)
+      local found = {}
+      if filter.position and filter.position.x == standing.position.x and filter.position.y == 0.5 then
+        for _, entity in ipairs({ standing, ghost }) do
+          local names = type(filter.name) == "table" and filter.name or { filter.name }
+          local named = filter.name == nil
+          for _, name in ipairs(names) do
+            named = named or entity.name == name
+          end
+          if entity.valid and named and (filter.ghost_name == nil or entity.ghost_name == filter.ghost_name) then
+            found[#found + 1] = entity
+          end
+        end
+      end
+      return found
+    end
+    return calls, standing
+  end
+  local function action(x, kind, name)
+    return { type = kind, surface_index = 1, target = { name = name, position = { x = x + 0.5, y = 0.5 } } }
+  end
+  local function swapped(x)
+    return {
+      player_index = 20,
+      actions = { action(x, "removed-entity", "jatz-request-depot"), action(x, "built-entity", "jatz-buffer-depot") },
+    }
+  end
+  -- An east-facing request depot replaced by a north-facing, uncommon buffer depot: undoing it.
+  local calls, standing = spot(900, "jatz-buffer-depot", "uncommon", "jatz-request-depot", "normal", NORTH, EAST)
+  check("the buffer depot's road is at its own loading zone", loading_tile(900, NORTH).name == "jatz-depot-road")
+  fire("on_undo_applied", swapped(900))
+  check(
+    "undoing a swap by hand marks the depot for upgrade back, to the ghost's quality, instead of deconstruction",
+    calls.cancelled and calls.destroyed and calls.upgrade
+  )
+  check(
+    "turned to the facing it had before the order, which the robots' upgrade keeps",
+    calls.facing_at_order == EAST and standing.direction == EAST
+  )
+  check(
+    "its road and loading zone follow, as a turn: the restored side has road, the buffer's is put back",
+    loading_tile(900, EAST).name == "jatz-depot-road" and loading_tile(900, NORTH).name == "grass-1"
+  )
+  -- Redoing it: an east-facing request depot, marked under a ghost of the south-facing buffer depot the redo brings back.
+  calls, standing = spot(910, "jatz-request-depot", "normal", "jatz-buffer-depot", "uncommon", EAST, SOUTH)
+  fire("on_redo_applied", swapped(910))
+  check(
+    "and redoing it marks it for upgrade again, to the ghost's quality",
+    calls.cancelled and calls.destroyed and calls.upgrade
+  )
+  check(
+    "at the facing the redo brings back, road following",
+    calls.facing_at_order == SOUTH
+      and standing.direction == SOUTH
+      and loading_tile(910, SOUTH).name == "jatz-depot-road"
+      and loading_tile(910, EAST).name == "grass-1"
+  )
+  -- Already facing as the ghost does: not turned, its road stays.
+  calls, standing = spot(920, "jatz-buffer-depot", "normal", "jatz-request-depot", "normal", EAST, EAST)
+  local before = storage.depot_roads[standing.unit_number]
+  fire("on_undo_applied", swapped(920))
+  check(
+    "a depot facing as the ghost does is left as it faces",
+    calls.upgrade
+      and calls.facing_at_order == EAST
+      and storage.depot_roads[standing.unit_number] == before
+      and loading_tile(920, EAST).name == "jatz-depot-road"
+  )
+  calls = spot(930, "jatz-buffer-depot", "normal", "jatz-request-depot", "normal", NORTH, EAST)
+  fire("on_undo_applied", { player_index = 20, actions = { action(930, "removed-entity", "jatz-request-depot") } })
+  check("a removal undone alone is left as the game made it", calls.cancelled == nil and calls.upgrade == nil)
+  surface.find_entities_filtered = search
 end
 
 print("all control event checks passed")
