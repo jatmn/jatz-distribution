@@ -4,9 +4,9 @@ Latest in-game results for the current artwork. The full screenshots and reports
 
 ## Quality: passed (automated)
 
-**November 14, 2026.** Quality support rebased onto `1fb8f9d133d4fa8bd5b6b7b0ab9c92c62be1d674`
-(after road tunnels by measured road length, #97), Factorio 2.1.24 headless on Linux (build 87808),
-base game and Space Age with Quality.
+**November 14, 2026.** Quality support rebased onto `26a2ee23fef495fc6baa096007b3f49500ebef90`
+(after depots marked for deconstruction stop refilling, #100), Factorio 2.1.24 headless on Linux
+(build 87808), base game and Space Age with Quality.
 
 - `tools/test_mod.py`: packaged mod passed with the base game and Space Age, including the new
   quality scenario. That covers requests by quality, better freighters and depots, a robot upgrade
@@ -14,7 +14,7 @@ base game and Space Age with Quality.
   arrive instead of rare, a rare freighter brings 100 with a 20 MJ tank, and an upgraded depot loses
   its request and freighters.
 - `tools/test_mod_setup.py`: all 15 setup tests passed, including the new `tests/lua/quality.lua`
-  (93 checks) on the shared `tests/lua/harness.lua`, the logistics harness's 760 the same as on
+  (125 checks) on the shared `tests/lua/harness.lua`, the logistics harness's 768 the same as on
   `main`, and the control-event checks for upgrades, the quality panel and its fuel tooltip.
 - An independent review found four defects: room by quality when planning, rare cargo refiled as
   normal, a hand-mined upgrade-marked depot, and a Fuel depot's refuel stop. All are fixed, each with
@@ -30,17 +30,27 @@ base game and Space Age with Quality.
   normal freighter's 20 MJ beside a full rare freighter's 32 MJ. Both are fixed, with checks that fail
   before the fix; the fuel descriptions now give 20 MJ as a normal freighter's tank and say a depot
   sends its best freighters first.
-- StyLua 2.5.2, Luacheck 1.2.0 and Ruff 0.17.3 passed; the emulator tests passed.
+- A fourth review (of `52f7016`) found four more, all fixed with checks that fail before the fix:
+  cargo of a quality the request no longer takes (changed after it was loaded) had no room kept for
+  it, so another freighter took the stack and it was spilled (in the engine, with one stack, an epic,
+  a "≥ epic" and a normal request all spilled the rare plate; now it goes in); a player's fast
+  replace at another quality left the removal's undo action without the depot's settings (now the
+  quality scenario finds them there); a quality asked for again from robots joined its earlier ask,
+  so a freighter put in by hand cancelled the wrong one (rare, normal, rare and a rare by hand
+  brought 2 rare; now 1 rare and 1 normal); and a freighter whose promise a request change dropped
+  searched for a provider again after every answer (now it goes home empty).
+- StyLua, Luacheck 1.2.0 and Ruff 0.17.3 passed; the emulator tests passed.
 - Not checked: the request panel and freighter slot tooltip in the graphical client.
 
-The deterministic quick emulator comparison reports +3.8% mean Lua instructions (+7.2% p99,
-+5.8% worst tick), +0.6% API calls, and identical paths, commands, vehicles and deliveries (standard
-preset: +2.7% mean, +3.5% worst tick). In game, standard preset, five alternating runs per revision:
+The deterministic quick emulator comparison reports +4.2% mean Lua instructions (+8.3% p99,
++6.7% worst tick), +0.6% API calls, and identical paths, commands, vehicles and deliveries (standard
+preset: +3.0% mean, +4.1% worst tick). In game, standard preset, five alternating runs per revision
+against `26a2ee2`, on an AMD Ryzen 7 8845HS:
 
 | | Mean update (ms) | UPS | Script (ms) | Pathfinder (ms) | p99 (ms) | Max (ms) | Run spread (ms) | Vehicles out | Delivered/min |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Before | 1.352 | 740 | 0.546 | 0.053 | 3.854 | 7.306 | 0.049 | 1510 | 264720 |
-| After | 1.388 | 721 | 0.565 | 0.055 | 3.892 | 7.354 | 0.074 | 1510 | 264720 |
+| Before | 1.096 | 912 | 0.432 | 0.052 | 3.424 | 8.602 | 0.190 | 1510 | 264720 |
+| After | 1.097 | 912 | 0.443 | 0.048 | 3.292 | 6.683 | 0.221 | 1510 | 264720 |
 
 ## Explicit runtime states: passed (automated)
 
