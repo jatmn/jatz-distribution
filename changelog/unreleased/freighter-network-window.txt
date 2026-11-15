@@ -1,0 +1,2 @@
+  Features:
+    - A "Freighter network" button on the shortcut bar (after Freight system research) opens a window showing your freighters, how many are out on the road, your depots of each kind, and the items and fluids provider and buffer depots hold. With Space Age, or depots on more than one surface, pick a planet or space platform to see its numbers alone.
