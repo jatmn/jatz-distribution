@@ -1525,6 +1525,7 @@ require("tests.lua.freighter-storage")({
   check = check,
   liquids = liquids,
   entity = entity,
+  tank = tank,
   stack = stack,
   script_inventory = script_inventory,
   answer = answer,

@@ -3643,6 +3643,11 @@ function logistics.add_all()
         depot.request = nil
       end
       logistics.forget_lost_qualities(depot)
+      if depot.reserve and not prototypes.fluid[depot.reserve.name] then
+        -- So was the mod of the fluid its parked freighters hold (logistics.store_in_freighters):
+        -- gone with it, as from freighters on the road, before anything pumps or counts it.
+        depot.reserve = nil
+      end
       if depot.circuit_condition then
         -- Signals whose mod was removed leave the condition (the game can't read them).
         depot.circuit_condition = depot_circuit.condition(depot.circuit_condition)

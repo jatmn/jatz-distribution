@@ -111,4 +111,52 @@ return function(h)
       request.held.amount == 750 and logistics.freighter_stored(request).amount == 0
     )
   end
+
+  do -- Freighters holding a fluid whose mod was removed forget it on load (add_all), as the request
+    -- and the trips do, rather than pumping a fluid the game no longer knows; other fluids stay.
+    local logistics = reset()
+    prototypes.fluid["mod-fluid"] = { fuel_value = 0 }
+    local request = liquids(logistics, 1000000, 40)
+    local buffer = h.tank("jatz-liquid-buffer-depot", 40.5, 0.5)
+    local other = h.tank("jatz-liquid-request-depot", 60.5, 0.5)
+    logistics.add(buffer)
+    logistics.add(other)
+    for _, tank in ipairs({ request, buffer, other }) do
+      local insert = tank.insert_fluid
+      tank.insert_fluid = function(spec) -- as the game does
+        assert(prototypes.fluid[spec.name], "Unknown fluid name: " .. spec.name)
+        return insert(spec)
+      end
+    end
+    -- Ticked, asking for the mod's fluid; unticked, asking for water while holding the mod's fluid
+    -- from before; ticked, holding water.
+    assert(logistics.set_request(request, "mod-fluid", 1000000))
+    assert(logistics.set_freighter_storage(request, true))
+    assert(logistics.set_request(buffer, "water", 1000))
+    assert(logistics.set_request(other, "water", 1000))
+    assert(logistics.set_freighter_storage(other, true))
+    storage.depots[request.unit_number].reserve = { name = "mod-fluid", amount = 750, temperature = 40 }
+    storage.depots[buffer.unit_number].reserve = { name = "mod-fluid", amount = 500, temperature = 40 }
+    storage.depots[other.unit_number].reserve = { name = "water", amount = 600, temperature = 60 }
+    prototypes.fluid["mod-fluid"] = nil
+    logistics.add_all()
+    check(
+      "a removed fluid's request and stored fluid are forgotten, ticked or not",
+      not logistics.get_request(request)
+        and not storage.depots[request.unit_number].reserve
+        and not storage.depots[buffer.unit_number].reserve
+        and logistics.freighter_stored(request).amount == 0
+    )
+    local kept = storage.depots[other.unit_number].reserve
+    check(
+      "another fluid's is kept as it was",
+      kept and kept.name == "water" and kept.amount == 600 and kept.temperature == 60
+    )
+    game.tick = 60
+    check("the game carries on", pcall(logistics.on_tick))
+    check(
+      "pumping the water into its tank",
+      other.held.name == "water" and other.held.amount == 600 and other.held.temperature == 60
+    )
+  end
 end
