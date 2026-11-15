@@ -1,2 +1,0 @@
-  Bugfixes:
-    - The Bonuses window now shows researched freighter speed, item capacity and fluid capacity, in a "Freighters" panel beside it.
