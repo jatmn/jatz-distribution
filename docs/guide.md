@@ -65,6 +65,10 @@ If one freighter isn't enough, or one provider doesn't have it all, the depot se
 
 Tick **Full loads only** on a request or buffer depot (item or liquid) to keep freighters from driving out for a handful of items. A freighter then sets off only when it can come back full: a depot it fetches from has a whole load to give (two stacks of the item, or 750 of a fluid, more with capacity research), and the requesting depot has room for one. Providers holding less are passed by, even when they're nearer, and smaller amounts wait until a full load is ready. A request smaller than one load counts as a full load, so it's fetched whole once the depot has room for all of it. The check is made when a freighter sets off, and again if it's sent on to another provider. If the depot fills up some other way, or the provider's stock is taken, while the freighter is on its way, it still brings back what fits rather than come home empty. It's off by default. To have new request and buffer depots start with it ticked, turn on **Full loads only by default** under **Settings → Mod settings → Startup**. Depots already built keep their own setting, and blueprints and copy and paste carry each depot's own.
 
+### Use freighter storage
+
+Tick **Use freighter storage** on a liquid request or buffer depot to count its freighters as storage. The depot can then hold, and request, as much as all its freighters carry when that is more than its tank: 50 freighters carrying 2,625 each hold 131,250, so with a 25,000 tank the freighters add 106,250. Both parked freighters and those out on trips count, so adding freighters, losing them or researching freighter fluid capacity changes it. The request you type is kept and asked for as far as the depot can hold, so the amount in the window follows the limit. Fluid the tank has no room for stays in the parked freighters, shown under the checkbox, and goes into the tank as soon as there is room, even after you untick it. If you change the depot's request to another fluid, fluid the freighters still hold waits in them, rather than go into pipes now meant for the other fluid, until you ask for it again. Fluid the freighters hold is lost if the depot is removed. It's off by default.
+
 ## The freighter slot
 
 A request depot holds up to **100 freighters** in its freighter slot.
@@ -150,7 +154,7 @@ Liquid depots work the same way for fluids. Research **Liquid freight** to unloc
 - A **liquid request** depot keeps a fluid in its tank, sending its freighters to liquid provider depots and liquid buffer depots (buffers first if **Request from buffer depots** is ticked, only when no provider can supply it otherwise), 750 units at a time (more with fluid capacity research).
 - A **liquid buffer** depot fills from liquid providers only.
 - Liquid provider and buffer depots have the same priority slider.
-- Every liquid depot's tank holds 25,000 by default. You can change the tank size of liquid provider depots and of liquid buffer depots separately under **Settings → Mod settings → Startup**. Making a tank smaller on an existing save can lose the fluid above the new size. A liquid request or buffer depot can't request more than its tank holds: a larger amount is set to the tank's size.
+- Every liquid depot's tank holds 25,000 by default. You can change the tank size of liquid provider, liquid request and liquid buffer depots separately under **Settings → Mod settings → Startup**. Making a tank smaller on an existing save can lose the fluid above the new size. A liquid request or buffer depot can't request more than its tank holds: a larger amount is set to the tank's size. Its freighters only set off for what still fits in the tank, counting what is already on its way, so a 25,000 tank with freighters carrying 2,625 each has room for 9 full loads out at once, and a tenth freighter for the last 1,375 (not with **Full loads only** ticked); a bigger tank lets more go. A request keeps the amount you typed and asks for as much of it as the tank holds, so it follows the tank's size; one set in an older version of the mod at as much as it could then ask for (25,000 for a liquid request depot; a liquid buffer depot's tank size, if that hasn't changed since) asks to fill the depot, and any other keeps its amount. With **Use freighter storage** ticked, a depot can hold more than its tank (see above).
 - Fluids keep their temperature on the way.
 - A liquid depot whose tank holds a different fluid waits until it is emptied.
 - Freighters never set off for less than **100** of a fluid, so the last drops pumps leave in a tank, or a little drained out of the requesting tank by pipes, don't keep them driving back and forth. The requesting depot waits until it has room for 100 and a depot it fetches from has 100 to give. A request below 100 is fetched whole once there is room for all of it. **Full loads only** still raises this to a whole load.
@@ -198,7 +202,7 @@ To switch depots on what the road network holds or needs, build a **road network
 
 - **What provider and buffer depots hold** (the default): what freighters can fetch.
 - **What provider depots hold**: buffer depots left out.
-- **What request depots hold**: item and liquid request depots, not buffer depots.
+- **What request depots hold**: item and liquid request depots, not buffer depots. A liquid request depot's fluid waiting in its parked freighters (**Use freighter storage**) counts with its tank's.
 - **What request depots still need**: each request depot's request, less what it holds and what freighters are already bringing it. A depot marked for deconstruction needs nothing.
 
 More about it:
@@ -217,7 +221,7 @@ With [Milestones](https://mods.factorio.com/mod/Milestones) installed, its list 
 
 ## Copy, paste and blueprints
 
-- Copy and Paste settings, copy and paste, and blueprints carry a request depot's request, its **Request from buffer depots** and **Full loads only** settings, and its number of freighters. The new depot asks for the freighters (as a ghost request), and construction robots, or you by hand, bring them. This works for liquid depots too.
+- Copy and Paste settings, copy and paste, and blueprints carry a request depot's request, its **Request from buffer depots**, **Full loads only** and **Use freighter storage** settings, and its number of freighters. The new depot asks for the freighters (as a ghost request), and construction robots, or you by hand, bring them. This works for liquid depots too.
 - They carry every depot's circuit condition too.
 - Blueprint parametrisation works on request and buffer depots' requests and freighters: a blueprint of a depot offers its request's item or fluid and amount as parameters, and its number of freighters (as a number only, with no item to swap), and the depots built from it request what you fill in and ask robots for that many freighters. The blueprint lists one "Depot request settings" per request or buffer depot; it is how the game sees the request and freighters, and never stays in the world. Pasting a blueprint over the same kind of depot already built sets its request (clearing it if the blueprint's depot had none) and freighters too. A request above 2,147,483,647 (the most a blueprint parameter holds) is kept, pasting over a depot included, but can't be parametrised.
 - Cloned depots keep their request and circuit condition.

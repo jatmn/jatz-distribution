@@ -1073,6 +1073,10 @@ do -- With qualities (the Quality mod), an item request's quality has its own ro
   check("which the item chosen next takes", got.item == "wood" and got.quality == "uncommon" and got.comparator == "<")
   local liquid = depot(250)
   liquid.name = "jatz-liquid-request-depot"
+  -- (Its panel shows what the freighters hold, which reads the tank's size.)
+  liquid.get_fluid_capacity = function()
+    return 25000
+  end
   fire("on_built_entity", { entity = liquid })
   fire("on_gui_opened", { player_index = 15, entity = liquid })
   inner = relative.jatz_request_frame.children[1]
@@ -2036,6 +2040,24 @@ do -- The "full loads only" checkbox, on buffer and request depots alike, carrie
     "set off again, new depots start without it",
     not logistics.get_full_loads(requesting(310, "jatz-request-depot"))
   )
+
+  -- Freighter storage, liquid depots only: ticked, pasted, blueprinted and built from the blueprint.
+  local storing, pasted_onto = requesting(320, "jatz-liquid-request-depot"), requesting(330, "jatz-liquid-buffer-depot")
+  storage.request_gui = { [11] = storing }
+  fire("on_gui_checked_state_changed", {
+    player_index = 11,
+    element = { name = "jatz_request_freighter_storage", state = true },
+  })
+  check("ticking freighter storage on a liquid request depot", logistics.get_freighter_storage(storing))
+  fire("on_entity_settings_pasted", { source = storing, destination = pasted_onto, player_index = 11 })
+  check("Copy and Paste settings carries it to a liquid buffer depot", logistics.get_freighter_storage(pasted_onto))
+  local storing_tags = blueprinted(storing)
+  check("a blueprint keeps it", storing_tags.jatz_freighter_storage == true)
+  check(
+    "and the depot built from it has it",
+    logistics.get_freighter_storage(built_from(storing_tags, 340, "jatz-liquid-request-depot"))
+  )
+  check("an item depot's blueprint has no such tag", blueprinted(on_request).jatz_freighter_storage == nil)
 end
 
 do -- The priority slider: provider depots get a panel with it and their circuit condition; buffer
@@ -2116,13 +2138,28 @@ do -- The priority slider: provider depots get a panel with it and their circuit
   check("an item chosen starts at one stack", logistics.get_request(request).count == 100 and amount.text == "100")
   amount.text = "1000000"
   fire("on_gui_text_changed", { player_index = 11, element = amount, text = amount.text })
+  check("an amount above its 48 stacks is 48 stacks", logistics.get_request(request).count == 4800)
+  nth[30]()
+  check("the field keeps what is being typed", amount.text == "1000000")
+  fire("on_gui_confirmed", { player_index = 11, element = amount })
+  check("and shows 48 stacks once confirmed", amount.text == "4800")
+  amount.text = ""
+  fire("on_gui_text_changed", { player_index = 11, element = amount, text = amount.text })
+  game.tick = game.tick + 120
+  nth[30]()
   check(
-    "an amount above its 48 stacks is 48 stacks, in the field too",
-    logistics.get_request(request).count == 4800 and amount.text == "4800"
+    "a field emptied asks for nothing, and stays empty",
+    logistics.get_request(request).count == 0 and amount.text == ""
   )
+  amount.text = "1000000"
+  fire("on_gui_text_changed", { player_index = 11, element = amount, text = amount.text })
+  game.tick = game.tick + 120
+  nth[30]()
+  check("typing stopped, it shows 48 stacks too", amount.text == "4800")
   assert(logistics.set_request(request, nil))
   local full_loads = inner.jatz_request_full_loads
   check("it has the full-loads-only checkbox, unticked", full_loads and full_loads.state == false)
+  check("but no freighter storage, which is for liquid depots", inner.jatz_request_freighter_storage == nil)
   logistics.set_full_loads(request, true)
   nth[30]()
   check(
@@ -2315,12 +2352,75 @@ do -- Liquid depots: the same panels, beside the storage tank window, choosing a
   local request_set = logistics.get_request(request)
   check("a fluid chosen starts at 1000", request_set and request_set.item == "water" and request_set.count == 1000)
   local amount = inner.request_row.jatz_request_count
+  -- Typed key by key: the field isn't rewritten under the cursor, so each key adds to what was typed.
+  for length = 1, 7 do
+    amount.text = string.sub("1000000", 1, length)
+    fire("on_gui_text_changed", { player_index = 12, element = amount, text = amount.text })
+  end
+  check("an amount above the tank's size is its size", logistics.get_request(request).count == 25000)
+  check("keeping the amount typed, key by key", logistics.get_request(request).asked == 1000000)
+  fire("on_gui_confirmed", { player_index = 12, element = amount })
+  check("in the field too, once confirmed", amount.text == "25000")
+  -- Another fluid chosen keeps the amount typed, not the 25,000 the field shows: so ticking freighter
+  -- storage later still raises it.
+  prototypes.fluid.steam = { fuel_value = 0 }
+  chooser.elem_value = "steam"
+  fire("on_gui_elem_changed", { player_index = 12, element = chooser })
+  request_set = logistics.get_request(request)
+  check(
+    "another fluid chosen keeps the amount typed",
+    request_set.item == "steam" and request_set.asked == 1000000 and amount.text == "25000"
+  )
+  chooser.elem_value = "water"
+  fire("on_gui_elem_changed", { player_index = 12, element = chooser })
+  check("and so does the first again", logistics.get_request(request).asked == 1000000)
+  prototypes.fluid.steam = nil
+  local freighter_storage = inner.jatz_request_freighter_storage
+  check("it has the freighter storage checkbox, unticked", freighter_storage and freighter_storage.state == false)
+  check("with what its freighters hold hidden", inner.freighter_stored and not inner.freighter_stored.visible)
+  -- A force with no freighter research: they carry 750 each.
+  local technologies, force = prototypes.technology, request.force
+  prototypes.technology, request.force = {}, { name = "player", index = 1, technologies = {} }
+  local parked = script_inventory()
+  parked[1].count = 40
+  storage.depots[request.unit_number].trucks = parked
+  freighter_storage.state = true
+  fire("on_gui_checked_state_changed", { player_index = 12, element = freighter_storage })
+  check("ticking it uses the depot's freighters as storage", logistics.get_freighter_storage(request))
+  check(
+    "it asks for what its 40 freighters carry, in the field too",
+    logistics.get_request(request).count == 30000 and amount.text == "30000"
+  )
+  check(
+    "and shows what they hold, of the 5,000 they add",
+    inner.freighter_stored.visible
+      and inner.freighter_stored.caption[1] == "jatz-gui.freighter-stored"
+      and inner.freighter_stored.caption[3] == 0
+      and inner.freighter_stored.caption[4] == 5000
+  )
+  parked[1].count = 20
+  -- (The depot's once-a-second check fits its request to what it can hold.)
+  logistics.fit_request(storage.depots[request.unit_number])
+  nth[30]()
+  check("with fewer freighters the field follows", amount.text == "25000")
+  amount.text = "10000000"
+  fire("on_gui_text_changed", { player_index = 12, element = amount, text = amount.text })
+  parked[1].count = 40
+  logistics.fit_request(storage.depots[request.unit_number])
+  nth[30]()
+  check("but not over an amount being typed", amount.text == "10000000")
+  freighter_storage.state = false
+  fire("on_gui_checked_state_changed", { player_index = 12, element = freighter_storage })
+  check(
+    "unticking it asks for the tank's size again",
+    not logistics.get_freighter_storage(request) and logistics.get_request(request).count == 25000
+  )
   amount.text = "1000000"
   fire("on_gui_text_changed", { player_index = 12, element = amount, text = amount.text })
-  check(
-    "an amount above the tank's size is its size, in the field too",
-    logistics.get_request(request).count == 25000 and amount.text == "25000"
-  )
+  fire("on_gui_confirmed", { player_index = 12, element = amount })
+  parked[1].count = 0
+  storage.depots[request.unit_number].trucks = nil
+  prototypes.technology, request.force = technologies, force
 
   local buffer = liquid(310, "jatz-liquid-buffer-depot")
   fire("on_gui_opened", { player_index = 12, entity = buffer })
@@ -2372,13 +2472,16 @@ do -- Liquid depots: the same panels, beside the storage tank window, choosing a
   logistics.setup_blueprint(blueprint, { request })
   local tags = saved[1].tags
   check("a liquid request depot's blueprint keeps its request", tags and tags.jatz_request.item == "water")
+  check("and freighter storage, off", tags.jatz_freighter_storage == false)
   local settings = saved[2] and saved[2].control_behavior.decider_conditions.conditions[1]
+  -- The amount set (1,000,000 typed above), not as far as this tank holds: the depot built from it
+  -- asks for that as far as it can hold, which freighter storage can make more.
   check(
     "and its request settings, as a fluid",
     saved[2].name == "jatz-depot-settings"
       and settings.first_signal.type == "fluid"
       and settings.first_signal.name == "water"
-      and settings.constant == 25000
+      and settings.constant == 1000000
   )
   check("and how many freighters", tags.jatz_freighters == 4)
   local freighter_settings = saved[2] and saved[2].control_behavior.decider_conditions.conditions[2]
@@ -2761,10 +2864,44 @@ do -- The road network monitor shows what the provider and buffer depots on its 
     seen["item:stone:normal"] == nil and seen["item:iron-plate:normal"] == 10 and seen["fluid:water:normal"] == 1500
   )
   check("and only that choice ticked", not panel.inner.jatz_monitor_reading_supply.state)
+  -- Two liquid request depots, with nothing requested, holding fluid in their parked freighters too
+  -- (logistics.store_in_freighters): one 600.5 water in its tank and 400.5 in its freighters, the
+  -- other 250.75 steam in its freighters only (asked for before), its tank empty. And a liquid
+  -- buffer depot with 100 water in its tank and 50 in its freighters.
+  local function stored(contents, reserve, name)
+    local entity = depot(504)
+    entity.name = name or "jatz-liquid-request-depot"
+    entity.get_fluid_contents = function()
+      return contents()
+    end
+    fire("on_built_entity", { entity = entity })
+    storage.depots[entity.unit_number].reserve = reserve
+    return entity
+  end
+  local tanked = stored(function()
+    return { water = 600.5 }
+  end, { name = "water", amount = 400.5, temperature = 15 })
+  stored(function()
+    return {}
+  end, { name = "steam", amount = 250.75, temperature = 165 })
+  stored(function()
+    return { water = 100 }
+  end, { name = "water", amount = 50, temperature = 15 }, "jatz-liquid-buffer-depot")
   seen = choose("requests")
   check(
     "request depots only: the 5 wood it holds, nothing else",
     seen["item:wood:normal"] == 5 and seen["item:iron-plate:normal"] == nil and seen["item:stone:normal"] == nil
+  )
+  check(
+    "and fluid in liquid request depots' tanks and parked freighters, in whole units once",
+    seen["fluid:water:normal"] == 1001 and seen["fluid:steam:normal"] == 250
+  )
+  local counts = storage.road_monitors[monitor.unit_number].counted[tanked.unit_number]
+  check("counted as the depot's own, for its circuit condition", counts and counts["fluid/water/normal"] == 1001)
+  seen = choose("supply")
+  check(
+    "and not as supply, a buffer depot's freighters' left out too",
+    seen["fluid:water:normal"] == 1600 and seen["fluid:steam:normal"] == nil
   )
   seen = choose("needs")
   check(
@@ -3793,6 +3930,9 @@ do -- A liquid depot shows the player's inventory, so a freighter can be picked 
     end
     entity.get_fluid_contents = function()
       return {}
+    end
+    entity.get_fluid_capacity = function()
+      return 25000
     end
     fire("on_built_entity", { entity = entity })
     return entity

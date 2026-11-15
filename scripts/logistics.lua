@@ -487,6 +487,11 @@ function logistics.add(entity)
     -- Request and buffer depots start with "Full loads only" as the startup setting says (off
     -- unless changed); blueprint tags and copied settings then set their own (scripts/blueprints.lua).
     full_loads = REQUESTING[role] and settings.startup["jatz-default-full-loads"].value or nil,
+    -- Liquid request and buffer depots ticked to use their freighters as storage
+    -- (logistics.fluid_limit), and the fluid their parked freighters hold for the tank meanwhile:
+    -- { name, amount, temperature } (logistics.store_in_freighters). Off, and nil, until then.
+    freighter_storage = nil,
+    reserve = nil,
   }
   storage.depots[entity.unit_number] = depot
   index_depot(entity.unit_number, depot, true)
@@ -723,12 +728,20 @@ end
 
 -- The request of a request depot: { item = name, count = n, quality =, comparator = }, or nil. The
 -- quality is there only when not normal, the comparator only when not "=" ("any" for any quality,
--- with no quality): scripts/quality.lua.
+-- with no quality): scripts/quality.lua. With `asked`, the amount set, when that is more: a liquid
+-- depot asks for it as far as it can hold, which can change (logistics.fit_request).
 function logistics.get_request(entity)
   local depot = request_depot(entity)
   local request = depot and depot.request
+  local asked = request and request.asked
   return request
-    and { item = request.item, count = request.count, quality = request.quality, comparator = request.comparator }
+    and {
+      item = request.item,
+      count = request.count,
+      asked = asked and asked > request.count and asked or nil,
+      quality = request.quality,
+      comparator = request.comparator,
+    }
 end
 
 -- Drop the searches under way for a requesting depot, which were for the old set or order of depots
@@ -785,6 +798,139 @@ function logistics.set_full_loads(entity, full_loads)
   return true
 end
 
+-- Whether a liquid request or buffer depot uses its freighters as storage: it can then hold, and
+-- ask for, as much as all its freighters carry, when that is more than its tank (fluid_limit).
+function logistics.get_freighter_storage(entity)
+  local depot = request_depot(entity)
+  return depot and depot.fluid and depot.freighter_storage == true or false
+end
+
+-- Returns false, changing nothing, for anything but a liquid request or buffer depot. Fluid its
+-- freighters already hold stays with them, going into the tank as it has room, ticked or not.
+function logistics.set_freighter_storage(entity, freighter_storage)
+  local depot = request_depot(entity)
+  if not (depot and depot.fluid) then
+    return false
+  end
+  depot.freighter_storage = freighter_storage == true or nil
+  logistics.fit_request(depot)
+  depot.cooldowns = {}
+  depot.retry_at = 0
+  restart_depot_searches(depot)
+  return true
+end
+
+-- The most a liquid request or buffer depot can hold, and its tank's size. Its tank's size; or,
+-- using its freighters as storage, what all of them carry (parked and out, at the force's fluid
+-- capacity) when that is more: the owner's rule (November 14, 2026), 25,000 and 50 freighters of
+-- 2,625 hold 131,250, the freighters 106,250 of it.
+function logistics.fluid_limit(depot)
+  -- Whole units, as request_limit reads it: a better tank holds a hair over a round number.
+  local tank = math.floor(depot.entity.get_fluid_capacity(1))
+  if not depot.freighter_storage then
+    return tank, tank
+  end
+  local parked, out = logistics.freighter_counts(depot.entity)
+  return math.max(tank, (parked + out) * research.fluid_capacity_of(depot.entity.force)), tank
+end
+
+-- The amount a liquid depot's request keeps (`asked`) to fill the depot, whatever it can hold:
+-- the most a blueprint parameter holds (a condition's int32, scripts/depot-settings.lua), so tags,
+-- blueprints and copy and paste carry it as they do any amount set. No depot holds as much.
+logistics.request_fill = 2147483647
+
+-- A liquid depot's request is the amount set as far as it can hold: that follows the depot's
+-- limit as freighters come and go, research raises their capacity, or freighter storage is ticked
+-- (checked once a second, from dispatch). An amount set that no tag or blueprint can hold
+-- (infinity, from a number or text too large for one) asks to fill the depot (request_fill), so it
+-- follows the limit too, rather than staying at whatever the depot held when it was set.
+-- A request from before `asked` was kept holds only the amount it was capped to, so it gets its
+-- `asked` here, the first time it is fitted (on load or not: a save loaded without a configuration
+-- change has these too): one at its tank's size, capped from whatever was typed, asks to fill the
+-- depot; any other keeps its amount. A liquid request depot's tank was 25,000 before it had a
+-- setting, so for one of those that is the size it was capped at, whatever its size now; a liquid
+-- buffer depot's size then isn't known, so only its size now is.
+function logistics.fit_request(depot)
+  local request = depot.request
+  if not (request and depot.fluid) then
+    return
+  end
+  local limit, tank = logistics.fluid_limit(depot)
+  if request.asked == nil then
+    local capped = request.count == tank or (depot.role == "request" and request.count >= 25000)
+    request.asked = capped and logistics.request_fill or request.count
+  elseif request.asked == math.huge then
+    request.asked = logistics.request_fill
+  end
+  request.count = math.min(request.asked, limit)
+end
+
+-- How much of `name` (any fluid, without) a liquid depot's parked freighters hold for its tank.
+function logistics.reserve_of(depot, name)
+  local reserve = depot.reserve
+  return reserve and (name == nil or reserve.name == name) and reserve.amount or 0
+end
+
+-- Fluid a freighter brought home that its depot's tank had no room for stays in the depot's parked
+-- freighters, as far as they have room (the depot's limit less its tank's size, less what they
+-- hold already, all of one fluid): only the fluid the depot asks for now, so one fetched before
+-- its request changed goes back rather than wait to be pumped into pipes now meant for another.
+-- What doesn't fit stays aboard. Returns how much was kept.
+function logistics.store_in_freighters(depot, trip)
+  local reserve, request = depot.reserve, depot.request
+  if
+    not depot.freighter_storage
+    or trip.fluid.amount <= 0
+    or not (request and request.item == trip.item)
+    or (reserve and reserve.name ~= trip.item)
+  then
+    return 0
+  end
+  local limit, tank = logistics.fluid_limit(depot)
+  local held = reserve and reserve.amount or 0
+  local kept = math.min(trip.fluid.amount, limit - tank - held)
+  if kept <= 0 then
+    return 0
+  end
+  local temperature = trip.fluid.temperature or 15
+  if reserve then
+    reserve.temperature = (reserve.temperature * held + temperature * kept) / (held + kept)
+    reserve.amount = held + kept
+  else
+    depot.reserve = { name = trip.item, amount = kept, temperature = temperature }
+  end
+  trip.fluid.amount = trip.fluid.amount - kept
+  return kept
+end
+
+-- Pump what a liquid depot's parked freighters hold into its tank, as far as it has room: while
+-- the depot asks for that fluid, or for nothing. Held for a request since changed to another
+-- fluid, it waits (the tank's pipes are now for the other), until that fluid is asked for again.
+function logistics.drain_reserve(depot)
+  local reserve, request = depot.reserve, depot.request
+  if not reserve or (request and request.item ~= reserve.name) then
+    return
+  end
+  if reserve.amount > 0 then
+    reserve.amount = reserve.amount
+      - depot.entity.insert_fluid({ name = reserve.name, amount = reserve.amount, temperature = reserve.temperature })
+  end
+  if reserve.amount <= 0 then
+    depot.reserve = nil
+  end
+end
+
+-- What a liquid request or buffer depot's freighters hold for its tank and have room for, for its
+-- panel: { fluid = name or nil, amount, room }. Nil for anything else.
+function logistics.freighter_stored(entity)
+  local depot = request_depot(entity)
+  if not (depot and depot.fluid) then
+    return nil
+  end
+  local limit, tank = logistics.fluid_limit(depot)
+  return { fluid = depot.reserve and depot.reserve.name, amount = logistics.reserve_of(depot), room = limit - tank }
+end
+
 -- The depots with a priority: provider and buffer depots, which freighters fetch from.
 local function supplying_depot(entity)
   local depot = entity and entity.valid and entity.unit_number and storage.depots[entity.unit_number]
@@ -834,15 +980,16 @@ function logistics.queue_place()
   return storage.promise_order
 end
 
--- The most a request depot can request of `item`: what it holds, its tank's size for a liquid
--- depot, and for an item depot as many of the item as fill every slot of its chest (slots are a
--- startup setting per kind of depot, 48 by default: 4,800 of an item that stacks to 100, 480 of one
--- that stacks to 10; more for a better depot, whose chest the game makes bigger).
+-- The most a request depot can request of `item`: what it holds, for a liquid depot its limit
+-- (fluid_limit: its tank's size, or using its freighters as storage, more), and for an item depot
+-- as many of the item as fill every slot of its chest (slots are a startup setting per kind of
+-- depot, 48 by default: 4,800 of an item that stacks to 100, 480 of one that stacks to 10; more for
+-- a better depot, whose chest the game makes bigger).
 local function request_limit(depot, item)
   if depot.fluid then
-    -- The tank's size, not a constant: liquid buffer sizes are a startup setting, and a better
-    -- tank holds more (the game's 1.6 times 25,000 is a hair over 40,000, so whole units).
-    return math.floor(depot.entity.get_fluid_capacity(1))
+    -- The tank's size (whole units: a better tank holds a hair over a round number), not a
+    -- constant: liquid buffer sizes are a startup setting.
+    return (logistics.fluid_limit(depot))
   end
   -- The chest's slots, not a constant, each a stack of this item.
   return #inventory(depot.entity) * transfer.stack_size_of(item)
@@ -850,7 +997,9 @@ end
 
 -- Set a request depot's request, or clear it with a nil item. Returns false, changing nothing,
 -- for anything but a request depot, an item that doesn't exist, or a count that isn't a number.
--- A request is at most what the depot holds (request_limit). An item request can name its quality
+-- A request is at most what the depot holds (request_limit): for a liquid depot its limit
+-- (fluid_limit: its tank's size, or using its freighters as storage, more), and for an item depot
+-- as many of the item as fill every slot of its chest. An item request can name its quality
 -- (`grade`, a quality's name; normal if nil) and how other qualities compare with it (`comparator`:
 -- "=", the default, "≠", ">", "<", "≥", "≤", or "any" for any quality: scripts/quality.lua); a fluid
 -- has neither. False, too, for a quality the game doesn't have or another comparator.
@@ -873,8 +1022,20 @@ function logistics.set_request(entity, item, count, grade, comparator)
     if not ok or (depot.fluid and (grade or comparator)) then
       return false
     end
-    count = math.min(math.max(0, math.floor(count)), request_limit(depot, item))
-    depot.request = { item = item, count = count, quality = grade, comparator = comparator }
+    count = math.max(0, math.floor(count))
+    if depot.fluid then
+      -- The amount set, and as far as the depot can hold (fit_request): its tank's size, not a
+      -- constant (tank sizes are startup settings), or more using its freighters as storage.
+      depot.request = { item = item, count = count, asked = count }
+      logistics.fit_request(depot)
+    else
+      depot.request = {
+        item = item,
+        count = math.min(count, request_limit(depot, item)),
+        quality = grade,
+        comparator = comparator,
+      }
+    end
   end
   depot.cooldowns = {}
   depot.retry_at = 0
@@ -948,11 +1109,20 @@ local function need(depot, except)
   if depot.fluid then
     local tank = depot.entity
     local coming = ledger.committed(depot, except)
-    local wanted = request.count - tank.get_fluid_count(request.item) - coming
+    -- What its parked freighters hold for the tank counts as held (logistics.store_in_freighters).
+    local wanted = request.count
+      - tank.get_fluid_count(request.item)
+      - logistics.reserve_of(depot, request.item)
+      - coming
     if wanted <= 0 then
       return 0, 0, nil, -wanted
     end
-    local held = 0
+    local limit, tank_size = logistics.fluid_limit(depot)
+    local held = logistics.reserve_of(depot, request.item)
+    if logistics.reserve_of(depot) > held then
+      -- Its freighters hold another fluid, asked for before: only the tank has room for this one.
+      limit = tank_size
+    end
     for name, amount in pairs(tank.get_fluid_contents()) do
       if name ~= request.item and amount > 0 then
         -- Another fluid fills the tank: nothing can go in until it is gone.
@@ -960,7 +1130,7 @@ local function need(depot, except)
       end
       held = held + amount
     end
-    return wanted, math.max(0, math.min(wanted, tank.get_fluid_capacity(1) - held - coming))
+    return wanted, math.max(0, math.min(wanted, limit - held - coming))
   end
   -- (An item's name alone means normal quality.)
   local chest, id = inventory(depot.entity), request.item
@@ -2003,6 +2173,10 @@ end
 local function dispatch(depot)
   absorb_freighters(depot)
   logistics.trim_freighter_requests(depot.entity)
+  if depot.fluid then
+    logistics.drain_reserve(depot)
+    logistics.fit_request(depot)
+  end
   local wanted, room, other_fluid, excess = need(depot)
   if excess and excess > 0 then
     logistics.release_excess(depot, excess)
@@ -2495,6 +2669,8 @@ local function arrived_at_request(id, trip, depot)
   if trip.fluid then
     if entity then
       transfer.unload_fluid(trip, entity)
+      -- What the tank has no room for stays in the depot's freighters, using them as storage.
+      logistics.store_in_freighters(depot, trip)
     end
     -- Fluid that didn't fit (another fluid got into the tank meanwhile, say) goes back.
     local provider = depot_entity(trip.provider)
@@ -3491,6 +3667,11 @@ function logistics.add_all()
         depot.request = nil
       end
       logistics.forget_lost_qualities(depot)
+      if depot.reserve and not prototypes.fluid[depot.reserve.name] then
+        -- So was the mod of the fluid its parked freighters hold (logistics.store_in_freighters):
+        -- gone with it, as from freighters on the road, before anything pumps or counts it.
+        depot.reserve = nil
+      end
       if depot.circuit_condition then
         -- Signals whose mod was removed leave the condition (the game can't read them).
         depot.circuit_condition = depot_circuit.condition(depot.circuit_condition)
@@ -4019,6 +4200,10 @@ function logistics.register()
     -- A request or buffer depot sending only freighters that can load a full load.
     set_full_loads = logistics.set_full_loads,
     get_full_loads = logistics.get_full_loads,
+    -- A liquid request or buffer depot using its freighters as storage, and what they hold.
+    set_freighter_storage = logistics.set_freighter_storage,
+    get_freighter_storage = logistics.get_freighter_storage,
+    get_freighter_stored = logistics.freighter_stored,
     -- A provider or buffer depot's priority, 1 to 10.
     set_priority = logistics.set_priority,
     get_priority = logistics.get_priority,

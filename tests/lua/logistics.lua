@@ -1518,6 +1518,24 @@ do -- A large request: several freighters, one a second, each promising what it 
   check("two freighters for 900", #trips == 2 and trips[1].planned == 750 and trips[2].planned == 150)
 end
 
+-- Freighter storage (tests/lua/freighter-storage.lua: this file is at the size CI downloads), with
+-- this file's helpers.
+require("tests.lua.freighter-storage")({
+  reset = reset,
+  check = check,
+  liquids = liquids,
+  entity = entity,
+  tank = tank,
+  stack = stack,
+  script_inventory = script_inventory,
+  answer = answer,
+  arrive = arrive,
+  trips_from = trips_from,
+  requests = function()
+    return requests
+  end,
+})
+
 do -- Items and fluids never meet.
   local logistics = reset()
   local request = tank("jatz-liquid-request-depot", 0.5, 0.5)

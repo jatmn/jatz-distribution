@@ -943,7 +943,8 @@ local function setup_deliveries(surface, result)
   assert(remote.call("jatz-distribution", "add_freighters", liquid.request, 3) == 3, "liquid: no freighters")
   result.liquid_refuses_items = remote.call("jatz-distribution", "set_request", liquid.request, "iron-plate", 10)
   result.item_depot_refuses_fluids = remote.call("jatz-distribution", "set_request", prioritised.request, "water", 10)
-  -- A request above the tank's size is its size: 25,000, and 15,000 for a liquid buffer here.
+  -- A request above the tank's size is its size: 35,000 for a liquid request, 15,000 for a liquid
+  -- buffer here (settings-updates.lua).
   assert(remote.call("jatz-distribution", "set_request", liquid.request, "water", 1000000), "water: refused")
   result.liquid_request_capped = remote.call("jatz-distribution", "get_request", liquid.request).count
   assert(remote.call("jatz-distribution", "set_request", liquid.request, "water", 1200), "water: refused")
@@ -984,6 +985,24 @@ local function setup_deliveries(surface, result)
   result.fallback_from_buffers = remote.call("jatz-distribution", "get_from_buffers", fallback.request)
   assert(remote.call("jatz-distribution", "set_request", fallback.request, "crude-oil", 300), "oil: refused")
   deliveries.fallback = fallback
+  -- Freighter storage (loading zones at y -35, east of the liquid depots above): a liquid request
+  -- depot with its 35,000 tank full (settings-updates.lua) and 50 freighters of 750 uses them as
+  -- storage, so it can hold, and asks for, 37,500 water. All 2,000 a liquid provider 10 tiles
+  -- away holds comes though the tank is full, and waits in its parked freighters.
+  local stored = {
+    request = depot(surface, "liquid-request", table.unpack(free(surface, 70.5, -36.5))),
+    provider = depot(surface, "liquid-provider", table.unpack(free(surface, 80.5, -36.5))),
+  }
+  lay_road(surface, 70, -35, 80, -35)
+  assert(stored.request.insert_fluid({ name = "water", amount = 35000 }) == 35000, "stored: cannot fill the tank")
+  assert(stored.provider.insert_fluid({ name = "water", amount = 2000 }) == 2000, "stored: cannot stock")
+  assert(remote.call("jatz-distribution", "add_freighters", stored.request, 50) == 50, "stored: no freighters")
+  assert(remote.call("jatz-distribution", "set_request", stored.request, "water", 1000000), "stored: refused")
+  result.storage_request_before = remote.call("jatz-distribution", "get_request", stored.request).count
+  result.storage_default = remote.call("jatz-distribution", "get_freighter_storage", stored.request)
+  assert(remote.call("jatz-distribution", "set_freighter_storage", stored.request, true), "stored: not set")
+  result.storage_request = remote.call("jatz-distribution", "get_request", stored.request).count
+  deliveries.stored = stored
   -- Fuel (loading zones at y 66). Each request depot has one freighter, its tank set low.
   -- * fuelled: fuel for 10 tiles and a provider 20 tiles east: it first drives 4 tiles west to a
   --   Fuel depot holding coal, fills up (5 coal for 20 MJ), then fetches 10 iron ore.
@@ -2609,6 +2628,7 @@ local function deliveries_finished(surface, tick, result)
     and deliveries.liquid.request.get_fluid_count("water") == 1200
     and deliveries.steam.request.get_fluid_count("steam") == 300
     and deliveries.fallback.request.get_fluid_count("crude-oil") == 300
+    and remote.call("jatz-distribution", "get_freighter_stored", deliveries.stored.request).amount > 1999.99
     and remote.call("jatz-distribution", "freighter_counts", deliveries.liquid_remote) == 2
     and count(deliveries.fuelled.request, "iron-ore") == 10
     and count(deliveries.liquid_fuelled.request, "copper-ore") == 10
@@ -2621,7 +2641,7 @@ local function deliveries_finished(surface, tick, result)
     if tick >= DELIVERY_DEADLINE then
       error(
         string.format(
-          "deliveries did not finish in time: fuel ore %d (%s), liquid fuel ore %d (%s), dry sulfur %d (%s), iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), pipes after mending %d (%s), bricks rerouted %d, buffered request %d (%s), buffer filled %d (%s), prioritised %d (%s), water %d (%s), steam %d (%s), oil fallback %d (%s), liquid robots %d, run over %d (%s), ambushed %d (%s, killed %s), unloaded depot %d in slot (%d taken out, %d in storage), %d freighter(s) out",
+          "deliveries did not finish in time: fuel ore %d (%s), liquid fuel ore %d (%s), dry sulfur %d (%s), iron %d (%s), armor %d, steel %d (destroyed %s), plastic change %s, gears back %d (cut %s, %s), pipes after mending %d (%s), bricks rerouted %d, buffered request %d (%s), buffer filled %d (%s), prioritised %d (%s), water %d (%s), steam %d (%s), oil fallback %d (%s), in freighters %d (%s), liquid robots %d, run over %d (%s), ambushed %d (%s, killed %s), unloaded depot %d in slot (%d taken out, %d in storage), %d freighter(s) out",
           count(deliveries.fuelled.request, "iron-ore"),
           tostring(status(deliveries.fuelled.request)),
           count(deliveries.liquid_fuelled.request, "copper-ore"),
@@ -2652,6 +2672,8 @@ local function deliveries_finished(surface, tick, result)
           tostring(status(deliveries.steam.request)),
           deliveries.fallback.request.get_fluid_count("crude-oil"),
           tostring(status(deliveries.fallback.request)),
+          remote.call("jatz-distribution", "get_freighter_stored", deliveries.stored.request).amount,
+          tostring(status(deliveries.stored.request)),
           remote.call("jatz-distribution", "freighter_counts", deliveries.liquid_remote),
           count(deliveries.runover.request, "iron-ore"),
           tostring(status(deliveries.runover.request)),
@@ -2925,6 +2947,13 @@ local function deliveries_finished(surface, tick, result)
   local fallback = deliveries.fallback
   result.fallback_delivered = fallback.request.get_fluid_count("crude-oil")
   result.fallback_buffer_left = fallback.buffer.get_fluid_count("crude-oil")
+  local stored = deliveries.stored
+  local in_freighters = remote.call("jatz-distribution", "get_freighter_stored", stored.request)
+  result.storage_held = {
+    tank = math.floor(stored.request.get_fluid_count("water") + 0.5),
+    freighters = math.floor(in_freighters.amount + 0.5),
+  }
+  result.storage_provider_left = math.floor(stored.provider.get_fluid_count("water") + 0.5)
   result.liquid_robots_delivered = remote.call("jatz-distribution", "freighter_counts", deliveries.liquid_remote)
   result.trimmed_requests = remote.call("jatz-distribution", "requested_freighters", deliveries.trimmed)
   result.dropped_requested_again = remote.call("jatz-distribution", "requested_freighters", deliveries.dropped)

@@ -53,6 +53,7 @@ local SLOT = "jatz_request_freighters"
 local SLOT_LABEL = "jatz_request_freighters_label"
 local FROM_BUFFERS = "jatz_request_from_buffers"
 local FULL_LOADS = "jatz_request_full_loads"
+local FREIGHTER_STORAGE = "jatz_request_freighter_storage"
 local PRIORITY = "jatz_depot_priority"
 local PRIORITY_VALUE = "jatz_depot_priority_value"
 local ROBOT_ACCESS = "jatz_depot_robot_access"
@@ -226,6 +227,42 @@ local function show_freighter_fuel(inner, entity)
     #tanks > 1 and { "jatz-gui.freighter-fuel-tanks", energy_list(tanks) }
       or { "jatz-gui.freighter-fuel-tank", logistics.energy_caption(tanks[1] or fuel.capacity) },
   }
+end
+
+-- A liquid request or buffer depot's freighter storage: what its parked freighters hold for the
+-- tank, of how much they have room for. Shown while it is ticked, or they still hold some.
+local function show_freighter_stored(inner, entity)
+  local label = inner.freighter_stored
+  local stored = logistics.freighter_stored(entity)
+  if not (label and stored) then
+    return
+  end
+  label.visible = logistics.get_freighter_storage(entity) or stored.amount > 0
+  label.caption = {
+    "jatz-gui.freighter-stored",
+    stored.fluid and ("[fluid=" .. stored.fluid .. "]") or "",
+    math.floor(stored.amount + 0.5),
+    math.max(0, stored.room),
+  }
+end
+
+-- How long after the last key a request amount being typed is left as typed.
+local TYPING_TICKS = 120
+
+-- The request amount as the depot asks for it: an amount above what it can hold shows as what it
+-- can, and a liquid depot's follows its limit (logistics.fit_request). Not while a player is
+-- typing (`tags.typed_at`, the tick of the last key; `now` shows it at once): rewriting the field
+-- under their cursor would make the next key add to the shown amount, not to what they typed.
+local function show_request_count(field, entity, now)
+  local request = logistics.get_request(entity)
+  local typed_at = field.tags and field.tags.typed_at
+  if not request or (not now and typed_at and game.tick - typed_at < TYPING_TICKS) then
+    return
+  end
+  if (tonumber(field.text) or 0) ~= request.count then
+    field.text = tostring(request.count)
+  end
+  field.tags = {}
 end
 
 -- Show a provider or buffer depot's priority on its slider and beside it.
@@ -625,6 +662,17 @@ local function open(player, entity)
       LIQUID[entity.name] and "jatz-gui.request-full-loads-fluid-tooltip" or "jatz-gui.request-full-loads-tooltip",
     },
   })
+  if LIQUID[entity.name] then
+    inner.add({
+      type = "checkbox",
+      name = FREIGHTER_STORAGE,
+      state = logistics.get_freighter_storage(entity),
+      caption = { "jatz-gui.request-freighter-storage" },
+      tooltip = { "jatz-gui.request-freighter-storage-tooltip" },
+    })
+    inner.add({ type = "label", name = "freighter_stored" })
+    show_freighter_stored(inner, entity)
+  end
   local freighters = inner.add({ type = "flow", name = "freighter_row", direction = "horizontal" })
   freighters.style.vertical_align = "center"
   freighters.add({
@@ -724,16 +772,6 @@ local function chosen_quality(inner)
   return comparator ~= quality.any and quality.names()[graded[QUALITY_LEVEL].selected_index] or nil, comparator
 end
 
--- After a request is set from the panel: a request stops at what the depot holds (a liquid
--- depot's tank, an item depot's chest full of the item), so show that rather than the larger
--- amount typed.
-local function show_count(field, entity, amount)
-  local request = logistics.get_request(entity)
-  if request and request.count < amount then
-    field.text = tostring(request.count)
-  end
-end
-
 local function on_gui_elem_changed(event)
   local name = event.element.name
   if name == CIRCUIT_FIRST or name == CIRCUIT_SECOND then
@@ -764,6 +802,11 @@ local function on_gui_elem_changed(event)
   end
   local field = event.element.parent[COUNT]
   local amount = tonumber(field.text) or 0
+  -- A liquid depot's field shows its request as far as the depot can hold now (show_request_count):
+  -- the amount set, kept above that (logistics.fit_request), stays the amount for another fluid.
+  if LIQUID[entity.name] and current and current.asked and amount == current.count then
+    amount = current.asked
+  end
   -- A newly chosen item starts at the default request (startup settings, settings.lua: stacks of
   -- an item, an amount of a fluid; one stack and 1,000 unless changed), so the request does
   -- something straight away.
@@ -773,7 +816,7 @@ local function on_gui_elem_changed(event)
     field.text = tostring(amount)
   end
   logistics.set_request(entity, item, amount, grade, comparator)
-  show_count(field, entity, amount)
+  show_request_count(field, entity, true)
 end
 
 local function on_gui_text_changed(event)
@@ -800,9 +843,20 @@ local function on_gui_text_changed(event)
   local entity = opened_depot(player)
   local request = entity and logistics.get_request(entity)
   if request then
-    local amount = tonumber(event.text) or 0
-    logistics.set_request(entity, request.item, amount, request.quality, request.comparator)
-    show_count(event.element, entity, amount)
+    logistics.set_request(entity, request.item, tonumber(event.text) or 0, request.quality, request.comparator)
+    -- Shown as the depot asks for it when confirmed, or once typing stops (show_request_count).
+    event.element.tags = { typed_at = game.tick }
+  end
+end
+
+-- Enter in the request amount: show it as the depot asks for it at once.
+local function on_gui_confirmed(event)
+  if event.element.name ~= COUNT then
+    return
+  end
+  local entity = opened_depot(game.get_player(event.player_index))
+  if entity then
+    show_request_count(event.element, entity, true)
   end
 end
 
@@ -961,6 +1015,20 @@ local function on_gui_checked_state_changed(event)
     end
     return
   end
+  if event.element.name == FREIGHTER_STORAGE then
+    local entity = opened_depot(game.get_player(event.player_index))
+    if entity then
+      logistics.set_freighter_storage(entity, event.element.state)
+      local inner = event.element.parent
+      if inner then
+        show_freighter_stored(inner, entity)
+        if inner.request_row then
+          show_request_count(inner.request_row[COUNT], entity, true)
+        end
+      end
+    end
+    return
+  end
   if event.element.name == ROBOT_ACCESS then
     local entity = opened_depot(game.get_player(event.player_index))
     if entity then
@@ -1037,6 +1105,7 @@ local function refresh()
         or (requesting and not (inner.request_row and inner.request_row[STATUS] and inner.freighter_fuel and inner[FULL_LOADS]))
         -- (Qualities came, or went, with a change of mods.)
         or (requesting and (inner.quality_row ~= nil) ~= (not LIQUID[entity.name] and quality.available()))
+        or (requesting and LIQUID[entity.name] and not inner[FREIGHTER_STORAGE])
         or not inner.circuit_mode_row
         or (robot_access.get(entity) ~= nil and not inner[ROBOT_ACCESS])
       then
@@ -1053,6 +1122,11 @@ local function refresh()
         local graded, request = inner.quality_row, logistics.get_request(entity)
         if graded and request then
           show_quality(graded, request)
+        end
+        show_request_count(inner.request_row[COUNT], entity)
+        if inner[FREIGHTER_STORAGE] then
+          inner[FREIGHTER_STORAGE].state = logistics.get_freighter_storage(entity)
+          show_freighter_stored(inner, entity)
         end
         -- Request depots only; every layout that passes the check above has it (it predates
         -- freighter_fuel).
@@ -1156,6 +1230,7 @@ function request_gui.register()
   script.on_event(defines.events.on_gui_closed, on_gui_closed)
   script.on_event(defines.events.on_gui_elem_changed, on_gui_elem_changed)
   script.on_event(defines.events.on_gui_text_changed, on_gui_text_changed)
+  script.on_event(defines.events.on_gui_confirmed, on_gui_confirmed)
   script.on_event(defines.events.on_gui_click, on_gui_click)
   script.on_event(defines.events.on_gui_checked_state_changed, on_gui_checked_state_changed)
   script.on_event(defines.events.on_gui_value_changed, on_gui_value_changed)

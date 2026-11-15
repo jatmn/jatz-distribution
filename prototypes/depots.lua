@@ -108,9 +108,10 @@ local PILLAR_CONNECTOR = {
   shadow_offset = util.by_pixel(48, 37),
   show_shadow = true,
 }
--- Tank sizes players can set (settings.lua); the liquid request depot holds 25,000.
+-- Tank sizes players can set (settings.lua).
 local CAPACITY_SETTINGS = {
   ["liquid-provider"] = "jatz-liquid-provider-depot-capacity",
+  ["liquid-request"] = "jatz-liquid-request-depot-capacity",
   ["liquid-buffer"] = "jatz-liquid-buffer-depot-capacity",
   fuel = "jatz-fuel-depot-capacity",
 }
