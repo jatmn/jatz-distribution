@@ -833,6 +833,17 @@ function logistics.queue_place()
   return storage.promise_order
 end
 
+-- The most a request depot can request of `item` (a name that exists): its tank's size for a liquid
+-- depot, and for an item depot as many of the item as fill every slot of its chest, each a stack of
+-- this item. Not constants: liquid buffer sizes and chest slots are startup settings, and a better
+-- depot holds more (the game's 1.6 times 25,000 is a hair over 40,000, so whole units of fluid).
+local function request_capacity(depot, item)
+  if depot.fluid then
+    return math.floor(depot.entity.get_fluid_capacity(1))
+  end
+  return #inventory(depot.entity) * transfer.stack_size_of(item)
+end
+
 -- Set a request depot's request, or clear it with a nil item. Returns false, changing nothing,
 -- for anything but a request depot, an item that doesn't exist, or a count that isn't a number.
 -- A request is at most what the depot holds: its tank's size for a liquid depot, and for an item
@@ -861,15 +872,7 @@ function logistics.set_request(entity, item, count, grade, comparator)
     if not ok or (depot.fluid and (grade or comparator)) then
       return false
     end
-    count = math.max(0, math.floor(count))
-    if depot.fluid then
-      -- The tank's size, not a constant: liquid buffer sizes are a startup setting, and a better
-      -- tank holds more (the game's 1.6 times 25,000 is a hair over 40,000, so whole units).
-      count = math.min(count, math.floor(depot.entity.get_fluid_capacity(1)))
-    else
-      -- The chest's slots, not a constant, each a stack of this item.
-      count = math.min(count, #inventory(depot.entity) * transfer.stack_size_of(item))
-    end
+    count = math.min(math.max(0, math.floor(count)), request_capacity(depot, item))
     depot.request = { item = item, count = count, quality = grade, comparator = comparator }
   end
   depot.cooldowns = {}
@@ -3346,6 +3349,13 @@ function logistics.replaced(old_id, entity)
   -- The old entity's inventory, and its custom status, which the new one doesn't show yet. A Fuel
   -- depot's tank follows its quality (fuel_tank), which the new one may not have.
   depot.stock_inventory, depot.shown_off, depot.tank_graded = nil, nil, nil
+  -- Its request carries on, but never above what the new one holds (set_request's limit): a
+  -- depot of a lower quality has a smaller chest or tank, and a request for more than fits would
+  -- wait for a full load it can never take.
+  local request = depot.request
+  if request and exists(depot.fluid, request.item) then
+    request.count = math.min(request.count, request_capacity(depot, request.item))
+  end
   script.register_on_object_destroyed(entity)
   for _, other in pairs(depots) do
     local cooldowns = other.cooldowns

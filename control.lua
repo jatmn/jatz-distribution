@@ -357,6 +357,8 @@ end)
 script.on_configuration_changed(function()
   research.on_configuration_changed()
   setup()
+  -- Panels open in the save show today's qualities (after setup: removed ones are forgotten there).
+  request_gui.on_configuration_changed()
 end)
 
 -- Milestones (optional) calls every remote interface with this function, on a new game and when

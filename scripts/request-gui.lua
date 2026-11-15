@@ -1027,6 +1027,21 @@ local function refresh()
   end
 end
 
+-- After a change of mods, panels still open from the save are built again. The game keeps a mod's
+-- GUI as it was, with its quality drop-down's items and selected index, but the qualities may now
+-- be others, or in another order (a mod added, removed or changed one): the index would then name
+-- another quality than the one shown, and the drop-down's events (chosen_quality) read it in
+-- today's list. Built again after the depots' requests are normalized (a request for a quality
+-- that is gone is normal now), so each panel shows and means what the request is.
+function request_gui.on_configuration_changed()
+  for index, entity in pairs(storage.request_gui or {}) do
+    local player = game.get_player(index)
+    if player and player.valid and entity.valid and frame_of(player) then
+      open(player, entity)
+    end
+  end
+end
+
 -- Freighters shift-clicked or ctrl-clicked in the inventory beside a liquid depot go into its
 -- slot. Other items stay: a liquid depot has no chest to put them in. A click that picks a stack
 -- up is done by the inventory widget (handle_cursor_transfer / handle_cursor_split).

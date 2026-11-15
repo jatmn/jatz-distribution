@@ -14,7 +14,8 @@
 --   ones, and a rare Fuel depot's hidden tank is rare too.
 -- * Upgrades: a request depot robots upgrade to rare keeps its request and freighters; a provider a
 --   player builds a rare one over keeps its priority and robot access, and the undo action of the
---   normal one's removal keeps its settings too.
+--   normal one's removal keeps its settings too; a rare request depot a player builds a normal one
+--   over keeps its request, cut to what the smaller chest holds.
 -- * Blueprints: a request for at least rare keeps its quality and comparator in its tag, and its
 --   settings' signal is rare, so a depot built from the blueprint asks for the same.
 -- Writes script-output/jatz-quality-check.json.
@@ -161,6 +162,27 @@ script.on_event(defines.events.on_tick, function(event)
           new = now.unit_number ~= old_id,
           priority = remote.call(REMOTE, "get_priority", now),
           robot_access = remote.call(REMOTE, "get_robot_access", now),
+        }
+      or "not replaced"
+
+    -- A player building a normal request depot over a rare one: the request carries on, but only
+    -- as far as the normal chest holds (it was for the rare chest's 1.6 times as many slots).
+    local downgraded = depot(surface, "request", 22.5, "rare")
+    assert(remote.call(REMOTE, "set_request", downgraded, "coal", 100000), "coal: refused")
+    local rare_count = remote.call(REMOTE, "get_request", downgraded).count
+    local down_at, down_id = downgraded.position, downgraded.unit_number
+    player.cursor_stack.set_stack({ name = "jatz-request-depot", count = 1 })
+    player.build_from_cursor({ position = down_at })
+    local lower = surface.find_entities_filtered({ name = "jatz-request-depot", position = down_at })[1]
+    local lower_request = lower and remote.call(REMOTE, "get_request", lower)
+    result.downgraded_request = lower_request
+        and {
+          quality = lower.quality.name,
+          new = lower.unit_number ~= down_id,
+          -- (At most the new chest's slots of coal, and less than the rare chest held.)
+          fits = lower_request.item == "coal"
+            and lower_request.count == #lower.get_inventory(defines.inventory.chest) * prototypes.item.coal.stack_size
+            and lower_request.count < rare_count,
         }
       or "not replaced"
 

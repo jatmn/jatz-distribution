@@ -986,6 +986,121 @@ do -- With qualities (the Quality mod), an item request's quality has its own ro
   storage.request_gui = {}
 end
 
+do -- A request panel open in a save when the qualities change (a mod added, removed or reordered
+  -- one: control.lua's on_configuration_changed) is built again: the game keeps a mod's GUI as it
+  -- was, but the drop-down's events read its selected index in today's list, so the quality the
+  -- request takes would be another than the one shown. Item request and buffer panels alike, through
+  -- both ways the shown quality is read: the comparator/quality drop-downs and the item chooser.
+  local logistics = require("scripts.logistics")
+  local quality = require("scripts.quality")
+  local research = require("scripts.research")
+  local names, known = quality.names, prototypes.quality
+  -- The mod change itself (control.lua's handler; research has no forces to look at here).
+  local function mod_change(list, qualities)
+    quality.names = function()
+      return list
+    end
+    prototypes.quality = qualities
+    local changed = research.on_configuration_changed
+    research.on_configuration_changed = function() end
+    lifecycle.configuration_changed()
+    research.on_configuration_changed = changed
+  end
+  local function named(...)
+    local made = {}
+    for level, name in ipairs({ ... }) do
+      made[name] = { name = name, level = level - 1, default_multiplier = 1 + (level - 1) * 0.3, localised_name = name }
+    end
+    return made
+  end
+  local before = named("normal", "uncommon", "rare")
+  -- (The qualities each case starts from, and what the mod change makes of them.)
+  local cases = {
+    {
+      "a quality added below the one shown",
+      { "normal", "uncommon", "rare" },
+      { "normal", "extra", "uncommon", "rare" },
+    },
+    { "a quality removed below the one shown", { "normal", "uncommon", "rare" }, { "normal", "rare" } },
+  }
+  local number = 600
+  for _, role in ipairs({ "jatz-request-depot", "jatz-buffer-depot" }) do
+    for _, case in ipairs(cases) do
+      for _, via in ipairs({ "comparator", "item" }) do
+        local label = role .. ", " .. case[1] .. ", read through the " .. via
+        local after = named(table.unpack(case[3]))
+        number = number + 10
+        local relative = element()
+        local player = { index = 16, valid = true, gui = { relative = relative }, get_main_inventory = function() end }
+        game.get_player = function()
+          return player
+        end
+        local entity = depot(number)
+        entity.name = role
+        fire("on_built_entity", { entity = entity })
+        quality.names = function()
+          return case[2]
+        end
+        prototypes.quality = before
+        assert(logistics.set_request(entity, "iron-plate", 50, "rare", "≥"))
+        fire("on_gui_opened", { player_index = 16, entity = entity })
+        mod_change(case[3], after)
+        local inner = relative.jatz_request_frame.children[1]
+        local graded = inner.quality_row
+        local levels = graded.jatz_request_quality
+        check(label .. ": the drop-down is listed from today's qualities", #levels.items == #case[3])
+        check(label .. ": and shows the quality the request takes", case[3][levels.selected_index] == "rare")
+        if via == "comparator" then
+          graded.jatz_request_quality_comparator.selected_index = 1
+          fire("on_gui_selection_state_changed", {
+            player_index = 16,
+            element = graded.jatz_request_quality_comparator,
+          })
+        else
+          local chooser = inner.request_row.jatz_request_item
+          chooser.elem_value = "wood"
+          fire("on_gui_elem_changed", { player_index = 16, element = chooser })
+        end
+        local got = logistics.get_request(entity)
+        check(label .. ": the request takes the quality shown", got.quality == "rare")
+        storage.request_gui = {}
+        storage.depots[entity.unit_number].trucks = nil
+        removed(entity)
+      end
+    end
+  end
+  -- A request for a quality the mod change removed becomes a normal one (logistics.forget_lost_qualities):
+  -- the panel shows that, and the quality the request then takes is that one.
+  do
+    local relative = element()
+    local player = { index = 16, valid = true, gui = { relative = relative }, get_main_inventory = function() end }
+    game.get_player = function()
+      return player
+    end
+    local entity = depot(number + 10)
+    entity.name = "jatz-request-depot"
+    fire("on_built_entity", { entity = entity })
+    quality.names = function()
+      return { "normal", "uncommon", "rare" }
+    end
+    prototypes.quality = before
+    assert(logistics.set_request(entity, "iron-plate", 50, "rare"))
+    fire("on_gui_opened", { player_index = 16, entity = entity })
+    mod_change({ "normal", "uncommon" }, named("normal", "uncommon"))
+    local graded = relative.jatz_request_frame.children[1].quality_row
+    check(
+      "a removed quality: the request is normal now, and the panel shows normal",
+      logistics.get_request(entity).quality == nil and graded.jatz_request_quality.selected_index == 1
+    )
+    fire("on_gui_selection_state_changed", { player_index = 16, element = graded.jatz_request_quality })
+    check("and choosing keeps it normal", logistics.get_request(entity).quality == nil)
+    storage.request_gui = {}
+    storage.depots[entity.unit_number].trucks = nil
+    removed(entity)
+  end
+  quality.names, prototypes.quality = names, known
+end
+
 do -- A panel opened before an update that changed its layout is rebuilt, with its status light.
   local entity = depot(70)
   entity.name = "jatz-request-depot"

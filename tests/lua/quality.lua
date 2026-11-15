@@ -802,6 +802,90 @@ do -- A freighter whose promise a request change dropped (another item, then bac
   end
 end
 
+do -- A request or buffer depot replaced by itself at a lower quality has a smaller chest or tank:
+  -- its request carries on, but never above what the new one holds (set_request's limit), so a
+  -- request for more than fits doesn't wait for a full load it can never take. Item and liquid
+  -- depots, request and buffer alike; a better one keeps the request it had.
+  local function replace(logistics, old, new)
+    old.valid = false
+    logistics.replaced(old.unit_number, new)
+  end
+  -- A depot of `slots` slots (item a stacks to 50), as the game sizes a chest by quality.
+  local function sized(role, slots)
+    local made = entity(role, 0.5, 0.5)
+    local chest = script_inventory(slots)
+    made.get_inventory = function()
+      return chest
+    end
+    return made
+  end
+  local logistics = reset()
+  for _, role in ipairs({ "jatz-request-depot", "jatz-buffer-depot" }) do
+    local old = sized(role, 4)
+    logistics.add(old)
+    assert(logistics.set_request(old, "a", 200, "rare", "≥"))
+    local worse = sized(role, 1)
+    replace(logistics, old, worse)
+    local got = logistics.get_request(worse)
+    check(
+      role .. ": a smaller chest caps the request at its slots, keeping the item and quality",
+      got.count == 50 and got.item == "a" and got.quality == "rare" and got.comparator == "≥"
+    )
+    local better = sized(role, 8)
+    replace(logistics, worse, better)
+    check(role .. ": a bigger one doesn't raise it", logistics.get_request(better).count == 50)
+    assert(logistics.set_request(better, "a", 120))
+    local same = sized(role, 8)
+    replace(logistics, better, same)
+    check(role .. ": and a request that still fits is left alone", logistics.get_request(same).count == 120)
+  end
+  for _, role in ipairs({ "jatz-liquid-request-depot", "jatz-liquid-buffer-depot" }) do
+    local old = tank(role, 0.5, 0.5, "water", 0)
+    logistics.add(old)
+    assert(logistics.set_request(old, "water", 20000))
+    local worse = tank(role, 0.5, 0.5, "water", 0)
+    worse.get_fluid_capacity = function()
+      return 15000.9
+    end
+    replace(logistics, old, worse)
+    check(role .. ": a smaller tank caps the request at its size", logistics.get_request(worse).count == 15000)
+    local better = tank(role, 0.5, 0.5, "water", 0)
+    replace(logistics, worse, better)
+    check(role .. ": a bigger one doesn't raise it", logistics.get_request(better).count == 15000)
+  end
+  -- A request for an item the game no longer has is left to the cleanup that forgets it.
+  local old = sized("jatz-request-depot", 4)
+  logistics.add(old)
+  assert(logistics.set_request(old, "a", 10))
+  storage.depots[old.unit_number].request.item = "gone"
+  local new = sized("jatz-request-depot", 1)
+  replace(logistics, old, new)
+  check("a request for an item that is gone is not looked up", storage.depots[new.unit_number].request.count == 10)
+  -- With 'Full loads only' the capped request is one a freighter can fill: it sets off. (Kept at 200
+  -- in a chest of 50, it waited for a full load of 100 that never fits.)
+  logistics = reset()
+  local wide = sized("jatz-request-depot", 4)
+  local provider = entity("jatz-provider-depot", 10.5, 0.5)
+  graded_stock(provider, { { "normal", 500 } })
+  logistics.add(wide)
+  logistics.add(provider)
+  assert(logistics.set_request(wide, "a", 200))
+  logistics.set_full_loads(wide, true)
+  assert(logistics.put_freighters(wide, stack("jatz-quinityn-freighter", 2)) == 2)
+  local narrow = sized("jatz-request-depot", 1)
+  local chest = narrow.get_inventory()
+  chest.get_item_count = function()
+    return 0
+  end
+  chest.get_insertable_count = function()
+    return 50
+  end
+  replace(logistics, wide, narrow)
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  check("a replaced depot set to full loads sends a freighter for what fits", has_trip(narrow))
+end
+
 do -- A Fuel depot replaced by itself at another quality keeps the freighters heading for it.
   local logistics = reset()
   local request = supplied(logistics, 1)

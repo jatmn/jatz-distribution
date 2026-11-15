@@ -478,7 +478,8 @@ BONUS_TICKS = 10
 # Quality mod is on: requests by quality whatever the depots' and freighters' quality (rare only,
 # any quality highest first, at least rare), a rare freighter's health, speed, cargo and tank, rare
 # depots' chest and tanks, a depot upgraded to rare by robots and one replaced by a player keeping
-# their settings (the player's on the removal's undo action too), and a blueprint keeping a
+# their settings (the player's on the removal's undo action too), a rare request depot a player
+# builds a normal one over keeping its request, cut to the smaller chest, and a blueprint keeping a
 # request's quality.
 EXPECTED_QUALITY = {
     'rare_received': {'rare': 15},
@@ -497,6 +498,7 @@ EXPECTED_QUALITY = {
     'upgraded_by_robots': {'quality': 'rare', 'request': 'wood x7', 'freighters': 3},
     'replaced_by_player': {'quality': 'rare', 'new': True, 'priority': 7, 'robot_access': True},
     'replaced_undo': {'priority': 7},
+    'downgraded_request': {'quality': 'normal', 'new': True, 'fits': True},
     'blueprint_tag': {'quality': 'rare', 'comparator': '≥'},
     'blueprint_settings': {'quality': 'rare', 'comparator': '≥'},
     'blueprint_built': {'quality': 'rare', 'comparator': '≥'}}
