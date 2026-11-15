@@ -436,6 +436,9 @@ local function depot(x)
     get_control_behavior = function()
       return nil
     end,
+    to_be_deconstructed = function()
+      return false
+    end,
     get_inventory = function()
       -- An empty chest of 48 stacks.
       local chest = {

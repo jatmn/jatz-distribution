@@ -829,6 +829,9 @@ local function new_depot(surface, name, x, y, direction)
   function entity.insert(spec)
     return chest.insert(spec)
   end
+  function entity.to_be_deconstructed()
+    return false
+  end
   return natives(entity), chest
 end
 

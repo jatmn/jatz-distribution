@@ -791,11 +791,17 @@ end
 -- How many of the requested item a request depot still wants, and how many of those it has room
 -- for, counting what its freighters (except trip `except`) are already bringing. Requests above
 -- what the depot can hold are filled as far as it can hold. Fourth, when it wants nothing more: by
--- how much what it holds and what is coming exceed its request (logistics.release_excess).
+-- how much what it holds and what is coming exceed its request (logistics.release_excess). A depot
+-- marked for deconstruction wants nothing, and all that is coming is its excess.
 local function need(depot, except)
   local request = depot.request
   if not request or request.count <= 0 or not exists(depot.fluid, request.item) then
     return 0, 0
+  end
+  if depot.entity.to_be_deconstructed() then
+    -- Marked for deconstruction: it wants nothing more, and what its freighters set off to fetch
+    -- is let go, so freighters don't refill what construction robots are emptying.
+    return 0, 0, nil, ledger.committed(depot, except)
   end
   if depot.fluid then
     local tank = depot.entity
@@ -825,7 +831,8 @@ local function need(depot, except)
 end
 
 -- What a request or buffer depot still needs of what it requests: its request, less what it holds
--- and what freighters are bringing (0 with nothing requested). The road network monitor reads it.
+-- and what freighters are bringing (0 with nothing requested, or marked for deconstruction). The
+-- road network monitor reads it.
 function logistics.missing(depot)
   return (need(depot))
 end
