@@ -238,10 +238,17 @@ script.on_event(defines.events.on_redo_applied, function(event)
   depot_swap.on_undo_applied(event, swap_turned)
 end)
 -- One about to be destroyed (died, or removed by a script that says so) leaves all its freighters,
--- including any still in its chest, where it stands.
-for _, event in ipairs({ defines.events.on_entity_died, defines.events.script_raised_destroy }) do
-  script.on_event(event, logistics.on_depot_destroyed, requesting_filters)
-end
+-- including any still in its chest, where it stands. Not a request or buffer depot a script
+-- upgrades in place to the other (LuaEntity.apply_upgrade, as Blueprint Sandboxes does in its labs:
+-- probed on 2.1.24, it raises script_raised_destroy for the old depot, still marked for that
+-- upgrade, then script_raised_built for the new one, in one tick): the new one keeps them
+-- (scripts/depot-swap.lua), as when robots carry out the upgrade.
+script.on_event(defines.events.on_entity_died, logistics.on_depot_destroyed, requesting_filters)
+script.on_event(defines.events.script_raised_destroy, function(event)
+  if not depot_swap.replacing(event.entity) then
+    logistics.on_depot_destroyed(event)
+  end
+end, requesting_filters)
 script.on_event(defines.events.on_player_rotated_entity, on_turned)
 script.on_event(defines.events.on_player_flipped_entity, on_turned)
 script.on_event(defines.events.on_entity_settings_pasted, function(event)

@@ -12,9 +12,12 @@
 -- on_pre_build (the old depot still holding its contents), on_pre_player_mined_item and
 -- on_player_mined_entity (its contents already moved), then on_built_entity for the new one, all
 -- in one tick; robots raise on_robot_mined_entity for the old one, still marked for upgrade to the
--- new one, then on_robot_built_entity in the same tick. on_object_destroyed for the old one comes
--- at the end of that tick. Its mining would hand its freighters to the miner, so `replacing` tells
--- control.lua not to, and remembers it for the build that follows (`built`).
+-- new one, then on_robot_built_entity in the same tick; a script's LuaEntity.apply_upgrade (Blueprint
+-- Sandboxes carries out upgrade orders that way in its labs) raises script_raised_destroy for the
+-- old one, still marked for upgrade to the new one, then script_raised_built in the same tick.
+-- on_object_destroyed for the old one comes at the end of that tick. Its mining would hand its
+-- freighters to the miner, and its scripted destruction leave them on the ground, so `replacing`
+-- tells control.lua not to, and remembers it for the build that follows (`built`).
 local logistics = require("scripts.logistics")
 local depot_road = require("scripts.depot-road")
 local robot_access = require("scripts.robot-access")
@@ -44,7 +47,8 @@ function swap.on_pre_build(event)
 end
 
 -- Whether a request or buffer depot being mined (on_*_mined_entity, by the player `player_index`
--- or by a robot or platform without one) is being replaced by the other kind: the player placed it
+-- or by a robot or platform without one), or destroyed by a script's apply_upgrade
+-- (script_raised_destroy, without one), is being replaced by the other kind: the player placed it
 -- over this one, or a robot is upgrading this one to it. If so, it is remembered for the build that
 -- follows (storage.depot_swaps, kept for this tick only).
 function swap.replacing(entity, player_index)
