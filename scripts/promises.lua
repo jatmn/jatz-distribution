@@ -358,6 +358,37 @@ do
     end
     return total
   end
+
+  -- What a request depot's freighters, except trip `except`, are bringing of the item it requests
+  -- in qualities its request doesn't take (it changed after they loaded): by key, or nil if none.
+  -- `committed` leaves that cargo out, as the depot doesn't want it, but it still comes home and
+  -- takes up room in the chest (logistics.graded_need keeps room for it). Read after `committed`,
+  -- which files cargo that spoiled again first.
+  function ledger.foreign(depot, except)
+    local items = storage.coming and storage.coming[depot.entity.unit_number]
+    if not items then
+      return nil
+    end
+    local request = depot.request
+    local item, plain = request.item, quality.plain(request)
+    local skipped = except and storage.trips[except]
+    skipped = skipped and skipped.key
+    local found
+    for key, trips in pairs(items) do
+      -- (The item's own key is normal quality, which a plain request takes, and its only one.)
+      if key ~= item or not plain then
+        local name, grade = quality.split(key)
+        if name == item and (plain or not quality.takes(request, grade)) then
+          local amount = sum(trips, skipped)
+          if amount > 0 then
+            found = found or {}
+            found[key] = amount
+          end
+        end
+      end
+    end
+    return found
+  end
 end
 
 -- What freighters on their way to a provider have promised to load there:

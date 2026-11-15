@@ -960,17 +960,26 @@ local function need(depot, except)
   if wanted <= 0 then
     return 0, 0, nil, -wanted
   end
+  -- Other qualities still coming home (from a request for them before): room is kept for them.
+  -- (Nothing, or only the item's own key, coming, the usual case, needs no look.)
+  local items = storage.coming[depot.entity.unit_number]
+  local first = items and next(items)
+  if first ~= nil and (first ~= id or next(items, first) ~= nil) and ledger.foreign(depot, except) then
+    return logistics.graded_need(depot, chest, request, except)
+  end
   return wanted, math.max(0, math.min(wanted, chest.get_insertable_count(id) - coming))
 end
 
--- need() for an item request that isn't for normal quality alone (scripts/quality.lua): what the
--- depot holds and has coming in the qualities it takes. Room for one quality is the game's
--- insertable count. Room for several is shared: each quality's part-filled stacks take only that
--- quality, and empty stacks take any one each. So it is worked out as the game would fill the
--- chest: the empty stacks (the insertable count of a quality none of its stacks has, which the
--- game's hidden "quality-unknown" always is), each quality's part-filled room, and what is already
--- coming of each quality filling its own room first, then empty stacks. Never more than fits, so a
--- freighter never brings what has to be left on the ground. Fifth: the room left, by quality
+-- need() for an item request that isn't for normal quality alone (scripts/quality.lua), or for any
+-- while freighters bring home qualities it no longer takes (ledger.foreign): what the depot holds
+-- and has coming in the qualities it takes. Room for one quality is the game's insertable count.
+-- Room for several, or beside cargo of other qualities coming, is shared: each quality's
+-- part-filled stacks take only that quality, and empty stacks take any one each. So it is worked
+-- out as the game would fill the chest: the empty stacks (the insertable count of a quality none of
+-- its stacks has, which the game's hidden "quality-unknown" always is), each quality's part-filled
+-- room, and what is already coming of each quality (those it takes or not) filling its own room
+-- first, then empty stacks. Never more than fits, so a freighter never brings what has to be left
+-- on the ground. Fifth, for a request taking several qualities: the room left, by quality
 -- (`partial`) and in empty stacks (`empty`, of `size`), for a freighter loading several qualities
 -- (arrived_at_provider). (A field, not a local: this file has few locals to spare.)
 function logistics.graded_need(depot, chest, request, except)
@@ -981,7 +990,8 @@ function logistics.graded_need(depot, chest, request, except)
     return 0, 0, nil, -wanted
   end
   local grades = quality.matching(request)
-  if #grades == 1 then
+  local foreign = ledger.foreign(depot, except)
+  if #grades == 1 and not foreign then
     local room = chest.get_insertable_count(quality.id(quality.key(item, grades[1]))) - coming
     return wanted, math.max(0, math.min(wanted, room))
   end
@@ -989,6 +999,14 @@ function logistics.graded_need(depot, chest, request, except)
   local blank = quality.absent(chest.get_item_quality_counts(item))
   local stacks_free = blank and math.floor(chest.get_insertable_count(quality.id(quality.key(item, blank))) / size) or 0
   local empty, partial = stacks_free, {}
+  -- Cargo coming of qualities it no longer takes (ledger.foreign) fills its own part-filled
+  -- stacks, then empty ones: those are no room for what it takes.
+  for key, brought in pairs(foreign or {}) do
+    local free = math.max(0, chest.get_insertable_count(quality.id(key)) - stacks_free * size)
+    if brought > free then
+      empty = empty - math.ceil((brought - free) / size)
+    end
+  end
   for _, grade in ipairs(grades) do
     local key = quality.key(item, grade)
     local free = math.max(0, chest.get_insertable_count(quality.id(key)) - stacks_free * size)
@@ -1011,7 +1029,9 @@ function logistics.graded_need(depot, chest, request, except)
   for _, free in pairs(partial) do
     room = room + free
   end
-  return wanted, math.max(0, math.min(wanted, room)), nil, nil, { empty = empty, partial = partial, size = size }
+  -- (Where each fits, for a request taking several; one taking one quality needs only the room.)
+  local fits = #grades > 1 and { empty = empty, partial = partial, size = size } or nil
+  return wanted, math.max(0, math.min(wanted, room)), nil, nil, fits
 end
 
 -- What a request or buffer depot still needs of what it requests: its request, less what it holds
@@ -2985,6 +3005,11 @@ local function finish_search(depot, search, owner)
       promise(owner)
       owner.leg = search.best_length
       set_off(search.trip, owner, search.best_length, logistics.search_plan(search, owner))
+    elseif not full and (owner.planned or 0) <= 0 and owner.drone.valid then
+      -- It has nothing left to fetch (a request change dropped what it set off for): no provider
+      -- gives it a load, so looking again would only find one again, for ever. Home empty.
+      lifecycle.clear_route_search(owner)
+      logistics.home_empty(search.trip, owner, depot)
     else
       -- The provider found was emptied or removed meanwhile: look again among the rest. (Or the
       -- depot no longer has room for a full load, or for what that provider has: reroute sends it

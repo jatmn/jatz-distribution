@@ -417,6 +417,32 @@ do -- Freighters asked for while the truck chest has no free stack keep the qual
   end
 end
 
+do -- A quality asked for again after another keeps its place: rare, normal and rare asked for with no
+  -- free stack wait in that order, and a rare one put in by hand counts for the last ask, so robots
+  -- bring the rare and the normal asked first (the review of 52f7016: the two rare asks were joined,
+  -- ahead of the normal, and robots brought two rare).
+  local logistics = reset()
+  local request = supplied(logistics, 0)
+  local planned, free = full_truck_chest(request, 2)
+  logistics.request_freighters(request, 1, "rare")
+  logistics.request_freighters(request, 1)
+  logistics.request_freighters(request, 1, "rare")
+  local waiting = storage.depots[request.unit_number].replenishment.waiting
+  check(
+    "rare, normal, rare: each waits in the order asked",
+    #waiting == 3 and waiting[1].quality == "rare" and waiting[2].quality == nil and waiting[3].quality == "rare"
+  )
+  assert(logistics.put_freighters(request, graded("jatz-quinityn-freighter", 1, "rare")) == 1)
+  free(1)
+  free(2)
+  game.tick = 60
+  logistics.on_tick()
+  check(
+    "a rare one put in by hand: robots bring the first rare and the normal",
+    plans_are(planned, { { "rare", 1 }, { "normal", 1 } })
+  )
+end
+
 do -- Freighters waiting for a free stack at a quality a mod change took away are asked for as normal.
   local logistics = reset()
   local request = supplied(logistics, 0)
@@ -578,6 +604,93 @@ do -- A freighter bringing rare cargo home is counted by quality even when what 
   check("setup: 15 rare on the way home", trip.state == "to-request" and logistics.missing(depot) == 15)
   logistics.add_all()
   check("still coming after everything is filed afresh", logistics.missing(depot) == 15)
+end
+
+do -- Cargo of a quality its request no longer takes still comes home, and keeps its room: a depot
+  -- with one stack, whose freighter loaded a rare plate before its request changed, sends no other
+  -- freighter for what it takes now until that is in (the review of 52f7016: a second freighter
+  -- brought an epic one first, and the rare one was left on the ground). So for exactly epic, at
+  -- least epic (several qualities), normal (a plain request), and any quality narrowed to at least
+  -- epic.
+  for _, case in ipairs({
+    { "rare", nil, "epic", nil },
+    { "rare", nil, "epic", ">=" },
+    { "rare", nil, nil, nil },
+    { nil, "any", "epic", ">=" },
+  }) do
+    local named = tostring(case[3]) .. " " .. tostring(case[4]) .. " after " .. tostring(case[1] or case[2])
+    local logistics = reset()
+    local request, provider = quality_pair(logistics, 50, case[1], case[2], { { "rare", 1 } }, 2)
+    local other = entity("jatz-provider-depot", 20.5, 0.5)
+    graded_stock(other, { { "epic", 1 }, { "normal", 1 } })
+    logistics.add(other)
+    -- One stack, with the game's room: a stack holds one quality, 50 of item a.
+    local chest = script_inventory(1)
+    chest.get_insertable_count = function(id)
+      local grade = type(id) == "table" and id.quality or "normal"
+      local slot = chest[1]
+      if not slot.valid_for_read then
+        return 50
+      end
+      return slot.quality and slot.quality.name == grade and 50 - slot.count or 0
+    end
+    request.get_inventory = function()
+      return chest
+    end
+    logistics.on_tick()
+    answer(logistics, 1, "route")
+    local trip = trips_from(request)[1]
+    check(named .. ": setup: a freighter for the rare plate", trip and trip.provider == provider.unit_number)
+    arrive(logistics, trip)
+    check(
+      named .. ": setup: it brings the rare plate home",
+      trip.state == "to-request" and trip.cargo.get_item_count({ name = "a", quality = "rare" }) == 1
+    )
+    assert(logistics.set_request(request, "a", 50, case[3], case[4]))
+    local asked = #requests
+    for second = 1, 3 do
+      game.tick = 60 * second
+      forget_roads()
+      logistics.on_tick()
+    end
+    check(named .. ": no other freighter goes while the rare one takes the only stack", #requests == asked)
+    check(named .. ": nor is it counted as wanted", logistics.missing(storage.depots[request.unit_number]) == 50)
+    arrive(logistics, trip)
+    check(named .. ": the rare plate goes in, none left on the ground", count_of(chest, "rare") == 1)
+  end
+end
+
+do -- A freighter whose promise a request change dropped (another item, then back) has nothing to
+  -- fetch: its provider removed, it goes home empty rather than look for another, over and over (the
+  -- review of 52f7016: every road found started the same search again, and it never came home).
+  for _, plain in ipairs({ true, false }) do
+    local grade = not plain and "rare" or nil
+    local named = tostring(grade)
+    local logistics = reset()
+    local request, near = quality_pair(logistics, 100, grade, nil, { { grade or "normal", 30 } }, 1)
+    local far = entity("jatz-provider-depot", 40.5, 0.5)
+    graded_stock(far, { { grade or "normal", 50 } })
+    logistics.add(far)
+    logistics.on_tick()
+    answer(logistics, 1, "route")
+    local trip = trips_from(request)[1]
+    check(named .. ": setup: a freighter out for 30", trip and trip.planned == 30)
+    assert(logistics.set_request(request, "b", 100))
+    assert(logistics.set_request(request, "a", 100, grade))
+    check(named .. ": setup: its promise dropped", trip.planned == 0)
+    near.valid = false
+    logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = near.unit_number })
+    for _ = 1, 4 do
+      if trip.search then
+        answer(logistics, #requests, "route")
+      end
+    end
+    check(named .. ": it stops looking", trip.search == nil)
+    check(named .. ": and heads home", trip.state == "to-request")
+    arrive(logistics, trip)
+    local home, out = logistics.freighter_counts(request)
+    check(named .. ": where it parks", home == 1 and out == 0)
+  end
 end
 
 do -- A Fuel depot replaced by itself at another quality keeps the freighters heading for it.

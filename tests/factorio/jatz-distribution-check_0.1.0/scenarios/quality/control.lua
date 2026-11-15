@@ -13,7 +13,8 @@
 -- * Better depots: a rare request depot's chest and a rare liquid depot's tank are the game's bigger
 --   ones, and a rare Fuel depot's hidden tank is rare too.
 -- * Upgrades: a request depot robots upgrade to rare keeps its request and freighters; a provider a
---   player builds a rare one over keeps its priority and robot access.
+--   player builds a rare one over keeps its priority and robot access, and the undo action of the
+--   normal one's removal keeps its settings too.
 -- * Blueprints: a request for at least rare keeps its quality and comparator in its tag, and its
 --   settings' signal is rare, so a depot built from the blueprint asks for the same.
 -- Writes script-output/jatz-quality-check.json.
@@ -152,6 +153,7 @@ script.on_event(defines.events.on_tick, function(event)
     local at, old_id = replaced.position, replaced.unit_number
     player.cursor_stack.set_stack({ name = "jatz-provider-depot", quality = "rare", count = 1 })
     player.build_from_cursor({ position = at })
+    storage.replaced_at = at
     local now = surface.find_entities_filtered({ name = "jatz-provider-depot", position = at })[1]
     result.replaced_by_player = now
         and {
@@ -240,6 +242,23 @@ script.on_event(defines.events.on_tick, function(event)
           freighters = in_slot + out,
         }
       or "not upgraded"
+    -- The player's replacement removed the normal provider: that removal's undo action keeps its
+    -- settings, as any player's removal's does (scripts/undo.lua).
+    local stack, kept = player.undo_redo_stack, nil
+    for item = 1, stack.get_undo_item_count() do
+      for index, action in ipairs(stack.get_undo_item(item)) do
+        local target = action.type == "removed-entity" and action.target
+        if
+          target
+          and target.name == "jatz-provider-depot"
+          and target.position.x == storage.replaced_at.x
+          and target.position.y == storage.replaced_at.y
+        then
+          kept = stack.get_undo_tag(item, index, "jatz_settings")
+        end
+      end
+    end
+    result.replaced_undo = kept and { priority = kept.jatz_priority } or "no settings"
     helpers.write_file("jatz-quality-check.json", helpers.table_to_json(result))
     script.finish_test(true)
   end

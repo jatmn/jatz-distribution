@@ -185,17 +185,18 @@ local function request_up_to(entity, goal, grade)
   -- (as many as its earlier target still lacks; freighters put in by hand count for the last
   -- asked), then the rest of the way to `goal`, of `grade`.
   local owed, left = {}, math.min(goal, depot.replenishment and depot.replenishment.target or 0) - have
+  -- (A quality asked for again straight after itself shares its entry; asked for again after
+  -- another, it is a new one, so the order asked stays and the last asked stays last.)
   local function owe(name, count)
     if count <= 0 then
       return
     end
-    for _, part in ipairs(owed) do
-      if part.quality == name then
-        part.count = part.count + count
-        return
-      end
+    local last = owed[#owed]
+    if last and last.quality == name then
+      last.count = last.count + count
+    else
+      owed[#owed + 1] = { quality = name, count = count }
     end
-    owed[#owed + 1] = { quality = name, count = count }
   end
   for _, part in ipairs(depot.replenishment and depot.replenishment.waiting or {}) do
     local count = math.min(part.count, left)

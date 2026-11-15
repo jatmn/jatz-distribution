@@ -678,6 +678,20 @@ do -- A depot replaced by itself at another quality (scripts/depot-upgrades.lua)
     check(how .. ": and its freighters, none handed over", received == 0 and logistics.freighter_counts(new) == 3)
     check(how .. ": and its robot access", access[new.unit_number] == true)
     check(how .. ": the old one is forgotten", storage.depots[old.unit_number] == nil)
+    if how == "player" then
+      -- The game puts the player's removal of the old one on their undo stack, as any removal by
+      -- hand: its settings wait for that action like any other's (scripts/undo.lua).
+      local waiting = storage.undo_pending and storage.undo_pending[1]
+      local entry = waiting and waiting[#waiting]
+      check(
+        "player: the removal's undo action still gets its settings",
+        entry
+          and entry.unit_number == old.unit_number
+          and entry.tags.jatz_request.item == "wood"
+          and entry.tags.jatz_freighters == 3
+      )
+      storage.undo_pending = nil
+    end
     -- (Its freighters taken out first: this fake surface spills nothing.)
     storage.depots[new.unit_number].trucks = nil
     removed(new)

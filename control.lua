@@ -180,12 +180,15 @@ for _, event in ipairs({
     end
   end, filters)
 end
--- Mined by a player: also the removal undo.player_removing's settings were read for (below).
+-- Mined by a player: also the removal undo.player_removing's settings were read for (below). A
+-- player replacing a depot by itself at another quality removes it too: the game puts that
+-- removal on their undo stack, so its settings go on it like any other's, though its freighters
+-- stay with the new one.
 script.on_event(defines.events.on_player_mined_entity, function(event)
+  undo.player_removed(event.entity, event.player_index)
   if depot_upgrades.mined(event.entity, event.player_index) then
     return
   end
-  undo.player_removed(event.entity, event.player_index)
   logistics.on_depot_mined(event)
 end, filters)
 -- A player's builds, for telling a depot placed over itself at another quality from one mined.

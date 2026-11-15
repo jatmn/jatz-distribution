@@ -10,7 +10,7 @@
 -- moves the chest's contents (or the tank's fluid), wires, circuit settings and a buffer depot's
 -- logistic requests itself, but not what the mod keeps by unit number, and it turns the logistic
 -- points back on. So the old one's removal is not a removal: its freighters aren't handed to the
--- miner, and no undo settings wait for it, and once the new one is built everything the mod kept
+-- miner, and once the new one is built everything the mod kept
 -- for the old one moves to it (logistics.replaced, depot_road.replaced, road_monitor.replaced, as for
 -- the depots from before they were logistic containers, scripts/legacy-depots.lua), with whether
 -- logistic robots may use it. Its request, freighters (in its slot and out on trips), the trips'
