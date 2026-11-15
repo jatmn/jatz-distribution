@@ -271,7 +271,15 @@ local function contents(members, reading, force)
       end
     elseif depot then
       if depot.fluid then
-        for name, amount in pairs(depot.entity.get_fluid_contents()) do
+        -- A liquid request depot holds what its parked freighters keep for its tank too
+        -- (logistics.store_in_freighters): with the tank's, in whole units, once per fluid. Not
+        -- what freighters can fetch, so a buffer depot's isn't supply.
+        local held = depot.entity.get_fluid_contents()
+        local reserve = reading == "requests" and depot.reserve
+        if reserve and reserve.amount > 0 then
+          held[reserve.name] = (held[reserve.name] or 0) + reserve.amount
+        end
+        for name, amount in pairs(held) do
           add(unit_number, "fluid", name, QUALITY, math.floor(amount))
         end
       else

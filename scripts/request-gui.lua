@@ -800,6 +800,11 @@ local function on_gui_elem_changed(event)
   end
   local field = event.element.parent[COUNT]
   local amount = tonumber(field.text) or 0
+  -- A liquid depot's field shows its request as far as the depot can hold now (show_request_count):
+  -- the amount set, kept above that (logistics.fit_request), stays the amount for another fluid.
+  if LIQUID[entity.name] and current and current.asked and amount == current.count then
+    amount = current.asked
+  end
   -- A newly chosen item starts at the default request (startup settings, settings.lua: stacks of
   -- an item, an amount of a fluid; one stack and 1,000 unless changed), so the request does
   -- something straight away.

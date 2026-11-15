@@ -60,25 +60,133 @@ return function(h)
     )
   end
 
-  do -- An amount set that is infinity (or text too long for a number) is what the depot holds, as
-    -- before `asked` was kept, for both liquid roles: no tag or blueprint can hold infinity. A
-    -- finite amount above the limit is kept, and so is an infinite one in a save from before.
+  do -- An amount set that is infinity (or text too long for a number) asks to fill the depot, for
+    -- both liquid roles: kept as the most a blueprint parameter holds, as no tag or blueprint can
+    -- hold infinity, so it follows the limit like any amount above it. A finite amount above the
+    -- limit is kept, and an infinite one in a save from before is fitted the same way.
     local logistics = reset()
+    local fill = logistics.request_fill
     local request = liquids(logistics, 1000000, 40)
     local buffer = h.tank("jatz-liquid-buffer-depot", 40.5, 0.5)
     logistics.add(buffer)
+    assert(logistics.put_freighters(buffer, stack("jatz-quinityn-freighter", 40)) == 40)
+    check("filling is a blueprint parameter's most", fill == 2147483647)
     for name, tank in pairs({ request = request, buffer = buffer }) do
       local depot = storage.depots[tank.unit_number]
       assert(logistics.set_request(tank, "water", math.huge))
       check(name .. ": infinity is the tank's size", logistics.get_request(tank).count == 25000)
-      check(name .. ": kept as that, not as infinity", depot.request.asked == 25000)
+      check(name .. ": kept as filling the depot, not as infinity", depot.request.asked == fill)
+      assert(logistics.set_freighter_storage(tank, true))
+      check(name .. ": so it follows the limit", logistics.get_request(tank).count == 30000)
+      assert(logistics.set_freighter_storage(tank, false))
       assert(logistics.set_request(tank, "water", tonumber("9" .. string.rep("0", 400))))
-      check(name .. ": so is a number too large to hold", depot.request.count == 25000 and depot.request.asked == 25000)
+      check(name .. ": so is a number too large to hold", depot.request.count == 25000 and depot.request.asked == fill)
       assert(logistics.set_request(tank, "water", 1e100))
       check(name .. ": a finite amount above it is kept", logistics.get_request(tank).asked == 1e100)
       depot.request.asked = math.huge -- saved by a version that kept it
       logistics.fit_request(depot)
-      check(name .. ": a saved infinity is fitted too", depot.request.count == 25000 and depot.request.asked == 25000)
+      check(name .. ": a saved infinity is fitted too", depot.request.count == 25000 and depot.request.asked == fill)
+    end
+  end
+
+  do -- A request saved before `asked` was kept holds only the amount it was capped to. One at its
+    -- tank's size (capped from whatever was typed: the owner's playtest of the reported save) asks
+    -- to fill the depot, so ticking freighter storage, or adding freighters, sends them out; one
+    -- below it keeps its amount. Both fit a tank made smaller (the request depot tank size setting)
+    -- and Full loads only then still sends freighters. No configuration change is needed.
+    local logistics = reset()
+    local request, provider = liquids(logistics, 1000, 40)
+    provider.held.amount = 20000
+    local depot = storage.depots[request.unit_number]
+    depot.request = { item = "water", count = 25000 } -- from a save before
+    request.held.name, request.held.amount = "water", 25000
+    assert(logistics.set_freighter_storage(request, true))
+    check(
+      "an old request at its tank's size fills the freighters ticked",
+      logistics.get_request(request).count == 30000
+    )
+    check("kept as filling the depot", depot.request.asked == logistics.request_fill)
+    game.tick = 60
+    logistics.on_tick()
+    answer(logistics, #h.requests(), "route")
+    check("so a freighter goes though the tank is full", #trips_from(request) == 1)
+    assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 20)) == 20)
+    game.tick = 120
+    logistics.on_tick()
+    check("and freighters added raise it", logistics.get_request(request).count == 45000)
+
+    -- An old request below its tank's size keeps its amount, ticked or not.
+    logistics = reset()
+    request = liquids(logistics, 1000, 40)
+    depot = storage.depots[request.unit_number]
+    depot.request = { item = "water", count = 10000 }
+    assert(logistics.set_freighter_storage(request, true))
+    check("an old request below its tank's size keeps it", logistics.get_request(request).count == 10000)
+    check("as the amount set", depot.request.asked == 10000)
+
+    -- The tank made bigger: 25,000 was a liquid request depot's tank before it had a setting, so
+    -- an old request for that fills the bigger one, without typing it again.
+    logistics = reset()
+    request = liquids(logistics, 1000, 3)
+    request.get_fluid_capacity = function()
+      return 35000
+    end
+    storage.depots[request.unit_number].request = { item = "water", count = 25000 }
+    logistics.fit_request(storage.depots[request.unit_number])
+    check("an old request at the old 25,000 fills a bigger tank", logistics.get_request(request).count == 35000)
+
+    -- The tank made smaller: an old request below 25,000 was never capped, so it keeps its amount
+    -- above the smaller tank, as far as the depot can hold, rather than fill it.
+    logistics = reset()
+    request = liquids(logistics, 1000, 40)
+    request.get_fluid_capacity = function()
+      return 10000
+    end
+    depot = storage.depots[request.unit_number]
+    depot.request = { item = "water", count = 20000 }
+    logistics.fit_request(depot)
+    check("an old 20,000 fits a 10,000 tank", depot.request.count == 10000 and depot.request.asked == 20000)
+    assert(logistics.set_freighter_storage(request, true))
+    check("and asks for no more than it with freighters added", logistics.get_request(request).count == 20000)
+
+    -- A liquid buffer depot's old request at its tank's size fills it too; one below keeps its amount.
+    for old, asked in pairs({ [25000] = logistics.request_fill, [10000] = 10000 }) do
+      logistics = reset()
+      local buffer = h.tank("jatz-liquid-buffer-depot", 40.5, 0.5)
+      logistics.add(buffer)
+      assert(logistics.put_freighters(buffer, stack("jatz-quinityn-freighter", 40)) == 40)
+      depot = storage.depots[buffer.unit_number]
+      depot.request = { item = "water", count = old }
+      assert(logistics.set_freighter_storage(buffer, true))
+      check(
+        "a liquid buffer depot's old request for " .. old .. " asks for " .. asked,
+        depot.request.asked == asked and depot.request.count == math.min(asked, 30000)
+      )
+    end
+
+    -- The tank made smaller than one load (1,000, freighters carrying 2,625): old requests at the
+    -- old 25,000 cap and below it fit it, and Full loads only sends a freighter for what fits.
+    for old, asked in pairs({ [25000] = logistics.request_fill, [10000] = 10000 }) do
+      logistics = reset()
+      request, provider = liquids(logistics, 1000, 3)
+      provider.held.amount = 20000
+      request.get_fluid_capacity = function()
+        return 1000
+      end
+      storage.research_levels = { [request.force.index] = { stacks = 0, fluid = 1875, speed = 1, tick = 0 } }
+      assert(logistics.set_full_loads(request, true))
+      depot = storage.depots[request.unit_number]
+      depot.request = { item = "water", count = old }
+      game.tick = 60
+      logistics.on_tick()
+      check(
+        "an old request for " .. old .. " fits a 1,000 tank",
+        depot.request.count == 1000 and depot.request.asked == asked
+      )
+      check(
+        "and Full loads only sends a freighter for it",
+        #h.requests() == 1 and logistics.get_status(request) == "searching"
+      )
     end
   end
 

@@ -834,20 +834,35 @@ function logistics.fluid_limit(depot)
   return math.max(tank, (parked + out) * research.fluid_capacity_of(depot.entity.force)), tank
 end
 
+-- The amount a liquid depot's request keeps (`asked`) to fill the depot, whatever it can hold:
+-- the most a blueprint parameter holds (a condition's int32, scripts/depot-settings.lua), so tags,
+-- blueprints and copy and paste carry it as they do any amount set. No depot holds as much.
+logistics.request_fill = 2147483647
+
 -- A liquid depot's request is the amount set as far as it can hold: that follows the depot's
 -- limit as freighters come and go, research raises their capacity, or freighter storage is ticked
--- (checked once a second, from dispatch). Requests from before this kept no `asked`, and stay.
--- An amount set that no tag or blueprint can hold (infinity, from a number or text too large for
--- one) is kept as what the depot can hold, as a request was before `asked` was kept.
+-- (checked once a second, from dispatch). An amount set that no tag or blueprint can hold
+-- (infinity, from a number or text too large for one) asks to fill the depot (request_fill), so it
+-- follows the limit too, rather than staying at whatever the depot held when it was set.
+-- A request from before `asked` was kept holds only the amount it was capped to, so it gets its
+-- `asked` here, the first time it is fitted (on load or not: a save loaded without a configuration
+-- change has these too): one at its tank's size, capped from whatever was typed, asks to fill the
+-- depot; any other keeps its amount. A liquid request depot's tank was 25,000 before it had a
+-- setting, so for one of those that is the size it was capped at, whatever its size now; a liquid
+-- buffer depot's size then isn't known, so only its size now is.
 function logistics.fit_request(depot)
   local request = depot.request
-  if request and request.asked and depot.fluid then
-    local limit = logistics.fluid_limit(depot)
-    if request.asked == math.huge then
-      request.asked = limit
-    end
-    request.count = math.min(request.asked, limit)
+  if not (request and depot.fluid) then
+    return
   end
+  local limit, tank = logistics.fluid_limit(depot)
+  if request.asked == nil then
+    local capped = request.count == tank or (depot.role == "request" and request.count >= 25000)
+    request.asked = capped and logistics.request_fill or request.count
+  elseif request.asked == math.huge then
+    request.asked = logistics.request_fill
+  end
+  request.count = math.min(request.asked, limit)
 end
 
 -- How much of `name` (any fluid, without) a liquid depot's parked freighters hold for its tank.

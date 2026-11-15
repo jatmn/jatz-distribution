@@ -2321,6 +2321,20 @@ do -- Liquid depots: the same panels, beside the storage tank window, choosing a
   check("keeping the amount typed, key by key", logistics.get_request(request).asked == 1000000)
   fire("on_gui_confirmed", { player_index = 12, element = amount })
   check("in the field too, once confirmed", amount.text == "25000")
+  -- Another fluid chosen keeps the amount typed, not the 25,000 the field shows: so ticking freighter
+  -- storage later still raises it.
+  prototypes.fluid.steam = { fuel_value = 0 }
+  chooser.elem_value = "steam"
+  fire("on_gui_elem_changed", { player_index = 12, element = chooser })
+  request_set = logistics.get_request(request)
+  check(
+    "another fluid chosen keeps the amount typed",
+    request_set.item == "steam" and request_set.asked == 1000000 and amount.text == "25000"
+  )
+  chooser.elem_value = "water"
+  fire("on_gui_elem_changed", { player_index = 12, element = chooser })
+  check("and so does the first again", logistics.get_request(request).asked == 1000000)
+  prototypes.fluid.steam = nil
   local freighter_storage = inner.jatz_request_freighter_storage
   check("it has the freighter storage checkbox, unticked", freighter_storage and freighter_storage.state == false)
   check("with what its freighters hold hidden", inner.freighter_stored and not inner.freighter_stored.visible)
@@ -2810,10 +2824,44 @@ do -- The road network monitor shows what the provider and buffer depots on its 
     seen["item:stone:normal"] == nil and seen["item:iron-plate:normal"] == 10 and seen["fluid:water:normal"] == 1500
   )
   check("and only that choice ticked", not panel.inner.jatz_monitor_reading_supply.state)
+  -- Two liquid request depots, with nothing requested, holding fluid in their parked freighters too
+  -- (logistics.store_in_freighters): one 600.5 water in its tank and 400.5 in its freighters, the
+  -- other 250.75 steam in its freighters only (asked for before), its tank empty. And a liquid
+  -- buffer depot with 100 water in its tank and 50 in its freighters.
+  local function stored(contents, reserve, name)
+    local entity = depot(504)
+    entity.name = name or "jatz-liquid-request-depot"
+    entity.get_fluid_contents = function()
+      return contents()
+    end
+    fire("on_built_entity", { entity = entity })
+    storage.depots[entity.unit_number].reserve = reserve
+    return entity
+  end
+  local tanked = stored(function()
+    return { water = 600.5 }
+  end, { name = "water", amount = 400.5, temperature = 15 })
+  stored(function()
+    return {}
+  end, { name = "steam", amount = 250.75, temperature = 165 })
+  stored(function()
+    return { water = 100 }
+  end, { name = "water", amount = 50, temperature = 15 }, "jatz-liquid-buffer-depot")
   seen = choose("requests")
   check(
     "request depots only: the 5 wood it holds, nothing else",
     seen["item:wood:normal"] == 5 and seen["item:iron-plate:normal"] == nil and seen["item:stone:normal"] == nil
+  )
+  check(
+    "and fluid in liquid request depots' tanks and parked freighters, in whole units once",
+    seen["fluid:water:normal"] == 1001 and seen["fluid:steam:normal"] == 250
+  )
+  local counts = storage.road_monitors[monitor.unit_number].counted[tanked.unit_number]
+  check("counted as the depot's own, for its circuit condition", counts and counts["fluid/water/normal"] == 1001)
+  seen = choose("supply")
+  check(
+    "and not as supply, a buffer depot's freighters' left out too",
+    seen["fluid:water:normal"] == 1600 and seen["fluid:steam:normal"] == nil
   )
   seen = choose("needs")
   check(
