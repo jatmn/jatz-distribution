@@ -2322,6 +2322,9 @@ local function check_trip(id, trip, per_tile, capacity, polluters)
     -- Where burn just found it.
     pollute(trip.at, POLLUTION_PER_SECOND * DISPATCH_INTERVAL / 60, DRONE)
   end
+  if trip.road_cut then
+    logistics.replan_cut(trip)
+  end
   if trip.search and game.tick - trip.search.since >= SEARCH_TIMEOUT then
     search_again(id, trip)
   elseif trip.planning and drone.valid and game.tick - trip.planning.since >= SEARCH_TIMEOUT then
@@ -3030,8 +3033,8 @@ function target(trip)
   return depot and (loading_tile(depot)) or trip.destination
 end
 
--- Plan a freighter's route again from where it stands. A route that no longer exists fails at
--- once (on_ai_command_completed), instead of after the freighter stands stuck for seconds.
+-- Plan a freighter's route again from where it stands. A route that no longer exists fails then
+-- (on_ai_command_completed), instead of after the freighter stands stuck for seconds.
 local function replan(trip)
   -- A freighter waiting for a reroute search stays put; the search decides where it goes. One
   -- loading or unloading finishes first, then plans its next route afresh.
@@ -3107,22 +3110,38 @@ function logistics.on_roads_changed(surface_index, added, removed)
     -- their origin from it (Pullfrog's review of fa62744).
     for _, trip in pairs(storage.trips) do
       if trip.drone.valid and trip.drone.surface_index == surface_index then
-        -- Its plan was worked out on the road as it was.
+        -- Its plan was worked out on the road as it was. It plans its way again at a check of
+        -- its own (check_trip, logistics.replan_cut), not here with every other freighter: road
+        -- mined or covered a tile at a time raises this for each tile, and on a large network
+        -- with tunnels planning every freighter's way took over 100 ms each time (a player's
+        -- report, November 15, 2026: removing road froze the game for seconds).
         trip.origin, trip.plan = nil, nil
+        trip.road_cut = true
       end
     end
+    storage.road_cuts = storage.road_cuts or {}
+    storage.road_cuts[surface_index] = game.tick
   end
   restart_searches(surface_index)
   if added then
     retry_now(surface_index)
   end
-  if removed then
-    for _, trip in pairs(storage.trips) do
-      if trip.drone.valid and trip.drone.surface_index == surface_index then
-        replan(upgrade(trip))
-      end
-    end
+end
+
+-- A freighter's check after road was removed on its surface (on_roads_changed): it plans its way
+-- again from where it stands, so within a second or so. Not while road is still being removed
+-- there (`cut_quiet` ticks since the last tile, storage.road_cuts): each removal forgets the
+-- surface's road networks, and the first plan after it floods them again (scripts/tunnels.lua),
+-- so freighters planning between the tiles of one stroke flooded them every tick. It waits for its
+-- next check then. (Fields: check_trip comes before replan in this file.)
+logistics.cut_quiet = 10
+function logistics.replan_cut(trip)
+  local cut = trip.drone.valid and storage.road_cuts and storage.road_cuts[trip.drone.surface_index]
+  if cut and game.tick - cut < logistics.cut_quiet then
+    return
   end
+  trip.road_cut = nil
+  replan(upgrade(trip))
 end
 
 -- A depot was built, turned or flipped: routes to and from it changed.

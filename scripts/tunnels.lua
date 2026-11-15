@@ -42,12 +42,15 @@ local function init_storage()
   -- How many portals each surface has: no surface without one pays for any of this.
   storage.tunnel_surfaces = storage.tunnel_surfaces or {}
   -- What is known of each surface's road networks: { made = tick, stale = bool, count = networks,
-  -- points = { [tile key] = network, or false off road }, portals = list (see `portals_of`) }.
+  -- points = { [tile key] = network, or false off road }, portals = list (see `portals_of`),
+  -- floods = the networks flooded so far, every tile of each (see `net_of`) }.
   storage.tunnel_nets = storage.tunnel_nets or {}
 end
 
+-- A tile's key: a number (a text key for each of a network's thousands of tiles was most of what
+-- flooding one cost). Maps reach a million tiles each way from the centre.
 local function key(x, y)
-  return x .. "," .. y
+  return (x + 2097152) * 4194304 + y + 2097152
 end
 
 -- The centre of the tile in front of a portal (one tile wide and two deep, its centre between its
@@ -189,59 +192,56 @@ local function nets_of(surface_index)
   return nets
 end
 
--- Every tile flooded this tick, by tile key, with its network: Lua only, and only for the tick and
--- the surface's networks it was flooded for, so it never differs between players' games. After road
--- is removed, every freighter on the surface plans its way from where it stands; one flood a
--- network then serves them all.
-local flooded = { tick = -1, nets = nil, tiles = {} }
-
 -- The road network `position` is on (a number), or false if it isn't on road. Unknown, its
--- network is flooded once, noting every portal entry and depot loading zone it reaches.
+-- network is flooded once, noting every portal entry and depot loading zone it reaches, and kept
+-- with what is known of the surface (`nets.floods`: { tiles = { [tile key] = true }, net } for
+-- each, in storage, so every player's game agrees), so points asked about later, where a freighter
+-- stands, say, need no flood of their own: until road is removed there, or a second after road is
+-- laid, when all of it is forgotten (nets_of). A flood reads every tile of the network, 10 ms and
+-- more for one of 14,000 tiles: kept only for the tick, each tick in which a freighter planned its
+-- way from where it stood flooded it again (a player's report, November 15, 2026).
 -- A network keeps its number while what is known of the surface lasts: one flooded again (from a
--- point asked about on a later tick) takes the number of any point already remembered on it, so
--- points remembered on it before still agree (a new number left them on a network with no
--- portals, and routes from them found no tunnel: Pullfrog's review of 4d4f64a). Road laid since
--- this was worked out (forgotten at most once a second) can have joined networks remembered
--- apart: they become one, under the lowest of their numbers.
+-- point on road laid since) takes the number of any point already remembered on it, so points
+-- remembered on it before still agree (a new number left them on a network with no portals, and
+-- routes from them found no tunnel: Pullfrog's review of 4d4f64a). Road laid since this was
+-- worked out (forgotten at most once a second) can have joined networks remembered apart: they
+-- become one, under the lowest of their numbers.
 local function net_of(nets, surface, position)
   local x, y = math.floor(position.x), math.floor(position.y)
   local wanted = key(x, y)
-  local known = nets.points[wanted]
+  local points = nets.points
+  local known = points[wanted]
   if known ~= nil then
     return known
   end
-  if flooded.tick ~= game.tick or flooded.nets ~= nets then
-    flooded.tick, flooded.nets, flooded.tiles = game.tick, nets, {}
-  end
-  known = flooded.tiles[wanted]
-  if known then
-    nets.points[wanted] = known
-    return known
+  local floods = nets.floods
+  if floods then
+    for _, flood in ipairs(floods) do
+      if flood.tiles[wanted] then
+        points[wanted] = flood.net
+        return flood.net
+      end
+    end
   end
   local tiles = surface.get_connected_tiles({ x, y }, ROADS)
   if #tiles == 0 then
-    nets.points[wanted] = false
+    points[wanted] = false
     return false
   end
-  -- The points worth remembering: where a route can start, end or go under.
-  local noted = { [wanted] = true }
-  for _, portal in ipairs(nets.portals) do
-    noted[key(math.floor(portal.entry.x), math.floor(portal.entry.y))] = true
+  -- (`key`, written out: this runs for every tile of the network.)
+  local set = {}
+  for index = 1, #tiles do
+    local tile = tiles[index]
+    set[(tile.x + 2097152) * 4194304 + tile.y + 2097152] = true
   end
-  for _, zone in ipairs(tunnels.zones and tunnels.zones(surface.index) or {}) do
-    noted[key(math.floor(zone.x), math.floor(zone.y))] = true
-  end
-  local points, keys, seen, net = nets.points, {}, {}, nil
-  for index, tile in ipairs(tiles) do
-    local found = key(tile.x, tile.y)
-    keys[index] = found
-    local id = points[found]
-    if id then
+  -- The number of any point remembered on it.
+  local seen, net = {}, nil
+  for point, id in pairs(points) do
+    if id and set[point] then
       seen[id] = true
       net = net and math.min(net, id) or id
     end
   end
-  local this_tick = flooded.tiles
   if not net then
     nets.count = nets.count + 1
     net = nets.count
@@ -252,19 +252,29 @@ local function net_of(nets, surface, position)
         points[point] = net
       end
     end
-    for tile, id in pairs(this_tick) do
-      if seen[id] then
-        this_tick[tile] = net
+    for _, flood in ipairs(floods or {}) do
+      if seen[flood.net] then
+        flood.net = net
       end
     end
   end
-  for _, found in ipairs(keys) do
-    this_tick[found] = net
-    if noted[found] then
-      points[found] = net
+  -- The points worth remembering: where a route can start, end or go under.
+  for _, portal in ipairs(nets.portals) do
+    local entry = key(math.floor(portal.entry.x), math.floor(portal.entry.y))
+    if set[entry] then
+      points[entry] = net
+    end
+  end
+  for _, zone in ipairs(tunnels.zones and tunnels.zones(surface.index) or {}) do
+    local at = key(math.floor(zone.x), math.floor(zone.y))
+    if set[at] then
+      points[at] = net
     end
   end
   points[wanted] = net
+  floods = floods or {}
+  nets.floods = floods
+  floods[#floods + 1] = { tiles = set, net = net }
   return net
 end
 

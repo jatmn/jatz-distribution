@@ -4,6 +4,8 @@
 -- its helpers (`h`): that file is at the size CI downloads.
 return function(h)
   local reset, check, settle, trip_of = h.reset, h.check, h.settle, h.trip_of
+  -- Road removed, and the freighters' checks after it (tests/lua/logistics.lua).
+  local road_removed = h.road_removed
   local tunnelled, joined_round, one_network, leg_road = h.tunnelled, h.joined_round, h.one_network, h.leg_road
 
   -- A freighter waits for its roads while tiles are laid elsewhere between each question and its
@@ -14,7 +16,7 @@ return function(h)
     local requests = h.requests()
     local trip = trip_of(request)
     trip.drone.position = { x = 10.5, y = 0.5 }
-    logistics.on_roads_changed(1, false, true)
+    road_removed(logistics)
     local waited = trip.planning ~= nil
     for _ = 1, 10 do
       local ids = {}
@@ -50,7 +52,7 @@ return function(h)
     local requests = h.requests()
     local trip = trip_of(request)
     trip.drone.position = { x = 10.5, y = 0.5 }
-    logistics.on_roads_changed(1, false, true)
+    road_removed(logistics)
     local id = #requests
     logistics.on_script_path_request_finished({ id = id, path = leg_road(requests[id].start, requests[id].goal) })
     for asked in pairs(storage.tunnel_leg_asks) do
@@ -122,7 +124,7 @@ return function(h)
     local request, _, _, _, restore = joined_round(logistics, "round")
     local trip = trip_of(request)
     trip.drone.position = { x = 10.5, y = 0.5 }
-    logistics.on_roads_changed(1, false, true)
+    road_removed(logistics)
     local asked = next(storage.tunnel_leg_asks)
     logistics.on_script_path_request_finished({ id = asked, try_again_later = true })
     check("setup: busy, it plans again at its next check", trip.planning and trip.planning.since < game.tick)
