@@ -837,10 +837,16 @@ end
 -- A liquid depot's request is the amount set as far as it can hold: that follows the depot's
 -- limit as freighters come and go, research raises their capacity, or freighter storage is ticked
 -- (checked once a second, from dispatch). Requests from before this kept no `asked`, and stay.
+-- An amount set that no tag or blueprint can hold (infinity, from a number or text too large for
+-- one) is kept as what the depot can hold, as a request was before `asked` was kept.
 function logistics.fit_request(depot)
   local request = depot.request
   if request and request.asked and depot.fluid then
-    request.count = math.min(request.asked, (logistics.fluid_limit(depot)))
+    local limit = logistics.fluid_limit(depot)
+    if request.asked == math.huge then
+      request.asked = limit
+    end
+    request.count = math.min(request.asked, limit)
   end
 end
 
@@ -959,15 +965,16 @@ function logistics.queue_place()
   return storage.promise_order
 end
 
--- The most a request depot can request of `item`: what it holds, its tank's size for a liquid
--- depot, and for an item depot as many of the item as fill every slot of its chest (slots are a
--- startup setting per kind of depot, 48 by default: 4,800 of an item that stacks to 100, 480 of one
--- that stacks to 10; more for a better depot, whose chest the game makes bigger).
+-- The most a request depot can request of `item`: what it holds, for a liquid depot its limit
+-- (fluid_limit: its tank's size, or using its freighters as storage, more), and for an item depot
+-- as many of the item as fill every slot of its chest (slots are a startup setting per kind of
+-- depot, 48 by default: 4,800 of an item that stacks to 100, 480 of one that stacks to 10; more for
+-- a better depot, whose chest the game makes bigger).
 local function request_limit(depot, item)
   if depot.fluid then
-    -- The tank's size, not a constant: liquid buffer sizes are a startup setting, and a better
-    -- tank holds more (the game's 1.6 times 25,000 is a hair over 40,000, so whole units).
-    return math.floor(depot.entity.get_fluid_capacity(1))
+    -- The tank's size (whole units: a better tank holds a hair over a round number), not a
+    -- constant: liquid buffer sizes are a startup setting.
+    return (logistics.fluid_limit(depot))
   end
   -- The chest's slots, not a constant, each a stack of this item.
   return #inventory(depot.entity) * transfer.stack_size_of(item)
@@ -975,7 +982,9 @@ end
 
 -- Set a request depot's request, or clear it with a nil item. Returns false, changing nothing,
 -- for anything but a request depot, an item that doesn't exist, or a count that isn't a number.
--- A request is at most what the depot holds (request_limit). An item request can name its quality
+-- A request is at most what the depot holds (request_limit): for a liquid depot its limit
+-- (fluid_limit: its tank's size, or using its freighters as storage, more), and for an item depot
+-- as many of the item as fill every slot of its chest. An item request can name its quality
 -- (`grade`, a quality's name; normal if nil) and how other qualities compare with it (`comparator`:
 -- "=", the default, "≠", ">", "<", "≥", "≤", or "any" for any quality: scripts/quality.lua); a fluid
 -- has neither. False, too, for a quality the game doesn't have or another comparator.

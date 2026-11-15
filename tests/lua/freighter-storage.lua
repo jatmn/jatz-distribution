@@ -60,6 +60,28 @@ return function(h)
     )
   end
 
+  do -- An amount set that is infinity (or text too long for a number) is what the depot holds, as
+    -- before `asked` was kept, for both liquid roles: no tag or blueprint can hold infinity. A
+    -- finite amount above the limit is kept, and so is an infinite one in a save from before.
+    local logistics = reset()
+    local request = liquids(logistics, 1000000, 40)
+    local buffer = h.tank("jatz-liquid-buffer-depot", 40.5, 0.5)
+    logistics.add(buffer)
+    for name, tank in pairs({ request = request, buffer = buffer }) do
+      local depot = storage.depots[tank.unit_number]
+      assert(logistics.set_request(tank, "water", math.huge))
+      check(name .. ": infinity is the tank's size", logistics.get_request(tank).count == 25000)
+      check(name .. ": kept as that, not as infinity", depot.request.asked == 25000)
+      assert(logistics.set_request(tank, "water", tonumber("9" .. string.rep("0", 400))))
+      check(name .. ": so is a number too large to hold", depot.request.count == 25000 and depot.request.asked == 25000)
+      assert(logistics.set_request(tank, "water", 1e100))
+      check(name .. ": a finite amount above it is kept", logistics.get_request(tank).asked == 1e100)
+      depot.request.asked = math.huge -- saved by a version that kept it
+      logistics.fit_request(depot)
+      check(name .. ": a saved infinity is fitted too", depot.request.count == 25000 and depot.request.asked == 25000)
+    end
+  end
+
   do -- Freighter storage with the request changed to another fluid: neither goes where the other is
     -- wanted, and no freighter goes back and forth with what has nowhere to go.
     local logistics = reset()

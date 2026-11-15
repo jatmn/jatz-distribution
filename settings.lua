@@ -45,8 +45,10 @@ data:extend({
     order = "a[liquid]-a[provider]",
   },
   {
-    -- A liquid request depot's freighters set off only for what its tank has room for, counting what
-    -- is already on its way, so its size caps how many of them are out at once.
+    -- A liquid request depot's freighters set off only for what it has room for, counting what is
+    -- already on its way: its tank's size, or with freighter storage ticked as much as all its
+    -- freighters carry when that is more. So its size caps how many of them are out at once, unless
+    -- it uses freighter storage.
     type = "int-setting",
     name = "jatz-liquid-request-depot-capacity",
     setting_type = "startup",
