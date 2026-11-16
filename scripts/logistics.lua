@@ -92,13 +92,16 @@ local promise, available = ledger.promise, ledger.available
 local PROVIDER = "jatz-provider-depot"
 local REQUEST = "jatz-request-depot"
 -- Buffer depots request like request depots (their own request, freighters and panel), but their
--- freighters only fetch from provider depots. Request depots fetch from them too: first if set to
--- "request from buffer depots", otherwise only for what no provider can supply.
+-- freighters fetch only from provider depots, and with the startup opt-in "Buffers pull by
+-- priority" from buffer depots of lower priority too (logistics.buffer_source). Request depots
+-- fetch from them too: first if set to "request from buffer depots", otherwise only for what no
+-- provider can supply.
 local BUFFER = "jatz-buffer-depot"
 -- Provider and buffer depots have a priority from 1 to 10: a requesting depot fetches from the
--- highest it can reach by road, nearest first among equals. Priority only orders depots of one
--- kind: buffer depots all still come before providers for request depots that request from them,
--- and after them for the rest.
+-- highest it can reach by road, nearest first among equals. For a request depot, priority only
+-- orders depots of one kind: buffer depots all still come before providers for one that requests
+-- from them, and after them otherwise. A buffer depot ranks the buffers it may take from (with the
+-- startup opt-in) together with providers, by priority alone.
 local PRIORITY_MIN, PRIORITY_MAX, PRIORITY_DEFAULT = 1, 10, 5
 logistics.priority = { min = PRIORITY_MIN, max = PRIORITY_MAX, default = PRIORITY_DEFAULT }
 local ROAD = "jatz-road"
@@ -113,7 +116,8 @@ local FREIGHTER = "jatz-quinityn-freighter"
 local FREIGHTER_CAPACITY = 100
 -- Liquid depots work like the item depots of the same role, for fluids: a liquid request depot
 -- keeps a fluid in stock, fetched from liquid provider depots and liquid buffer depots (buffers
--- first if set to, last otherwise); a liquid buffer depot fetches from liquid providers only.
+-- first if set to, last otherwise); a liquid buffer depot fetches from liquid providers, and with
+-- the startup opt-in from liquid buffers of lower priority too.
 -- Items and fluids never meet: item depots deal only with item depots, liquid depots only with
 -- liquid depots.
 local LIQUID_PROVIDER = "jatz-liquid-provider-depot"
@@ -759,7 +763,8 @@ end
 
 -- Whether a request depot fetches from buffer depots first, like a requester chest's "request from
 -- buffer chests" (without it, buffers come after providers, for what no provider can supply). Only
--- request depots have it: buffer depots fetch from providers alone.
+-- request depots have it: buffer depots fetch from providers, and with the startup opt-in from
+-- lower-priority buffers ranked with them by priority.
 function logistics.get_from_buffers(entity)
   local depot = request_depot(entity)
   return depot and depot.role == "request" and depot.from_buffers == true or false
@@ -1359,8 +1364,27 @@ function logistics.full_load(depot, trip)
   return math.min(capacity, request.count), capacity
 end
 
+-- Buffer stock can flow upward only with the startup opt-in: the priority a buffer depot's buffer
+-- sources must be below, or nil. A search reads it once, not for each buffer it passes.
+function logistics.buffer_floor(depot)
+  if depot.role == "buffer" and settings.startup["jatz-buffer-priority-pull"].value then
+    return depot.priority or PRIORITY_DEFAULT
+  end
+end
+
+-- Whether a buffer depot may take stock from `provider` as a buffer: with the startup opt-in, a
+-- buffer depot of strictly lower priority. Pickup checks it again (arrived_at_provider), so a
+-- priority changed, or the source replaced by a request depot, while a freighter is travelling
+-- cannot make it take stock it may not. candidates applies the same rule inline: the floor read
+-- once per search, the role from the provider and buffer depots `suppliers` lists.
+function logistics.buffer_source(depot, provider)
+  local floor = logistics.buffer_floor(depot)
+  return floor ~= nil and provider.role == "buffer" and (provider.priority or PRIORITY_DEFAULT) < floor
+end
+
 -- Every depot that could serve a requesting depot: provider depots, and for a request depot,
--- buffer depots too (a buffer depot itself fetches only from providers). A request depot set to
+-- buffer depots too. With the startup opt-in, a buffer also takes from lower-priority buffers,
+-- ranked with providers. A request depot set to
 -- request from buffer depots ranks buffers first, however near a provider is; one not set to ranks
 -- them last, so it falls back to a buffer only for what no provider can supply. All on the same
 -- surface and force, with road at its loading zone, holding the item and not on cooldown for this
@@ -1391,6 +1415,9 @@ local function candidates(depot, from, full, passed, carries, fits)
   -- The kind of depot asked about first.
   local first = buffers and depot.from_buffers and "buffer" or "provider"
   local own = entity.unit_number
+  -- For a buffer depot with the startup opt-in, buffers below this take too: the rule of
+  -- logistics.buffer_source, applied inline below with the floor read once for the whole search.
+  local floor = not buffers and logistics.buffer_floor(depot)
   local request = depot.request
   local size = full and not depot.fluid and transfer.stack_size_of(request.item)
   local supplying = suppliers(entity.surface_index, entity.force_index, depot.fluid, request)
@@ -1399,7 +1426,13 @@ local function candidates(depot, from, full, passed, carries, fits)
   for index = 1, #ids do
     local id, provider = ids[index], depots[index]
     -- (The one passed is neither ready nor waiting: the freighter goes on, or home.)
-    if id ~= passed and (provider.role == "provider" or (buffers and id ~= own)) then
+    if
+      id ~= passed
+      and (
+        provider.role == "provider"
+        or (buffers or (floor and (provider.priority or PRIORITY_DEFAULT) < floor)) and id ~= own
+      )
+    then
       if fits and ledger.allocate(provider, request, math.huge, nil, fits.size, fits) <= 0 then
         cramped = true
       elseif
@@ -1416,8 +1449,8 @@ local function candidates(depot, from, full, passed, carries, fits)
         distances[count] = math.sqrt(dx * dx + dy * dy)
         -- With "request from buffer depots", buffer depots come first, nearer providers or not,
         -- whatever either's priority; without it, providers come first. Then the higher
-        -- priority, nearer or not.
-        ranks[count] = (provider.role == first and 0 or PRIORITY_MAX)
+        -- priority, nearer or not. A buffer treats eligible buffers as providers.
+        ranks[count] = ((not buffers or provider.role == first) and 0 or PRIORITY_MAX)
           + PRIORITY_MAX
           - (provider.priority or PRIORITY_DEFAULT)
       end
@@ -1655,6 +1688,12 @@ local function start_trip(depot, provider, from, planned, length, plan, mix)
     drone = drone,
     request = depot.entity.unit_number,
     provider = provider.entity.unit_number,
+    -- Whether this pickup was admitted as a buffer pull (a buffer depot taking from a buffer). It
+    -- survives home/source replacement and save/load, and a buffer pull is checked again at pickup
+    -- (logistics.buffer_source). nil, on a trip saved before this was recorded, is none:
+    -- buffers then fetched only from providers, so its pickup is a requester's, whatever its home
+    -- has been replaced with since.
+    buffer_pull = depot.role == "buffer" and provider.role == "buffer",
     item = depot.request.item,
     -- The qualities it plans to load, if not all normal (scripts/quality.lua), and that it ever did:
     -- its cargo is then counted by quality all the way home (promises.lua's file_coming).
@@ -2736,6 +2775,16 @@ local function arrived_at_provider(id, trip, depot)
   -- with Full loads only too: that rule decides when a freighter sets off (dispatch, reroute), and
   -- once it is here, bringing what fits beats driving home empty for the same trip.
   if provider and request and request.item == trip.item then
+    -- A buffer pull loads only while its source is still a buffer it may take from: the trip's
+    -- admission says what it is, not the depots' roles now. (One whose home has become a request
+    -- depot is that depot's pickup.)
+    if
+      trip.buffer_pull
+      and depot.role == "buffer"
+      and not logistics.buffer_source(depot, storage.depots[trip.provider])
+    then
+      return logistics.give_up(id, trip)
+    end
     -- What it promised, as far as the depot (counting its other freighters) still needs it.
     local _, room, _, _, fits = need(depot, id)
     local left, lefts
@@ -3391,6 +3440,8 @@ local function finish_search(depot, search, owner)
       owner.planned, owner.mix = planned, mix
       owner.graded = owner.graded or (mix and true) or nil
       owner.provider = search.best
+      -- A reroute admits a new pickup under the home's current role.
+      owner.buffer_pull = depot.role == "buffer" and provider.role == "buffer"
       -- Last in its new provider's queue, and its one diversion used (reroute). Any provider may be
       -- found again by a later search (the one passed was only for this one).
       owner.queued, owner.passed, owner.diverted = logistics.queue_place(), nil, true
@@ -3734,8 +3785,10 @@ function logistics.replaced(old_id, entity)
   end
   index_depot(old_id, depot, false)
   depots[old_id], depots[id] = nil, depot
-  -- It does what the new one does: a buffer depot supplies request depots and fetches from
-  -- providers only, a request depot supplies no one. Freighters already sent finish their trips.
+  -- It does what the new one does: a buffer depot supplies request depots (and, with the startup
+  -- opt-in, higher-priority buffers) and fetches from providers (and, with it, lower-priority
+  -- buffers), a request depot supplies no one. Freighters already sent finish their trips, but a
+  -- buffer pull from a depot that is no longer a buffer takes nothing there (arrived_at_provider).
   local role = logistics.depots[entity.name] or depot.role
   depot.role = role
   index_depot(id, depot, true)

@@ -2,6 +2,102 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Buffer pull wording: checks passed; text only
+
+**November 16, 2026.** PR #112 review repair on `8ad87c90f1d7021089e78ada74e8c5918f63998f`, against
+`main` at `51c25b67643c4f1e07bf8ea57575f67f6d272d3b`. Locale and documentation only; no code,
+test or behaviour change, so Factorio and the UPS benchmark were not rerun.
+
+- The `searching` status text and the guide's status legend now name lower-priority buffers for a
+  buffer depot with the setting, as `no-provider` and `unreachable` already did.
+- The setting description, the guide and `AGENTS.md` state the rule as where a buffer sends its
+  freighters. A pickup a request depot sent before it was swapped for a buffer depot still loads,
+  as the swap checks require; the guide and `AGENTS.md` say so, and that a buffer pull whose source
+  became a request depot takes nothing there.
+- `tools/test_mod_setup.py`: 16 passed; `tools/test_releases.py`: 14 passed;
+  `tools/test_portal_page.py`: 7 passed; `tools/test_ci_changes.py`: 18 passed (1 skipped);
+  `git diff --check` passed.
+
+## Buffer pulls from a replaced source: passed (automated)
+
+**November 16, 2026.** PR #112 review repair on `7bbe41722aeebd2f484ad7be3dcbc1b2968f5079`, against
+`main` at `51c25b67643c4f1e07bf8ea57575f67f6d272d3b`; Factorio 2.1.24 headless on Linux x86-64.
+
+- A buffer pull whose source buffer was replaced by a request depot on the way loaded that depot's
+  stock (10 of its 20): pickup checked the priority rule only while the source was still a buffer.
+  It now takes nothing there and looks for another source. A source replaced by a buffer still
+  gives its load. The new swap check fails on the previous revision.
+- `tools/test_mod.py`: passed with base game and Space Age. The check mod now waits for the upward
+  buffer rows, which are on their own surface, before it reads them.
+- `tools/test_mod_setup.py`: 16 passed; `tools/test_emulate_ups.py`: 6 passed;
+  `tools/emulate_ups.py --base` against that `main`: mean +0.1%, p99 +0.2%, worst +0.1%; API calls,
+  path requests, commands, freighters and deliveries unchanged.
+- `tools/benchmark_ups.py --compare origin/main`, standard preset, three runs each: mean update
+  1.393 ms before and 1.389 ms after, within run variation; 1,512 freighters out and 265,200
+  items/minute delivered in both.
+- StyLua 2.5.2, Luacheck 1.2.0, Lua 5.2 syntax, `git diff --check`, and the CI package job's release,
+  portal and package build/validation steps passed. No visual changes.
+
+## Pre-update pickups and disabled buffer scans: Lua checks passed; Factorio not rerun
+
+**November 16, 2026.** PR #112 review repair on `a545788313b39dcef11489c3c1b5beb12c1a6c95`, against
+`main` at `51c25b67643c4f1e07bf8ea57575f67f6d272d3b`. No Factorio executable was available, so
+`tools/test_mod.py` and `tools/benchmark_ups.py` were not rerun for this revision.
+
+- A requester dispatched to a buffer on `main`, its home replaced by a buffer and saved before
+  pickup, received 0 of 10 after reloading with the previous PR revision. A trip without an
+  admission record now counts as a requester's pickup, as no earlier version sent buffers to buffers.
+  The same state, made by `main`'s own `scripts/logistics.lua`, now delivers 10 and leaves 10, as
+  on `main`, with the setting on or off. The changed swap check fails on the previous revision.
+- With the setting off, buffer searches read it once each instead of once for each other buffer.
+  For 400 stocked buffers over 60 `on_tick_share` ticks (Lua instructions in `scripts/`):
+  `main` 2,049,416; previous revision 3,963,816 with 159,600 setting reads; this one 2,214,616 with
+  400. A new logistics check fails on the previous revision.
+- `tools/test_mod_setup.py`: 16 passed; `tools/test_emulate_ups.py`: 6 passed;
+  `tools/emulate_ups.py --base` against that `main`: mean +0.1%, p99 +0.2%, worst +0.1%, deliveries unchanged.
+- StyLua 2.5.2, Luacheck 1.2.0, Lua 5.2 syntax, Ruff 0.17.3, `git diff --check`, and the CI package
+  job's release, portal and package build/validation steps passed. No visual changes.
+
+## Buffer pickup after home replacement: passed (automated)
+
+**November 16, 2026.** PR #112 repair working tree on `0b1d467b72550e9b30f4f69a933864cb1de59b33`,
+against `main` at `51c25b67643c4f1e07bf8ea57575f67f6d272d3b`; Factorio 2.1.24 headless on Linux x86-64.
+
+- `tools/test_mod.py`: passed with base game and Space Age, including undo, bonuses, network and
+  Quality scenarios. The new engine case dispatches a requester to a buffer, applies a scripted
+  request-to-buffer upgrade before pickup, and requires all 10 promised wood at home and 10 left
+  at the source. Equal priorities prevent a fresh buffer pull from hiding a cancelled pickup.
+- `tools/test_mod_setup.py`: 16 tests passed; `tools/test_emulate_ups.py`: 6 passed. Added swap
+  checks cover both startup values and requester source modes, new and older saved trip records,
+  module/configuration reload, both reroute admission changes, and older buffer trips' priority
+  refusal. Reload here uses the Lua harness; it is not a second Factorio process save/load test.
+- The home-replacement regression fails on the starting PR code. Isolated mutations omitting the
+  reroute update or legacy snapshot, or bypassing an older trip's priority guard, fail the intended
+  delivered-stock assertions. The existing buffer-origin priority refusals pass with the repair.
+- Lua 5.2 syntax, Luacheck 1.2.0, StyLua 2.5.2, package build/validation and `git diff --check` passed.
+- Standard UPS: three paired runs against that `main`; stress: one paired run. Both kept the same
+  delivered stock and active freighters. These use the default provider/request maps, not a large
+  enabled buffer-chain network; no speed-up claimed. No visual changes or graphical-client check.
+
+## Buffers pull by priority: passed (automated)
+
+**November 15, 2026.** Against `main` at `a826850320c5b1f5b2f3658c895fb0a56628f9be`,
+Factorio 2.1.24 headless on Linux, base game and Space Age.
+
+- `tools/test_mod.py`: the packaged mod passed, including undo, bonuses and Quality scenarios.
+  With the new startup setting enabled, item and liquid buffers at priorities 2, 5 and 8 moved
+  stock upward: the middle buffer refilled after the central one collected its stock. A second
+  priority-2 buffer received nothing. The liquid arrived at its original 80 degrees.
+- `tools/test_mod_setup.py`: 16 tests passed. The logistics checks cover disabled, equal and
+  descending priorities for both kinds, completed transfers, shared ranking with normal providers,
+  and priority changes during a pending search and before pickup. The new upward-transfer check
+  fails on the original production code, which admits no buffer source for another buffer.
+- `tools/benchmark_ups.py --compare origin/main`: standard preset, three runs per revision.
+  Mean update was 1.124 ms before and 1.120 ms after (within run variation); deliveries remained
+  265,200 items/minute with 1,512 active freighters. This checks default settings on the existing
+  benchmark map; it does not measure a large network of opt-in buffer chains.
+- No graphics changed; graphical-client inspection was not performed.
+
 ## Freighter network command center: automated checks passed; visual check pending
 
 **November 15, 2026.** Uncommitted `feat/network-supply-demand` candidate based on

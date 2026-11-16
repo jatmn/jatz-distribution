@@ -335,6 +335,8 @@ EXPECTED = {'recipes': RECIPES,
             # from the other buffer; buffers have no request-from-buffers setting.
             'buffered_request': 20, 'buffer_taken_from': 20, 'buffer_filled': 15, 'buffer_provider_left': 85,
             'buffer_has_no_from_buffers': False,
+            'upward_buffers': [[0, 20, 20, 0], [0, 300, 300, 0]],
+            'upward_temperature': 80,
             # Priority: a provider 30 tiles away at priority 9 supplies all 10, not one 10 tiles away
             # at priority 2; providers start at 5; request depots have no priority.
             'priority_from_far': 10, 'priority_from_near': 0, 'priority_default': 5,

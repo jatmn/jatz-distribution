@@ -240,6 +240,7 @@ local STARTUP = {
   ["jatz-default-item-request"] = 1,
   ["jatz-default-fluid-request"] = 1000,
   ["jatz-default-full-loads"] = false,
+  ["jatz-buffer-priority-pull"] = false,
 }
 local function setting_kind(values, kind)
   return setmetatable({}, {
