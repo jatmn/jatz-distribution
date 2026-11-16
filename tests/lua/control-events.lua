@@ -3900,6 +3900,216 @@ do -- Road tunnels' portals: built, turned, cloned and removed, deliveries re-pl
   logistics.on_roads_changed = on_roads_changed
 end
 
+do -- Road laid and removed where road networks are known (scripts/tunnels.lua, `changed`): the
+  -- tiles of each event are put on them and taken off them, and nothing is flooded again unless a
+  -- removal may have cut a network in two.
+  local tunnels = require("scripts.tunnels")
+  -- Two roads along y 3, x 2000 to 2020 and 2030 to 2050, a tunnel between them.
+  for x = 2000, 2050 do
+    if x <= 2020 or x >= 2030 then
+      cell(x, 3).name = "jatz-road"
+    end
+  end
+  local function portal(x, facing)
+    local entity = depot(x)
+    entity.name, entity.position, entity.direction = tunnels.name, { x = x, y = 3.5 }, defines.direction[facing]
+    return entity
+  end
+  local west, east = portal(2022, "west"), portal(2029, "east")
+  west.fluidbox_neighbours, east.fluidbox_neighbours = { { east } }, { { west } }
+  fire("on_built_entity", { entity = west })
+  fire("on_built_entity", { entity = east })
+  -- Floods of road: a tile off road, asked about, reads no tile.
+  local floods, flood = 0, surface.get_connected_tiles
+  function surface.get_connected_tiles(...)
+    local found = flood(...)
+    floods = floods + (#found > 0 and 1 or 0)
+    return found
+  end
+  -- (No pathfinder here: the roads a way asks about are only counted.)
+  local ask, asked = tunnels.ask, 0
+  function tunnels.ask()
+    asked = asked + 1
+    return 5000 + asked
+  end
+  local far = { x = 2035.5, y = 3.5 }
+  -- Whether there is a way from tile x, y to the east road, a second and more later.
+  local function way(x, y)
+    game.tick = game.tick + 61
+    return tunnels.plan(1, { x = x + 0.5, y = y + 0.5 }, far, nil, "player", { id = "check", order = 0 }) ~= nil
+  end
+  local function net(x, y)
+    return storage.tunnel_nets[1].points[(x + 2097152) * 4194304 + y + 2097152]
+  end
+  check("setup: a way through the tunnel, each road flooded once", way(2005, 3) and floods == 2)
+  local built = { surface_index = 1, tile = { name = "jatz-road" } }
+  built.tiles = { { old_tile = { name = "grass-1" }, position = { x = 2005, y = 4 } } }
+  cell(2005, 4).name = "jatz-road"
+  fire("on_player_built_tile", built)
+  check("road a player lays beside a road joins its network", way(2005, 4) and net(2005, 4) == net(2020, 3))
+  check("with no flood, even a second later", floods == 2)
+  cell(2005, 4).name = "grass-1"
+  fire("on_robot_mined_tile", {
+    surface_index = 1,
+    tiles = { { old_tile = { name = "jatz-road" }, position = { x = 2005, y = 4 } } },
+  })
+  check("mined by a robot, it leaves it: no way from there", not way(2005, 4) and not net(2005, 4))
+  check("and the road it was beside is still whole, not flooded again", way(2006, 3) and floods == 2)
+  cell(2000, 3).name = "grass-1"
+  fire("on_player_mined_tile", {
+    surface_index = 1,
+    tiles = { { old_tile = { name = "jatz-road" }, position = { x = 2000, y = 3 } } },
+  })
+  check("nor when the road's end tile is mined", way(2001, 3) and not way(2000, 3) and floods == 2)
+  -- A tile elsewhere, of another kind: nothing known changes.
+  cell(2100, 50).name = "concrete"
+  built.tile, built.tiles =
+    { name = "concrete" }, { { old_tile = { name = "grass-1" }, position = { x = 2100, y = 50 } } }
+  fire("on_robot_built_tile", built)
+  check("a tile of another kind laid elsewhere floods nothing", way(2006, 3) and floods == 2)
+  -- A depot's own road, laid as it is built and lifted as it goes: its loading zone is (2012, 2).
+  local entity = depot(2012)
+  fire("on_built_entity", { entity = entity })
+  check(
+    "a depot's road joins the road it is laid beside",
+    cell(2012, 2).name == "jatz-depot-road" and way(2012, 2) and net(2012, 2) == net(2020, 3) and floods == 2
+  )
+  removed(entity)
+  check("and leaves it when the depot goes", not way(2012, 2) and way(2012, 3) and floods == 2)
+  -- Road two tiles wide from x 2014 to 2016: a tile mined from it leaves those beside it joined
+  -- round it, so the network is whole.
+  built.tile, built.tiles = { name = "jatz-road" }, {}
+  for x = 2014, 2016 do
+    cell(x, 4).name = "jatz-road"
+    built.tiles[#built.tiles + 1] = { old_tile = { name = "grass-1" }, position = { x = x, y = 4 } }
+  end
+  fire("on_player_built_tile", built)
+  cell(2015, 3).name = "grass-1"
+  fire("on_player_mined_tile", {
+    surface_index = 1,
+    tiles = { { old_tile = { name = "jatz-road" }, position = { x = 2015, y = 3 } } },
+  })
+  check(
+    "a tile mined from a wider road, still joined round it, floods nothing",
+    way(2005, 3) and way(2015, 4) and not way(2015, 3) and floods == 2
+  )
+  -- Two tiles laid at once, the farther one first in the event: both join.
+  cell(2018, 4).name, cell(2018, 5).name = "jatz-road", "jatz-road"
+  built.tiles = {
+    { old_tile = { name = "grass-1" }, position = { x = 2018, y = 5 } },
+    { old_tile = { name = "grass-1" }, position = { x = 2018, y = 4 } },
+  }
+  fire("on_player_built_tile", built)
+  check(
+    "tiles laid in one event join the road through each other",
+    way(2018, 5) and net(2018, 5) == net(2020, 3) and floods == 2 and not storage.tunnel_nets[1].stale
+  )
+  -- A script covers the road's middle: what is west of it has no way to the tunnel any more.
+  cell(2010, 3).name = "concrete"
+  fire("script_raised_set_tiles", { surface_index = 1, tiles = { { name = "concrete", position = { 2010, 3 } } } })
+  -- (Its two ends, once each: the west end asked about, the east end for the tunnel's mouth.)
+  check("a road cut in the middle is flooded again: its west end is cut off", not way(2005, 3) and floods == 4)
+  check("and its east end still reaches the tunnel", way(2017, 3) and floods == 4)
+  cell(2010, 3).name = "jatz-road"
+  fire("script_raised_set_tiles", { surface_index = 1, tiles = { { name = "jatz-road", position = { 2010, 3 } } } })
+  check(
+    "mended, the two are one network again, with no flood",
+    way(2005, 3) and net(2005, 3) == net(2020, 3) and floods == 4
+  )
+  -- (One flood holds the tiles of both: cut there again, it is two again.)
+  cell(2010, 3).name = "concrete"
+  fire("script_raised_set_tiles", { surface_index = 1, tiles = { { name = "concrete", position = { 2010, 3 } } } })
+  check("cut again where it was mended, its west end is cut off again", not way(2005, 3) and way(2017, 3))
+  cell(2010, 3).name = "jatz-road"
+  fire("script_raised_set_tiles", { surface_index = 1, tiles = { { name = "jatz-road", position = { 2010, 3 } } } })
+  check("and mended again, it is one", way(2005, 3) and #storage.tunnel_nets[1].floods == 2 and floods == 6)
+  -- A road never asked about (x 2003 to 2010 along y 8), reached by road laid from the known one:
+  -- what that road joins isn't known, so all is made afresh, a second later as for any road laid.
+  for x = 2003, 2010 do
+    cell(x, 8).name = "jatz-road"
+  end
+  built.tile = { name = "jatz-road" }
+  for y = 4, 7 do
+    check("road laid towards it joins the known road", not storage.tunnel_nets[1].stale)
+    cell(2003, y).name = "jatz-road"
+    built.tiles = { { old_tile = { name = "grass-1" }, position = { x = 2003, y = y } } }
+    fire("on_player_built_tile", built)
+  end
+  check("until it reaches road never flooded", storage.tunnel_nets[1].stale == true)
+  check(
+    "road laid up to road never flooded: the networks are flooded again, once each",
+    way(2009, 8) and floods == 8 and net(2009, 8) == net(2020, 3) and #storage.tunnel_nets[1].floods == 2
+  )
+  -- More tiles in one event than are gone through one by one: what is known is forgotten, a
+  -- second later for road laid.
+  cell(2006, 4).name = "jatz-road"
+  built.tiles = {}
+  for index = 1, 1001 do
+    built.tiles[index] = { old_tile = { name = "grass-1" }, position = { x = 2006, y = 4 } }
+  end
+  fire("on_player_built_tile", built)
+  check("more tiles at once than that: the networks are flooded again", way(2006, 4) and floods == 10)
+  -- As many tiles of another kind, none of them on road: no road changed, so nothing known does.
+  cell(2101, 50).name = "concrete"
+  built.tile, built.tiles = { name = "concrete" }, {}
+  for index = 1, 1001 do
+    built.tiles[index] = { old_tile = { name = "grass-1" }, position = { x = 2101, y = 50 } }
+  end
+  fire("on_player_built_tile", built)
+  check(
+    "but as many tiles of another kind, off road, flood nothing",
+    not storage.tunnel_nets[1].stale and way(2006, 4) and floods == 10
+  )
+  built.tile = { name = "jatz-road" }
+  -- What a save from before knew (its floods could share a network) is forgotten at the first
+  -- change, not followed tile by tile.
+  storage.tunnel_nets[1].tiled = nil
+  cell(2007, 4).name = "jatz-road"
+  built.tiles = { { old_tile = { name = "grass-1" }, position = { x = 2007, y = 4 } } }
+  fire("on_player_built_tile", built)
+  check(
+    "networks known from before are flooded again, and followed from then on",
+    way(2007, 4) and floods == 12 and storage.tunnel_nets[1].tiled
+  )
+  -- A tile removed with the tiles of the event not given: all is forgotten at once.
+  cell(2004, 8).name = "grass-1"
+  require("scripts.logistics").on_roads_changed(1, false, true)
+  check("road removed with its tiles not known: flooded again", not way(2009, 8) and way(2005, 3) and floods == 15)
+  -- A network flooded from a point since removed (its end: the network is whole, with no point
+  -- remembered on it), road laid from it to road never flooded, and that asked about within the
+  -- second: one flood holds both, so the first road cut in its middle cuts its end off still.
+  for x = 2060, 2066 do
+    cell(x, 20).name, cell(x, 22).name = "jatz-road", "jatz-road"
+  end
+  local function plan(from_x, from_y, to_x, to_y)
+    local from, to = { x = from_x + 0.5, y = from_y + 0.5 }, { x = to_x + 0.5, y = to_y + 0.5 }
+    return tunnels.plan(1, from, to, nil, "player", { id = "check", order = 0 })
+  end
+  -- (All within a second of what is known being made: forgotten now, and made afresh.)
+  require("scripts.logistics").on_roads_changed(1, false, true)
+  plan(2060, 20, 2100, 60)
+  local function mined(x, y)
+    cell(x, y).name = "grass-1"
+    fire("on_player_mined_tile", {
+      surface_index = 1,
+      tiles = { { old_tile = { name = "jatz-road" }, position = { x = x, y = y } } },
+    })
+  end
+  mined(2060, 20)
+  cell(2066, 21).name = "jatz-road"
+  built.tiles = { { old_tile = { name = "grass-1" }, position = { x = 2066, y = 21 } } }
+  fire("on_player_built_tile", built)
+  plan(2060, 22, 2100, 60)
+  mined(2063, 20)
+  check(
+    "a flood with no point left is replaced by the one flooded over it: cut, its end has no way",
+    plan(2061, 20, 2060, 22) == nil and plan(2064, 20, 2060, 22) ~= nil
+  )
+  surface.get_connected_tiles, tunnels.ask = flood, ask
+  removed(west)
+  removed(east)
+end
+
 do -- A liquid depot shows the player's inventory, so a freighter can be picked from it.
   local logistics = require("scripts.logistics")
   local function stack(name, count)

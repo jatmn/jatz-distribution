@@ -84,7 +84,8 @@ local function restore(unit_number, record)
   return true
 end
 
--- Remove the road a depot laid (removed or turned depot). Returns the surface index if road went.
+-- Remove the road a depot laid (removed or turned depot). Returns the surface index if road went,
+-- and the tile it went from.
 function depot_road.lift(unit_number)
   local record = records()[unit_number]
   -- Forget the depot whether or not it still owns road (`released`: the player took the spot).
@@ -92,22 +93,26 @@ function depot_road.lift(unit_number)
   if not record or record.phase ~= "owned" then
     return nil
   end
-  return restore(unit_number, record) and record.surface or nil
+  if restore(unit_number, record) then
+    return record.surface, { x = record.x, y = record.y }
+  end
+  return nil
 end
 
 -- Lay road under a depot's loading zone sign, first lifting any it laid elsewhere (a turned
--- depot). Returns the surface indices where road was laid and removed (either may be nil).
+-- depot). Returns the surface indices where road was laid and removed (either may be nil), and
+-- the tiles it was laid on and removed from.
 function depot_road.lay(entity)
   local unit_number = entity.unit_number
-  local removed = depot_road.lift(unit_number)
+  local removed, lifted = depot_road.lift(unit_number)
   local surface = entity.surface
   if surface.platform then
-    return nil, removed
+    return nil, removed, nil, lifted
   end
   local x, y = tile_position(entity)
   local tile = surface.get_tile(x, y)
   if not tile.valid or tile.name == ROAD or tile.name == "out-of-map" or tile.collides_with("water_tile") then
-    return nil, removed
+    return nil, removed, nil, lifted
   end
   script.register_on_object_destroyed(entity)
   if tile.name == DEPOT_ROAD then
@@ -123,7 +128,7 @@ function depot_road.lay(entity)
       record.tile, record.hidden = surface.get_hidden_tile(position), surface.get_double_hidden_tile(position)
     end
     records()[unit_number] = record
-    return nil, removed
+    return nil, removed, nil, lifted
   end
   local position = { x, y }
   records()[unit_number] = {
@@ -136,7 +141,7 @@ function depot_road.lay(entity)
     double = surface.get_double_hidden_tile(position),
   }
   surface.set_tiles({ { name = DEPOT_ROAD, position = position } }, true, false, true, false)
-  return surface.index, removed
+  return surface.index, removed, { x = x, y = y }, lifted
 end
 
 -- A depot replaced by a new entity standing where it stood, facing the same way
