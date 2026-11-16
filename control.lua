@@ -19,9 +19,11 @@ local depot_swap = require("scripts.depot-swap")
 local network_gui = require("scripts.network-gui")
 
 -- Road laid (`added`) or removed or covered (`removed`) on a surface: deliveries re-plan, and road
--- network monitors there work out their networks again.
-local function roads_changed(surface_index, added, removed)
-  logistics.on_roads_changed(surface_index, added, removed)
+-- network monitors there work out their networks again. `tiles`: the tiles that changed (each with
+-- its `position`), where they are known, so the road networks known follow them, not flooded
+-- again (scripts/tunnels.lua, `changed`).
+local function roads_changed(surface_index, added, removed, tiles)
+  logistics.on_roads_changed(surface_index, added, removed, tiles)
   if added or removed then
     road_monitor.changed(surface_index)
   end
@@ -36,13 +38,13 @@ end
 -- Lay road under a depot's loading zone (lifting the road of its old one, if turned), clear the
 -- zone's decoratives, and let deliveries know the roads changed.
 local function settle(entity)
-  local laid, removed = depot_road.lay(entity)
+  local laid, removed, laid_on, removed_from = depot_road.lay(entity)
   loading_zone.clear(entity)
   if removed then
-    roads_changed(removed, false, true)
+    roads_changed(removed, false, true, { { position = removed_from } })
   end
   if laid then
-    roads_changed(laid, true, false)
+    roads_changed(laid, true, false, { { position = laid_on } })
   end
 end
 
@@ -275,9 +277,9 @@ script.on_event(defines.events.on_object_destroyed, function(event)
     -- A request or buffer depot a script destroyed while it was marked for upgrade to the other,
     -- with no replacement built: the freighters kept aside from its chest are left where it stood.
     depot_swap.gone(event.useful_id)
-    local surface_index = depot_road.lift(event.useful_id)
+    local surface_index, lifted = depot_road.lift(event.useful_id)
     if surface_index then
-      roads_changed(surface_index, false, true)
+      roads_changed(surface_index, false, true, { { position = lifted } })
     end
   end
 end)
@@ -295,7 +297,7 @@ local function on_tiles_built(event)
     end
   end
   local added = ROADS[event.tile.name] or false
-  roads_changed(event.surface_index, added, removed and not added)
+  roads_changed(event.surface_index, added, removed and not added, event.tiles)
 end
 local function on_tiles_mined(event)
   local removed = false
@@ -306,7 +308,7 @@ local function on_tiles_mined(event)
     end
   end
   if removed then
-    roads_changed(event.surface_index, false, true)
+    roads_changed(event.surface_index, false, true, event.tiles)
   end
 end
 for _, event in ipairs({
@@ -337,7 +339,7 @@ script.on_event(defines.events.script_raised_set_tiles, function(event)
       depot_road.covered(event.surface_index, tile.position)
     end
   end
-  roads_changed(event.surface_index, added, other)
+  roads_changed(event.surface_index, added, other, event.tiles)
 end)
 logistics.register()
 request_gui.register()

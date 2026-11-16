@@ -19,9 +19,10 @@ local tunnels = {}
 
 tunnels.name = "jatz-road-tunnel"
 local ROADS = { "jatz-road", "jatz-depot-road" }
--- Road laid comes in bursts (robots laying road a tile at a time): what is known of a surface's
--- networks is forgotten at most once a second for it, and the routes in between are worked out from
--- what it was. Road removed is forgotten at once (`changed`).
+-- Road laid comes in bursts (robots laying road a tile at a time). Where the tiles laid aren't
+-- known (`changed`), what is known of a surface's networks is forgotten at most once a second for
+-- it, and the routes in between are worked out from what it was; road removed is then forgotten at
+-- once. The roads measured (`legs_of`) are measured again at most that often too.
 local FORGET_TICKS = 60
 -- Unit vectors of the four directions a portal can face (its mouth is that way).
 local FACING = {
@@ -42,12 +43,16 @@ local function init_storage()
   -- How many portals each surface has: no surface without one pays for any of this.
   storage.tunnel_surfaces = storage.tunnel_surfaces or {}
   -- What is known of each surface's road networks: { made = tick, stale = bool, count = networks,
-  -- points = { [tile key] = network, or false off road }, portals = list (see `portals_of`) }.
+  -- points = { [tile key] = network, or false off road }, portals = list (see `portals_of`),
+  -- floods = the networks flooded so far, every tile of each (see `net_of`), tiled = true (its
+  -- floods are one a network, kept so tile by tile: see `apply`) }.
   storage.tunnel_nets = storage.tunnel_nets or {}
 end
 
+-- A tile's key: a number (a text key for each of a network's thousands of tiles was most of what
+-- flooding one cost). Maps reach a million tiles each way from the centre.
 local function key(x, y)
-  return x .. "," .. y
+  return (x + 2097152) * 4194304 + y + 2097152
 end
 
 -- The centre of the tile in front of a portal (one tile wide and two deep, its centre between its
@@ -75,15 +80,159 @@ local function partner(entity)
 end
 tunnels.partner = partner
 
--- Forget what is known of a surface's networks: at once (`now`: a portal built, removed or turned,
--- or road removed, which can split a network), or, for road laid, once a second has passed since it
--- was last worked out (laying only joins networks: until then a freighter may go through a tunnel
--- where road now joins the two, which still gets it there).
-function tunnels.changed(surface_index, now)
+-- Whether the road beside tile x, y of a flooded network (`tiles`, the tile itself taken out) is
+-- still in one piece without it: its road neighbours all reach each other round it, through the
+-- eight tiles about it. Then no way led through it that doesn't lead round it, and the network is
+-- whole.
+local function joined(tiles, x, y)
+  local north, east = tiles[key(x, y - 1)], tiles[key(x + 1, y)]
+  local south, west = tiles[key(x, y + 1)], tiles[key(x - 1, y)]
+  local beside = (north and 1 or 0) + (east and 1 or 0) + (south and 1 or 0) + (west and 1 or 0)
+  if beside < 2 then
+    return true
+  end
+  -- Two neighbours next to each other reach each other through the corner tile between them.
+  local links = (north and east and tiles[key(x + 1, y - 1)] and 1 or 0)
+    + (east and south and tiles[key(x + 1, y + 1)] and 1 or 0)
+    + (south and west and tiles[key(x - 1, y + 1)] and 1 or 0)
+    + (west and north and tiles[key(x - 1, y - 1)] and 1 or 0)
+  return links >= beside - 1
+end
+
+-- More tiles changed at once than this are not gone through one by one: what is known is forgotten.
+local TILES_AT_ONCE = 1000
+local ROAD_TILES = { [ROADS[1]] = true, [ROADS[2]] = true }
+
+-- The flood a tile is on (its place in `floods`), if any.
+local function flood_at(floods, at)
+  for place = 1, #floods do
+    if floods[place].tiles[at] then
+      return place
+    end
+  end
+  return nil
+end
+
+-- The four tiles beside one.
+local BESIDE = { { 0, -1 }, { 1, 0 }, { 0, 1 }, { -1, 0 } }
+
+-- The tiles of an event (`tiles`: each with its `position`), as the surface has them now, applied
+-- to the networks flooded so far (`nets.floods`, see `net_of`), so a tile laid or removed doesn't
+-- cost a flood of the whole network (one of 14,000 tiles takes 20 ms and more: a player's report,
+-- November 15, 2026, of road laid and removed a tile at a time). Each flood holds every tile of
+-- its network, one flood a network, and stays so:
+-- * Road removed leaves its network. One it may have cut in two (`joined`) is forgotten with its
+--   points, and flooded again when next asked about; any other is still whole. In turn, so each
+--   is judged with the tiles removed before it gone.
+-- * Road laid beside a flooded network joins it, with the tiles laid beside it in the same event,
+--   and makes one of two it lies between, under the lower of their numbers. Where it also lies
+--   beside road on no flooded network, what that road reaches isn't known: all that is known is
+--   stale, and made afresh as for road laid with its tiles not given (`changed`).
+-- Tiles on no flooded network change nothing known: their road is flooded when asked about.
+local function apply(nets, surface, tiles)
+  local points, floods = nets.points, nets.floods or {}
+  -- The tiles that are road now, on no flooded network: by key, and their keys in turn.
+  local laid, queue = {}, {}
+  for index = 1, #tiles do
+    local position = tiles[index].position
+    local x, y = position.x or position[1], position.y or position[2]
+    local at = key(x, y)
+    local tile = surface.get_tile(x, y)
+    local on = flood_at(floods, at)
+    if tile.valid and ROAD_TILES[tile.name] then
+      if not (on or laid[at]) then
+        -- Not known as off road any more.
+        points[at] = nil
+        laid[at] = { x, y }
+        queue[#queue + 1] = at
+      end
+    else
+      if points[at] then
+        points[at] = nil
+      end
+      if on then
+        local flood = floods[on]
+        flood.tiles[at] = nil
+        if not joined(flood.tiles, x, y) then
+          table.remove(floods, on)
+          for point, id in pairs(points) do
+            if id == flood.net then
+              points[point] = nil
+            end
+          end
+        end
+      end
+    end
+  end
+  -- Each tile laid, and again when a tile beside it has joined a network.
+  local place = 1
+  while place <= #queue do
+    local at = queue[place]
+    local tile = laid[at]
+    place = place + 1
+    local into
+    for _, step in ipairs(tile and BESIDE or {}) do
+      local found = flood_at(floods, key(tile[1] + step[1], tile[2] + step[2]))
+      local other = found and floods[found]
+      if other and not into then
+        into = other
+        into.tiles[at] = true
+      elseif other and other ~= into then
+        -- Two networks known apart, now one, under the lower of their numbers: one flood holds
+        -- the tiles of both.
+        if other.net < into.net then
+          into, other = other, into
+        end
+        for joining in pairs(other.tiles) do
+          into.tiles[joining] = true
+        end
+        for point, id in pairs(points) do
+          if id == other.net then
+            points[point] = into.net
+          end
+        end
+        for index = #floods, 1, -1 do
+          if floods[index] == other then
+            table.remove(floods, index)
+          end
+        end
+      end
+    end
+    if into then
+      laid[at] = nil
+      for _, step in ipairs(BESIDE) do
+        local x, y = tile[1] + step[1], tile[2] + step[2]
+        local beside = key(x, y)
+        if laid[beside] then
+          queue[#queue + 1] = beside
+        elseif not flood_at(floods, beside) then
+          local other = surface.get_tile(x, y)
+          if other.valid and ROAD_TILES[other.name] then
+            nets.stale = true
+          end
+        end
+      end
+    end
+  end
+end
+
+-- Road changed on a surface: what is known of its networks follows. With the event's `tiles`
+-- (their positions), each is applied to it (`apply`) and nothing is forgotten. Without them (a
+-- portal built, removed or turned, a configuration change), with more of them than
+-- TILES_AT_ONCE, or for what a save from before `apply` knows (not `tiled`: its floods could
+-- share a network), it is forgotten: at once (`now`: road removed can split a network), or, for
+-- road laid, once a second has passed since it was last worked out (laying only joins networks:
+-- until then a freighter may go through a tunnel where road now joins the two, which still gets it
+-- there).
+function tunnels.changed(surface_index, now, tiles)
   init_storage()
   local nets = storage.tunnel_nets[surface_index]
   if not nets then
     return
+  end
+  local surface = tiles and nets.tiled and #tiles <= TILES_AT_ONCE and game.surfaces[surface_index]
+  if surface then
+    return apply(nets, surface, tiles)
   end
   if now then
     storage.tunnel_nets[surface_index] = nil
@@ -164,7 +313,7 @@ local function nets_of(surface_index)
   if nets then
     return nets
   end
-  nets = { made = game.tick, count = 0, points = {}, portals = {} }
+  nets = { made = game.tick, count = 0, points = {}, portals = {}, tiled = true }
   storage.tunnel_nets[surface_index] = nets
   local places = {}
   for id, registered in pairs(storage.tunnel_portals) do
@@ -189,59 +338,58 @@ local function nets_of(surface_index)
   return nets
 end
 
--- Every tile flooded this tick, by tile key, with its network: Lua only, and only for the tick and
--- the surface's networks it was flooded for, so it never differs between players' games. After road
--- is removed, every freighter on the surface plans its way from where it stands; one flood a
--- network then serves them all.
-local flooded = { tick = -1, nets = nil, tiles = {} }
-
 -- The road network `position` is on (a number), or false if it isn't on road. Unknown, its
--- network is flooded once, noting every portal entry and depot loading zone it reaches.
+-- network is flooded once, noting every portal entry and depot loading zone it reaches, and kept
+-- with what is known of the surface (`nets.floods`: { tiles = { [tile key] = true }, net } for
+-- each, in storage, so every player's game agrees), so points asked about later, where a freighter
+-- stands, say, need no flood of their own. Tiles laid and removed since are put on it and taken
+-- off it (`apply`), so it lasts until a removal may have cut it in two, or all that is known is
+-- forgotten (`changed`, nets_of). A flood reads every tile of the network, 10 ms and more for one
+-- of 14,000 tiles: kept only for the tick, each tick in which a freighter planned its way from
+-- where it stood flooded it again (a player's report, November 15, 2026).
 -- A network keeps its number while what is known of the surface lasts: one flooded again (from a
--- point asked about on a later tick) takes the number of any point already remembered on it, so
--- points remembered on it before still agree (a new number left them on a network with no
--- portals, and routes from them found no tunnel: Pullfrog's review of 4d4f64a). Road laid since
--- this was worked out (forgotten at most once a second) can have joined networks remembered
--- apart: they become one, under the lowest of their numbers.
+-- point on road that joined it to road never flooded, or laid with its tiles not known) takes the
+-- number of any point already remembered on it, so points remembered on it before still agree (a
+-- new number left them on a network with no portals, and routes from them found no tunnel:
+-- Pullfrog's review of 4d4f64a), and it replaces every flood it holds a tile of: those kept under
+-- that number, and one left with no point on it. It can have joined networks remembered apart:
+-- they become one, under the lowest of their numbers.
 local function net_of(nets, surface, position)
   local x, y = math.floor(position.x), math.floor(position.y)
   local wanted = key(x, y)
-  local known = nets.points[wanted]
+  local points = nets.points
+  local known = points[wanted]
   if known ~= nil then
     return known
   end
-  if flooded.tick ~= game.tick or flooded.nets ~= nets then
-    flooded.tick, flooded.nets, flooded.tiles = game.tick, nets, {}
-  end
-  known = flooded.tiles[wanted]
-  if known then
-    nets.points[wanted] = known
-    return known
+  local floods = nets.floods
+  if floods then
+    for _, flood in ipairs(floods) do
+      if flood.tiles[wanted] then
+        points[wanted] = flood.net
+        return flood.net
+      end
+    end
   end
   local tiles = surface.get_connected_tiles({ x, y }, ROADS)
   if #tiles == 0 then
-    nets.points[wanted] = false
+    points[wanted] = false
     return false
   end
-  -- The points worth remembering: where a route can start, end or go under.
-  local noted = { [wanted] = true }
-  for _, portal in ipairs(nets.portals) do
-    noted[key(math.floor(portal.entry.x), math.floor(portal.entry.y))] = true
+  -- (`key`, written out: this runs for every tile of the network.)
+  local set = {}
+  for index = 1, #tiles do
+    local tile = tiles[index]
+    set[(tile.x + 2097152) * 4194304 + tile.y + 2097152] = true
   end
-  for _, zone in ipairs(tunnels.zones and tunnels.zones(surface.index) or {}) do
-    noted[key(math.floor(zone.x), math.floor(zone.y))] = true
-  end
-  local points, keys, seen, net = nets.points, {}, {}, nil
-  for index, tile in ipairs(tiles) do
-    local found = key(tile.x, tile.y)
-    keys[index] = found
-    local id = points[found]
-    if id then
+  -- The number of any point remembered on it.
+  local seen, net = {}, nil
+  for point, id in pairs(points) do
+    if id and set[point] then
       seen[id] = true
       net = net and math.min(net, id) or id
     end
   end
-  local this_tick = flooded.tiles
   if not net then
     nets.count = nets.count + 1
     net = nets.count
@@ -252,19 +400,34 @@ local function net_of(nets, surface, position)
         points[point] = net
       end
     end
-    for tile, id in pairs(this_tick) do
-      if seen[id] then
-        this_tick[tile] = net
-      end
+  end
+  -- It holds every tile of the floods kept under those numbers, and of any other with a tile on it
+  -- (a flood whose points were all removed, joined since to road never flooded): this one stands
+  -- for them, so no two floods share a tile, and a tile removed leaves the one flood it is on.
+  -- A flood's tiles are road joined to each other, so one tile tells.
+  for place = #(floods or {}), 1, -1 do
+    local flood = floods[place]
+    if seen[flood.net] or set[next(flood.tiles)] then
+      table.remove(floods, place)
     end
   end
-  for _, found in ipairs(keys) do
-    this_tick[found] = net
-    if noted[found] then
-      points[found] = net
+  -- The points worth remembering: where a route can start, end or go under.
+  for _, portal in ipairs(nets.portals) do
+    local entry = key(math.floor(portal.entry.x), math.floor(portal.entry.y))
+    if set[entry] then
+      points[entry] = net
+    end
+  end
+  for _, zone in ipairs(tunnels.zones and tunnels.zones(surface.index) or {}) do
+    local at = key(math.floor(zone.x), math.floor(zone.y))
+    if set[at] then
+      points[at] = net
     end
   end
   points[wanted] = net
+  floods = floods or {}
+  nets.floods = floods
+  floods[#floods + 1] = { tiles = set, net = net }
   return net
 end
 
@@ -582,7 +745,6 @@ function tunnels.facing(unit_number)
   return entity and entity.valid and entity.direction / 16 or nil
 end
 
-local ROAD_TILES = { [ROADS[1]] = true, [ROADS[2]] = true }
 -- How a freighter comes out of portal `unit_number`, whose entry tile's centre is `exit`: where it
 -- appears (just inside the mouth's edge, on the entry tile), the first point it drives to (straight
 -- out: a tile on, if that is road too, else the entry tile's centre) and the way it faces (out of
