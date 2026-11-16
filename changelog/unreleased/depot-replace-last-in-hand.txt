@@ -1,0 +1,2 @@
+  Bugfixes:
+    - Fixed a crash when a depot was replaced by hand with the last depot the player was holding. Placed over itself at another quality, the depot keeps its request, freighters and settings then too.

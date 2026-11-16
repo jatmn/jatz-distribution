@@ -5,8 +5,9 @@
 -- over it (a fast replace). The game removes the old entity and builds a new one, with a new unit
 -- number, in the same tick: probed on 2.1.24, robots raise on_robot_mined_entity for the old one
 -- (still marked for upgrade to the same depot; no on_robot_pre_mined) and then on_robot_built_entity
--- for the new; a player raises on_pre_build, on_pre_player_mined_item, on_player_mined_entity for
--- the old one (their cursor still holding the depot) and then on_built_entity for the new. The game
+-- for the new; a player raises on_pre_build (their cursor holding the depot: read there, as it can
+-- be empty by the mining), on_pre_player_mined_item, on_player_mined_entity for the old one and
+-- then on_built_entity for the new. The game
 -- moves the chest's contents (or the tank's fluid), wires, circuit settings and a buffer depot's
 -- logistic requests itself, but not what the mod keeps by unit number, and it turns the logistic
 -- points back on. So the old one's removal is not a removal: its freighters aren't handed to the
@@ -28,11 +29,16 @@ local function spot(entity)
   return entity.surface_index .. " " .. position.x .. " " .. position.y .. " " .. entity.name
 end
 
--- A player's build: noted (`storage.depot_builds[player index]`, this tick only), for telling a
--- fast replace from a player mining a depot with one in their cursor.
+-- A player's build: noted (`storage.depot_builds[player index]`, this tick only), with what their
+-- cursor places, for telling a fast replace from a player mining a depot with one in their cursor.
+-- Read now: by the time the old depot is mined the cursor can be empty (0.1.8 crashed on that).
 function upgrades.pre_build(event)
+  local player = game.get_player(event.player_index)
+  local cursor = player and player.cursor_stack
+  local placed = cursor and cursor.valid_for_read and cursor.prototype.place_result
   storage.depot_builds = storage.depot_builds or {}
-  storage.depot_builds[event.player_index] = { tick = event.tick, position = event.position }
+  storage.depot_builds[event.player_index] =
+    { tick = event.tick, position = event.position, name = placed and placed.name or nil }
 end
 
 -- Whether `position` lies on `entity`'s ground (its selection box: where a click picks it).
@@ -58,13 +64,7 @@ local function replacing(entity, player_index)
     return target ~= nil and target.name == entity.name
   end
   local build = storage.depot_builds and storage.depot_builds[player_index]
-  if not (build and build.tick == game.tick and on(entity, build.position)) then
-    return false
-  end
-  local player = game.get_player(player_index)
-  local cursor = player and player.cursor_stack
-  local placed = cursor and cursor.valid_for_read and cursor.prototype.place_result
-  return placed ~= nil and placed.name == entity.name
+  return build ~= nil and build.tick == game.tick and build.name == entity.name and on(entity, build.position)
 end
 
 -- A delivery or Fuel depot mined: if it is being replaced by itself at another quality, note it
