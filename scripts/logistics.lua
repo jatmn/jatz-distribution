@@ -1374,13 +1374,16 @@ end
 -- `fits`: for such a request, where each quality fits at the depot (logistics.graded_need): a
 -- depot holding only qualities there is no room for is left out too, and fourth, says one was.
 --
--- Returns the first of them, in a list, and fifth, the others, not yet in order (`rest`:
--- { ids, positions, distances, ranks }, a list each, in step): a search asks about the nearest few
--- (route_answered), and each takes its next from them as it comes to it (logistics.candidate).
--- A table for each, all sorted, was a hundred tables and a sort for each depot of a large group
--- each second, nearly all of them never read: on a map of 100 request depots asking for one item,
--- 10,000 tables a second for the collector, whose work made the group's ticks several times
--- longer than the rest.
+-- Returns the first of them, in a list, and fifth, the others, a heap (`rest`:
+-- { ids, positions, distances, ranks }, a list each, in step, not sorted): a search asks about the
+-- nearest few (route_answered), and each takes its next from them as it comes to it
+-- (logistics.candidate). A table for each, all sorted, was a hundred tables and a sort for each
+-- depot of a large group each second, nearly all of them never read: on a map of 100 request
+-- depots asking for one item, 10,000 tables a second for the collector, whose work made the
+-- group's ticks several times longer than the rest. Without the heap, each next one was a look at
+-- all the others, and a search that comes to every one (none with a road, its answers
+-- remembered) made 124,750 comparisons for 500 providers: with 100 depots searching so, the
+-- script took four times as long as with the sort.
 local function candidates(depot, from, full, passed, carries, fits)
   local entity = depot.entity
   local waiting, short, cramped = false, false, false
@@ -1421,6 +1424,9 @@ local function candidates(depot, from, full, passed, carries, fits)
     end
   end
   local rest = { ids = found_ids, positions = positions, distances = distances, ranks = ranks }
+  for index = math.floor(count / 2), 1, -1 do
+    logistics.sift_candidate(rest, index, count)
+  end
   return { logistics.candidate(rest) }, waiting, short, cramped, rest
 end
 
@@ -1428,29 +1434,52 @@ end
 -- (see there), and of those the nearest in a straight line, of those the lowest unit number (so
 -- every player's game takes the same one). Nil once there are none. (A field: few locals to spare.)
 function logistics.candidate(rest)
-  local ids, distances, ranks = rest.ids, rest.distances, rest.ranks
+  local ids, positions, distances, ranks = rest.ids, rest.positions, rest.distances, rest.ranks
   local count = #ids
   if count == 0 then
     return nil
   end
-  local first = 1
-  for index = 2, count do
-    local rank, best = ranks[index], ranks[first]
-    if rank < best then
-      first = index
-    elseif rank == best then
-      local distance, nearest = distances[index], distances[first]
-      if distance < nearest or (distance == nearest and ids[index] < ids[first]) then
-        first = index
+  local candidate = { id = ids[1], position = positions[1], distance = distances[1], rank = ranks[1] }
+  ids[1], positions[1], distances[1], ranks[1] = ids[count], positions[count], distances[count], ranks[count]
+  ids[count], positions[count], distances[count], ranks[count] = nil, nil, nil, nil
+  logistics.sift_candidate(rest, 1, count - 1)
+  return candidate
+end
+
+-- Keeps `rest` (candidates, logistics.candidate) a heap, its first `count` of them: the one at
+-- `index` goes down past every one after it that comes before it, in the order logistics.candidate
+-- takes them (unit numbers are never the same, so no two tie), and the first is always the next.
+-- Taking each next one is then a few looks, not a look at all of them. (A field, as there.)
+function logistics.sift_candidate(rest, index, count)
+  local ids, positions, distances, ranks = rest.ids, rest.positions, rest.distances, rest.ranks
+  local id, position, distance, rank = ids[index], positions[index], distances[index], ranks[index]
+  local child = index * 2
+  while child <= count do
+    local child_rank, child_distance, child_id = ranks[child], distances[child], ids[child]
+    local other = child + 1
+    if other <= count then
+      local other_rank, other_distance, other_id = ranks[other], distances[other], ids[other]
+      if
+        other_rank < child_rank
+        or (
+          other_rank == child_rank
+          and (other_distance < child_distance or (other_distance == child_distance and other_id < child_id))
+        )
+      then
+        child, child_rank, child_distance, child_id = other, other_rank, other_distance, other_id
       end
     end
+    if
+      child_rank > rank
+      or (child_rank == rank and (child_distance > distance or (child_distance == distance and child_id > id)))
+    then
+      break
+    end
+    ids[index], positions[index], distances[index], ranks[index] =
+      child_id, positions[child], child_distance, child_rank
+    index, child = child, child * 2
   end
-  local positions = rest.positions
-  local candidate = { id = ids[first], position = positions[first], distance = distances[first], rank = ranks[first] }
-  ids[first], positions[first], distances[first], ranks[first] =
-    ids[count], positions[count], distances[count], ranks[count]
-  ids[count], positions[count], distances[count], ranks[count] = nil, nil, nil, nil
-  return candidate
+  ids[index], positions[index], distances[index], ranks[index] = id, position, distance, rank
 end
 
 -- Every trip out has its own tick of the second, its phase: storage.trip_phases[phase + 1] lists
