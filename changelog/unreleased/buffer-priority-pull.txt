@@ -1,2 +1,0 @@
-  Features:
-    - Add the "Buffers pull by priority" startup setting, off by default, so item and liquid buffers can fetch from lower-priority buffers to collect stock centrally.

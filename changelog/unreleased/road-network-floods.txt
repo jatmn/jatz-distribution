@@ -1,2 +1,0 @@
-  Bugfixes:
-    - Fixed the stutters left while laying and removing road on a large road network with road tunnels: the road networks follow each tile laid or removed, and are no longer worked out afresh once a second while road is laid and after each tile removed.
