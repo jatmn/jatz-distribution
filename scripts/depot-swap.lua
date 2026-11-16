@@ -17,13 +17,17 @@
 -- old one, still marked for upgrade to the new one, then script_raised_built in the same tick.
 -- on_object_destroyed for the old one comes at the end of that tick. Its mining would hand its
 -- freighters to the miner, and its scripted destruction leave them on the ground, so `replacing`
--- tells control.lua not to, and remembers it for the build that follows (`built`).
+-- tells control.lua not to, and remembers it for the build that follows (`built`). A script can
+-- as well destroy a marked depot outright, with no build to follow, and its chest goes with it, so
+-- `destroying` keeps the freighters in its chest aside until the build or the end of the tick.
 local logistics = require("scripts.logistics")
 local depot_road = require("scripts.depot-road")
 local robot_access = require("scripts.robot-access")
 local road_monitor = require("scripts.road-monitor")
 
 local swap = {}
+
+local FREIGHTER = "jatz-quinityn-freighter"
 
 -- What each depot is replaced with.
 local PARTNER = { ["jatz-request-depot"] = "jatz-buffer-depot", ["jatz-buffer-depot"] = "jatz-request-depot" }
@@ -86,9 +90,57 @@ function swap.replacing(entity, player_index)
   return true
 end
 
+-- The freighters a replacement kept aside (`destroying`), put into `chest` as far as it has room
+-- (nil: none), the rest left on the ground at `position`, as logistics.on_depot_destroyed leaves a
+-- destroyed depot's.
+local function hand_back(held, surface, position, chest)
+  for index = 1, #held do
+    local stack = held[index]
+    if stack.valid_for_read and chest then
+      local inserted = chest.insert(stack)
+      if inserted >= stack.count then
+        stack.clear()
+      else
+        stack.count = stack.count - inserted
+      end
+    end
+    if stack.valid_for_read and surface then
+      surface.spill_item_stack({ position = position, stack = stack, enable_looted = true, allow_belts = false })
+    end
+    stack.clear()
+  end
+  held.destroy()
+end
+
+-- A request or buffer depot a script is about to destroy (script_raised_destroy): whether it is
+-- being replaced by the other kind (`replacing`: marked for that upgrade, which a script's
+-- apply_upgrade carries out at once). If so, the freighters still in its chest are taken out and
+-- kept with that note (`held`) rather than spilled: the new depot gets them back in its chest
+-- (`built`), wherever the game moved the rest of the chest, and if none is built they are left
+-- where it stood when it is gone (`gone`), as for any depot destroyed (logistics.on_depot_destroyed).
+-- Freighter items carry their entity's data, so the stacks themselves are kept.
+function swap.destroying(entity)
+  if not swap.replacing(entity) then
+    return false
+  end
+  local chest = logistics.inventory(entity)
+  local held
+  for index = 1, #chest do
+    local stack = chest[index]
+    if stack.valid_for_read and stack.name == FREIGHTER then
+      held = held or game.create_inventory(#chest)
+      held[index].transfer_stack(stack)
+    end
+  end
+  local swaps = storage.depot_swaps
+  swaps[#swaps].held = held
+  return true
+end
+
 -- A request or buffer depot just built: if it replaces the other kind at its spot this tick, it
--- takes over everything the mod kept for that one. Older replacements that never came are dropped
--- (their depot's on_object_destroyed hands its freighters out as for any depot destroyed).
+-- takes over everything the mod kept for that one. Older replacements that never came are dropped,
+-- the freighters they kept aside left where their depot stood (`gone` does so for a depot gone
+-- before this; its on_object_destroyed hands out the rest as for any depot destroyed).
 function swap.built(entity)
   local swaps = storage.depot_swaps
   if not swaps then
@@ -107,11 +159,16 @@ function swap.built(entity)
       found = pending
     elseif pending.tick == game.tick then
       kept[#kept + 1] = pending
+    elseif pending.held then
+      hand_back(pending.held, game.surfaces[pending.surface_index], pending.position)
     end
   end
   storage.depot_swaps = #kept > 0 and kept or nil
   if not found then
     return
+  end
+  if found.held then
+    hand_back(found.held, entity.surface, here, logistics.inventory(entity))
   end
   local old_id = found.unit_number
   logistics.replaced(old_id, entity)
@@ -119,6 +176,28 @@ function swap.built(entity)
   road_monitor.replaced(old_id, entity.unit_number)
   -- Robots stay out of a buffer depot until it lets them, as of every new depot.
   robot_access.set(entity, false)
+end
+
+-- An entity gone (on_object_destroyed, its unit number `id`): a depot whose replacement never came
+-- this tick (a script destroyed it while it was marked for upgrade) is forgotten, the freighters
+-- kept aside from its chest left where it stood. One replaced is no longer noted here.
+function swap.gone(id)
+  local swaps = storage.depot_swaps
+  if not swaps then
+    return
+  end
+  for index, pending in ipairs(swaps) do
+    if pending.unit_number == id then
+      table.remove(swaps, index)
+      if #swaps == 0 then
+        storage.depot_swaps = nil
+      end
+      if pending.held then
+        hand_back(pending.held, game.surfaces[pending.surface_index], pending.position)
+      end
+      return
+    end
+  end
 end
 
 -- Undo and redo. Robots' replacements are recorded as upgrades ("upgraded-entity", with the

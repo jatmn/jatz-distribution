@@ -242,10 +242,11 @@ end)
 -- upgrades in place to the other (LuaEntity.apply_upgrade, as Blueprint Sandboxes does in its labs:
 -- probed on 2.1.24, it raises script_raised_destroy for the old depot, still marked for that
 -- upgrade, then script_raised_built for the new one, in one tick): the new one keeps them
--- (scripts/depot-swap.lua), as when robots carry out the upgrade.
+-- (scripts/depot-swap.lua), as when robots carry out the upgrade. One destroyed outright while so
+-- marked leaves them when it is gone (depot_swap.gone, below).
 script.on_event(defines.events.on_entity_died, logistics.on_depot_destroyed, requesting_filters)
 script.on_event(defines.events.script_raised_destroy, function(event)
-  if not depot_swap.replacing(event.entity) then
+  if not depot_swap.destroying(event.entity) then
     logistics.on_depot_destroyed(event)
   end
 end, requesting_filters)
@@ -271,6 +272,9 @@ script.on_event(defines.events.on_object_destroyed, function(event)
     end
     -- Gone some other way while marked for deconstruction (destroyed, say): no robot removal.
     undo.forget(event.useful_id)
+    -- A request or buffer depot a script destroyed while it was marked for upgrade to the other,
+    -- with no replacement built: the freighters kept aside from its chest are left where it stood.
+    depot_swap.gone(event.useful_id)
     local surface_index = depot_road.lift(event.useful_id)
     if surface_index then
       roads_changed(surface_index, false, true)

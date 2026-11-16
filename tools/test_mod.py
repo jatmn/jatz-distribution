@@ -435,6 +435,8 @@ TICKS = 2600
 # depot by a request depot from a ghost robots build, a request depot by a buffer depot from an
 # upgrade planner, and a request depot upgraded to a buffer depot at once by a script
 # (apply_upgrade), keep their request, freighters and chest, and the player is handed no freighters.
+# A request depot marked for that upgrade but destroyed outright by a script leaves all 3 of its
+# freighters on the ground, the 2 in its chest too.
 EXPECTED_UNDO = {
     'cut_removed': True,
     'cut_settings': {'request': {'item': 'wood', 'count': 8}, 'freighters': 5},
@@ -453,7 +455,8 @@ EXPECTED_UNDO = {
     'by_hand': {'request': {'item': 'wood', 'count': 4}, 'freighters': 2, 'iron': 7},
     'by_robots': {'request': {'item': 'wood', 'count': 6}, 'freighters': 3, 'iron': 9},
     'by_planner': {'request': {'item': 'wood', 'count': 3}, 'freighters': 1, 'iron': 5},
-    'by_script': {'request': {'item': 'wood', 'count': 5}, 'freighters': 2, 'iron': 6}}
+    'by_script': {'request': {'item': 'wood', 'count': 5}, 'freighters': 4, 'iron': 6},
+    'destroyed_marked_left': 3}
 # With Space Age, also a liquid request depot cut on a space platform, which takes it at once, and
 # rebuilt there by the platform from the ghost given its settings.
 EXPECTED_UNDO_PLATFORM = {
