@@ -2,6 +2,37 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Network window row separation and read-only summaries (November 16, 2026)
+
+PR #115 follow-up to the owner's screenshot at `6f5ce9c8f767218155baf97671ea16d4d7ec1d12`.
+Runtime blob: `scripts/network-gui.lua` `4c888a53bbe8b04843b4ad7997bd856e564c4e13`.
+Factorio 2.1.25 headless; Lua 5.2.4.
+
+- Added a native horizontal line under each resource row, with row visibility controlling the line.
+  Widened the shared grid and increased row padding/spacing and the bounded scroll area.
+- Depot/resource summaries use read-only 48 px sprites and adjacent depot counts; the picker,
+  page arrows and close remain buttons. Header/metric depot symbols are 24 px rather than 16 px.
+- `tools/test_mod.py`: base and Space Age passed, including native line direction/full width,
+  read-only widget types, exact counts/zeros, icon sizes, shared header/row geometry and close/rebuild
+  behavior. The event harness verifies both previous-draft layouts rebuild without inventory reads,
+  as well as the existing force isolation, scan budget, cached controls and 61-viewer fairness.
+- Lua syntax, Luacheck 1.2.0, StyLua 2.5.2, Ruff 0.17.3, setup (16), emulator boundaries (6),
+  releases (14), portal (7), portal content, package bytes/checksum and whitespace passed.
+- Standard engine comparison against `683882b`, three alternating runs each: mean update
+  1.120 → 1.135 ms (+1.3%), script 0.445 → 0.458 ms, p99 3.419 → 3.618 ms, median worst tick
+  6.354 → 6.575 ms. Individual worst ticks overlapped (5.227–8.345 before, 6.054–7.702 after).
+  Both variants had 1,512 vehicles out and delivered 265,200 items/minute. These are GUI-closed
+  measurements; the small timing increase is disclosed, with no speedup or zero-cost claim.
+- Engine-free standard comparison against the upstream base was identical in instruction counts,
+  API calls, path requests, commands, freighters and deliveries.
+- The real-engine eight-row refresh probe against `6f5ce9c`, three alternating runs of 5,000
+  refreshes after 500 warm-ups, measured median 0.330 → 0.338 ms. This is about 0.009 ms extra
+  per full page, with overlapping ranges. Shared scan/render budgets are unchanged; this probe
+  measures one viewer's GUI API work, not drawing or live multiplayer latency.
+- **Validation still needed:** the new row rules, icon legibility, read-only appearance and roomier
+  layout in the graphical client, plus live multiplayer/save/load checks. The supplied screenshot
+  shows the previous layout, not this candidate.
+
 ## Network window proportions and alignment: screenshot repair (November 16, 2026)
 
 PR #115 follow-up to the owner's graphical screenshot at `4403d7d2192036394341edf690baa2b3264638d4`.

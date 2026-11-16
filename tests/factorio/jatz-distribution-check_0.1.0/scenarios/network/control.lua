@@ -8,7 +8,7 @@ local function inner()
   return game.get_player(1).gui.screen.jatz_network_frame.inner
 end
 local function row(kind)
-  return inner().jatz_network_tabs[kind .. "_content"].resource_rows.row_1
+  return inner().jatz_network_tabs[kind .. "_content"].resource_rows.row_1.cells
 end
 script.on_event(defines.events.on_gui_closed, network.on_gui_closed)
 script.on_event(defines.events.on_gui_click, network.on_gui_click)
@@ -66,7 +66,7 @@ script.on_event(defines.events.on_tick, function(event)
     request.trucks.insert({ name = "jatz-quinityn-freighter", count = 3 })
     network.on_lua_shortcut({ player_index = 1, prototype_name = "jatz-network" })
     assert(player.opened == player.gui.screen.jatz_network_frame)
-    assert(not row("item").visible)
+    assert(not row("item").parent.visible)
   end
   network.refresh(event.tick)
   if event.tick == 5 then
@@ -96,10 +96,15 @@ script.on_event(defines.events.on_tick, function(event)
       "jatz-liquid-request-depot",
       "jatz-liquid-buffer-depot",
     }) do
-      assert(depots[name].sprite == "entity/" .. name and depots[name].number == 1)
+      assert(
+        depots[name].type == "flow"
+          and depots[name].icon.type == "sprite"
+          and depots[name].icon.sprite == "entity/" .. name
+          and depots[name].count.caption == "1"
+      )
       assert(depots[name].tooltip[2][1] == prototypes.entity[name].localised_name[1])
     end
-    assert(inner().overview.support.depots["jatz-fuel-depot"].number == 0)
+    assert(inner().overview.support.depots["jatz-fuel-depot"].count.caption == "0")
     assert(row("item").resource_icon.sprite == "item/iron-plate")
     assert(row("item").provider_cell.details.depot_count.caption == "1")
     assert(row("item").provider_cell.details.activity.caption == "1")
@@ -111,6 +116,10 @@ script.on_event(defines.events.on_tick, function(event)
     assert(headers.style.horizontal_spacing == resource.style.horizontal_spacing)
     assert(resource.resource_icon.style.minimal_width == resource.resource_icon.style.minimal_height)
     assert(headers.jatz_network_item.style.minimal_width == resource.resource_icon.style.minimal_width)
+    assert(resource.resource_icon.type == "sprite" and resource.resource_icon.style.minimal_width == 48)
+    assert(resource.provider_cell.details.holding_icon.style.minimal_width == 24)
+    assert(resource.parent.separator.type == "line" and resource.parent.separator.direction == "horizontal")
+    assert(resource.parent.separator.style.minimal_width == resource.style.minimal_width)
     assert(resource.need_cell.needed.style.minimal_height == resource.provider_cell.stock.style.minimal_height)
     for column = 2, 5 do
       assert(headers.children[column].style.minimal_width == resource.children[column].style.minimal_width)
@@ -119,7 +128,7 @@ script.on_event(defines.events.on_tick, function(event)
     assert(depots.style.column_alignments[2] == "top-center")
     assert(inner().overview.freighters.on_road.marker.children[1].resize_to_sprite == false)
     local old_frame = player.gui.screen.jatz_network_frame
-    old_frame.inner.overview.freighters.fleet.destroy()
+    old_frame.inner.overview.freighters.fleet.icon.destroy()
     network.on_gui_selection_state_changed({ player_index = 1, element = old_frame.inner.jatz_network_tabs })
     assert(player.gui.screen.jatz_network_frame ~= old_frame)
     assert(inner().overview.freighters.fleet.total.caption == "3")
@@ -136,7 +145,7 @@ script.on_event(defines.events.on_tick, function(event)
     assert(row("fluid").resource_icon.sprite == "fluid/water")
     assert(row("fluid").request_cell.details.holding_icon.sprite == "entity/jatz-liquid-request-depot")
     network.on_configuration_changed()
-    assert(not row("item").visible and storage.network_data == nil)
+    assert(not row("item").parent.visible and storage.network_data == nil)
   elseif event.tick == 10 then
     player.opened = nil -- Real engine on_gui_closed, not an invented close event.
     assert(not player.gui.screen.jatz_network_frame)

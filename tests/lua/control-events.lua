@@ -4894,7 +4894,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
     advance()
   end
   local function row(kind, index)
-    return screen.jatz_network_frame.inner.jatz_network_tabs[kind .. "_content"].resource_rows["row_" .. (index or 1)]
+    return screen.jatz_network_frame.inner.jatz_network_tabs[kind .. "_content"].resource_rows["row_" .. (index or 1)].cells
   end
   for name in pairs(logistics.depots) do
     prototypes.entity[name] = prototypes.entity[name] or { localised_name = { "entity-name." .. name } }
@@ -4924,10 +4924,12 @@ do -- Network command center: real GUI events and production snapshots, fake eng
     check(
       "depot icon retains the exact count and name: " .. name,
       slot
-        and slot.sprite == "entity/" .. name
-        and slot.number == (storage.network_data[30].all.depots[name] or 0)
+        and slot.type == "flow"
+        and slot.icon.type == "sprite"
+        and slot.icon.sprite == "entity/" .. name
+        and slot.count.caption == tostring(storage.network_data[30].all.depots[name] or 0)
         and slot.tooltip[1] == "jatz-network.depot-tooltip"
-        and slot.tooltip[3] == slot.number
+        and slot.tooltip[3] == (storage.network_data[30].all.depots[name] or 0)
     )
   end
   check(
@@ -4972,15 +4974,21 @@ do -- Network command center: real GUI events and production snapshots, fake eng
   )
   -- A saved window from the earlier draft has no fleet container. Same-version test builds
   -- need not raise on_configuration_changed, so the cached render must rebuild this layout.
-  local previous_frame, previous_reads = frame, reads
-  frame.inner.overview.freighters.fleet.destroy()
-  fire("on_gui_selected_tab_changed", { player_index = 30, element = frame.inner.jatz_network_tabs })
-  frame = screen.jatz_network_frame
-  depot_grid = frame.inner.overview.depot_summary.depots
-  check(
-    "prior draft window rebuilds from the shared snapshot without scanning",
-    frame ~= previous_frame and frame.inner.overview.freighters.fleet.total.caption == "5" and reads == previous_reads
-  )
+  for _, previous_layout in ipairs({ "fleet", "icon" }) do
+    local previous_frame, previous_reads = frame, reads
+    if previous_layout == "fleet" then
+      frame.inner.overview.freighters.fleet.destroy()
+    else
+      frame.inner.overview.freighters.fleet.icon.destroy()
+    end
+    fire("on_gui_selected_tab_changed", { player_index = 30, element = frame.inner.jatz_network_tabs })
+    frame = screen.jatz_network_frame
+    depot_grid = frame.inner.overview.depot_summary.depots
+    check(
+      "prior draft window rebuilds without scanning: " .. previous_layout,
+      frame ~= previous_frame and frame.inner.overview.freighters.fleet.total.caption == "5" and reads == previous_reads
+    )
+  end
   check(
     "other forces and fuel are absent",
     storage.network_data[30].all.items["item/copper-plate"] == nil
@@ -5013,8 +5021,8 @@ do -- Network command center: real GUI events and production snapshots, fake eng
     "surface changes do not scan and show only that surface",
     reads == before
       and row("fluid").provider_cell.stock.caption == "0"
-      and depot_grid["jatz-provider-depot"].number == 0
-      and depot_grid["jatz-buffer-depot"].number == 1
+      and depot_grid["jatz-provider-depot"].count.caption == "0"
+      and depot_grid["jatz-buffer-depot"].count.caption == "1"
   )
   tabs.selected_tab_index = 1
   fire("on_gui_selected_tab_changed", { player_index = 30, element = tabs })
@@ -5054,7 +5062,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
   fire("on_gui_selection_state_changed", { player_index = 30, element = filter })
   check(
     "shortages filter keeps active demand and removes the paused empty request",
-    row("item").visible and not row("item", 2).visible and reads == before
+    row("item").parent.visible and not row("item", 2).parent.visible and reads == before
   )
   filter.selected_index = 1
   fire("on_gui_selection_state_changed", { player_index = 30, element = filter })
@@ -5065,7 +5073,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
     "resource picker finds an empty configured request without a scan",
     row("item").request_cell.details.activity.caption == "1"
       and row("item").request_cell.stock.caption == "0"
-      and not row("item", 2).visible
+      and not row("item", 2).parent.visible
       and reads == before
   )
   picker.elem_value = nil

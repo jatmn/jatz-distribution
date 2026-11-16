@@ -11,7 +11,7 @@ local TABS, FILTER = "jatz_network_tabs", "jatz_network_filter"
 local PREVIOUS, NEXT = "jatz_network_previous", "jatz_network_next"
 local INTERVAL, PER_TICK, PAGE_SIZE = 300, 8, 8
 local ROLES = { "provider", "request", "buffer" }
-local CONTENT_WIDTH, ROW_WIDTH, SLOT_SIZE, ROLE_WIDTH, NEED_WIDTH = 640, 624, 40, 144, 112
+local CONTENT_WIDTH, ROW_WIDTH, SLOT_SIZE, ROLE_WIDTH, NEED_WIDTH = 760, 744, 48, 176, 120
 network_gui.shortcut = SHORTCUT
 -- The depots in the crafting menu's order; any other (Mining Drones' mining depot) after them.
 local KINDS = {
@@ -218,7 +218,7 @@ local function show(player, frame, counts)
   local freighters = overview.freighters
   local fleet = freighters.fleet
   -- A saved window from the previous same-version draft can still have the old hierarchy.
-  if not fleet then
+  if not (fleet and fleet.icon) then
     network_gui.open(player)
     return
   end
@@ -227,19 +227,22 @@ local function show(player, frame, counts)
   local depots = overview.depot_summary.depots
   local support = overview.support.depots
   for index, name in ipairs(KINDS) do
-    local count = (index >= 7 and support or depots)[name]
-    if count then
+    local summary = (index >= 7 and support or depots)[name]
+    if summary then
       local total = shown.depots[name] or 0
-      if count.number ~= total then
-        count.number = total
-        count.tooltip = { "jatz-network.depot-tooltip", prototypes.entity[name].localised_name, total }
+      local count, caption = summary.count, tostring(total)
+      if count.caption ~= caption then
+        local tooltip = { "jatz-network.depot-tooltip", prototypes.entity[name].localised_name, total }
+        count.caption, count.tooltip = caption, tooltip
+        summary.tooltip, summary.icon.tooltip = tooltip, tooltip
       end
     end
   end
 
-  inner.paging.snapshot.caption = { "jatz-network.snapshot", math.floor((game.tick - counts.tick) / 60) }
-  local kind = inner[TABS].selected_tab_index == 2 and "fluid" or "item"
-  local content = inner[TABS][kind .. "_content"]
+  local paging, tabs = inner.paging, inner[TABS]
+  paging.snapshot.caption = { "jatz-network.snapshot", math.floor((game.tick - counts.tick) / 60) }
+  local kind = tabs.selected_tab_index == 2 and "fluid" or "item"
+  local content = tabs[kind .. "_content"]
   local rows = {}
   local totals = { item = 0, fluid = 0 }
   for _, item in pairs(shown.items) do
@@ -262,7 +265,7 @@ local function show(player, frame, counts)
     end
   end
   for _, t in ipairs({ "item", "fluid" }) do
-    inner[TABS][t .. "_tab"].badge_text = tostring(totals[t])
+    tabs[t .. "_tab"].badge_text = tostring(totals[t])
   end
   table.sort(rows, function(a, b)
     local ma, mb = a.request.missing + a.buffer.missing, b.request.missing + b.buffer.missing
@@ -273,14 +276,16 @@ local function show(player, frame, counts)
   end)
   local pages = math.max(1, math.ceil(#rows / PAGE_SIZE))
   state.page = math.min(state.page or 1, pages)
-  inner.paging.page_label.caption = { "jatz-network.page", state.page, pages }
-  inner.paging[PREVIOUS].enabled, inner.paging[NEXT].enabled = state.page > 1, state.page < pages
+  paging.page_label.caption = { "jatz-network.page", state.page, pages }
+  paging[PREVIOUS].enabled, paging[NEXT].enabled = state.page > 1, state.page < pages
   content.no_items.visible = #rows == 0
+  local resource_rows = content.resource_rows
   for index = 1, PAGE_SIZE do
-    local row = content.resource_rows["row_" .. index]
+    local group = resource_rows["row_" .. index]
     local item = rows[(state.page - 1) * PAGE_SIZE + index]
-    row.visible = item ~= nil
+    group.visible = item ~= nil
     if item then
+      local row = group.cells
       local prototype = prototypes[item.type][item.name]
       local resource = row.resource_icon
       resource.sprite = item.type .. "/" .. item.name
@@ -333,7 +338,7 @@ end
 -- 16 px of the content width for the scrollbar instead of letting it shift the numbers.
 local function resource_grid(parent, name, visible)
   local grid = parent.add({ type = "table", name = name, column_count = 5, visible = visible })
-  grid.style.width, grid.style.padding = ROW_WIDTH, 4
+  grid.style.width, grid.style.padding = ROW_WIDTH, { 4, 8 }
   grid.style.horizontal_spacing, grid.style.vertical_spacing = 8, 0
   return grid
 end
@@ -409,6 +414,7 @@ function network_gui.open(player)
   fleet.style.vertical_align = "center"
   fleet.add({
     type = "sprite",
+    name = "icon",
     sprite = "item/jatz-quinityn-freighter",
     resize_to_sprite = false,
     tooltip = { "jatz-network.freighters-tooltip" },
@@ -436,35 +442,45 @@ function network_gui.open(player)
     name = "depot_summary",
     direction = "vertical",
   })
-  depot_summary.style.width, depot_summary.style.right_margin = 336, 12
+  depot_summary.style.width, depot_summary.style.right_margin = 372, 12
   local depots = depot_summary.add({ type = "table", name = "depots", column_count = 4 })
-  depots.style.horizontal_spacing, depots.style.vertical_spacing = 8, 4
+  depots.style.horizontal_spacing, depots.style.vertical_spacing = 12, 8
   depots.add({ type = "empty-widget" })
   for index, role in ipairs(ROLES) do
-    local heading = label(depots, { "jatz-network." .. role }, 88)
+    local heading = label(depots, { "jatz-network." .. role }, 96)
     heading.style.font, heading.style.horizontal_align = "default-semibold", "center"
     depots.style.column_alignments[index + 1] = "top-center"
   end
   -- Support depots have their own group, so Mining Drones does not add a mostly empty third row.
   local support = overview.add({ type = "flow", name = "support", direction = "vertical" })
-  support.style.width = 112
+  support.style.width = 196
   support.style.vertical_spacing = 4
-  local support_heading = label(support, { "jatz-network.support" }, 112)
+  local support_heading = label(support, { "jatz-network.support" }, 196)
   support_heading.style.font, support_heading.style.horizontal_align = "default-semibold", "center"
   local support_depots = support.add({ type = "table", name = "depots", column_count = 2 })
-  support_depots.style.width, support_depots.style.horizontal_align = 112, "center"
-  support_depots.style.horizontal_spacing, support_depots.style.vertical_spacing = 8, 4
+  support_depots.style.width, support_depots.style.horizontal_align = 196, "center"
+  support_depots.style.horizontal_spacing, support_depots.style.vertical_spacing = 4, 8
   local function depot_slot(parent, name)
     local prototype = prototypes.entity[name]
     if prototype then
-      parent.add({
-        type = "sprite-button",
+      local summary = parent.add({
+        type = "flow",
         name = name,
-        style = "slot_button",
+        direction = "horizontal",
+        tooltip = prototype.localised_name,
+      })
+      summary.style.width, summary.style.height = 96, SLOT_SIZE
+      summary.style.vertical_align = "center"
+      summary.add({
+        type = "sprite",
+        name = "icon",
+        resize_to_sprite = false,
         sprite = "entity/" .. name,
         tooltip = prototype.localised_name,
       }).style.size =
         SLOT_SIZE
+      local count = summary.add({ type = "label", name = "count", caption = "…", tooltip = prototype.localised_name })
+      count.style.width, count.style.font = 40, "default-semibold"
     else
       parent.add({ type = "empty-widget" })
     end
@@ -481,7 +497,7 @@ function network_gui.open(player)
     depot_slot(support_depots, KINDS[index])
   end
   local tabs = inner.add({ type = "tabbed-pane", name = TABS, style = "tabbed_pane_with_no_side_padding" })
-  tabs.style.top_margin = 8
+  tabs.style.top_margin = 12
   for _, kind in ipairs({ "item", "fluid" }) do
     local tab = tabs.add({ type = "tab", name = kind .. "_tab", caption = { "jatz-network." .. kind .. "s" } })
     local content = tabs.add({ type = "flow", name = kind .. "_content", direction = "vertical" })
@@ -495,33 +511,40 @@ function network_gui.open(player)
     }).style.size =
       SLOT_SIZE
     for _, role in ipairs(ROLES) do
-      label(picker, {
-        "",
-        "[entity=jatz-" .. (kind == "fluid" and "liquid-" or "") .. role .. "-depot] ",
-        { "jatz-network." .. role },
-      }, ROLE_WIDTH).style.horizontal_align =
-        "right"
+      local heading = picker.add({ type = "flow", direction = "horizontal" })
+      heading.style.width, heading.style.horizontal_align = ROLE_WIDTH, "right"
+      heading.style.vertical_align = "center"
+      heading.add({
+        type = "sprite",
+        resize_to_sprite = false,
+        sprite = "entity/jatz-" .. (kind == "fluid" and "liquid-" or "") .. role .. "-depot",
+        tooltip = { "jatz-network." .. role },
+      }).style.size =
+        24
+      heading.add({ type = "label", caption = { "jatz-network." .. role } })
     end
     label(picker, { "jatz-network.needed" }, NEED_WIDTH).style.horizontal_align = "right"
     content.add({ type = "label", name = "no_items", caption = { "jatz-network.no-items" } })
     local pane = content.add({ type = "scroll-pane", name = "resource_rows", style = "naked_scroll_pane" })
     pane.style.width, pane.style.padding = CONTENT_WIDTH, 0
-    pane.style.maximal_height = 300
+    pane.style.maximal_height = 360
     for index = 1, PAGE_SIZE do
-      local row = resource_grid(pane, "row_" .. index, false)
-      local resource = row.add({ type = "sprite-button", name = "resource_icon", style = "slot_button" })
+      local group = pane.add({ type = "flow", name = "row_" .. index, direction = "vertical", visible = false })
+      group.style.vertical_spacing = 0
+      local row = resource_grid(group, "cells", true)
+      local resource = row.add({ type = "sprite", name = "resource_icon", resize_to_sprite = false })
       resource.style.size = SLOT_SIZE
       for _, role in ipairs(ROLES) do
         local cell = row.add({ type = "flow", name = role .. "_cell", direction = "vertical" })
-        cell.style.width, cell.style.vertical_spacing = ROLE_WIDTH, 0
+        cell.style.width, cell.style.vertical_spacing = ROLE_WIDTH, 4
         local stock = cell.add({ type = "label", name = "stock" })
         stock.style.width, stock.style.height = ROLE_WIDTH, 20
         stock.style.horizontal_align, stock.style.font = "right", "default-semibold"
         stock.style.vertical_align = "center"
         local details = cell.add({ type = "flow", name = "details", direction = "horizontal" })
-        details.style.width, details.style.height = ROLE_WIDTH, 20
+        details.style.width, details.style.height = ROLE_WIDTH, 28
         details.style.horizontal_align, details.style.vertical_align = "right", "center"
-        details.style.horizontal_spacing = 4
+        details.style.horizontal_spacing = 8
         details.add({
           type = "sprite",
           name = "holding_icon",
@@ -529,7 +552,7 @@ function network_gui.open(player)
           resize_to_sprite = false,
           tooltip = { "jatz-network.holding-tooltip" },
         }).style.size =
-          16
+          24
         details.add({ type = "label", name = "depot_count", tooltip = { "jatz-network.holding-tooltip" } }).style.width =
           40
         details.depot_count.style.horizontal_align = "right"
@@ -539,16 +562,19 @@ function network_gui.open(player)
           resize_to_sprite = false,
           tooltip = { "jatz-network." .. (role == "provider" and "offering-icon-tooltip" or "requesting-icon-tooltip") },
         }).style.size =
-          16
+          24
         details.add({ type = "label", name = "activity" }).style.width = 40
         details.activity.style.horizontal_align = "right"
       end
       local need = row.add({ type = "flow", name = "need_cell", direction = "vertical" })
-      need.style.width, need.style.height = NEED_WIDTH, SLOT_SIZE
+      need.style.width, need.style.height = NEED_WIDTH, 52
       local needed = need.add({ type = "label", name = "needed" })
       needed.style.width, needed.style.height = NEED_WIDTH, 20
       needed.style.horizontal_align, needed.style.vertical_align = "right", "center"
       needed.style.font = "default-semibold"
+      local separator = group.add({ type = "line", name = "separator", direction = "horizontal" })
+      separator.style.width = ROW_WIDTH
+      separator.style.top_margin, separator.style.bottom_margin = 2, 2
     end
     tabs.add_tab(tab, content)
   end
@@ -556,7 +582,7 @@ function network_gui.open(player)
   local paging = inner.add({ type = "flow", name = "paging", direction = "horizontal" })
   paging.style.width, paging.style.horizontal_spacing = CONTENT_WIDTH, 8
   paging.style.vertical_align = "center"
-  paging.style.top_margin = 8
+  paging.style.top_margin = 12
   paging.add({
     type = "sprite-button",
     name = PREVIOUS,
