@@ -1359,11 +1359,19 @@ function logistics.full_load(depot, trip)
   return math.min(capacity, request.count), capacity
 end
 
--- Buffer stock can flow upward only with the startup opt-in. Kept shared with pickup so a
--- priority changed while a freighter is travelling cannot make it take stock downward.
+-- Buffer stock can flow upward only with the startup opt-in: the priority a buffer depot's buffer
+-- sources must be below, or nil. A search reads it once, not for each buffer it passes.
+function logistics.buffer_floor(depot)
+  if depot.role == "buffer" and settings.startup["jatz-buffer-priority-pull"].value then
+    return depot.priority or PRIORITY_DEFAULT
+  end
+end
+
+-- Kept shared with pickup so a priority changed while a freighter is travelling cannot make it
+-- take stock downward.
 function logistics.buffer_source(depot, provider)
-  return settings.startup["jatz-buffer-priority-pull"].value
-    and (provider.priority or PRIORITY_DEFAULT) < (depot.priority or PRIORITY_DEFAULT)
+  local floor = logistics.buffer_floor(depot)
+  return floor ~= nil and (provider.priority or PRIORITY_DEFAULT) < floor
 end
 
 -- Every depot that could serve a requesting depot: provider depots, and for a request depot,
@@ -1399,6 +1407,8 @@ local function candidates(depot, from, full, passed, carries, fits)
   -- The kind of depot asked about first.
   local first = buffers and depot.from_buffers and "buffer" or "provider"
   local own = entity.unit_number
+  -- For a buffer depot with the startup opt-in, buffers below this take too (logistics.buffer_source).
+  local floor = not buffers and logistics.buffer_floor(depot)
   local request = depot.request
   local size = full and not depot.fluid and transfer.stack_size_of(request.item)
   local supplying = suppliers(entity.surface_index, entity.force_index, depot.fluid, request)
@@ -1409,8 +1419,10 @@ local function candidates(depot, from, full, passed, carries, fits)
     -- (The one passed is neither ready nor waiting: the freighter goes on, or home.)
     if
       id ~= passed
-      and id ~= own
-      and (provider.role == "provider" or buffers or logistics.buffer_source(depot, provider))
+      and (
+        provider.role == "provider"
+        or (buffers or (floor and (provider.priority or PRIORITY_DEFAULT) < floor)) and id ~= own
+      )
     then
       if fits and ledger.allocate(provider, request, math.huge, nil, fits.size, fits) <= 0 then
         cramped = true
@@ -1667,8 +1679,10 @@ local function start_trip(depot, provider, from, planned, length, plan, mix)
     drone = drone,
     request = depot.entity.unit_number,
     provider = provider.entity.unit_number,
-    -- The rule that admitted this pickup survives home/source replacement and save/load.
-    -- nil on an older trip keeps the existing current-role check until its first replacement.
+    -- The rule that admitted this pickup survives home/source replacement and save/load: a buffer
+    -- pull is checked again at pickup. nil, on a trip saved before this was recorded, is none:
+    -- buffers then fetched only from providers, so its pickup is a requester's, whatever its home
+    -- has been replaced with since.
     buffer_pull = depot.role == "buffer" and provider.role == "buffer",
     item = depot.request.item,
     -- The qualities it plans to load, if not all normal (scripts/quality.lua), and that it ever did:
@@ -2753,7 +2767,7 @@ local function arrived_at_provider(id, trip, depot)
   if provider and request and request.item == trip.item then
     local source = storage.depots[trip.provider]
     if
-      trip.buffer_pull ~= false
+      trip.buffer_pull
       and depot.role == "buffer"
       and source.role == "buffer"
       and not logistics.buffer_source(depot, source)
@@ -3762,8 +3776,7 @@ function logistics.replaced(old_id, entity)
   depots[old_id], depots[id] = nil, depot
   -- It does what the new one does: a buffer depot supplies request depots and fetches from
   -- providers only, a request depot supplies no one. Freighters already sent finish their trips.
-  local previous_role = depot.role
-  local role = logistics.depots[entity.name] or previous_role
+  local role = logistics.depots[entity.name] or depot.role
   depot.role = role
   index_depot(id, depot, true)
   depot.entity = entity
@@ -3787,11 +3800,6 @@ function logistics.replaced(old_id, entity)
   end
   for _, trip in pairs(storage.trips) do
     if trip.request == old_id then
-      -- A saved trip from before admission was recorded inherits its old home's rule, before
-      -- this replacement changes that rule. Later replacements preserve the recorded admission.
-      if trip.buffer_pull == nil then
-        trip.buffer_pull = previous_role == "buffer"
-      end
       trip.request = id
     end
     if trip.provider == old_id then

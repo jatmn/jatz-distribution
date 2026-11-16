@@ -209,15 +209,17 @@ for _, enabled in ipairs({ false, true }) do
       answer(logistics, 1, "route")
       local trip = trips_from(home)[1]
       check("requester dispatched to buffer before home replacement", trip and trip.provider == source.unit_number)
-      if legacy then
-        trip.buffer_pull = nil -- A trip saved before pickup admission was recorded.
-      end
       local replacement = entity("jatz-buffer-depot", 0.5, 0.5)
       replacement.get_inventory, replacement.chest = home.get_inventory, home.chest
       home.valid = false
       logistics.replaced(home.unit_number, replacement)
       logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = home.unit_number })
       logistics.on_depot_changed(replacement)
+      if legacy then
+        -- Saved by a version from before pickup admission was recorded, after its home was
+        -- replaced: a buffer home with a buffer source, which that version never dispatched.
+        trip.buffer_pull = nil
+      end
       -- Saved trips survive module reload and configuration reconciliation with their admission.
       package.loaded["scripts.logistics"] = nil
       logistics = require("scripts.logistics")
@@ -292,7 +294,7 @@ for _, buffer_first in ipairs({ false, true }) do
 end
 harness.STARTUP["jatz-buffer-priority-pull"].value = false
 
-do -- Unknown admission on an older saved buffer trip must not bypass its existing priority rule.
+do -- A saved buffer pull keeps its admission through reload, so pickup still checks priority.
   local logistics = reset()
   harness.STARTUP["jatz-buffer-priority-pull"].value = true
   local home = entity("jatz-buffer-depot", 0.5, 0.5)
@@ -307,13 +309,14 @@ do -- Unknown admission on an older saved buffer trip must not bypass its existi
   answer(logistics, 1, "route")
   local trip = trips_from(home)[1]
   check("saved buffer pickup was admitted upward", trip and trip.provider == source.unit_number)
-  trip.buffer_pull = nil
   logistics.set_priority(source, 8)
+  package.loaded["scripts.logistics"] = nil
+  logistics = require("scripts.logistics")
   logistics.add_all()
   arrive(logistics, trip)
   arrive(logistics, trip)
   check(
-    "saved buffer pickup rechecks priority without an admission marker",
+    "saved buffer pickup rechecks priority after reload",
     received.get_item_count("a") == 0 and stock.get_item_count("a") == 20 and #trips_from(home) == 0
   )
   harness.STARTUP["jatz-buffer-priority-pull"].value = false

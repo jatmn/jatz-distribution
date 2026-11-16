@@ -2,6 +2,26 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Pre-update pickups and disabled buffer scans: Lua checks passed; Factorio not rerun
+
+**November 16, 2026.** PR #112 review repair on `a545788313b39dcef11489c3c1b5beb12c1a6c95`, against
+`main` at `51c25b67643c4f1e07bf8ea57575f67f6d272d3b`. No Factorio executable was available, so
+`tools/test_mod.py` and `tools/benchmark_ups.py` were not rerun for this revision.
+
+- A requester dispatched to a buffer on `main`, its home replaced by a buffer and saved before
+  pickup, received 0 of 10 after reloading with the previous PR revision. A trip without an
+  admission record now counts as a requester's pickup, as no earlier version sent buffers to buffers.
+  The same state, made by `main`'s own `scripts/logistics.lua`, now delivers 10 and leaves 10, as
+  on `main`, with the setting on or off. The changed swap check fails on the previous revision.
+- With the setting off, buffer searches read it once each instead of once for each other buffer.
+  For 400 stocked buffers over 60 `on_tick_share` ticks (Lua instructions in `scripts/`):
+  `main` 2,049,416; previous revision 3,963,816 with 159,600 setting reads; this one 2,214,616 with
+  400. A new logistics check fails on the previous revision.
+- `tools/test_mod_setup.py`: 16 passed; `tools/test_emulate_ups.py`: 6 passed;
+  `tools/emulate_ups.py --base` that `main`: mean +0.1%, p99 +0.2%, worst +0.1%, deliveries unchanged.
+- StyLua 2.5.2, Luacheck 1.2.0, Lua 5.2 syntax, Ruff 0.17.3, `git diff --check`, and the CI package
+  job's release, portal and package build/validation steps passed. No visual changes.
+
 ## Buffer pickup after home replacement: passed (automated)
 
 **November 16, 2026.** PR #112 repair working tree on `0b1d467b72550e9b30f4f69a933864cb1de59b33`,

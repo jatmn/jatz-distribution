@@ -1152,6 +1152,28 @@ for _, pending in ipairs({ true, false }) do
 end
 harness.STARTUP["jatz-buffer-priority-pull"].value = false
 
+do -- Disabled, a buffer's search reads the opt-in once, not once for each stocked buffer it passes.
+  local logistics = reset()
+  local setting, reads = harness.STARTUP["jatz-buffer-priority-pull"], 0
+  harness.STARTUP["jatz-buffer-priority-pull"] = setmetatable({}, {
+    __index = function(_, key)
+      reads = reads + 1
+      return setting[key]
+    end,
+  })
+  local filling = entity("jatz-buffer-depot", 0.5, 0.5)
+  logistics.add(filling)
+  logistics.set_priority(filling, 10)
+  for index = 1, 8 do
+    logistics.add(entity("jatz-buffer-depot", 10.5 * index, 0.5, { a = 20 }))
+  end
+  logistics.set_request(filling, "a", 10)
+  logistics.put_freighters(filling, stack("jatz-quinityn-freighter", 1))
+  logistics.on_tick()
+  harness.STARTUP["jatz-buffer-priority-pull"] = setting
+  check("disabled buffer scan reads the opt-in once", #requests == 0 and not has_trip(filling) and reads == 1)
+end
+
 do -- Changing "request from buffer depots" restarts searches under way, freighters' included, and
   -- applies at once, without waiting out a retry delay.
   local logistics = reset()
