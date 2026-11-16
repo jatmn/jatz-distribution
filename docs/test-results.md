@@ -2,6 +2,35 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Freighter network command center: automated checks passed; visual check pending
+
+**November 15, 2026.** Uncommitted `feat/network-supply-demand` candidate based on
+`a826850320c5b1f5b2f3658c895fb0a56628f9be`; network module blob `b313d80ba593ddbcae3512229fb9229148a24008`.
+Factorio 2.1.24 (build 87808), Linux x86_64 headless; Python 3.13.5 and Lua 5.2.4.
+
+- `tools/test_mod.py`: passed with base game and Space Age. The new network scenario exercises
+  real tabbed GUI construction, item/fluid and depot-role stock, quality-aware need, reservations,
+  explicitly supplied inbound commitments, parked fluid storage, rebuilding and engine close events.
+- `tools/test_mod_setup.py`: 16 tests passed, including the control-event GUI regressions;
+  `tools/test_emulate_ups.py`, release and portal/package validation passed. Lua syntax,
+  Luacheck 1.2.0, StyLua 2.5.2, Ruff 0.17.3 and whitespace checks passed.
+- The new first-open regression fails against the baseline GUI and its original event wiring.
+  Independent review found starvation with 61 simultaneous viewers; the added regression fails
+  before the correction and passes with rotating viewer service. Multiplayer clients themselves
+  were not connected; the harness checks shared work, isolation, disconnects and closed-window behavior.
+- Repository engine benchmarks (three runs per variant, GUI closed): standard mean update
+  1.334 → 1.353 ms (+1.4%); stress 7.220 → 7.275 ms (+0.8%). Delivery totals and active freighters
+  were identical; changes are small relative to run spread. These measured the initial candidate;
+  later open-window fairness/tooltip changes leave the measured closed-window path unchanged.
+  Final-tree engine-free emulation: +0.1% mean instructions, unchanged API calls and deliveries.
+- Separate real-engine GUI probes, one player and 600 stationary depots: worst open-window GUI tick
+  6.320 → 0.591 ms with one resource per chest; 30.616 → 7.227 ms with 48 resources per chest.
+  The dense probe's mean GUI work rose 0.391 → 0.418 ms while being spread across ticks. These
+  single-run timings exclude other game update work and graphical rendering; they do not guarantee
+  latency on every factory or machine. No inventory reads occur once all connected viewers close.
+- **Untested:** graphical layout, normal UI scales and live multiplayer join/latency. The graphical
+  client gate remains pending before submission; headless runs are not visual approval.
+
 ## Quality: passed (automated)
 
 **November 14, 2026.** Quality support rebased onto `016bc60fc762a541be01dec1cfaa5946c271bb7e`

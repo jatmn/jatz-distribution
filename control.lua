@@ -357,15 +357,15 @@ script.on_event(defines.events.on_tick, function(event)
   logistics.sample_circuits()
   logistics.on_tick_share(event.tick)
   logistics.on_impact_share(event.tick)
+  network_gui.refresh(event.tick)
   if storage.undo_pending or storage.undo_locating then
     undo.tag_pending(event.tick)
   end
 end)
--- Once a second: road network monitors show their networks, and open freighter network windows
--- their numbers (scripts/network-gui.lua).
+-- Once a second: road network monitors show their networks. Network GUI snapshots are spread
+-- across ticks above (scripts/network-gui.lua).
 script.on_nth_tick(logistics.dispatch_interval, function()
   road_monitor.update()
-  network_gui.refresh()
 end)
 -- Freighters ctrl+ or shift+clicked from a player's inventory into a request depot fill its
 -- freighter slot (scripts/request-gui.lua).
@@ -401,6 +401,7 @@ script.on_configuration_changed(function()
   setup()
   -- Panels open in the save show today's qualities (after setup: removed ones are forgotten there).
   request_gui.on_configuration_changed()
+  network_gui.on_configuration_changed()
 end)
 
 -- Milestones (optional) calls every remote interface with this function, on a new game and when

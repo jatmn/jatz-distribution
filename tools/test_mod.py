@@ -659,6 +659,12 @@ def check(binary, data, bundled, enabled_mods, label, extra=None):
     bonuses = json.loads(bonuses_path.read_text()) if bonused and bonuses_path.exists() else None
     if bonuses != EXPECTED_BONUSES:
         wrong['bonuses'] = bonuses
+    network_path = write / 'script-output/jatz-network-check.json'
+    networked = run(command + ['--test-scenario', f'{CHECK.name.rsplit("_", 1)[0]}/network',
+                              '--test-ticks', '30'], workspace / 'network.log') == 0
+    network = json.loads(network_path.read_text()) if networked and network_path.exists() else None
+    if network != {'passed': True}:
+        wrong['network'] = network
     if 'quality' in enabled_mods:
         quality_path = write / 'script-output/jatz-quality-check.json'
         graded = run(command + ['--test-scenario', f'{CHECK.name.rsplit("_", 1)[0]}/quality',

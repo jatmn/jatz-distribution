@@ -773,6 +773,9 @@ local function chosen_quality(inner)
 end
 
 local function on_gui_elem_changed(event)
+  if network_gui.on_gui_elem_changed(event) then
+    return
+  end
   local name = event.element.name
   if name == CIRCUIT_FIRST or name == CIRCUIT_SECOND then
     local entity = opened_depot(game.get_player(event.player_index))
@@ -1244,6 +1247,7 @@ function request_gui.register()
     network_gui.on_player_changed_force(event)
   end)
   script.on_event(defines.events.on_lua_shortcut, network_gui.on_lua_shortcut)
+  script.on_event(defines.events.on_gui_selected_tab_changed, network_gui.on_gui_selection_state_changed)
   script.on_event("jatz-pipette", on_pipette)
   script.on_nth_tick(30, refresh)
 end
