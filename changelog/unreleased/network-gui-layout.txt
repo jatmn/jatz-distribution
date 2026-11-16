@@ -3,3 +3,4 @@
     - Use resource and status icons, compact stock rows and page arrows, retaining names, exact counts and definitions on hover.
     - Align resource columns and use consistent square icons, a balanced summary band and a separate support-depot group.
     - Separate resource rows with horizontal dividers, enlarge depot icons and spacing, and show read-only summaries without inactive button skins.
+    - Keep resource icons compact, enlarge row depot symbols, place their counts beside them, and label offering/requesting counts instead of ambiguous arrows.

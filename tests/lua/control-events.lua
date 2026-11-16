@@ -4968,18 +4968,18 @@ do -- Network command center: real GUI events and production snapshots, fake eng
     "compact role metrics keep holding and activity counts and their definitions",
     row("item").provider_cell.details.depot_count.caption == "1"
       and row("item").provider_cell.details.depot_count.tooltip[1] == "jatz-network.holding-tooltip"
-      and row("item").provider_cell.details.activity.caption == "1"
+      and row("item").provider_cell.details.activity.caption[2] == 1
       and row("item").provider_cell.details.activity.tooltip[1] == "jatz-network.offering-tooltip"
       and row("item").request_cell.details.activity.tooltip[1] == "jatz-network.requesting-tooltip"
   )
   -- A saved window from the earlier draft has no fleet container. Same-version test builds
   -- need not raise on_configuration_changed, so the cached render must rebuild this layout.
-  for _, previous_layout in ipairs({ "fleet", "icon" }) do
+  for _, previous_layout in ipairs({ "fleet", "freighter_icon" }) do
     local previous_frame, previous_reads = frame, reads
     if previous_layout == "fleet" then
       frame.inner.overview.freighters.fleet.destroy()
     else
-      frame.inner.overview.freighters.fleet.icon.destroy()
+      frame.inner.overview.freighters.fleet.freighter_icon.destroy()
     end
     fire("on_gui_selected_tab_changed", { player_index = 30, element = frame.inner.jatz_network_tabs })
     frame = screen.jatz_network_frame
@@ -5071,7 +5071,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
   fire("on_gui_elem_changed", { player_index = 30, element = picker })
   check(
     "resource picker finds an empty configured request without a scan",
-    row("item").request_cell.details.activity.caption == "1"
+    row("item").request_cell.details.activity.caption[2] == 1
       and row("item").request_cell.stock.caption == "0"
       and not row("item", 2).parent.visible
       and reads == before
@@ -5119,7 +5119,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
   fire("on_gui_selection_state_changed", { player_index = 30, element = filter })
   check(
     "stock without requests filter resets paging and excludes iron demand",
-    frame.inner.paging.page_label.caption[2] == 1 and row("item").request_cell.details.activity.caption == "0"
+    frame.inner.paging.page_label.caption[2] == 1 and row("item").request_cell.details.activity.caption[2] == 0
   )
   filter.selected_index = 1
   fire("on_gui_selection_state_changed", { player_index = 30, element = filter })

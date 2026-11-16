@@ -2,6 +2,37 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Row depot icon sizing and metric meanings (November 16, 2026)
+
+PR #115 follow-up to the owner's screenshot and count/arrow clarification at
+`3fe3c07d9a611e1d03e95b45218e3cedf70dd36e`. Runtime blob:
+`scripts/network-gui.lua` `68489a8a55f2334cc281995212ec2b8ee2856f5d`.
+
+- Restored resource/picker icons to 40 px while row/header depot symbols are 48 px, matching
+  the readable summary icons. Matching margins retain the existing first-column alignment.
+- Holding counts use natural-width left-aligned labels beside the depot image. Ambiguous arrows
+  are removed; the other count explicitly says offering or requesting. Row height accommodates
+  the larger models; window width, dividers, summaries, controls and data accounting are retained.
+- `tools/test_mod.py` passed with base and Space Age, including native 40/48 px sizing,
+  zero forced count-label minimum, left alignment, labeled activity count values, absence of arrow
+  widgets, retained geometry/counts/quality, and rebuilding earlier same-version GUI layouts.
+  Lua harnesses retain force isolation, shared work budget, cached controls and 61-viewer checks.
+- Lua syntax, Luacheck 1.2.0, StyLua 2.5.2, Ruff 0.17.3, setup (16), emulator boundaries (6),
+  releases (14), portal (7), portal content, package bytes/checksum and whitespace passed.
+- Engine comparison against `683882b`, three alternating runs each: mean update 1.143 → 1.135 ms,
+  script 0.454 → 0.450 ms, p99 3.345 → 3.582 ms, median worst tick 6.361 → 6.111 ms.
+  Individual worst ticks overlapped (5.624–8.274 before, 5.914–6.425 after). Both variants retained
+  1,512 vehicles out and 265,200 items/minute. No speedup or zero-cost claim; the GUI is closed here.
+- Engine-free standard comparison against the upstream base was identical in instruction counts,
+  API calls, path requests, commands, freighters and deliveries.
+- The real-engine eight-row GUI API probe against the starting repair head measured median
+  0.342 → 0.346 ms, with overlapping ranges, after 500 warm-ups and 5,000 refreshes per run,
+  three alternating runs. Global scan/refresh limits are unchanged. This is one viewer's update
+  work, not a graphical rendering or live multiplayer result.
+- **Still needed:** graphical confirmation of depot-icon legibility, count proximity and clear
+  labeled metrics, plus live multiplayer/save/load checks. The submitted screenshot shows the
+  previous sizes and ambiguous arrows, not this candidate.
+
 ## Network window row separation and read-only summaries (November 16, 2026)
 
 PR #115 follow-up to the owner's screenshot at `6f5ce9c8f767218155baf97671ea16d4d7ec1d12`.

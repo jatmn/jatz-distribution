@@ -12,6 +12,7 @@ local PREVIOUS, NEXT = "jatz_network_previous", "jatz_network_next"
 local INTERVAL, PER_TICK, PAGE_SIZE = 300, 8, 8
 local ROLES = { "provider", "request", "buffer" }
 local CONTENT_WIDTH, ROW_WIDTH, SLOT_SIZE, ROLE_WIDTH, NEED_WIDTH = 760, 744, 48, 176, 120
+local RESOURCE_SIZE, ROW_DEPOT_SIZE = 40, 48
 network_gui.shortcut = SHORTCUT
 -- The depots in the crafting menu's order; any other (Mining Drones' mining depot) after them.
 local KINDS = {
@@ -218,7 +219,7 @@ local function show(player, frame, counts)
   local freighters = overview.freighters
   local fleet = freighters.fleet
   -- A saved window from the previous same-version draft can still have the old hierarchy.
-  if not (fleet and fleet.icon) then
+  if not (fleet and fleet.freighter_icon) then
     network_gui.open(player)
     return
   end
@@ -299,10 +300,10 @@ local function show(player, frame, counts)
         details.depot_count.caption = tostring(r.depots)
         local activity = details.activity
         if role == "provider" then
-          activity.caption = tostring(r.offers)
+          activity.caption = { "jatz-network.offering", r.offers }
           activity.tooltip = { "jatz-network.offering-tooltip", r.offers, amount(r.offered) }
         else
-          activity.caption = tostring(r.requested)
+          activity.caption = { "jatz-network.requesting", r.requested }
           local tip = { "jatz-network.requesting-tooltip", r.requested, amount(r.target), amount(r.missing) }
           tip = role == "buffer" and { "jatz-network.buffer-requesting-tooltip", tip, r.offers, amount(r.offered) }
             or tip
@@ -414,7 +415,7 @@ function network_gui.open(player)
   fleet.style.vertical_align = "center"
   fleet.add({
     type = "sprite",
-    name = "icon",
+    name = "freighter_icon",
     sprite = "item/jatz-quinityn-freighter",
     resize_to_sprite = false,
     tooltip = { "jatz-network.freighters-tooltip" },
@@ -503,13 +504,13 @@ function network_gui.open(player)
     local content = tabs.add({ type = "flow", name = kind .. "_content", direction = "vertical" })
     content.style.width = CONTENT_WIDTH
     local picker = resource_grid(content, "headers", true)
-    picker.add({
+    local chooser = picker.add({
       type = "choose-elem-button",
       name = "jatz_network_" .. kind,
       elem_type = kind,
       tooltip = { "jatz-network.find-resource-tooltip" },
-    }).style.size =
-      SLOT_SIZE
+    })
+    chooser.style.size, chooser.style.right_margin = RESOURCE_SIZE, SLOT_SIZE - RESOURCE_SIZE
     for _, role in ipairs(ROLES) do
       local heading = picker.add({ type = "flow", direction = "horizontal" })
       heading.style.width, heading.style.horizontal_align = ROLE_WIDTH, "right"
@@ -520,7 +521,7 @@ function network_gui.open(player)
         sprite = "entity/jatz-" .. (kind == "fluid" and "liquid-" or "") .. role .. "-depot",
         tooltip = { "jatz-network." .. role },
       }).style.size =
-        24
+        ROW_DEPOT_SIZE
       heading.add({ type = "label", caption = { "jatz-network." .. role } })
     end
     label(picker, { "jatz-network.needed" }, NEED_WIDTH).style.horizontal_align = "right"
@@ -533,7 +534,7 @@ function network_gui.open(player)
       group.style.vertical_spacing = 0
       local row = resource_grid(group, "cells", true)
       local resource = row.add({ type = "sprite", name = "resource_icon", resize_to_sprite = false })
-      resource.style.size = SLOT_SIZE
+      resource.style.size, resource.style.right_margin = RESOURCE_SIZE, SLOT_SIZE - RESOURCE_SIZE
       for _, role in ipairs(ROLES) do
         local cell = row.add({ type = "flow", name = role .. "_cell", direction = "vertical" })
         cell.style.width, cell.style.vertical_spacing = ROLE_WIDTH, 4
@@ -542,9 +543,9 @@ function network_gui.open(player)
         stock.style.horizontal_align, stock.style.font = "right", "default-semibold"
         stock.style.vertical_align = "center"
         local details = cell.add({ type = "flow", name = "details", direction = "horizontal" })
-        details.style.width, details.style.height = ROLE_WIDTH, 28
+        details.style.width, details.style.height = ROLE_WIDTH, ROW_DEPOT_SIZE
         details.style.horizontal_align, details.style.vertical_align = "right", "center"
-        details.style.horizontal_spacing = 8
+        details.style.horizontal_spacing = 4
         details.add({
           type = "sprite",
           name = "holding_icon",
@@ -552,22 +553,19 @@ function network_gui.open(player)
           resize_to_sprite = false,
           tooltip = { "jatz-network.holding-tooltip" },
         }).style.size =
-          24
-        details.add({ type = "label", name = "depot_count", tooltip = { "jatz-network.holding-tooltip" } }).style.width =
-          40
-        details.depot_count.style.horizontal_align = "right"
-        details.add({
-          type = "sprite",
-          sprite = role == "provider" and "utility/forward_arrow" or "utility/backward_arrow",
-          resize_to_sprite = false,
-          tooltip = { "jatz-network." .. (role == "provider" and "offering-icon-tooltip" or "requesting-icon-tooltip") },
-        }).style.size =
-          24
-        details.add({ type = "label", name = "activity" }).style.width = 40
-        details.activity.style.horizontal_align = "right"
+          ROW_DEPOT_SIZE
+        local holding =
+          details.add({ type = "label", name = "depot_count", tooltip = { "jatz-network.holding-tooltip" } })
+        holding.style.minimal_width, holding.style.maximal_width = 0, 28
+        holding.style.right_margin = 12
+        holding.style.horizontal_align = "left"
+        local activity = details.add({ type = "label", name = "activity" })
+        activity.style.minimal_width = 0
+        activity.style.maximal_width, activity.style.horizontal_align = 80, "left"
+        activity.style.single_line = false
       end
       local need = row.add({ type = "flow", name = "need_cell", direction = "vertical" })
-      need.style.width, need.style.height = NEED_WIDTH, 52
+      need.style.width, need.style.height = NEED_WIDTH, 24 + ROW_DEPOT_SIZE
       local needed = need.add({ type = "label", name = "needed" })
       needed.style.width, needed.style.height = NEED_WIDTH, 20
       needed.style.horizontal_align, needed.style.vertical_align = "right", "center"
