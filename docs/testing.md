@@ -51,6 +51,13 @@ With the Quality mod (the Space Age run), the check mod's `scenarios/quality` ru
 
 It runs with the base game only and, if your Factorio includes Space Age and the mods it needs, again with Space Age. The free headless server is enough. To look around yourself, open the newest save under `.local/mod-check/` in the full game with that run's `config.ini` and `mods` folder (see the depot instructions below).
 
+The `drop-freighters` scenario supplies the single-item-drop event payload to the production
+inventory handler after moving one real item. It checks request and buffer slots, robot-request
+trimming, overflow, unrelated items, cargo and a burner inserter. The engine cannot raise that
+event by script; `tests/lua/control-events.lua` checks its registration. In the graphical client,
+hold several freighters and press Z over a request or buffer depot being unloaded by an inserter
+or loader, with its window closed: each drop must reach the freighter slot.
+
 ## Freighter
 
 ```sh

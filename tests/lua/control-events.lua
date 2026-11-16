@@ -2051,6 +2051,51 @@ do -- A freighter placed from the cursor into an open request depot goes to its 
   check("one placed from the cursor goes to the slot at once", taken and taken.entity == entity and taken.moved == 1)
 end
 
+do -- Z drops use their actual destination before the delayed cursor notification.
+  local logistics = require("scripts.logistics")
+  local take_in, count = logistics.take_in_freighters, logistics.count_freighters
+  local calls, pockets, held = {}, {}, 3
+  logistics.take_in_freighters = function(entity, inventory, moved)
+    calls[#calls + 1] = { entity = entity, inventory = inventory, moved = moved }
+    return moved, 0
+  end
+  logistics.count_freighters = function()
+    return 0
+  end
+  local target, other = depot(140), depot(150)
+  target.name, other.name = "jatz-buffer-depot", "jatz-request-depot"
+  local cursor = { valid_for_read = true, name = logistics.freighter, count = held }
+  local player = {
+    index = 7,
+    selected = other,
+    cursor_stack = cursor,
+    gui = { relative = {} },
+    get_main_inventory = function()
+      return pockets
+    end,
+  }
+  game.get_player = function()
+    return player
+  end
+  storage.request_gui, storage.pocket_freighters = { [7] = other }, { [7] = held }
+  cursor.count = 2
+  fire("on_player_dropped_item_into_entity", { player_index = 7, entity = target })
+  check(
+    "Z moves one freighter into the actual destination before any cursor notification",
+    #calls == 1 and calls[1].entity == target and calls[1].inventory == pockets and calls[1].moved == 1
+  )
+  fire("on_player_cursor_stack_changed", { player_index = 7 })
+  check("the delayed cursor event does not handle the same freighter again", #calls == 1)
+  -- Dropping something else does not consume a freighter already waiting in the chest.
+  fire("on_player_dropped_item_into_entity", { player_index = 7, entity = target })
+  check("an unrelated drop moves no freighters", #calls == 1)
+  cursor.count = 1
+  target.name = "jatz-provider-depot"
+  fire("on_player_dropped_item_into_entity", { player_index = 7, entity = target })
+  check("a drop in a provider does not transfer to the open requesting depot", #calls == 1)
+  logistics.take_in_freighters, logistics.count_freighters = take_in, count
+end
+
 do -- The "request from buffer depots" checkbox, and Copy and Paste settings carrying it.
   local logistics = require("scripts.logistics")
   local function requesting(x, name)

@@ -665,6 +665,12 @@ def check(binary, data, bundled, enabled_mods, label, extra=None):
     network = json.loads(network_path.read_text()) if networked and network_path.exists() else None
     if network != {'passed': True}:
         wrong['network'] = network
+    drop_path = write / 'script-output/jatz-drop-check.json'
+    dropped = run(command + ['--test-scenario', f'{CHECK.name.rsplit("_", 1)[0]}/drop-freighters',
+                            '--test-ticks', '200'], workspace / 'drop-freighters.log') == 0
+    drop = json.loads(drop_path.read_text()) if dropped and drop_path.exists() else None
+    if drop != {'passed': True}:
+        wrong['drop_freighters'] = drop
     if 'quality' in enabled_mods:
         quality_path = write / 'script-output/jatz-quality-check.json'
         graded = run(command + ['--test-scenario', f'{CHECK.name.rsplit("_", 1)[0]}/quality',

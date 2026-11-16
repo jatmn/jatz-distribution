@@ -372,6 +372,8 @@ end)
 script.on_event(defines.events.on_player_main_inventory_changed, request_gui.on_player_main_inventory_changed)
 script.on_event(defines.events.on_selected_entity_changed, request_gui.on_selected_entity_changed)
 script.on_event(defines.events.on_player_cursor_stack_changed, request_gui.on_player_cursor_stack_changed)
+-- Z drops have their own immediate event; the cursor notification is delayed within the tick.
+script.on_event(defines.events.on_player_dropped_item_into_entity, request_gui.on_player_main_inventory_changed)
 
 local function setup()
   -- Item provider and buffer depots from before they were logistic containers become the depots
