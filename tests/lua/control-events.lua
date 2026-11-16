@@ -4282,6 +4282,96 @@ do -- Road laid and removed where road networks are known (scripts/tunnels.lua, 
   removed(east)
 end
 
+do -- A script's event of road and another tile (control.lua: road laid, and road maybe covered):
+  -- the roads measured that its tiles can have been on are forgotten, as for any removal, and the
+  -- others are measured again, as for any road laid, a road measured as none included (Pullfrog's
+  -- review of 90b541c: the shorter road it laid was left out until the roads measured expired).
+  local tunnels = require("scripts.tunnels")
+  -- Two roads, (3000, 0) to (3004, 0) and down to (3004, 10), and (3014, 0) to (3010, 0) and down
+  -- to (3010, 10), a tunnel between their south ends.
+  for x = 3000, 3004 do
+    cell(x, 0).name, cell(x + 10, 0).name = "jatz-road", "jatz-road"
+  end
+  for y = 0, 10 do
+    cell(3004, y).name, cell(3010, y).name = "jatz-road", "jatz-road"
+  end
+  local function portal(x, facing)
+    local entity = depot(x)
+    entity.name, entity.position, entity.direction = tunnels.name, { x = x, y = 10.5 }, defines.direction[facing]
+    return entity
+  end
+  local west, east = portal(3006, "west"), portal(3009, "east")
+  west.fluidbox_neighbours, east.fluidbox_neighbours = { { east } }, { { west } }
+  fire("on_built_entity", { entity = west })
+  fire("on_built_entity", { entity = east })
+  -- The pathfinder: the shortest road between two points, tile by tile, or none.
+  local function road_length(a, b)
+    local goal = math.floor(b.x) .. "," .. math.floor(b.y)
+    local seen, queue, index = {}, { { math.floor(a.x), math.floor(a.y), 0 } }, 1
+    while queue[index] do
+      local x, y, steps = table.unpack(queue[index])
+      local at, tile = x .. "," .. y, tiles[x .. "," .. y]
+      index = index + 1
+      if not seen[at] and tile and tile.name == "jatz-road" then
+        if at == goal then
+          return steps
+        end
+        seen[at] = true
+        for _, step in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+          queue[#queue + 1] = { x + step[1], y + step[2], steps + 1 }
+        end
+      end
+    end
+    return nil
+  end
+  local ask, questions, answered = tunnels.ask, {}, 0
+  function tunnels.ask(_, _, from, to)
+    questions[#questions + 1] = { from = from, to = to }
+    return 6000 + #questions
+  end
+  -- The way from `from` to `to` once every road it asks about is answered (`road`: a search's own
+  -- answer for the two).
+  local function planned(from, to, road)
+    for _ = 1, 20 do
+      local hops, length = tunnels.plan(1, from, to, road, "player", { id = "mixed", order = 0 })
+      road = nil
+      if hops ~= false and answered == #questions then
+        return hops, length
+      end
+      while answered < #questions do
+        answered = answered + 1
+        local question = questions[answered]
+        tunnels.answered(6000 + answered, road_length(question.from, question.to), false)
+      end
+    end
+    error("FAILED: the way through the tunnel never settled")
+  end
+  local home, provider = { x = 3000.5, y = 0.5 }, { x = 3014.5, y = 0.5 }
+  game.tick = game.tick + 61
+  local hops, length = planned(home, provider, false)
+  check(
+    "setup: no road from one to the other, the way goes through the tunnel",
+    hops and #hops == 1 and length == 34 and storage.tunnel_legs[1].lengths["3000,0,3014,0"] == false
+  )
+  -- A script lays road between them along y 0, and sets a tile far off to concrete, in one event.
+  local set = {}
+  for x = 3005, 3009 do
+    cell(x, 0).name = "jatz-road"
+    set[#set + 1] = { name = "jatz-road", position = { x = x, y = 0 } }
+  end
+  cell(3100, 100).name = "concrete"
+  set[#set + 1] = { name = "concrete", position = { x = 3100, y = 100 } }
+  fire("script_raised_set_tiles", { surface_index = 1, tiles = set })
+  game.tick = game.tick + 61
+  hops, length = planned(home, provider)
+  check("road a script lays with another tile is measured: the way takes it", hops and #hops == 0 and length == 14)
+  hops, length = planned(provider, home)
+  check("and back", hops and #hops == 0 and length == 14)
+  tunnels.ask = ask
+  removed(west)
+  removed(east)
+end
+
 do -- A liquid depot shows the player's inventory, so a freighter can be picked from it.
   local logistics = require("scripts.logistics")
   local function stack(name, count)

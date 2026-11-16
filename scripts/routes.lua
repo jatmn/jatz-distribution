@@ -11,12 +11,12 @@ local tunnels = require("scripts.tunnels")
 
 -- scripts/logistics.lua's helpers, from routes.install.
 local owner_of, cancel_search, route_answered
-local DRONE, ARRIVAL_RADIUS, ROAD_MEMORY_TICKS, DISPATCH_INTERVAL, SEARCH_TIMEOUT
+local DRONE, ARRIVAL_RADIUS, ROAD_MEMORY_TICKS, DISPATCH_INTERVAL
 
 function routes.install(_, shared)
   owner_of, cancel_search, route_answered = shared.owner_of, shared.cancel_search, shared.route_answered
   DRONE, ARRIVAL_RADIUS, ROAD_MEMORY_TICKS = shared.drone, shared.arrival_radius, shared.road_memory_ticks
-  DISPATCH_INTERVAL, SEARCH_TIMEOUT = shared.dispatch_interval, shared.search_timeout
+  DISPATCH_INTERVAL = shared.dispatch_interval
 end
 
 -- The freighter's box and collision mask, read from its prototype once (prototypes don't change
@@ -160,14 +160,20 @@ function routes.on_script_path_request_finished(event)
   end
   storage.searches[event.id] = nil
   if event.try_again_later then
-    -- The pathfinder is busy: this search ends, and a new one starts at the next dispatch (or, for
-    -- a freighter, the next once-a-second check), so a busy pathfinder is asked at most once a
-    -- second per owner.
+    -- The pathfinder is busy. A depot's search ends, and a new one starts at the next dispatch. A
+    -- freighter's asks the same question again at its next once-a-second check (lifecycle.ask_again;
+    -- scripts/logistics.lua, logistics.ask_again), so a busy pathfinder is asked at most once a
+    -- second per owner either way. A freighter's search started afresh instead, asking again about
+    -- every candidate already answered, each answer a whole route for the collector: on the stress
+    -- map, where freighters sent to another provider on the road ask from wherever they stand, a
+    -- few busy answers then kept the pathfinder busy for good, 14,000 answers a minute where there
+    -- had been 1,000, a quarter of them busy, on nothing more than which tick a group of depots
+    -- was checked at.
     local owner = owner_of(search)
     local depot = storage.depots[search.request]
     if owner and depot and depot.entity.valid then
       if search.trip then
-        lifecycle.retry_search(owner, game.tick - SEARCH_TIMEOUT)
+        lifecycle.ask_again(owner, search)
       else
         cancel_search(depot)
       end

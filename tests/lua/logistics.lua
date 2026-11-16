@@ -910,6 +910,90 @@ do -- Buffers first, nearer provider or not.
   check("and the freighter goes to the buffer", trips_from(request)[1].provider == buffer.unit_number)
 end
 
+do -- Providers as far off as each other are asked about in the order of their unit numbers, the
+  -- same in every player's game, and each next one only as the search comes to it.
+  local logistics = reset()
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  local east = entity("jatz-provider-depot", 10.5, 0.5, { a = 20 })
+  local west = entity("jatz-provider-depot", -9.5, 0.5, { a = 20 })
+  local far = entity("jatz-provider-depot", 0.5, 30.5, { a = 20 })
+  for _, depot in ipairs({ request, far, west, east }) do
+    logistics.add(depot)
+  end
+  assert(logistics.set_request(request, "a", 10))
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+  logistics.on_tick()
+  check("of two 10 tiles off, the one with the lower unit number is asked about first", requests[1].goal.x == 10.5)
+  local search = storage.searches[1]
+  check(
+    "the search holds the one it asked about, the others not yet in order",
+    #search.candidates == 1 and #search.rest.ids == 2
+  )
+  answer(logistics, 1, "none")
+  check("no road to it: then the other", #requests == 2 and requests[2].goal.x == -9.5)
+  answer(logistics, 2, "none")
+  check("no road to that either: then the farthest", #requests == 3 and requests[3].goal.y == 32.5)
+  answer(logistics, 3, "route")
+  check("and the freighter goes there", trips_from(request)[1].provider == far.unit_number)
+end
+
+do -- A search with no road to any provider asks about every one, in the order a sort gives (the
+  -- higher priority, then the nearer, then the lower unit number), and once their cooldowns are
+  -- over asks about them all again from the answers remembered, asking the pathfinder nothing.
+  local logistics = reset()
+  local request = entity("jatz-request-depot", 0.5, 0.5)
+  logistics.add(request)
+  local providers, by_place = {}, {}
+  -- Four on each of several rings round the request depot, so many are as far off as others, at
+  -- three priorities.
+  for ring = 1, 6 do
+    for side, offset in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+      local x, y = 0.5 + offset[1] * ring * 4, 0.5 + offset[2] * ring * 4
+      local provider = entity("jatz-provider-depot", x, y, { a = 20 })
+      logistics.add(provider)
+      local priority = 4 + (ring + side) % 3
+      assert(logistics.set_priority(provider, priority))
+      providers[#providers + 1] = { id = provider.unit_number, distance = ring * 4, priority = priority }
+      by_place[x .. "," .. (y + 2)] = provider.unit_number
+    end
+  end
+  table.sort(providers, function(a, b)
+    if a.priority ~= b.priority then
+      return a.priority > b.priority
+    end
+    return a.distance < b.distance or (a.distance == b.distance and a.id < b.id)
+  end)
+  assert(logistics.set_request(request, "a", 10))
+  assert(logistics.put_freighters(request, stack("jatz-quinityn-freighter", 1)) == 1)
+  logistics.on_tick()
+  local asked = {}
+  for index = 1, #providers do
+    local goal = requests[index] and requests[index].goal
+    asked[index] = goal and by_place[goal.x .. "," .. goal.y]
+    answer(logistics, index, "none")
+  end
+  local in_order = #requests == #providers
+  for index, provider in ipairs(providers) do
+    in_order = in_order and asked[index] == provider.id
+  end
+  check("every provider is asked about once, in the order a sort gives", in_order)
+  local depot = storage.depots[request.unit_number]
+  check("none has a road: no freighter goes", next(depot.trips) == nil)
+  game.tick = depot.cooldowns[providers[1].id] + 1
+  logistics.on_tick()
+  for _ = 1, #providers + 1 do
+    logistics.answer_remembered()
+  end
+  local again = true
+  for _, provider in ipairs(providers) do
+    again = again and (depot.cooldowns[provider.id] or 0) > game.tick
+  end
+  check(
+    "their cooldowns over, every one is asked about again from the answers remembered",
+    again and #requests == #providers and next(depot.trips) == nil
+  )
+end
+
 do -- A buffer with no road route: the provider instead.
   local logistics = reset()
   local request, provider = buffered(logistics, true)
@@ -5209,6 +5293,8 @@ local shared = {
 require("tests.lua.tunnel-legs")(shared)
 -- Road removed while freighters are out (tests/lua/road-cuts.lua, for this file's size).
 require("tests.lua.road-cuts")(shared)
+-- A freighter's search and a busy pathfinder (tests/lua/busy-searches.lua).
+require("tests.lua.busy-searches")(shared)
 
 do -- Just after road joins two networks, their tunnel is no longer than the road the pathfinder found.
   local logistics = reset()
