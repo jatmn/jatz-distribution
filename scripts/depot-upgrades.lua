@@ -5,8 +5,9 @@
 -- over it (a fast replace). The game removes the old entity and builds a new one, with a new unit
 -- number, in the same tick: probed on 2.1.24, robots raise on_robot_mined_entity for the old one
 -- (still marked for upgrade to the same depot; no on_robot_pre_mined) and then on_robot_built_entity
--- for the new; a player raises on_pre_build, on_pre_player_mined_item, on_player_mined_entity for
--- the old one (their cursor still holding the depot) and then on_built_entity for the new. The game
+-- for the new; a player raises on_pre_build (their cursor holding the depot: read there, as it can
+-- be empty by the mining), on_pre_player_mined_item, on_player_mined_entity for the old one and
+-- then on_built_entity for the new. The game
 -- moves the chest's contents (or the tank's fluid), wires, circuit settings and a buffer depot's
 -- logistic requests itself, but not what the mod keeps by unit number, and it turns the logistic
 -- points back on. So the old one's removal is not a removal: its freighters aren't handed to the

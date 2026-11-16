@@ -696,7 +696,7 @@ do -- A depot replaced by itself at another quality (scripts/depot-upgrades.lua)
       local waiting = storage.undo_pending and storage.undo_pending[1]
       local entry = waiting and waiting[#waiting]
       check(
-        "player: the removal's undo action still gets its settings",
+        how .. ": the removal's undo action still gets its settings",
         entry
           and entry.unit_number == old.unit_number
           and entry.tags.jatz_request.item == "wood"
