@@ -351,9 +351,9 @@ end
 -- point on road that joined it to road never flooded, or laid with its tiles not known) takes the
 -- number of any point already remembered on it, so points remembered on it before still agree (a
 -- new number left them on a network with no portals, and routes from them found no tunnel:
--- Pullfrog's review of 4d4f64a), and it replaces the floods kept under that number, whose tiles
--- it all holds. It can have joined networks remembered apart: they become one, under the lowest
--- of their numbers.
+-- Pullfrog's review of 4d4f64a), and it replaces every flood it holds a tile of: those kept under
+-- that number, and one left with no point on it. It can have joined networks remembered apart:
+-- they become one, under the lowest of their numbers.
 local function net_of(nets, surface, position)
   local x, y = math.floor(position.x), math.floor(position.y)
   local wanted = key(x, y)
@@ -401,9 +401,13 @@ local function net_of(nets, surface, position)
       end
     end
   end
-  -- It holds every tile of the floods kept under those numbers: this one stands for them.
+  -- It holds every tile of the floods kept under those numbers, and of any other with a tile on it
+  -- (a flood whose points were all removed, joined since to road never flooded): this one stands
+  -- for them, so no two floods share a tile, and a tile removed leaves the one flood it is on.
+  -- A flood's tiles are road joined to each other, so one tile tells.
   for place = #(floods or {}), 1, -1 do
-    if seen[floods[place].net] then
+    local flood = floods[place]
+    if seen[flood.net] or set[next(flood.tiles)] then
       table.remove(floods, place)
     end
   end

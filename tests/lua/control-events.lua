@@ -4049,6 +4049,18 @@ do -- Road laid and removed where road networks are known (scripts/tunnels.lua, 
   end
   fire("on_player_built_tile", built)
   check("more tiles at once than that: the networks are flooded again", way(2006, 4) and floods == 10)
+  -- As many tiles of another kind, none of them on road: no road changed, so nothing known does.
+  cell(2101, 50).name = "concrete"
+  built.tile, built.tiles = { name = "concrete" }, {}
+  for index = 1, 1001 do
+    built.tiles[index] = { old_tile = { name = "grass-1" }, position = { x = 2101, y = 50 } }
+  end
+  fire("on_player_built_tile", built)
+  check(
+    "but as many tiles of another kind, off road, flood nothing",
+    not storage.tunnel_nets[1].stale and way(2006, 4) and floods == 10
+  )
+  built.tile = { name = "jatz-road" }
   -- What a save from before knew (its floods could share a network) is forgotten at the first
   -- change, not followed tile by tile.
   storage.tunnel_nets[1].tiled = nil
@@ -4063,6 +4075,36 @@ do -- Road laid and removed where road networks are known (scripts/tunnels.lua, 
   cell(2004, 8).name = "grass-1"
   require("scripts.logistics").on_roads_changed(1, false, true)
   check("road removed with its tiles not known: flooded again", not way(2009, 8) and way(2005, 3) and floods == 15)
+  -- A network flooded from a point since removed (its end: the network is whole, with no point
+  -- remembered on it), road laid from it to road never flooded, and that asked about within the
+  -- second: one flood holds both, so the first road cut in its middle cuts its end off still.
+  for x = 2060, 2066 do
+    cell(x, 20).name, cell(x, 22).name = "jatz-road", "jatz-road"
+  end
+  local function plan(from_x, from_y, to_x, to_y)
+    local from, to = { x = from_x + 0.5, y = from_y + 0.5 }, { x = to_x + 0.5, y = to_y + 0.5 }
+    return tunnels.plan(1, from, to, nil, "player", { id = "check", order = 0 })
+  end
+  -- (All within a second of what is known being made: forgotten now, and made afresh.)
+  require("scripts.logistics").on_roads_changed(1, false, true)
+  plan(2060, 20, 2100, 60)
+  local function mined(x, y)
+    cell(x, y).name = "grass-1"
+    fire("on_player_mined_tile", {
+      surface_index = 1,
+      tiles = { { old_tile = { name = "jatz-road" }, position = { x = x, y = y } } },
+    })
+  end
+  mined(2060, 20)
+  cell(2066, 21).name = "jatz-road"
+  built.tiles = { { old_tile = { name = "grass-1" }, position = { x = 2066, y = 21 } } }
+  fire("on_player_built_tile", built)
+  plan(2060, 22, 2100, 60)
+  mined(2063, 20)
+  check(
+    "a flood with no point left is replaced by the one flooded over it: cut, its end has no way",
+    plan(2061, 20, 2060, 22) == nil and plan(2064, 20, 2060, 22) ~= nil
+  )
   surface.get_connected_tiles, tunnels.ask = flood, ask
   removed(west)
   removed(east)

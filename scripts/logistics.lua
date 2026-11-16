@@ -3105,13 +3105,13 @@ function logistics.on_roads_changed(surface_index, added, removed, tiles)
   end
   storage.road_versions = storage.road_versions or {}
   storage.road_versions[surface_index] = (storage.road_versions[surface_index] or 0) + 1
-  -- Which road networks tunnels join may have changed too: the tiles are put on and taken off
-  -- the networks known, or, not given, those are forgotten (at once if road was removed, which
-  -- can split one).
-  tunnels.changed(surface_index, removed, tiles)
-  -- The roads measured for ways through tunnels, where road was laid or removed (not for a tile
-  -- such as concrete laid elsewhere).
+  -- Where road was laid or removed (not for tiles such as concrete laid elsewhere, however many:
+  -- more than tunnels.changed goes through one by one would forget the networks for nothing):
+  -- which road networks tunnels join may have changed, the tiles put on and taken off the
+  -- networks known, or, not given, those forgotten (at once if road was removed, which can split
+  -- one); and the roads measured for ways through tunnels.
   if added or removed then
+    tunnels.changed(surface_index, removed, tiles)
     tunnels.forget(surface_index, removed)
   end
   if removed then
