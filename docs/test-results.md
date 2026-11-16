@@ -2,6 +2,26 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Buffer pulls from a replaced source: passed (automated)
+
+**November 16, 2026.** PR #112 review repair on `7bbe41722aeebd2f484ad7be3dcbc1b2968f5079`, against
+`main` at `51c25b67643c4f1e07bf8ea57575f67f6d272d3b`; Factorio 2.1.24 headless on Linux x86-64.
+
+- A buffer pull whose source buffer was replaced by a request depot on the way loaded that depot's
+  stock (10 of its 20): pickup checked the priority rule only while the source was still a buffer.
+  It now takes nothing there and looks for another source. A source replaced by a buffer still
+  gives its load. The new swap check fails on the previous revision.
+- `tools/test_mod.py`: passed with base game and Space Age. The check mod now waits for the upward
+  buffer rows, which are on their own surface, before it reads them.
+- `tools/test_mod_setup.py`: 16 passed; `tools/test_emulate_ups.py`: 6 passed;
+  `tools/emulate_ups.py --base` against that `main`: mean +0.1%, p99 +0.2%, worst +0.1%; API calls,
+  path requests, commands, freighters and deliveries unchanged.
+- `tools/benchmark_ups.py --compare origin/main`, standard preset, three runs each: mean update
+  1.393 ms before and 1.389 ms after, within run variation; 1,512 freighters out and 265,200
+  items/minute delivered in both.
+- StyLua 2.5.2, Luacheck 1.2.0, Lua 5.2 syntax, `git diff --check`, and the CI package job's release,
+  portal and package build/validation steps passed. No visual changes.
+
 ## Pre-update pickups and disabled buffer scans: Lua checks passed; Factorio not rerun
 
 **November 16, 2026.** PR #112 review repair on `a545788313b39dcef11489c3c1b5beb12c1a6c95`, against
@@ -18,7 +38,7 @@ Latest in-game results for the current artwork. The full screenshots and reports
   `main` 2,049,416; previous revision 3,963,816 with 159,600 setting reads; this one 2,214,616 with
   400. A new logistics check fails on the previous revision.
 - `tools/test_mod_setup.py`: 16 passed; `tools/test_emulate_ups.py`: 6 passed;
-  `tools/emulate_ups.py --base` that `main`: mean +0.1%, p99 +0.2%, worst +0.1%, deliveries unchanged.
+  `tools/emulate_ups.py --base` against that `main`: mean +0.1%, p99 +0.2%, worst +0.1%, deliveries unchanged.
 - StyLua 2.5.2, Luacheck 1.2.0, Lua 5.2 syntax, Ruff 0.17.3, `git diff --check`, and the CI package
   job's release, portal and package build/validation steps passed. No visual changes.
 

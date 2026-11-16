@@ -919,7 +919,7 @@ local function setup_deliveries(surface, result)
       local role, item, amount =
         fluid and "liquid-buffer" or "buffer", fluid and "water" or "iron-plate", fluid and 300 or 20
       local y = index * 10 - 15.5
-      local row = { fluid = fluid, item = item, depots = {} }
+      local row = { fluid = fluid, item = item, amount = amount, depots = {} }
       for n, priority in ipairs({ 2, 5, 8, 2 }) do
         local buffer = depot(area, role, -30.5 + (n - 1) * 20, y, 0)
         assert(remote.call("jatz-distribution", "add_freighters", buffer, 1) == 1)
@@ -2648,8 +2648,19 @@ local function deliveries_finished(surface, tick, result)
   local deliveries = storage.deliveries
   local armor, full, destroyed, changed, cut =
     deliveries.armor, deliveries.full, deliveries.destroyed, deliveries.changed, deliveries.cut
+  -- The upward buffer rows (on their own surface, so not in the freighters-out count below) are
+  -- done once the central and middle buffers hold their requests: all the stock there is, so
+  -- nothing is on its way.
+  local upward = true
+  for _, row in ipairs(deliveries.upward) do
+    for n = 2, 3 do
+      local buffer = row.depots[n]
+      upward = upward and (row.fluid and buffer.get_fluid_count(row.item) or count(buffer, row.item)) == row.amount
+    end
+  end
   -- A depot's status updates at its next dispatch, up to a second after the last unload.
-  local done = count(deliveries.connected) >= 30
+  local done = upward
+    and count(deliveries.connected) >= 30
     and status(deliveries.connected) ~= "delivering"
     and count(deliveries.sticky.request, "iron-plate") == 10
     and count(armor.request, armor.item) == 1

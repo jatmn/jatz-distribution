@@ -322,4 +322,41 @@ do -- A saved buffer pull keeps its admission through reload, so pickup still ch
   harness.STARTUP["jatz-buffer-priority-pull"].value = false
 end
 
+-- A buffer pull's source replaced on the way: by a buffer (another quality, say) it is still a
+-- lower-priority buffer and gives the load; by a request depot it is no source for a buffer at all,
+-- so the freighter takes nothing from it.
+for _, name in ipairs({ "jatz-buffer-depot", "jatz-request-depot" }) do
+  local logistics = reset()
+  harness.STARTUP["jatz-buffer-priority-pull"].value = true
+  local home = entity("jatz-buffer-depot", 0.5, 0.5)
+  local source = entity("jatz-buffer-depot", 20.5, 0.5)
+  local received, stock = stocked(home), stocked(source, "a", 20)
+  logistics.add(home)
+  logistics.add(source)
+  logistics.set_priority(home, 8)
+  logistics.set_request(home, "a", 10)
+  logistics.put_freighters(home, stack("jatz-quinityn-freighter", 1))
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(home)[1]
+  check("buffer pull admitted before its source is replaced", trip and trip.provider == source.unit_number)
+  local replacement = entity(name, 20.5, 0.5)
+  replacement.get_inventory, replacement.chest = source.get_inventory, source.chest
+  source.valid = false
+  logistics.replaced(source.unit_number, replacement)
+  logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = source.unit_number })
+  logistics.on_depot_changed(replacement)
+  arrive(logistics, trip)
+  arrive(logistics, trip)
+  local loads = name == "jatz-buffer-depot"
+  check(
+    "replaced source gives a buffer pull its load only while it is a lower-priority buffer",
+    received.get_item_count("a") == (loads and 10 or 0)
+      and stock.get_item_count("a") == (loads and 10 or 20)
+      and #trips_from(home) == 0
+      and logistics.freighter_counts(home) == 1
+  )
+  harness.STARTUP["jatz-buffer-priority-pull"].value = false
+end
+
 print("all depot swap checks passed")
