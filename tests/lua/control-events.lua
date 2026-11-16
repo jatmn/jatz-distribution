@@ -1141,6 +1141,10 @@ local function element(spec, parent)
   if type(self.style) ~= "table" then
     self.style = { name = self.style }
   end
+  if self.type == "table" then
+    -- Factorio 2.1.25: column_alignments is a mutable LuaCustomTable, not a style assignment.
+    self.style.column_alignments = {}
+  end
   function self.add(child_spec)
     if child_spec.name and GUI_MEMBERS[child_spec.name] then
       error(
@@ -4905,7 +4909,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
   )
   sample()
   local depot_grid = frame.inner.overview.depot_summary.depots
-  check("depot summary groups roles in an item/liquid matrix", depot_grid.column_count == 5)
+  check("depot summary groups roles in an item/liquid matrix", depot_grid.column_count == 4)
   for _, name in ipairs({
     "jatz-provider-depot",
     "jatz-request-depot",
@@ -4916,7 +4920,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
     "jatz-liquid-buffer-depot",
     "mining-depot",
   }) do
-    local slot = depot_grid[name]
+    local slot = depot_grid[name] or frame.inner.overview.support.depots[name]
     check(
       "depot icon retains the exact count and name: " .. name,
       slot
@@ -4928,7 +4932,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
   end
   check(
     "freighter summary retains parked and outbound counts",
-    frame.inner.overview.freighters.total.caption == "5"
+    frame.inner.overview.freighters.fleet.total.caption == "5"
       and frame.inner.overview.freighters.on_road.count.caption == "2"
   )
   local iron = storage.network_data[30].all.items["item/iron-plate"]
@@ -4965,6 +4969,17 @@ do -- Network command center: real GUI events and production snapshots, fake eng
       and row("item").provider_cell.details.activity.caption == "1"
       and row("item").provider_cell.details.activity.tooltip[1] == "jatz-network.offering-tooltip"
       and row("item").request_cell.details.activity.tooltip[1] == "jatz-network.requesting-tooltip"
+  )
+  -- A saved window from the earlier draft has no fleet container. Same-version test builds
+  -- need not raise on_configuration_changed, so the cached render must rebuild this layout.
+  local previous_frame, previous_reads = frame, reads
+  frame.inner.overview.freighters.fleet.destroy()
+  fire("on_gui_selected_tab_changed", { player_index = 30, element = frame.inner.jatz_network_tabs })
+  frame = screen.jatz_network_frame
+  depot_grid = frame.inner.overview.depot_summary.depots
+  check(
+    "prior draft window rebuilds from the shared snapshot without scanning",
+    frame ~= previous_frame and frame.inner.overview.freighters.fleet.total.caption == "5" and reads == previous_reads
   )
   check(
     "other forces and fuel are absent",
@@ -5114,7 +5129,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
   network.open(second)
   check(
     "another player reuses this force's snapshot",
-    reads == before and second.gui.screen.jatz_network_frame.inner.overview.freighters.total.caption ~= "…"
+    reads == before and second.gui.screen.jatz_network_frame.inner.overview.freighters.fleet.total.caption ~= "…"
   )
   -- Add enough depots to span several ticks. Deletion during a scan is safe.
   local extras = {}

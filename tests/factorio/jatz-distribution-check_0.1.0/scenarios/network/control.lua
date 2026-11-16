@@ -85,9 +85,9 @@ script.on_event(defines.events.on_tick, function(event)
         and iron.buffer.missing == (script.active_mods.quality and 10 or 15)
     )
     assert(row("item").need_cell.needed.caption == (script.active_mods.quality and "45" or "50"))
-    assert(inner().overview.freighters.total.caption == "3")
+    assert(inner().overview.freighters.fleet.total.caption == "3")
     local depots = inner().overview.depot_summary.depots
-    assert(depots.column_count == 5)
+    assert(depots.column_count == 4)
     for _, name in ipairs({
       "jatz-provider-depot",
       "jatz-request-depot",
@@ -99,10 +99,31 @@ script.on_event(defines.events.on_tick, function(event)
       assert(depots[name].sprite == "entity/" .. name and depots[name].number == 1)
       assert(depots[name].tooltip[2][1] == prototypes.entity[name].localised_name[1])
     end
-    assert(depots["jatz-fuel-depot"].number == 0)
+    assert(inner().overview.support.depots["jatz-fuel-depot"].number == 0)
     assert(row("item").resource_icon.sprite == "item/iron-plate")
     assert(row("item").provider_cell.details.depot_count.caption == "1")
     assert(row("item").provider_cell.details.activity.caption == "1")
+    local headers = inner().jatz_network_tabs.item_content.headers
+    local resource = row("item")
+    assert(headers.type == "table" and resource.type == "table")
+    assert(headers.style.minimal_width == resource.style.minimal_width)
+    assert(headers.style.left_padding == resource.style.left_padding)
+    assert(headers.style.horizontal_spacing == resource.style.horizontal_spacing)
+    assert(resource.resource_icon.style.minimal_width == resource.resource_icon.style.minimal_height)
+    assert(headers.jatz_network_item.style.minimal_width == resource.resource_icon.style.minimal_width)
+    assert(resource.need_cell.needed.style.minimal_height == resource.provider_cell.stock.style.minimal_height)
+    for column = 2, 5 do
+      assert(headers.children[column].style.minimal_width == resource.children[column].style.minimal_width)
+      assert(headers.children[column].style.horizontal_align == "right")
+    end
+    assert(depots.style.column_alignments[2] == "top-center")
+    assert(inner().overview.freighters.on_road.marker.children[1].resize_to_sprite == false)
+    local old_frame = player.gui.screen.jatz_network_frame
+    old_frame.inner.overview.freighters.fleet.destroy()
+    network.on_gui_selection_state_changed({ player_index = 1, element = old_frame.inner.jatz_network_tabs })
+    assert(player.gui.screen.jatz_network_frame ~= old_frame)
+    assert(inner().overview.freighters.fleet.total.caption == "3")
+    assert(row("item").resource_icon.sprite == "item/iron-plate")
     if script.active_mods.quality then
       assert(iron.provider.grades.rare == 20)
     end

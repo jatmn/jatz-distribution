@@ -2,6 +2,40 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Network window proportions and alignment: screenshot repair (November 16, 2026)
+
+PR #115 follow-up to the owner's graphical screenshot at `4403d7d2192036394341edf690baa2b3264638d4`.
+Runtime blob: `scripts/network-gui.lua` `4c6299ad73a9f86083c1420c7ce4d84b065fe43e`.
+Factorio 2.1.25 (build 88022), Linux x86_64 headless; Lua 5.2.4.
+
+- The screenshot showed the first draft's uneven summary panels, mostly empty Other row,
+  rectangular resource/picker slots and disproportionate active arrow. The repair uses one summary
+  band with Fuel/Mining Drones in Support, native 40 px square slots, bounded status sprites and
+  shared header/row table geometry. Primary numbers share label height and right alignment.
+- `tools/test_mod.py`: base game and Space Age passed. The real GUI scenario checks equal header/row
+  widths, padding, spacing and column widths; square resource/picker sizes; equal primary-value
+  label height; centered depot columns; explicit sprite resizing; counts, quality and demand.
+- Both development ZIPs use unreleased version 0.1.10. A saved previous-draft window can lack the
+  new fleet container without a configuration-change event. The regression fails before the guard;
+  it now rebuilds through the existing cached-open path, preserving counts without inventory reads.
+  The event harness and real-engine scenario both check the rebuild.
+- Lua syntax, Luacheck 1.2.0, StyLua 2.5.2, Ruff 0.17.3, setup (16 tests), emulator boundaries (6),
+  releases (14), portal (7), portal content, package bytes/checksum and whitespace passed.
+- Standard engine comparison against `683882b`, three alternating runs each: mean update
+  1.131 → 1.138 ms, script 0.455 → 0.453 ms, p99 3.512 → 3.410 ms, median worst tick
+  5.862 → 6.232 ms. Individual worst ticks overlapped (5.384–7.027 ms before, 5.576–7.185 after).
+  Mean differences are within run variation; no speedup or tail improvement is claimed.
+  Both variants had 1,512 vehicles out and 265,200 items delivered/minute. The GUI is closed here.
+- Engine-free standard comparison against the upstream base was identical in instructions, API calls,
+  path requests, commands, freighters and deliveries.
+- The eight-row real-engine GUI update probe compared the repair with the starting draft:
+  500 warm-ups and 5,000 forced refreshes per run, three alternating runs. Median 0.331 → 0.335 ms,
+  with overlapping ranges (0.330–0.339 before, 0.328–0.337 after). No material change established.
+  This is one viewer's API/update work; it does not measure drawing or multiplayer latency.
+- **Validation still needed:** inspect this revised layout in the graphical client and perform the
+  live multiplayer/save/load checks. The owner's screenshot proves the previous layout failed;
+  it does not validate this revised layout. Shared scan and render budgets remain unchanged.
+
 ## Compact network window: automated checks passed; graphical and multiplayer checks pending (November 16, 2026)
 
 Candidate `feat/network-gui-polish`, based on `683882b4f40f96286f6b1191f460882be4cca194`.
