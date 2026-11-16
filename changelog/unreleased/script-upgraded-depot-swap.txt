@@ -1,0 +1,2 @@
+  Bugfixes:
+    - A request depot upgraded to a buffer depot (or a buffer depot to a request depot) at once by another mod, such as Blueprint Sandboxes in its labs, now keeps its request, settings and freighters, instead of becoming a bare depot with its freighters dropped on the ground.

@@ -15,9 +15,12 @@
 -- so do two depots mined by hand at one spot in a tick with the undo history at its limit, and in
 -- adjacent ticks. And, needing a player too, request and buffer depots replaced in place
 -- (scripts/depot-swap.lua): a request depot by a buffer depot from the player's hand, and a buffer
--- depot by a request depot from a ghost the player places over it, which robots build, and a request
--- depot by a buffer depot from an upgrade planner mapping each to the other; each keeps its request,
--- freighters and chest, and the player is handed no freighters.
+-- depot by a request depot from a ghost the player places over it, which robots build, a request
+-- depot by a buffer depot from an upgrade planner mapping each to the other, and a request depot
+-- upgraded to a buffer depot at once by a script (LuaEntity.apply_upgrade, as Blueprint Sandboxes
+-- does in its labs); each keeps its request, freighters and chest, and the player is handed no
+-- freighters. A request depot marked for that upgrade but destroyed outright by a script leaves all
+-- its freighters on the ground, those in its chest too.
 -- Writes script-output/jatz-undo-check.json.
 local FREIGHTER = "jatz-quinityn-freighter"
 local DEPOT = "jatz-request-depot"
@@ -25,7 +28,8 @@ local CUT, MINED, KEPT = { x = 6.5, y = 0.5 }, { x = 6.5, y = -6.5 }, { x = 14.5
 local PLATFORM_DEPOT, AFLOAT = "jatz-liquid-request-depot", { x = 8.5, y = 0.5 }
 local SWAPPED, AT_LIMIT, NEXT_TICK = { x = -2.5, y = -6.5 }, { x = -2.5, y = 6.5 }, { x = 2.5, y = -12.5 }
 local BUFFER, BY_HAND, BY_ROBOTS = "jatz-buffer-depot", { x = 2.5, y = 6.5 }, { x = 2.5, y = -6.5 }
-local BY_PLANNER = { x = 8.5, y = 6.5 }
+local BY_PLANNER, BY_SCRIPT = { x = 8.5, y = 6.5 }, { x = 14.5, y = -6.5 }
+local DESTROYED_MARKED = { x = 20.5, y = -6.5 }
 
 -- The freighters kept on every undo action for the removal of a request depot at `position`,
 -- newest first (0 for none).
@@ -186,6 +190,23 @@ script.on_event(defines.events.on_tick, function(event)
       item = planner[1],
     })
     planner.destroy()
+    -- A request depot (2 freighters, 2 more and 6 iron plates in its chest) marked for upgrade to
+    -- a buffer depot, which a script carries out at once.
+    local by_script =
+      surface.create_entity({ name = DEPOT, position = BY_SCRIPT, force = player.force, raise_built = true })
+    assert(remote.call("jatz-distribution", "set_request", by_script, "wood", 5))
+    assert(remote.call("jatz-distribution", "add_freighters", by_script, 2) == 2)
+    by_script.get_inventory(defines.inventory.chest).insert({ name = "iron-plate", count = 6 })
+    by_script.get_inventory(defines.inventory.chest).insert({ name = FREIGHTER, count = 2 })
+    assert(by_script.order_upgrade({ target = BUFFER, force = player.force }), "upgrade: refused")
+    assert(by_script.apply_upgrade(), "the script could not upgrade the depot")
+    -- The same (1 freighter, 2 more in its chest), destroyed outright by a script instead.
+    local destroyed =
+      surface.create_entity({ name = DEPOT, position = DESTROYED_MARKED, force = player.force, raise_built = true })
+    assert(remote.call("jatz-distribution", "add_freighters", destroyed, 1) == 1)
+    destroyed.get_inventory(defines.inventory.chest).insert({ name = FREIGHTER, count = 2 })
+    assert(destroyed.order_upgrade({ target = BUFFER, force = player.force }), "upgrade: refused")
+    destroyed.destroy({ raise_destroy = true })
     -- With Space Age: a liquid request depot on a space platform (gravity stops the item depots
     -- there), cut; the platform takes it within the tick.
     if script.active_mods["space-age"] then
@@ -309,6 +330,7 @@ script.on_event(defines.events.on_tick, function(event)
       by_hand = { BY_HAND, BUFFER },
       by_robots = { BY_ROBOTS, DEPOT },
       by_planner = { BY_PLANNER, BUFFER },
+      by_script = { BY_SCRIPT, BUFFER },
     }) do
       local depot = depot_at(spot[1], spot[2])
       result[name] = depot
@@ -319,6 +341,15 @@ script.on_event(defines.events.on_tick, function(event)
           }
         or "not replaced"
     end
+    local on_ground = 0
+    for _, item in
+      pairs(surface.find_entities_filtered({ name = "item-on-ground", position = DESTROYED_MARKED, radius = 3 }))
+    do
+      if item.stack.valid_for_read and item.stack.name == FREIGHTER then
+        on_ground = on_ground + item.stack.count
+      end
+    end
+    result.destroyed_marked_left = on_ground
     helpers.write_file("jatz-undo-check.json", helpers.table_to_json(result))
     script.finish_test(true)
   end

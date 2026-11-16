@@ -748,6 +748,174 @@ do -- A depot replaced by itself at another quality (scripts/depot-upgrades.lua)
   robot_access.get, robot_access.set = saved.get, saved.set
 end
 
+do -- A request depot marked for upgrade to a buffer depot that a script destroys, raising
+  -- script_raised_destroy (scripts/depot-swap.lua). Upgraded at once (LuaEntity.apply_upgrade), the
+  -- buffer depot built at its spot that tick keeps its request and freighters, those in its chest
+  -- too, whether the game moved the chest before or after the old one's event, and none are left on
+  -- the ground. Destroyed outright, nothing built, all its freighters are left where it stood, those
+  -- in its chest too (Pullfrog's review of 2795672: those in its chest were lost).
+  local logistics = require("scripts.logistics")
+  local robot_access = require("scripts.robot-access")
+  local saved = { set = robot_access.set, create_inventory = game.create_inventory }
+  robot_access.set = function() end
+  local FREIGHTER = "jatz-quinityn-freighter"
+  -- An inventory of `size` stacks, as far as moving freighters about needs.
+  local function stacks_of(size)
+    local inventory = { valid = true }
+    for index = 1, size do
+      local stack = { valid_for_read = false, count = 0 }
+      function stack.clear()
+        stack.name, stack.count, stack.valid_for_read = nil, 0, false
+      end
+      function stack.transfer_stack(from)
+        if stack.valid_for_read or not from.valid_for_read then
+          return false
+        end
+        stack.name, stack.count, stack.valid_for_read = from.name, from.count, true
+        from.clear()
+        return true
+      end
+      inventory[index] = stack
+    end
+    function inventory.count(name)
+      local total = 0
+      for index = 1, size do
+        if inventory[index].valid_for_read and inventory[index].name == name then
+          total = total + inventory[index].count
+        end
+      end
+      return total
+    end
+    function inventory.get_item_count_filtered(filter)
+      return inventory.count(filter.name)
+    end
+    function inventory.get_item_count(item)
+      return inventory.count(type(item) == "table" and item.name or item)
+    end
+    function inventory.insert(from)
+      for index = 1, size do
+        if not inventory[index].valid_for_read then
+          local count = from.count
+          inventory[index].transfer_stack({
+            name = from.name,
+            count = count,
+            valid_for_read = true,
+            clear = function() end,
+          })
+          return count
+        end
+      end
+      return 0
+    end
+    function inventory.is_empty()
+      for index = 1, size do
+        if inventory[index].valid_for_read then
+          return false
+        end
+      end
+      return true
+    end
+    function inventory.destroy()
+      inventory.valid = false
+    end
+    return inventory
+  end
+  -- What the game does with the old depot's chest in a replacement: everything in it to the new one.
+  local function move(from, to)
+    for index = 1, #from do
+      if from[index].valid_for_read then
+        to.insert(from[index])
+        from[index].clear()
+      end
+    end
+  end
+  local spilled = 0
+  surface.spill_item_stack = function(spec)
+    spilled = spilled + (spec.stack.name == FREIGHTER and spec.stack.count or 0)
+    return {}
+  end
+  local made = {}
+  game.create_inventory = function(size)
+    local inventory = stacks_of(size)
+    made[#made + 1] = inventory
+    return inventory
+  end
+  -- A request depot asking for 5 wood, 1 freighter in its slot, 2 in its chest with 6 iron plates,
+  -- marked for upgrade to a buffer depot.
+  local function marked(x)
+    local old = depot(x)
+    old.name = "jatz-request-depot"
+    local chest = stacks_of(48)
+    chest.insert({ name = FREIGHTER, count = 2 })
+    chest.insert({ name = "iron-plate", count = 6 })
+    old.get_inventory = function()
+      return chest
+    end
+    fire("on_built_entity", { entity = old })
+    assert(logistics.set_request(old, "wood", 5))
+    local trucks = saved.create_inventory(10)
+    trucks[1].transfer_stack({ name = FREIGHTER, count = 1, valid_for_read = true })
+    trucks[1].clear = function()
+      trucks[1].count, trucks[1].valid_for_read = 0, false
+    end
+    trucks.destroy = function() end
+    storage.depots[old.unit_number].trucks = trucks
+    old.to_be_upgraded = function()
+      return true
+    end
+    old.get_upgrade_target = function()
+      return { name = "jatz-buffer-depot" }, prototypes.quality.normal
+    end
+    return old, chest
+  end
+  for _, moved in ipairs({ "after", "before" }) do
+    local old, chest = marked(moved == "after" and 800 or 820)
+    local new = depot(old.position.x - 0.5)
+    new.name = "jatz-buffer-depot"
+    local new_chest = stacks_of(48)
+    new.get_inventory = function()
+      return new_chest
+    end
+    spilled = 0
+    if moved == "before" then
+      move(chest, new_chest)
+    end
+    fire("script_raised_destroy", { entity = old })
+    if moved == "after" then
+      move(chest, new_chest)
+    end
+    old.valid = false
+    fire("script_raised_built", { entity = new })
+    removed(old)
+    local request = logistics.get_request(new)
+    check(
+      "apply_upgrade, chest moved " .. moved .. " its event: the buffer depot keeps the request and slot",
+      request and request.item == "wood" and request.count == 5 and logistics.freighter_counts(new) == 1
+    )
+    check(
+      "and its chest, freighters too, none left on the ground",
+      new_chest.count(FREIGHTER) == 2 and new_chest.count("iron-plate") == 6 and spilled == 0
+    )
+    storage.depots[new.unit_number].trucks = nil
+    removed(new)
+  end
+  local old = marked(840)
+  spilled = 0
+  fire("script_raised_destroy", { entity = old })
+  removed(old)
+  check(
+    "a depot marked for upgrade destroyed outright by a script leaves all its freighters, its chest's too",
+    spilled == 3
+  )
+  local kept = false
+  for _, inventory in ipairs(made) do
+    kept = kept or inventory.valid
+  end
+  check("nothing is kept for a replacement after the tick", storage.depot_swaps == nil and not kept)
+  surface.spill_item_stack = nil
+  robot_access.set, game.create_inventory = saved.set, saved.create_inventory
+end
+
 do -- The freighter slot's clicks: ghosts request freighters from robots; remote view moves nothing.
   local logistics = require("scripts.logistics")
   local calls = {}
