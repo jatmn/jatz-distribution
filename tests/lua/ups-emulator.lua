@@ -358,12 +358,21 @@ local function new_inventory(size)
     end
     return total
   end
+  -- One entry an item and quality, however many stacks hold it, as the game lists them (probed on
+  -- 2.1.24: 48 stacks of iron plate give one entry). One a stack made a provider keeping a minimum,
+  -- whose circuit condition reads what it holds, count 48 times the mod's work for it.
   function inv.get_contents()
-    local found = {}
+    local found, places = {}, {}
     for index = 1, #inv do
       local stack = inv[index]
       if stack.valid_for_read then
-        found[#found + 1] = { name = stack.name, count = stack.count, quality = "normal" }
+        local place = places[stack.name]
+        if place then
+          found[place].count = found[place].count + stack.count
+        else
+          found[#found + 1] = { name = stack.name, count = stack.count, quality = "normal" }
+          places[stack.name] = #found
+        end
       end
     end
     return found

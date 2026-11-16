@@ -76,6 +76,22 @@ class EmulatorCountsOnlyTheModTests(unittest.TestCase):
                LOOP.replace('  ', '          ', 1))
         self.assertEqual(self.emulate(), before)
 
+    def test_the_fake_inventory_lists_an_item_once_however_many_stacks_hold_it(self):
+        # As LuaInventory.get_contents does (one entry an item and quality: 48 stacks of iron plate
+        # give one entry on 2.1.24). One a stack made a provider whose circuit condition reads its
+        # contents count as 48 times the mod's work for it.
+        inject(self.emulator, '-- The world: surfaces with road tiles, entities, scheduled engine events.\n', """do
+  local name = next(STACK_SIZE)
+  local chest = new_inventory(48)
+  local held = chest.insert({ name = name, count = 3 * STACK_SIZE[name] })
+  local contents = chest.get_contents()
+  assert(held == 3 * STACK_SIZE[name], "setup: three stacks")
+  assert(#contents == 1, "get_contents: " .. #contents .. " entries for one item in three stacks")
+  assert(contents[1].name == name and contents[1].count == held and contents[1].quality == "normal")
+end
+""")
+        self.emulate()
+
     def test_work_inside_a_mod_handler_is_counted_exactly(self):
         before = self.emulate()
         inject(self.mod / 'scripts/logistics.lua', 'function logistics.on_tick_share(tick)\n', LOOP)

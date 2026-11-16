@@ -23,6 +23,15 @@ function state.retry_search(owner, tick)
   end
 end
 
+-- The pathfinder was busy with a freighter's question: its search stands, and asks the same
+-- question again at the freighter's next check (scripts/logistics.lua, logistics.ask_again).
+function state.ask_again(owner, search)
+  local current = owner.search
+  if current then
+    current.again = search
+  end
+end
+
 function state.owns_search(owner, token)
   local search = owner and owner.search
   return search and search.phase == "pending" and search.token == token

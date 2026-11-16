@@ -1226,7 +1226,8 @@ end
 -- Provider and buffer depots that can supply what `request` asks for (an item in the qualities it
 -- takes, or a fluid, for liquid depots) on a surface, to a force: on that surface, of that force
 -- and kind, holding some of it unpromised, switched on by their circuit condition, and with road at
--- their loading zone. A list of { id, depot, position }.
+-- their loading zone: { ids, depots, positions }, a list each, in step (a table for each depot,
+-- of each look, was a hundred tables a tick for a large group, for the collector to free).
 -- While a tick's depots are checked (`suppliers_cache` is set: checking them changes no provider's
 -- stock or promises), depots asking for the same share one look at every depot.
 local suppliers_cache
@@ -1264,7 +1265,8 @@ local function suppliers(surface_index, force_index, fluid, request)
   local looks = ends and storage.passes.looks
   local kept = looks and looks[key]
   local ids = kept and kept.ends == ends and kept.ids
-  local found = {}
+  local found_ids, found_depots, found_positions, count = {}, {}, {}, 0
+  local found = { ids = found_ids, depots = found_depots, positions = found_positions }
   -- (The depots kept are one set, of both roles.)
   for _, role in ipairs(ids and { ids } or SUPPLYING) do
     for unit_number in pairs(ids or depots_at(surface_index, role)) do
@@ -1281,7 +1283,8 @@ local function suppliers(surface_index, force_index, fluid, request)
       then
         local position, on_road = loading_tile(candidate)
         if on_road then
-          found[#found + 1] = { id = unit_number, depot = provider, position = position }
+          count = count + 1
+          found_ids[count], found_depots[count], found_positions[count] = unit_number, provider, position
         end
       end
     end
@@ -1290,8 +1293,8 @@ local function suppliers(surface_index, force_index, fluid, request)
     suppliers_cache[key] = found
     if ends and not ids then
       ids = {}
-      for _, supplier in ipairs(found) do
-        ids[supplier.id] = true
+      for index = 1, count do
+        ids[found_ids[index]] = true
       end
       storage.passes.looks = looks or {}
       storage.passes.looks[key] = { ids = ids, ends = ends }
@@ -1370,51 +1373,84 @@ end
 -- qualities of an item, which fill their own cargo stacks, a full load is what fits of them.
 -- `fits`: for such a request, where each quality fits at the depot (logistics.graded_need): a
 -- depot holding only qualities there is no room for is left out too, and fourth, says one was.
+--
+-- Returns the first of them, in a list, and fifth, the others, not yet in order (`rest`:
+-- { ids, positions, distances, ranks }, a list each, in step): a search asks about the nearest few
+-- (route_answered), and each takes its next from them as it comes to it (logistics.candidate).
+-- A table for each, all sorted, was a hundred tables and a sort for each depot of a large group
+-- each second, nearly all of them never read: on a map of 100 request depots asking for one item,
+-- 10,000 tables a second for the collector, whose work made the group's ticks several times
+-- longer than the rest.
 local function candidates(depot, from, full, passed, carries, fits)
   local entity = depot.entity
-  local found, waiting, short, cramped = {}, false, false, false
+  local waiting, short, cramped = false, false, false
   local buffers = depot.role == "request"
   -- The kind of depot asked about first.
   local first = buffers and depot.from_buffers and "buffer" or "provider"
   local own = entity.unit_number
   local request = depot.request
   local size = full and not depot.fluid and transfer.stack_size_of(request.item)
-  for _, supplier in ipairs(suppliers(entity.surface_index, entity.force_index, depot.fluid, request)) do
-    local provider = supplier.depot
+  local supplying = suppliers(entity.surface_index, entity.force_index, depot.fluid, request)
+  local ids, depots, places = supplying.ids, supplying.depots, supplying.positions
+  local found_ids, positions, distances, ranks, count = {}, {}, {}, {}, 0
+  for index = 1, #ids do
+    local id, provider = ids[index], depots[index]
     -- (The one passed is neither ready nor waiting: the freighter goes on, or home.)
-    if supplier.id ~= passed and (provider.role == "provider" or (buffers and supplier.id ~= own)) then
+    if id ~= passed and (provider.role == "provider" or (buffers and id ~= own)) then
       if fits and ledger.allocate(provider, request, math.huge, nil, fits.size, fits) <= 0 then
         cramped = true
       elseif
         full and ledger.allocate(provider, request, full, size and math.floor(carries / size), size, fits) < full
       then
         short = true
-      elseif (depot.cooldowns[supplier.id] or 0) > game.tick then
+      elseif (depot.cooldowns[id] or 0) > game.tick then
         waiting = true
       else
-        local position = supplier.position
+        local position = places[index]
         local dx, dy = position.x - from.x, position.y - from.y
-        found[#found + 1] = {
-          id = supplier.id,
-          position = position,
-          distance = math.sqrt(dx * dx + dy * dy),
-          -- With "request from buffer depots", buffer depots come first, nearer providers or not,
-          -- whatever either's priority; without it, providers come first. Then the higher
-          -- priority, nearer or not.
-          rank = (provider.role == first and 0 or PRIORITY_MAX)
-            + PRIORITY_MAX
-            - (provider.priority or PRIORITY_DEFAULT),
-        }
+        count = count + 1
+        found_ids[count], positions[count] = id, position
+        distances[count] = math.sqrt(dx * dx + dy * dy)
+        -- With "request from buffer depots", buffer depots come first, nearer providers or not,
+        -- whatever either's priority; without it, providers come first. Then the higher
+        -- priority, nearer or not.
+        ranks[count] = (provider.role == first and 0 or PRIORITY_MAX)
+          + PRIORITY_MAX
+          - (provider.priority or PRIORITY_DEFAULT)
       end
     end
   end
-  table.sort(found, function(a, b)
-    if a.rank ~= b.rank then
-      return a.rank < b.rank
+  local rest = { ids = found_ids, positions = positions, distances = distances, ranks = ranks }
+  return { logistics.candidate(rest) }, waiting, short, cramped, rest
+end
+
+-- The next of a search's candidates (`rest`, from candidates), taken out of them: of the best rank
+-- (see there), and of those the nearest in a straight line, of those the lowest unit number (so
+-- every player's game takes the same one). Nil once there are none. (A field: few locals to spare.)
+function logistics.candidate(rest)
+  local ids, distances, ranks = rest.ids, rest.distances, rest.ranks
+  local count = #ids
+  if count == 0 then
+    return nil
+  end
+  local first = 1
+  for index = 2, count do
+    local rank, best = ranks[index], ranks[first]
+    if rank < best then
+      first = index
+    elseif rank == best then
+      local distance, nearest = distances[index], distances[first]
+      if distance < nearest or (distance == nearest and ids[index] < ids[first]) then
+        first = index
+      end
     end
-    return a.distance < b.distance or (a.distance == b.distance and a.id < b.id)
-  end)
-  return found, waiting, short, cramped
+  end
+  local positions = rest.positions
+  local candidate = { id = ids[first], position = positions[first], distance = distances[first], rank = ranks[first] }
+  ids[first], positions[first], distances[first], ranks[first] =
+    ids[count], positions[count], distances[count], ranks[count]
+  ids[count], positions[count], distances[count], ranks[count] = nil, nil, nil, nil
+  return candidate
 end
 
 -- Every trip out has its own tick of the second, its phase: storage.trip_phases[phase + 1] lists
@@ -1668,7 +1704,8 @@ local function search_providers(depot, from, trip)
   -- A request taking several qualities: where each fits (logistics.graded_need).
   local request = depot.request
   local fits = (request.quality or request.comparator) and select(5, need(depot, trip)) or nil
-  local found, waiting, short, cramped = candidates(depot, from, full, rerouted and rerouted.passed, carries, fits)
+  local found, waiting, short, cramped, rest =
+    candidates(depot, from, full, rerouted and rerouted.passed, carries, fits)
   if #found == 0 then
     return false, waiting, short, cramped
   end
@@ -1681,7 +1718,9 @@ local function search_providers(depot, from, trip)
     from = from,
     -- Where a rerouted freighter last arrived when its search started (see logistics.search_plan).
     origin = rerouted and rerouted.origin,
+    -- Those asked about so far, in turn, and the others (candidates).
     candidates = found,
+    rest = rest,
     index = 1,
     trip = trip,
   }
@@ -2305,6 +2344,20 @@ function burn(trip, per_tile)
   end
 end
 
+-- A freighter's search whose question the pathfinder was too busy for (scripts/routes.lua,
+-- on_script_path_request_finished) asks it again, at the freighter's check: the candidates it has
+-- had answers for stand, and it goes on from where it was. Its depot gone or its search no longer
+-- its own, it searches afresh instead, which sorts that out. (A field: check_trip comes first.)
+function logistics.ask_again(id, trip)
+  local search = trip.search.again
+  trip.search.again = nil
+  local depot = storage.depots[search.request]
+  if depot and depot.entity.valid and trip.drone.valid and lifecycle.owns_search(trip, search.token) then
+    return routes.ask_route(search, depot.entity.surface, depot.entity.force)
+  end
+  search_again(id, trip)
+end
+
 -- A trip's once-a-second check: it burns fuel, shows it, and pollutes a little (standing or
 -- driving). A freighter whose search never answered (or met a busy pathfinder) searches again, and
 -- one whose tank just ran dry crawls on, to a Fuel depot if it can find one. Returns whether it
@@ -2332,6 +2385,8 @@ local function check_trip(id, trip, per_tile, capacity, polluters)
   end
   if trip.search and game.tick - trip.search.since >= SEARCH_TIMEOUT then
     search_again(id, trip)
+  elseif trip.search and trip.search.again then
+    logistics.ask_again(id, trip)
   elseif trip.planning and drone.valid and not trip.road_cut and game.tick - trip.planning.since >= SEARCH_TIMEOUT then
     -- Its roads were never measured (a busy pathfinder, say): it asks again. (Not one destroyed,
     -- its on_object_destroyed still to come: Pullfrog's review of 5d10933. Nor one whose road was
@@ -3109,15 +3164,18 @@ function logistics.on_roads_changed(surface_index, added, removed, tiles)
   -- more than tunnels.changed goes through one by one would forget the networks for nothing):
   -- which road networks tunnels join may have changed, the tiles put on and taken off the
   -- networks known, or, not given, those forgotten (at once if road was removed, which can split
-  -- one); and the roads measured for ways through tunnels.
+  -- one); and the roads measured for ways through tunnels that those tiles can have changed (all
+  -- of them, with the tiles not given).
+  local x1, y1, x2, y2 = tunnels.box(tiles)
   if added or removed then
     tunnels.changed(surface_index, removed, tiles)
-    tunnels.forget(surface_index, removed)
+    tunnels.forget(surface_index, removed, x1, y1, x2, y2)
   end
   if removed then
     -- Where a freighter last arrived may be on another road network than where it stands now: it
     -- plans from where it stands. First, before anything reads it: the searches restarted below fix
     -- their origin from it (Pullfrog's review of fa62744).
+    local tunnelled = x1 and tunnels.on(surface_index)
     for _, trip in pairs(storage.trips) do
       if trip.drone.valid and trip.drone.surface_index == surface_index then
         -- Its plan was worked out on the road as it was. It plans its way again at a check of
@@ -3125,8 +3183,23 @@ function logistics.on_roads_changed(surface_index, added, removed, tiles)
         -- mined or covered a tile at a time raises this for each tile, and on a large network
         -- with tunnels planning every freighter's way took over 100 ms each time (a player's
         -- report, November 15, 2026: removing road froze the game for seconds).
-        trip.origin, trip.plan = nil, nil
-        trip.road_cut = true
+        -- Not one whose way the tiles removed can't have been on (tunnels.untouched: the roads it
+        -- has yet to drive, or where it stands loading or unloading): its way is still there and
+        -- still the shortest, so it drives on. Planning each from where it stood, with a
+        -- question to the pathfinder for every road from there, kept 500 freighters planning for
+        -- ten seconds and more after one tile was removed anywhere on their surface.
+        local plan = trip.plan
+        if
+          not (
+            tunnelled
+            and (plan or trip.service)
+            and not trip.road_cut
+            and tunnels.untouched(plan, trip.origin, x1, y1, x2, y2)
+          )
+        then
+          trip.origin, trip.plan = nil, nil
+          trip.road_cut = true
+        end
       end
     end
     storage.road_cuts = storage.road_cuts or {}
@@ -3394,6 +3467,11 @@ local function route_answered(search, length)
   -- at all.
   search.index = search.index + 1
   local next_candidate = search.candidates[search.index]
+  if not next_candidate and search.rest then
+    -- (A search from before `rest` holds every candidate in its list.)
+    next_candidate = logistics.candidate(search.rest)
+    search.candidates[search.index] = next_candidate
+  end
   if
     next_candidate
     and (not search.best or (next_candidate.rank == search.best_rank and next_candidate.distance < search.best_length))
@@ -3412,7 +3490,6 @@ routes.install(logistics, {
   arrival_radius = ARRIVAL_RADIUS,
   road_memory_ticks = ROAD_MEMORY_TICKS,
   dispatch_interval = DISPATCH_INTERVAL,
-  search_timeout = SEARCH_TIMEOUT,
 })
 -- An owner waiting for the roads of a way through tunnels to be measured (tunnels.plan) goes on:
 -- a search takes its candidate's road again, a freighter drives on. With the pathfinder busy, a

@@ -322,7 +322,14 @@ local function nets_of(surface_index)
       local other = partner(entity)
       if other then
         local list = nets.portals
-        list[#list + 1] = { id = id, entity = entity, entry = tunnels.entry(entity), partner = other.unit_number }
+        local entry = tunnels.entry(entity)
+        list[#list + 1] = {
+          id = id,
+          entity = entity,
+          entry = entry,
+          at = key(math.floor(entry.x), math.floor(entry.y)),
+          partner = other.unit_number,
+        }
         places[id] = #list
       end
     end
@@ -475,8 +482,8 @@ end
 local function legs_of(surface_index)
   storage.tunnel_legs = storage.tunnel_legs or {}
   local legs = storage.tunnel_legs[surface_index]
-  -- (A table without `fresh` is from before it: made afresh.)
-  if not (legs and legs.fresh) or game.tick - legs.made >= LEG_MEMORY_TICKS then
+  -- (A table without `fresh` or `spans` is from before them: made afresh.)
+  if not (legs and legs.fresh and legs.spans) or game.tick - legs.made >= LEG_MEMORY_TICKS then
     local asked = legs and legs.asked or {}
     retire(surface_index, asked, true)
     legs = {
@@ -485,6 +492,7 @@ local function legs_of(surface_index)
       fresh = game.tick,
       lengths = {},
       measured = {},
+      spans = {},
       asked = asked,
     }
     storage.tunnel_legs[surface_index] = legs
@@ -494,23 +502,123 @@ local function legs_of(surface_index)
   return legs
 end
 
--- Road laid or removed on a surface: the roads measured there are forgotten, or measured again
--- (scripts/logistics.lua, on_roads_changed).
-function tunnels.forget(surface_index, removed)
+-- How near tiles that changed a road counts as passing them, in tiles: a freighter's width, how
+-- far short of its goal a route may end (the arrival radius), and the rounding of both.
+local NEAR = 2
+
+-- Whether tiles removed within x1..x2, y1..y2 (tile positions) can have been on the road of
+-- `length` between two points. Every point of a road that long lies within that sum of distances
+-- from its two ends, so tiles farther off than that were never on it: it is still there, as long
+-- as it was, and removing road makes no other shorter. The tiles' box stands for each of them:
+-- none is nearer either end than it is.
+local function passes(ax, ay, bx, by, length, x1, y1, x2, y2)
+  local reach = length + NEAR
+  x2, y2 = x2 + 1, y2 + 1
+  local dx = ax < x1 and x1 - ax or ax > x2 and ax - x2 or 0
+  local dy = ay < y1 and y1 - ay or ay > y2 and ay - y2 or 0
+  if dx > reach or dy > reach then
+    return false
+  end
+  local ex = bx < x1 and x1 - bx or bx > x2 and bx - x2 or 0
+  local ey = by < y1 and y1 - by or by > y2 and by - y2 or 0
+  return math.sqrt(dx * dx + dy * dy) + math.sqrt(ex * ex + ey * ey) <= reach
+end
+
+-- The box of an event's tiles (each with its `position`): the least and greatest x and y. Nil
+-- with no tiles, or more than are gone through one by one (TILES_AT_ONCE).
+function tunnels.box(tiles)
+  if not tiles or #tiles == 0 or #tiles > TILES_AT_ONCE then
+    return nil
+  end
+  local x1, y1, x2, y2 = math.huge, math.huge, -math.huge, -math.huge
+  for index = 1, #tiles do
+    local position = tiles[index].position
+    local x, y = position.x or position[1], position.y or position[2]
+    x1, y1, x2, y2 = math.min(x1, x), math.min(y1, y), math.max(x2, x), math.max(y2, y)
+  end
+  return x1, y1, x2, y2
+end
+
+-- Road laid or removed on a surface (scripts/logistics.lua, on_roads_changed). Laid: the roads
+-- measured there are measured again. Removed: those the tiles removed (within x1..x2, y1..y2:
+-- tunnels.box) can have been on (`passes`) are forgotten, and the others stand; with the tiles not
+-- known (no box), all are forgotten. Before, all were whatever was removed: after one tile gone
+-- anywhere on a map of 500 freighters and 30 tunnels, every plan asked the pathfinder about its
+-- roads again, thousands of questions over ten seconds and more. A road measured as none stays
+-- none. Questions asked before a removal are dropped whatever they asked, with whoever waited for
+-- them: their answers may be of the road as it was.
+function tunnels.forget(surface_index, removed, x1, y1, x2, y2)
   local legs = storage.tunnel_legs and storage.tunnel_legs[surface_index]
-  if legs and removed then
-    retire(surface_index, legs.asked)
+  if not legs then
+    return
+  end
+  if not removed then
+    legs.stale = true
+    return
+  end
+  retire(surface_index, legs.asked)
+  if not (x1 and legs.spans) then
     storage.tunnel_legs[surface_index] = {
       cut = legs.cut + 1,
       made = game.tick,
       fresh = game.tick,
       lengths = {},
       measured = {},
+      spans = {},
       asked = {},
     }
-  elseif legs then
-    legs.stale = true
+    return
   end
+  legs.cut = legs.cut + 1
+  local lengths, measured, spans = legs.lengths, legs.measured, legs.spans
+  local far_x, far_y = x2 + 1, y2 + 1
+  for leg, length in pairs(lengths) do
+    if length then
+      local span = spans[leg]
+      -- (One with no span was measured for a save from before them.)
+      local gone = not span
+      if span then
+        -- (Most are far off: one end farther from the tiles than the road is long, told
+        -- without `passes`.)
+        local reach = length + NEAR
+        local ax, ay = span[1], span[2]
+        gone = ax >= x1 - reach
+          and ax <= far_x + reach
+          and ay >= y1 - reach
+          and ay <= far_y + reach
+          and passes(ax, ay, span[3], span[4], length, x1, y1, x2, y2)
+      end
+      if gone then
+        lengths[leg], measured[leg], spans[leg] = nil, nil, nil
+      end
+    end
+  end
+end
+
+-- Whether the rest of a freighter's way is clear of tiles changed within x1..x2, y1..y2: no road
+-- it has yet to drive can have been changed by them (`passes`), so its way is still there, and
+-- still the shortest (road removed makes no other shorter). `plan`: its plan as scripts/logistics.lua's
+-- drive keeps it ({ to, hops, step }, the hops as tunnels.plan returned them, with where they start
+-- and the length of each road between them), or nil for one standing at `origin`, where it last
+-- arrived.
+function tunnels.untouched(plan, origin, x1, y1, x2, y2)
+  if not plan then
+    return origin ~= nil and not passes(origin.x, origin.y, origin.x, origin.y, 0, x1, y1, x2, y2)
+  end
+  local hops = plan.hops
+  local roads, from = hops.roads, hops.from
+  if not (roads and from and #roads == #hops + 1) then
+    -- A plan from before they were kept.
+    return false
+  end
+  for index = plan.step, #roads do
+    local a = index == 1 and from or hops[index - 1].exit
+    local b = hops[index] and hops[index].entry or plan.to
+    if passes(a.x, a.y, b.x, b.y, roads[index], x1, y1, x2, y2) then
+      return false
+    end
+  end
+  return true
 end
 
 -- A leg's key, the same either way along it, by the tiles of its ends.
@@ -527,16 +635,54 @@ local function distance(a, b)
   return math.sqrt(dx * dx + dy * dy)
 end
 
--- The shortest way for tunnels.plan, a Dijkstra over its `points` (`on`: their networks; see
--- there), road legs weighed by `legs`: measured since road was last laid there, or (`stale`) before
--- that too; any other as its straight line. Returns the tunnels to go through in turn, the way's
--- length and its road legs counted as their straight line ({ leg, from, to } each), or nil for no
--- way at all.
-local function shortest(legs, portals, points, on, road, stale)
+-- Leg keys made so far, by the tile keys of the leg's two ends: a plan weighs the road from each
+-- tunnel's way out to every other mouth, and making the text of each key anew was most of what a
+-- plan cost (about 1 ms with 30 tunnels on one network). Lua only, and never read for anything
+-- else: a key is the same whenever it is made, so it doesn't matter that players who joined later
+-- remember fewer. Started afresh when it holds LEG_KEYS of them (freighters plan from wherever
+-- they stand).
+local LEG_KEYS = 20000
+local leg_keys, leg_keys_made = {}, 0
+local function leg_between(from_tile, to_tile, a, b)
+  local row = leg_keys[from_tile]
+  local leg = row and row[to_tile]
+  if not leg then
+    if leg_keys_made >= LEG_KEYS then
+      leg_keys, leg_keys_made, row = {}, 0, nil
+    end
+    if not row then
+      row = {}
+      leg_keys[from_tile] = row
+    end
+    leg = leg_key(a, b)
+    row[to_tile] = leg
+    leg_keys_made = leg_keys_made + 1
+  end
+  return leg
+end
+
+-- A road's length, measured just now, between `a` and `b` (`length`: false for no road), and
+-- where it runs (`spans`: its two ends, for tunnels.forget).
+local function measured_now(legs, leg, a, b, length)
+  legs.lengths[leg], legs.measured[leg] = length, game.tick
+  local span = legs.spans[leg]
+  if not (span and span[1] == a.x and span[2] == a.y and span[3] == b.x and span[4] == b.y) then
+    legs.spans[leg] = { a.x, a.y, b.x, b.y }
+  end
+end
+
+-- The shortest way for tunnels.plan, a Dijkstra over its `points` (`on`: their networks, `tiles`:
+-- their tiles' keys; see there), road legs weighed by `legs`: measured since road was last laid
+-- there, or (`stale`) before that too; any other as its straight line. Returns the tunnels to go
+-- through in turn (with `from`, where the way starts, and `roads`, the length of each road of it
+-- in turn: one more than its tunnels), the way's length and its road legs counted as their
+-- straight line ({ leg, from, to } each), or nil for no way at all.
+local function shortest(legs, portals, points, on, tiles, road, stale)
   local count = #portals
-  -- `by[state]`: how it was reached from previous[state]: a leg key not yet measured, true for a
-  -- measured road, or the portal whose tunnel led there.
-  local best, previous, by, done = { [1] = 0 }, {}, {}, {}
+  local lengths, measured, fresh = legs.lengths, legs.measured, legs.fresh
+  -- `by[state]`: how it was reached from previous[state]: by the road with that leg key (`sure`:
+  -- measured, `far`: its length as counted), or through the tunnel of that portal.
+  local best, previous, by, done, sure, far = { [1] = 0 }, {}, {}, {}, {}, {}
   while true do
     local current, shortest_cost = nil, math.huge
     for state, cost in pairs(best) do
@@ -553,25 +699,26 @@ local function shortest(legs, portals, points, on, road, stale)
     -- known apart).
     local net = (current == 1 or current > 2 + count) and on[current]
     if net or current == 1 then
+      local a, from_tile = points[current], tiles[current]
       for state = 2, count + 2 do
         local direct = current == 1 and state == 2 and road
         if (net and state ~= current and not done[state] and on[state] == net) or direct then
-          local a, b = points[current], points[state]
-          local leg = leg_key(a, b)
-          local length = legs.lengths[leg]
-          if length ~= nil and not stale and legs.measured[leg] < legs.fresh then
+          local b, to_tile = points[state], tiles[state]
+          local leg = leg_between(from_tile, to_tile, a, b)
+          local length = lengths[leg]
+          if length ~= nil and not stale and measured[leg] < fresh then
             length = nil
           end
           -- Within one tile (a freighter just out of a tunnel, at its mouth), the straight line is
           -- the road.
-          local known = length ~= nil or (math.floor(a.x) == math.floor(b.x) and math.floor(a.y) == math.floor(b.y))
+          local known = length ~= nil or from_tile == to_tile
           if length == nil then
             length = distance(a, b)
           end
           if length then
             local cost = shortest_cost + length
             if not best[state] or cost < best[state] then
-              best[state], previous[state], by[state] = cost, current, known or leg
+              best[state], previous[state], by[state], sure[state], far[state] = cost, current, leg, known, length
             end
           end
         end
@@ -590,13 +737,16 @@ local function shortest(legs, portals, points, on, road, stale)
   if not best[2] then
     return nil
   end
-  -- The way back from `to`: its tunnels, and its roads not yet measured.
-  local hops, unknown, state = {}, {}, 2
+  -- The way back from `to`: its tunnels, its roads, and those of them not yet measured.
+  local hops, roads, unknown, state = {}, {}, {}, 2
   while state ~= 1 do
     local how, before = by[state], previous[state]
     if type(how) == "string" then
-      unknown[#unknown + 1] = { leg = how, from = points[before], to = points[state] }
-    elseif how ~= true then
+      if not sure[state] then
+        unknown[#unknown + 1] = { leg = how, from = points[before], to = points[state] }
+      end
+      table.insert(roads, 1, far[state])
+    else
       table.insert(hops, 1, {
         entry = how.entry,
         exit = portals[how.other].entry,
@@ -607,6 +757,7 @@ local function shortest(legs, portals, points, on, road, stale)
     end
     state = before
   end
+  hops.roads, hops.from = roads, { x = points[1].x, y = points[1].y }
   return hops, best[2], unknown
 end
 
@@ -622,7 +773,8 @@ local function measure(surface, surface_index, force, legs, unknown)
       end
       local id = tunnels.ask(surface, force, leg.from, leg.to)
       legs.asked[leg.leg] = { tick = game.tick, id = id }
-      storage.tunnel_leg_asks[id] = { surface_index = surface_index, leg = leg.leg, from = leg.from, cut = legs.cut }
+      storage.tunnel_leg_asks[id] =
+        { surface_index = surface_index, leg = leg.leg, from = leg.from, to = leg.to, cut = legs.cut }
     end
   end
 end
@@ -638,7 +790,9 @@ end
 -- Returns the tunnels to go through in turn ({ entry, exit, length, from, to } each: where to drive
 -- in, where it comes out, how far apart, and the two portals' unit numbers; none for the road) and
 -- the way's length; false while waiting; nil when there is nothing to weigh (no tunnel on the
--- surface, an end off road, no way at all): the road, if any, as the pathfinder finds it.
+-- surface, an end off road, no way at all): the road, if any, as the pathfinder finds it. The
+-- tunnels come with where the way starts (`from`) and the length of each road of it (`roads`),
+-- for tunnels.untouched.
 -- Few portals are expected, so every one is looked at for each step.
 function tunnels.plan(surface_index, from, to, road, force, waiter)
   if not (has_tunnels(surface_index) and from and to) then
@@ -653,8 +807,7 @@ function tunnels.plan(surface_index, from, to, road, force, waiter)
   end
   local legs = legs_of(surface_index)
   if road ~= nil then
-    local leg = leg_key(from, to)
-    legs.lengths[leg], legs.measured[leg] = road, game.tick
+    measured_now(legs, leg_key(from, to), from, to, road)
   end
   -- States: 1 is at `from`, 2 at `to`; 2 + i at portal i's entry, come by road, and 2 + count + i
   -- there, come out of its partner's tunnel. Only `from` and a tunnel's way out go on by road: two
@@ -662,12 +815,21 @@ function tunnels.plan(surface_index, from, to, road, force, waiter)
   -- about them would only cost the pathfinder's time.
   local count = #portals
   local points, on = { from, to }, { start, goal }
+  local tiles = { key(math.floor(from.x), math.floor(from.y)), key(math.floor(to.x), math.floor(to.y)) }
+  local known = nets.points
   for index, portal in ipairs(portals) do
-    points[2 + index], points[2 + count + index] = portal.entry, portal.entry
-    on[2 + index] = net_of(nets, surface, portal.entry)
-    on[2 + count + index] = on[2 + index]
+    local entry = portal.entry
+    -- (What is known from a save before `at`.)
+    local at = portal.at or key(math.floor(entry.x), math.floor(entry.y))
+    local net = known[at]
+    if net == nil then
+      net = net_of(nets, surface, entry)
+    end
+    points[2 + index], points[2 + count + index] = entry, entry
+    tiles[2 + index], tiles[2 + count + index] = at, at
+    on[2 + index], on[2 + count + index] = net, net
   end
-  local hops, length, unknown = shortest(legs, portals, points, on, road, false)
+  local hops, length, unknown = shortest(legs, portals, points, on, tiles, road, false)
   if not hops then
     return nil
   end
@@ -678,7 +840,7 @@ function tunnels.plan(surface_index, from, to, road, force, waiter)
   -- Roads measured before road was laid, asked again just now: meanwhile, the way with them.
   for _, leg in ipairs(unknown) do
     if legs.lengths[leg.leg] ~= nil then
-      local stale_hops, stale_length, missing = shortest(legs, portals, points, on, road, true)
+      local stale_hops, stale_length, missing = shortest(legs, portals, points, on, tiles, road, true)
       if stale_hops and #missing == 0 then
         return stale_hops, stale_length
       elseif stale_hops then
@@ -716,7 +878,11 @@ function tunnels.answered(id, length, busy)
     return true
   end
   legs.asked[ask.leg] = nil
-  if not busy then
+  if not busy and ask.to and legs.spans then
+    measured_now(legs, ask.leg, ask.from, ask.to, length or false)
+  elseif not busy then
+    -- (Asked by a save from before a question kept where it leads: no span, so any tile changed
+    -- counts as changing it.)
     legs.lengths[ask.leg], legs.measured[ask.leg] = length or false, game.tick
   end
   local waiting = storage.tunnel_waiters and storage.tunnel_waiters[ask.surface_index]

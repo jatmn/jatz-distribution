@@ -1,0 +1,4 @@
+  Bugfixes:
+    - Fixed most of the stutter left after road is removed on a road network with road tunnels: only the freighters whose way the removed tiles can have been on plan their way again, and only the roads measured there are measured again. Before, every freighter on the surface stood and planned afresh for ten seconds and more.
+    - Fixed the longer ticks of a large group of depots asking for the same item or fluid: each depot now ranks only the providers its search comes to, not every one each second.
+    - Fixed freighters looking for another provider flooding a busy pathfinder: one it has no time for now asks the same question again a second later, instead of starting its whole search afresh.
