@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.1.9](https://github.com/jatmn/jatz-distribution/compare/v0.1.8...v0.1.9) (2026-11-16)
+
+
+### Features
+
+* add supply and demand overview to the freighter network GUI ([#113](https://github.com/jatmn/jatz-distribution/issues/113)) ([51c25b6](https://github.com/jatmn/jatz-distribution/commit/51c25b67643c4f1e07bf8ea57575f67f6d272d3b))
+* let buffers pull from lower-priority buffers ([#112](https://github.com/jatmn/jatz-distribution/issues/112)) ([dcc4818](https://github.com/jatmn/jatz-distribution/commit/dcc48181989170d6ea9b93b4a956c85e79399260))
+
+
+### Bug Fixes
+
+* absorb freighters dropped into depots with Z immediately ([#114](https://github.com/jatmn/jatz-distribution/issues/114)) ([14d8196](https://github.com/jatmn/jatz-distribution/commit/14d81968b3a33cb0fd2534e851f5fc25343f4487))
+* follow road laid and removed tile by tile, not with a flood ([#110](https://github.com/jatmn/jatz-distribution/issues/110)) ([98be4f1](https://github.com/jatmn/jatz-distribution/commit/98be4f1b9a04b5859c2453b76c9e81466e8299e0))
+* keep request and buffer depots a script swaps with apply_upgrade ([#108](https://github.com/jatmn/jatz-distribution/issues/108)) ([445f7ca](https://github.com/jatmn/jatz-distribution/commit/445f7ca29f36244ab6d6754fb3cadf11bb287dc6))
+* stop a crash when a depot is replaced with the last one in hand ([#107](https://github.com/jatmn/jatz-distribution/issues/107)) ([a826850](https://github.com/jatmn/jatz-distribution/commit/a826850320c5b1f5b2f3658c895fb0a56628f9be))
+* stop stutters from large depot groups and from removing road ([#106](https://github.com/jatmn/jatz-distribution/issues/106)) ([ae2643e](https://github.com/jatmn/jatz-distribution/commit/ae2643e0a70b5cc497f1dd88cb247627b8156d59))
+* stop the stutters left after road removal, in large depot groups and with a busy pathfinder ([#111](https://github.com/jatmn/jatz-distribution/issues/111)) ([979c092](https://github.com/jatmn/jatz-distribution/commit/979c0922429c5ddb0d795f3747e31fbcf809a5e4))
+
 ## [0.1.8](https://github.com/jatmn/jatz-distribution/compare/v0.1.7...v0.1.8) (2026-11-15)
 
 

@@ -1,4 +1,23 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.9
+Date: 2026-11-16
+  Features:
+    - Add the "Buffers pull by priority" startup setting, off by default, so item and liquid buffers can fetch from lower-priority buffers to collect stock centrally.
+    - Split the freighter network window into Items and Fluids, with provider, requester and buffer stock, depot counts, configured requests and unmet demand.
+    - Find resources with the game's searchable picker, focus on shortages or stock without requests, and inspect quality and supply details on hover.
+  Optimizations:
+    - Share network snapshots between viewers, spread depot reads over ticks and refresh after five seconds. Stop counting when no connected player has the window open.
+  Bugfixes:
+    - Fixed a crash when a depot was replaced by hand with the last depot the player was holding. Placed over itself at another quality, the depot keeps its request, freighters and settings then too.
+    - Fixed most of the stutter left after road is removed on a road network with road tunnels: only the freighters whose way the removed tiles can have been on plan their way again, and only the roads measured there are measured again. Before, every freighter on the surface stood and planned afresh for ten seconds and more.
+    - Fixed the longer ticks of a large group of depots asking for the same item or fluid: each depot now ranks only the providers its search comes to, not every one each second.
+    - Fixed freighters looking for another provider flooding a busy pathfinder: one it has no time for now asks the same question again a second later, instead of starting its whole search afresh.
+    - Fixed the stutters left while laying and removing road on a large road network with road tunnels: the road networks follow each tile laid or removed, and are no longer worked out afresh once a second while road is laid and after each tile removed.
+    - A request depot upgraded to a buffer depot (or a buffer depot to a request depot) at once by another mod, such as Blueprint Sandboxes in its labs, now keeps its request, settings and freighters, instead of becoming a bare depot with its freighters dropped on the ground.
+    - Fixed a stutter once a second with many request or buffer depots asking for the same item or fluid on one surface: their once-a-second checks are now spread over several ticks instead of all running in one.
+    - Fixed the game freezing while road is removed on a large road network with road tunnels: every freighter out planned its way again for each tile removed. They now do so one after another, within a second or so of the road being left alone. The stutter a second after laying road there is shorter too.
+    - Move freighters dropped into depots with Z into the freighter slot immediately, before inserters or loaders can take them.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.8
 Date: 2026-11-15
   Features:
