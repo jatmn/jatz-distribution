@@ -2,6 +2,22 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Buffer pull wording: checks passed; text only
+
+**November 16, 2026.** PR #112 review repair on `8ad87c90f1d7021089e78ada74e8c5918f63998f`, against
+`main` at `51c25b67643c4f1e07bf8ea57575f67f6d272d3b`. Locale and documentation only; no code,
+test or behaviour change, so Factorio and the UPS benchmark were not rerun.
+
+- The `searching` status text and the guide's status legend now name lower-priority buffers for a
+  buffer depot with the setting, as `no-provider` and `unreachable` already did.
+- The setting description, the guide and `AGENTS.md` state the rule as where a buffer sends its
+  freighters. A pickup a request depot sent before it was swapped for a buffer depot still loads,
+  as the swap checks require; the guide and `AGENTS.md` say so, and that a buffer pull whose source
+  became a request depot takes nothing there.
+- `tools/test_mod_setup.py`: 16 passed; `tools/test_releases.py`: 14 passed;
+  `tools/test_portal_page.py`: 7 passed; `tools/test_ci_changes.py`: 18 passed (1 skipped);
+  `git diff --check` passed.
+
 ## Buffer pulls from a replaced source: passed (automated)
 
 **November 16, 2026.** PR #112 review repair on `7bbe41722aeebd2f484ad7be3dcbc1b2968f5079`, against
