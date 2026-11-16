@@ -539,21 +539,25 @@ function tunnels.box(tiles)
   return x1, y1, x2, y2
 end
 
--- Road laid or removed on a surface (scripts/logistics.lua, on_roads_changed). Laid: the roads
--- measured there are measured again. Removed: those the tiles removed (within x1..x2, y1..y2:
+-- Road laid (`added`) or removed (`removed`) on a surface, or both in one event (a script's, of
+-- road and another tile: control.lua) (scripts/logistics.lua, on_roads_changed). Laid: the roads
+-- measured there are measured again, those measured as none too, as laid road can make a road
+-- shorter, or one where there was none. Removed: those the tiles removed (within x1..x2, y1..y2:
 -- tunnels.box) can have been on (`passes`) are forgotten, and the others stand; with the tiles not
 -- known (no box), all are forgotten. Before, all were whatever was removed: after one tile gone
 -- anywhere on a map of 500 freighters and 30 tunnels, every plan asked the pathfinder about its
--- roads again, thousands of questions over ten seconds and more. A road measured as none stays
--- none. Questions asked before a removal are dropped whatever they asked, with whoever waited for
--- them: their answers may be of the road as it was.
-function tunnels.forget(surface_index, removed, x1, y1, x2, y2)
+-- roads again, thousands of questions over ten seconds and more. Road removed leaves a road
+-- measured as none as none. Questions asked before a removal are dropped whatever they asked, with
+-- whoever waited for them: their answers may be of the road as it was.
+function tunnels.forget(surface_index, added, removed, x1, y1, x2, y2)
   local legs = storage.tunnel_legs and storage.tunnel_legs[surface_index]
   if not legs then
     return
   end
-  if not removed then
+  if added then
     legs.stale = true
+  end
+  if not removed then
     return
   end
   retire(surface_index, legs.asked)

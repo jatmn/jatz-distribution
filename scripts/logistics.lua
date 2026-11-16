@@ -3165,11 +3165,12 @@ function logistics.on_roads_changed(surface_index, added, removed, tiles)
   -- which road networks tunnels join may have changed, the tiles put on and taken off the
   -- networks known, or, not given, those forgotten (at once if road was removed, which can split
   -- one); and the roads measured for ways through tunnels that those tiles can have changed (all
-  -- of them, with the tiles not given).
+  -- of them, with the tiles not given), for road laid and removed both when an event does both
+  -- (a script's, of road and another tile).
   local x1, y1, x2, y2 = tunnels.box(tiles)
   if added or removed then
     tunnels.changed(surface_index, removed, tiles)
-    tunnels.forget(surface_index, removed, x1, y1, x2, y2)
+    tunnels.forget(surface_index, added, removed, x1, y1, x2, y2)
   end
   if removed then
     -- Where a freighter last arrived may be on another road network than where it stands now: it
