@@ -117,9 +117,9 @@ A light beside the request shows at a glance whether it can be filled. Hover it 
 
 | Light | Meaning |
 | --- | --- |
-| 🟢 Green | Stocked, a freighter is on its way, or it's finding a provider (or, for a request depot, a buffer depot) by road |
-| 🟡 Yellow | Waiting on something in the way: no room in the depot, waiting for a full load (with **Full loads only** ticked) or, for a liquid depot, for at least 100, its loading zone isn't on road, no road route to a provider (or, for a request depot, a buffer depot) that has it, no freighters (or none could be sent), freighters too low on fuel while the fuel depots are empty, or a liquid depot's tank holds another fluid |
-| 🔴 Red | No provider depot with road at its loading zone has it (nor, for a request depot, any buffer depot), its freighters need fuel and no fuel depot is connected by road, or the depot is switched off by its circuit condition |
+| 🟢 Green | Stocked, a freighter is on its way, or it's finding a provider (or, for a request depot, a buffer depot, or for a buffer depot with **Buffers pull by priority**, a lower-priority buffer depot) by road |
+| 🟡 Yellow | Waiting on something in the way: no room in the depot, waiting for a full load (with **Full loads only** ticked) or, for a liquid depot, for at least 100, its loading zone isn't on road, no road route to a provider (or, for a request depot, a buffer depot, or for a buffer depot with **Buffers pull by priority**, a lower-priority buffer depot) that has it, no freighters (or none could be sent), freighters too low on fuel while the fuel depots are empty, or a liquid depot's tank holds another fluid |
+| 🔴 Red | No provider depot with road at its loading zone has it (nor, for a request depot, any buffer depot, or for a buffer depot with **Buffers pull by priority**, any lower-priority buffer depot), its freighters need fuel and no fuel depot is connected by road, or the depot is switched off by its circuit condition |
 | ⚪ Grey | Nothing requested |
 
 ## When roads or depots change
@@ -130,21 +130,23 @@ A light beside the request shows at a glance whether it can be filled. Hover it 
 
 ## Buffer depots
 
-Buffer depots keep stock close to where it's needed. They work like request depots, with their own request and freighters, but they fetch only from provider depots and send nothing anywhere themselves.
+Buffer depots keep stock close to where it's needed. They work like request depots, with their own request and freighters, but by default they send their freighters only to provider depots and send nothing anywhere themselves.
+
+Turn on **Buffers pull by priority** under **Settings → Mod settings → Startup** to let item and liquid buffers also fetch from buffers with a strictly lower priority. It is off by default. For example, local buffers at priority 3 can supply a central buffer at priority 8; equal-priority buffers never send freighters to each other. Eligible buffers and normal providers are ranked together by priority, then distance by road. Normal providers remain eligible at any priority. A priority change before pickup is checked again; cargo already loaded finishes its trip.
 
 Request depots take from buffer depots too. The **Request from buffer depots** checkbox (like a requester chest's "request from buffer chests") decides which come first:
 
 - **Ticked:** buffer depots first, even when a provider is nearer. It goes to providers only for what no buffer can supply.
 - **Unticked** (the default): provider depots first, however near a buffer is. It falls back to buffer depots only for what no provider can supply: when no provider has the item, none can be reached by road, or what they have is already promised to other freighters.
 
-Request and buffer depots replace each other in place, as chests do. Place a buffer depot over a request depot, or a request depot over a buffer depot, and it swaps without being emptied first. Robots do the same from a ghost placed over it, from a blueprint pasted over it with super-forced building (Ctrl+Shift+click), or from an upgrade planner set to turn request depots into buffer depots (or the other way round). Undo and redo swap it back and forth in place too: robots do it, even for one you swapped by hand. The depot keeps what is in its chest, its request and settings, and its freighters, including any out on trips. If its request is more than the new depot's chest can hold (request and buffer depots can have different numbers of slots), it becomes what fills every slot, as when you set it. It does its new job at once: a buffer depot supplies request depots, a request depot supplies no one. Freighters already on their way finish their trips. Logistic robots are kept out of a new buffer depot until you let them in, as with any new one.
+Request and buffer depots replace each other in place, as chests do. Place a buffer depot over a request depot, or a request depot over a buffer depot, and it swaps without being emptied first. Robots do the same from a ghost placed over it, from a blueprint pasted over it with super-forced building (Ctrl+Shift+click), or from an upgrade planner set to turn request depots into buffer depots (or the other way round). Undo and redo swap it back and forth in place too: robots do it, even for one you swapped by hand. The depot keeps what is in its chest, its request and settings, and its freighters, including any out on trips. If its request is more than the new depot's chest can hold (request and buffer depots can have different numbers of slots), it becomes what fills every slot, as when you set it. It does its new job at once: a buffer depot supplies request depots, a request depot supplies no one. Freighters already on their way finish their trips as they were sent: one a request depot sent to a buffer depot still loads there after the request depot becomes a buffer depot. Only a buffer depot's freighter sent to a lower-priority buffer depot (**Buffers pull by priority**) takes nothing there if that depot has since become a request depot; it looks for another depot to fetch from, or goes home empty. Logistic robots are kept out of a new buffer depot until you let them in, as with any new one.
 
 ## Priority
 
 Provider and buffer depots have a **priority** slider from 1 to 10 (5 to start with) in the panel beside their window.
 
 - Freighters go to the highest-priority depot they can reach by road, even when a lower one is nearer, and to the nearest among equals.
-- Priority only orders depots of the same kind: with **Request from buffer depots** ticked, a buffer at 1 still comes before a provider at 10; unticked, a provider at 1 still comes before a buffer at 10.
+- For request depots, priority only orders depots of the same kind: with **Request from buffer depots** ticked, a buffer at 1 still comes before a provider at 10; unticked, a provider at 1 still comes before a buffer at 10.
 - Copy and Paste settings, blueprints and clones keep it.
 
 ## Liquid depots
@@ -153,7 +155,7 @@ Liquid depots work the same way for fluids. Research **Liquid freight** to unloc
 
 - Opening a liquid depot shows your inventory on the left of its tank window, as opening an item depot does. On a liquid request depot or a liquid buffer depot, click a freighter there to pick it up, then click the slot. Shift-click puts that stack in the slot, and ctrl-click puts in every freighter you are carrying. Anything else stays in your inventory: a liquid depot has no chest for items. A liquid provider depot shows the inventory too, and has no freighter slot.
 - A **liquid request** depot keeps a fluid in its tank, sending its freighters to liquid provider depots and liquid buffer depots (buffers first if **Request from buffer depots** is ticked, only when no provider can supply it otherwise), 750 units at a time (more with fluid capacity research).
-- A **liquid buffer** depot fills from liquid providers only.
+- A **liquid buffer** depot fills from liquid providers, and with **Buffers pull by priority** enabled, from lower-priority liquid buffers too.
 - Liquid provider and buffer depots have the same priority slider.
 - Every liquid depot's tank holds 25,000 by default. You can change the tank size of liquid provider, liquid request and liquid buffer depots separately under **Settings → Mod settings → Startup**. Making a tank smaller on an existing save can lose the fluid above the new size. A liquid request or buffer depot can't request more than its tank holds: a larger amount is set to the tank's size. Its freighters only set off for what still fits in the tank, counting what is already on its way, so a 25,000 tank with freighters carrying 2,625 each has room for 9 full loads out at once, and a tenth freighter for the last 1,375 (not with **Full loads only** ticked); a bigger tank lets more go. A request keeps the amount you typed and asks for as much of it as the tank holds, so it follows the tank's size; one set in an older version of the mod at as much as it could then ask for (25,000 for a liquid request depot; a liquid buffer depot's tank size, if that hasn't changed since) asks to fill the depot, and any other keeps its amount. With **Use freighter storage** ticked, a depot can hold more than its tank (see above).
 - Fluids keep their temperature on the way.

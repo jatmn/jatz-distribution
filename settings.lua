@@ -115,6 +115,13 @@ data:extend({
     order = "a[request]-c[full-loads]",
   },
   {
+    type = "bool-setting",
+    name = "jatz-buffer-priority-pull",
+    setting_type = "startup",
+    default_value = false,
+    order = "a[request]-d[buffer-priority]",
+  },
+  {
     -- How much road stacks to, and how many stacks of it a rocket lifts (its weight, which only
     -- Space Age's rockets to space platforms use): prototypes/roads.lua.
     type = "int-setting",

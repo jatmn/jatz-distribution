@@ -27,6 +27,10 @@ defines = {
 -- Runtime settings, as Factorio gives them: an unknown name fails, as `settings.global[name].value`
 -- would on nil in game.
 local SETTINGS = { ["jatz-freighter-fuel-capacity"] = 20, ["jatz-freighter-fuel-per-tile"] = 10 }
+local STARTUP = {
+  ["jatz-default-full-loads"] = { value = false },
+  ["jatz-buffer-priority-pull"] = { value = false },
+}
 settings = {
   global = setmetatable({}, {
     __index = function(_, name)
@@ -38,7 +42,7 @@ settings = {
     end,
   }),
   -- Startup settings the scripts read; new depots start with "Full loads only" off.
-  startup = { ["jatz-default-full-loads"] = { value = false } },
+  startup = STARTUP,
 }
 -- Every item and fluid prototype has a fuel_value (0 if it doesn't burn), as in game.
 prototypes = {
@@ -888,6 +892,7 @@ end
 -- What a check file uses. `state` gives the surface and the path requests of the latest reset.
 return {
   SETTINGS = SETTINGS,
+  STARTUP = STARTUP,
   ENTITY_TYPES = ENTITY_TYPES,
   never_spoils = never_spoils,
   stack = stack,

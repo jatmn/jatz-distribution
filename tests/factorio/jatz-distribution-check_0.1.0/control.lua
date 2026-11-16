@@ -898,6 +898,56 @@ local function setup_deliveries(surface, result)
   assert(remote.call("jatz-distribution", "set_request", buffering.filling, "copper-cable", 15), "buffer: refused")
   result.buffer_has_no_from_buffers = remote.call("jatz-distribution", "set_from_buffers", buffering.filling, true)
   deliveries.buffering = buffering
+  -- On a separate road for each kind, a central buffer empties the middle buffer, which refills
+  -- from the local one. The local and its equal-priority neighbour cannot pull stock back down.
+  do
+    local area = game.create_surface("jatz-buffer-priority", { width = 96, height = 96 })
+    area.request_to_generate_chunks({ 0, 0 }, 2)
+    area.force_generate_chunk_requests()
+    for _, object in pairs(area.find_entities()) do
+      object.destroy()
+    end
+    local tiles = {}
+    for x = -40, 40 do
+      for y = -20, 20 do
+        tiles[#tiles + 1] = { name = "concrete", position = { x, y } }
+      end
+    end
+    area.set_tiles(tiles)
+    deliveries.upward = {}
+    for index, fluid in ipairs({ false, true }) do
+      local role, item, amount =
+        fluid and "liquid-buffer" or "buffer", fluid and "water" or "iron-plate", fluid and 300 or 20
+      local y = index * 10 - 15.5
+      local row = { fluid = fluid, item = item, amount = amount, depots = {} }
+      for n, priority in ipairs({ 2, 5, 8, 2 }) do
+        local buffer = depot(area, role, -30.5 + (n - 1) * 20, y, 0)
+        assert(remote.call("jatz-distribution", "add_freighters", buffer, 1) == 1)
+        assert(remote.call("jatz-distribution", "set_priority", buffer, priority))
+        assert(remote.call("jatz-distribution", "set_request", buffer, item, amount))
+        if n <= 2 then
+          if fluid then
+            assert(buffer.insert_fluid({ name = item, amount = amount, temperature = 80 }) == amount)
+          else
+            assert(buffer.insert({ name = item, count = amount }) == amount)
+          end
+        end
+        row.depots[n] = buffer
+      end
+      lay_road(area, -31, math.floor(y) + 2, 30, math.floor(y) + 2)
+      deliveries.upward[index] = row
+    end
+    -- An ordinary requester pickup survives its home being upgraded to a buffer on the way.
+    -- The equal default priorities would forbid a newly dispatched buffer-to-buffer trip.
+    local pickup = {
+      home = depot(area, "request", -10.5, 15.5, 1),
+      source = depot(area, "buffer", -30.5, 15.5),
+    }
+    assert(pickup.source.insert({ name = "wood", count = 20 }) == 20)
+    assert(remote.call("jatz-distribution", "set_request", pickup.home, "wood", 10))
+    lay_road(area, -31, 17, -10, 17)
+    deliveries.swap_pickup = pickup
+  end
   -- Priority, on one road (loading zones at y -25): a request depot for 10 stone, a provider 10
   -- tiles away at priority 2 and one 30 tiles away at priority 9, each holding 20. The freighter
   -- goes to the farther one, for its higher priority.
@@ -2241,6 +2291,16 @@ end
 
 -- Interfere with trips as they happen: destroy one freighter, change one request, cut one road.
 local function interfere(surface)
+  local pickup = storage.deliveries.swap_pickup
+  if not pickup.swapped and status(pickup.home) == "delivering" then
+    local home = pickup.home
+    local area, position = home.surface, home.position
+    assert(home.order_upgrade({ target = "jatz-buffer-depot", force = home.force }))
+    assert(home.apply_upgrade(), "outbound request depot could not become a buffer")
+    pickup.home = area.find_entities_filtered({ name = "jatz-buffer-depot", position = position })[1]
+    assert(pickup.home, "outbound depot replacement is missing")
+    pickup.swapped = true
+  end
   if game.tick == 65 then
     -- After the first dispatch, a player puts 1 of the 5 freighters in by hand, and Factorio drops
     -- the request.
@@ -2588,8 +2648,19 @@ local function deliveries_finished(surface, tick, result)
   local deliveries = storage.deliveries
   local armor, full, destroyed, changed, cut =
     deliveries.armor, deliveries.full, deliveries.destroyed, deliveries.changed, deliveries.cut
+  -- The upward buffer rows (on their own surface, so not in the freighters-out count below) are
+  -- done once the central and middle buffers hold their requests: all the stock there is, so
+  -- nothing is on its way.
+  local upward = true
+  for _, row in ipairs(deliveries.upward) do
+    for n = 2, 3 do
+      local buffer = row.depots[n]
+      upward = upward and (row.fluid and buffer.get_fluid_count(row.item) or count(buffer, row.item)) == row.amount
+    end
+  end
   -- A depot's status updates at its next dispatch, up to a second after the last unload.
-  local done = count(deliveries.connected) >= 30
+  local done = upward
+    and count(deliveries.connected) >= 30
     and status(deliveries.connected) ~= "delivering"
     and count(deliveries.sticky.request, "iron-plate") == 10
     and count(armor.request, armor.item) == 1
@@ -2620,6 +2691,8 @@ local function deliveries_finished(surface, tick, result)
     and remote.call("jatz-distribution", "freighter_counts", deliveries.ambush.request) == 3
     and count(deliveries.buffering.request, "copper-cable") == 20
     and count(deliveries.buffering.filling, "copper-cable") == 15
+    and deliveries.swap_pickup.swapped
+    and count(deliveries.swap_pickup.home, "wood") == 10
     and count(deliveries.prioritised.request, "stone") == 10
     and count(deliveries.full_loads.request, "iron-chest") == 30
     and (not deliveries.mining or count(deliveries.mining.request, "iron-ore") == 30)
@@ -2858,6 +2931,16 @@ local function deliveries_finished(surface, tick, result)
   result.buffer_taken_from = 30 - count(buffering.stocked, "copper-cable")
   result.buffer_filled = count(buffering.filling, "copper-cable")
   result.buffer_provider_left = count(buffering.provider, "copper-cable")
+  assert(count(deliveries.swap_pickup.source, "wood") == 10, "replacement lost its promised buffer pickup")
+  result.upward_buffers = {}
+  for index, row in ipairs(deliveries.upward) do
+    local held = {}
+    for n, buffer in ipairs(row.depots) do
+      held[n] = row.fluid and buffer.get_fluid_count(row.item) or count(buffer, row.item)
+    end
+    result.upward_buffers[index] = held
+  end
+  result.upward_temperature = deliveries.upward[2].depots[3].get_fluid(1).temperature
   local circuit = deliveries.circuit
   result.circuit_before = circuit.before
   result.circuit_walls = count(circuit.request, "stone-wall")
