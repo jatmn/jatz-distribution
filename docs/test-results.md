@@ -2,6 +2,27 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Buffer pickup after home replacement: passed (automated)
+
+**November 16, 2026.** PR #112 repair working tree on `0b1d467b72550e9b30f4f69a933864cb1de59b33`,
+against `main` at `51c25b67643c4f1e07bf8ea57575f67f6d272d3b`; Factorio 2.1.24 headless on Linux x86-64.
+
+- `tools/test_mod.py`: passed with base game and Space Age, including undo, bonuses, network and
+  Quality scenarios. The new engine case dispatches a requester to a buffer, applies a scripted
+  request-to-buffer upgrade before pickup, and requires all 10 promised wood at home and 10 left
+  at the source. Equal priorities prevent a fresh buffer pull from hiding a cancelled pickup.
+- `tools/test_mod_setup.py`: 16 tests passed; `tools/test_emulate_ups.py`: 6 passed. Added swap
+  checks cover both startup values and requester source modes, new and older saved trip records,
+  module/configuration reload, both reroute admission changes, and older buffer trips' priority
+  refusal. Reload here uses the Lua harness; it is not a second Factorio process save/load test.
+- The home-replacement regression fails on the starting PR code. Isolated mutations omitting the
+  reroute update or legacy snapshot, or bypassing an older trip's priority guard, fail the intended
+  delivered-stock assertions. The existing buffer-origin priority refusals pass with the repair.
+- Lua 5.2 syntax, Luacheck 1.2.0, StyLua 2.5.2, package build/validation and `git diff --check` passed.
+- Standard UPS: three paired runs against that `main`; stress: one paired run. Both kept the same
+  delivered stock and active freighters. These use the default provider/request maps, not a large
+  enabled buffer-chain network; no speed-up claimed. No visual changes or graphical-client check.
+
 ## Buffers pull by priority: passed (automated)
 
 **November 15, 2026.** Against `main` at `a826850320c5b1f5b2f3658c895fb0a56628f9be`,

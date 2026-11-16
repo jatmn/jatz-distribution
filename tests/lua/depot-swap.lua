@@ -190,4 +190,133 @@ do -- A request carried to the other kind of depot (scripts/depot-swap.lua) is a
   )
 end
 
+-- Replacing the home must not reinterpret a pickup already admitted for a requester as a new
+-- buffer pull. Both requester source modes can collect from a buffer, with either startup value.
+for _, enabled in ipairs({ false, true }) do
+  for _, preferred in ipairs({ false, true }) do
+    for _, legacy in ipairs({ false, true }) do
+      local logistics = reset()
+      harness.STARTUP["jatz-buffer-priority-pull"].value = enabled
+      local home = entity("jatz-request-depot", 0.5, 0.5)
+      local source = entity("jatz-buffer-depot", 20.5, 0.5)
+      local received, stock = stocked(home), stocked(source, "a", 20)
+      logistics.add(home)
+      logistics.add(source)
+      assert(logistics.set_request(home, "a", 10))
+      assert(logistics.set_from_buffers(home, preferred))
+      assert(logistics.put_freighters(home, stack("jatz-quinityn-freighter", 1)) == 1)
+      logistics.on_tick()
+      answer(logistics, 1, "route")
+      local trip = trips_from(home)[1]
+      check("requester dispatched to buffer before home replacement", trip and trip.provider == source.unit_number)
+      if legacy then
+        trip.buffer_pull = nil -- A trip saved before pickup admission was recorded.
+      end
+      local replacement = entity("jatz-buffer-depot", 0.5, 0.5)
+      replacement.get_inventory, replacement.chest = home.get_inventory, home.chest
+      home.valid = false
+      logistics.replaced(home.unit_number, replacement)
+      logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = home.unit_number })
+      logistics.on_depot_changed(replacement)
+      -- Saved trips survive module reload and configuration reconciliation with their admission.
+      package.loaded["scripts.logistics"] = nil
+      logistics = require("scripts.logistics")
+      logistics.add_all()
+      arrive(logistics, trip)
+      arrive(logistics, trip)
+      check(
+        "requester pickup finishes after home becomes buffer and reloads",
+        received.get_item_count("a") == 10
+          and stock.get_item_count("a") == 10
+          and #trips_from(replacement) == 0
+          and logistics.freighter_counts(replacement) == 1
+      )
+    end
+  end
+end
+harness.STARTUP["jatz-buffer-priority-pull"].value = false
+
+-- A reroute is a new source selection: it uses the home's role at that selection, rather than
+-- inheriting the pickup rule from the original trip. Exercise both changes of admission.
+for _, buffer_first in ipairs({ false, true }) do
+  local logistics = reset()
+  harness.STARTUP["jatz-buffer-priority-pull"].value = true
+  local home = entity(buffer_first and "jatz-buffer-depot" or "jatz-request-depot", 0.5, 0.5)
+  local source = entity(buffer_first and "jatz-buffer-depot" or "jatz-provider-depot", 20.5, 0.5)
+  local alternate = entity("jatz-buffer-depot", 40.5, 0.5)
+  local received, stock = stocked(home), stocked(source, "a", 20)
+  local alternate_stock = stocked(alternate, "a", 20)
+  for _, depot in ipairs({ home, source, alternate }) do
+    logistics.add(depot)
+  end
+  if buffer_first then
+    logistics.set_priority(home, 8)
+    logistics.set_priority(source, 6)
+  else
+    logistics.set_priority(source, 10)
+  end
+  logistics.set_priority(alternate, 4)
+  logistics.set_request(home, "a", 10)
+  logistics.put_freighters(home, stack("jatz-quinityn-freighter", 1))
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(home)[1]
+  check("reroute starts with the original supplier", trip and trip.provider == source.unit_number)
+  local function replace(name)
+    local replacement = entity(name, 0.5, 0.5)
+    replacement.get_inventory, replacement.chest = home.get_inventory, home.chest
+    home.valid = false
+    logistics.replaced(home.unit_number, replacement)
+    logistics.on_object_destroyed({ type = defines.target_type.entity, useful_id = home.unit_number })
+    logistics.on_depot_changed(replacement)
+    home = replacement
+  end
+  replace(buffer_first and "jatz-request-depot" or "jatz-buffer-depot")
+  stock[1].clear()
+  arrive(logistics, trip)
+  answer(logistics, #requests, "route")
+  check("empty source reroutes to the other buffer", trip.provider == alternate.unit_number)
+  if buffer_first then
+    replace("jatz-buffer-depot")
+  end
+  logistics.set_priority(alternate, logistics.get_priority(home))
+  arrive(logistics, trip)
+  arrive(logistics, trip)
+  check(
+    "rerouted pickup retains the admission of its selected source",
+    received.get_item_count("a") == (buffer_first and 10 or 0)
+      and alternate_stock.get_item_count("a") == (buffer_first and 10 or 20)
+      and #trips_from(home) == 0
+      and logistics.freighter_counts(home) == 1
+  )
+end
+harness.STARTUP["jatz-buffer-priority-pull"].value = false
+
+do -- Unknown admission on an older saved buffer trip must not bypass its existing priority rule.
+  local logistics = reset()
+  harness.STARTUP["jatz-buffer-priority-pull"].value = true
+  local home = entity("jatz-buffer-depot", 0.5, 0.5)
+  local source = entity("jatz-buffer-depot", 20.5, 0.5)
+  local received, stock = stocked(home), stocked(source, "a", 20)
+  logistics.add(home)
+  logistics.add(source)
+  logistics.set_priority(home, 8)
+  logistics.set_request(home, "a", 10)
+  logistics.put_freighters(home, stack("jatz-quinityn-freighter", 1))
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local trip = trips_from(home)[1]
+  check("saved buffer pickup was admitted upward", trip and trip.provider == source.unit_number)
+  trip.buffer_pull = nil
+  logistics.set_priority(source, 8)
+  logistics.add_all()
+  arrive(logistics, trip)
+  arrive(logistics, trip)
+  check(
+    "saved buffer pickup rechecks priority without an admission marker",
+    received.get_item_count("a") == 0 and stock.get_item_count("a") == 20 and #trips_from(home) == 0
+  )
+  harness.STARTUP["jatz-buffer-priority-pull"].value = false
+end
+
 print("all depot swap checks passed")

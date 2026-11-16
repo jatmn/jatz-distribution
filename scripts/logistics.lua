@@ -1667,6 +1667,9 @@ local function start_trip(depot, provider, from, planned, length, plan, mix)
     drone = drone,
     request = depot.entity.unit_number,
     provider = provider.entity.unit_number,
+    -- The rule that admitted this pickup survives home/source replacement and save/load.
+    -- nil on an older trip keeps the existing current-role check until its first replacement.
+    buffer_pull = depot.role == "buffer" and provider.role == "buffer",
     item = depot.request.item,
     -- The qualities it plans to load, if not all normal (scripts/quality.lua), and that it ever did:
     -- its cargo is then counted by quality all the way home (promises.lua's file_coming).
@@ -2749,7 +2752,12 @@ local function arrived_at_provider(id, trip, depot)
   -- once it is here, bringing what fits beats driving home empty for the same trip.
   if provider and request and request.item == trip.item then
     local source = storage.depots[trip.provider]
-    if depot.role == "buffer" and source.role == "buffer" and not logistics.buffer_source(depot, source) then
+    if
+      trip.buffer_pull ~= false
+      and depot.role == "buffer"
+      and source.role == "buffer"
+      and not logistics.buffer_source(depot, source)
+    then
       return logistics.give_up(id, trip)
     end
     -- What it promised, as far as the depot (counting its other freighters) still needs it.
@@ -3407,6 +3415,8 @@ local function finish_search(depot, search, owner)
       owner.planned, owner.mix = planned, mix
       owner.graded = owner.graded or (mix and true) or nil
       owner.provider = search.best
+      -- A reroute admits a new pickup under the home's current role.
+      owner.buffer_pull = depot.role == "buffer" and provider.role == "buffer"
       -- Last in its new provider's queue, and its one diversion used (reroute). Any provider may be
       -- found again by a later search (the one passed was only for this one).
       owner.queued, owner.passed, owner.diverted = logistics.queue_place(), nil, true
@@ -3752,7 +3762,8 @@ function logistics.replaced(old_id, entity)
   depots[old_id], depots[id] = nil, depot
   -- It does what the new one does: a buffer depot supplies request depots and fetches from
   -- providers only, a request depot supplies no one. Freighters already sent finish their trips.
-  local role = logistics.depots[entity.name] or depot.role
+  local previous_role = depot.role
+  local role = logistics.depots[entity.name] or previous_role
   depot.role = role
   index_depot(id, depot, true)
   depot.entity = entity
@@ -3776,6 +3787,11 @@ function logistics.replaced(old_id, entity)
   end
   for _, trip in pairs(storage.trips) do
     if trip.request == old_id then
+      -- A saved trip from before admission was recorded inherits its old home's rule, before
+      -- this replacement changes that rule. Later replacements preserve the recorded admission.
+      if trip.buffer_pull == nil then
+        trip.buffer_pull = previous_role == "buffer"
+      end
       trip.request = id
     end
     if trip.provider == old_id then

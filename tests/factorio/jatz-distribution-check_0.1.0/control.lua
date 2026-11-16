@@ -937,6 +937,16 @@ local function setup_deliveries(surface, result)
       lay_road(area, -31, math.floor(y) + 2, 30, math.floor(y) + 2)
       deliveries.upward[index] = row
     end
+    -- An ordinary requester pickup survives its home being upgraded to a buffer on the way.
+    -- The equal default priorities would forbid a newly dispatched buffer-to-buffer trip.
+    local pickup = {
+      home = depot(area, "request", -10.5, 15.5, 1),
+      source = depot(area, "buffer", -30.5, 15.5),
+    }
+    assert(pickup.source.insert({ name = "wood", count = 20 }) == 20)
+    assert(remote.call("jatz-distribution", "set_request", pickup.home, "wood", 10))
+    lay_road(area, -31, 17, -10, 17)
+    deliveries.swap_pickup = pickup
   end
   -- Priority, on one road (loading zones at y -25): a request depot for 10 stone, a provider 10
   -- tiles away at priority 2 and one 30 tiles away at priority 9, each holding 20. The freighter
@@ -2281,6 +2291,16 @@ end
 
 -- Interfere with trips as they happen: destroy one freighter, change one request, cut one road.
 local function interfere(surface)
+  local pickup = storage.deliveries.swap_pickup
+  if not pickup.swapped and status(pickup.home) == "delivering" then
+    local home = pickup.home
+    local area, position = home.surface, home.position
+    assert(home.order_upgrade({ target = "jatz-buffer-depot", force = home.force }))
+    assert(home.apply_upgrade(), "outbound request depot could not become a buffer")
+    pickup.home = area.find_entities_filtered({ name = "jatz-buffer-depot", position = position })[1]
+    assert(pickup.home, "outbound depot replacement is missing")
+    pickup.swapped = true
+  end
   if game.tick == 65 then
     -- After the first dispatch, a player puts 1 of the 5 freighters in by hand, and Factorio drops
     -- the request.
@@ -2660,6 +2680,8 @@ local function deliveries_finished(surface, tick, result)
     and remote.call("jatz-distribution", "freighter_counts", deliveries.ambush.request) == 3
     and count(deliveries.buffering.request, "copper-cable") == 20
     and count(deliveries.buffering.filling, "copper-cable") == 15
+    and deliveries.swap_pickup.swapped
+    and count(deliveries.swap_pickup.home, "wood") == 10
     and count(deliveries.prioritised.request, "stone") == 10
     and count(deliveries.full_loads.request, "iron-chest") == 30
     and (not deliveries.mining or count(deliveries.mining.request, "iron-ore") == 30)
@@ -2898,6 +2920,7 @@ local function deliveries_finished(surface, tick, result)
   result.buffer_taken_from = 30 - count(buffering.stocked, "copper-cable")
   result.buffer_filled = count(buffering.filling, "copper-cable")
   result.buffer_provider_left = count(buffering.provider, "copper-cable")
+  assert(count(deliveries.swap_pickup.source, "wood") == 10, "replacement lost its promised buffer pickup")
   result.upward_buffers = {}
   for index, row in ipairs(deliveries.upward) do
     local held = {}
