@@ -54,6 +54,22 @@ script.on_event(defines.events.on_tick, function(event)
       drop(target, FREIGHTER)
       assert(logistics.freighter_counts(target) == 100 and pockets.get_item_count(FREIGHTER) == before + 1)
       assert(chest.get_item_count(FREIGHTER) == 0, "overflow left for inserters")
+      -- Dispatch saw leftovers while the fleet was full. An inserter takes some or all,
+      -- then the player makes room and drops one before the next dispatch.
+      for removed = 1, 2 do
+        assert(chest.insert({ name = FREIGHTER, count = 2 }) == 2)
+        logistics.on_tick()
+        assert(chest.remove({ name = FREIGHTER, count = removed }) == removed)
+        cursor.clear()
+        assert(logistics.take_freighters(target, cursor, 1) == 1)
+        cursor.set_stack({ name = FREIGHTER, count = 3 })
+        drop(target, FREIGHTER)
+        assert(logistics.freighter_counts(target) == 100, "a removed leftover masked the Z drop")
+        assert(chest.get_item_count(FREIGHTER) == 2 - removed, "Z drop consumed an existing leftover")
+        gui.on_player_cursor_stack_changed({ player_index = 1 })
+        assert(chest.get_item_count(FREIGHTER) == 2 - removed, "delayed event consumed a leftover")
+        chest.clear()
+      end
       local inserter = surface.create_entity({
         name = "burner-inserter",
         position = { index * 8, -2 },

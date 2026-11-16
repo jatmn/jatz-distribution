@@ -7,6 +7,71 @@
 package.path = "./?.lua;" .. package.path
 
 local handlers = {}
+-- Event names used by this harness, verified against Factorio 2.1.25 runtime-api.json.
+local EVENTS = {}
+for _, name in ipairs({
+  "on_ai_command_completed",
+  "on_built_entity",
+  "on_cancelled_deconstruction",
+  "on_entity_cloned",
+  "on_entity_died",
+  "on_entity_settings_pasted",
+  "on_force_created",
+  "on_force_reset",
+  "on_forces_merged",
+  "on_gui_checked_state_changed",
+  "on_gui_click",
+  "on_gui_closed",
+  "on_gui_confirmed",
+  "on_gui_elem_changed",
+  "on_gui_hover",
+  "on_gui_inventory_action",
+  "on_gui_leave",
+  "on_gui_opened",
+  "on_gui_selected_tab_changed",
+  "on_gui_selection_state_changed",
+  "on_gui_text_changed",
+  "on_gui_value_changed",
+  "on_lua_shortcut",
+  "on_marked_for_deconstruction",
+  "on_object_destroyed",
+  "on_player_built_tile",
+  "on_player_changed_force",
+  "on_player_cursor_stack_changed",
+  "on_player_dropped_item_into_entity",
+  "on_player_flipped_entity",
+  "on_player_main_inventory_changed",
+  "on_player_mined_entity",
+  "on_player_mined_tile",
+  "on_player_rotated_entity",
+  "on_player_setup_blueprint",
+  "on_pre_build",
+  "on_pre_player_mined_item",
+  "on_redo_applied",
+  "on_research_finished",
+  "on_research_reversed",
+  "on_robot_built_entity",
+  "on_robot_built_tile",
+  "on_robot_mined_entity",
+  "on_robot_mined_tile",
+  "on_robot_pre_mined",
+  "on_script_path_request_finished",
+  "on_selected_entity_changed",
+  "on_space_platform_built_entity",
+  "on_space_platform_built_tile",
+  "on_space_platform_mined_entity",
+  "on_space_platform_mined_tile",
+  "on_space_platform_pre_mined",
+  "on_technology_effects_reset",
+  "on_tick",
+  "on_undo_applied",
+  "script_raised_built",
+  "script_raised_destroy",
+  "script_raised_revive",
+  "script_raised_set_tiles",
+}) do
+  EVENTS[name] = name
+end
 defines = setmetatable({
   direction = { north = 0, east = 4, south = 8, west = 12 },
   inventory = { chest = 1 },
@@ -15,9 +80,9 @@ defines = setmetatable({
   command = { go_to_location = 1, stop = 2 },
   distraction = { none = 0 },
   -- Events are identified by name here.
-  events = setmetatable({}, {
+  events = setmetatable(EVENTS, {
     __index = function(_, name)
-      return name
+      error("unknown Factorio 2.1 event: " .. name)
     end,
   }),
 }, {
@@ -2055,8 +2120,8 @@ do -- Z drops use their actual destination before the delayed cursor notificatio
   local logistics = require("scripts.logistics")
   local take_in, count = logistics.take_in_freighters, logistics.count_freighters
   local calls, pockets, held = {}, {}, 3
-  logistics.take_in_freighters = function(entity, inventory, moved)
-    calls[#calls + 1] = { entity = entity, inventory = inventory, moved = moved }
+  logistics.take_in_freighters = function(entity, inventory, moved, dropped)
+    calls[#calls + 1] = { entity = entity, inventory = inventory, moved = moved, dropped = dropped }
     return moved, 0
   end
   logistics.count_freighters = function()
@@ -2082,17 +2147,31 @@ do -- Z drops use their actual destination before the delayed cursor notificatio
   fire("on_player_dropped_item_into_entity", { player_index = 7, entity = target })
   check(
     "Z moves one freighter into the actual destination before any cursor notification",
-    #calls == 1 and calls[1].entity == target and calls[1].inventory == pockets and calls[1].moved == 1
+    #calls == 1
+      and calls[1].entity == target
+      and calls[1].inventory == pockets
+      and calls[1].moved == 1
+      and calls[1].dropped == true
   )
   fire("on_player_cursor_stack_changed", { player_index = 7 })
   check("the delayed cursor event does not handle the same freighter again", #calls == 1)
-  -- Dropping something else does not consume a freighter already waiting in the chest.
+  storage.pocket_freighters[7] = 5
+  cursor.count = 1
   fire("on_player_dropped_item_into_entity", { player_index = 7, entity = target })
-  check("an unrelated drop moves no freighters", #calls == 1)
+  check("a stale carried count cannot turn one Z drop into several", #calls == 2 and calls[2].moved == 1)
+  -- Dropping something else does not consume a freighter already waiting in the chest.
+  cursor.name, cursor.count = "iron-plate", 2
+  fire("on_player_cursor_stack_changed", { player_index = 7 })
+  local before = #calls
+  cursor.count = 1
+  fire("on_player_dropped_item_into_entity", { player_index = 7, entity = target })
+  check("an unrelated drop moves no freighters", #calls == before)
+  cursor.name, cursor.count = logistics.freighter, 2
+  fire("on_player_cursor_stack_changed", { player_index = 7 })
   cursor.count = 1
   target.name = "jatz-provider-depot"
   fire("on_player_dropped_item_into_entity", { player_index = 7, entity = target })
-  check("a drop in a provider does not transfer to the open requesting depot", #calls == 1)
+  check("a drop in a provider does not transfer to the open requesting depot", #calls == before)
   logistics.take_in_freighters, logistics.count_freighters = take_in, count
 end
 

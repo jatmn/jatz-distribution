@@ -6,26 +6,34 @@ Latest in-game results for the current artwork. The full screenshots and reports
 
 Candidate `fix/z-drop-freighter-absorption`, based on `51c25b67643c4f1e07bf8ea57575f67f6d272d3b`.
 Runtime blobs: `control.lua` 0cb049a6409006e2d49d536af156201511f16113, `scripts/request-gui.lua`
-1086e3aa9111485e8b56145a01da1c46a00d8f07.
+87f4ec3e77b7a0f8aa2c54636f2c81dd652bb6ee, `scripts/logistics.lua`
+41e1ca5a424bcc2b765a6678be3f025e1c7df309.
 Factorio 2.1.25 (build 88022), Linux x86_64 headless; Lua 5.2.4.
 
 - The Lua event regression fails on the baseline's missing single-item-drop registration and
   passes with the fix. It checks the destination supplied by the event, delayed cursor
-  notifications, unrelated drops and providers.
+  notifications, unrelated drops, providers and a stale carried count. Its event-name fake
+  rejects unknown names, checked against the 2.1.25 API.
+- The leftover-removal regression fails at the starting PR head `422f8f6`, in both the
+  real-handler Lua test and the headless scenario. With the repair, request and buffer
+  depots immediately absorb one dropped freighter after some or all observed leftovers
+  were removed, preserving remaining leftovers through the delayed cursor notification.
+  The scenario models that extraction with real inventory removal, between dispatch and drop.
 - `tools/test_mod.py`: passed with the base game and Space Age, including the new
   `drop-freighters` scenario's real inventories, request and buffer slots, robot-request
   trimming, overflow, unrelated items, cargo and a working burner inserter.
 - `tools/test_mod_setup.py` (16 tests), `tools/test_emulate_ups.py` (6 tests), release and
   portal tests, package validation, Lua syntax, Luacheck 1.2.0, StyLua 2.5.2, Ruff 0.17.3
   and whitespace checks passed.
-- Standard engine benchmark, three runs per variant: mean update 1.500 → 1.322 ms;
-  run spread 0.941 ms before and 0.253 ms after, so no speedup is established. Vehicles
-  out (1,512) and deliveries/minute (265,200) were identical. Engine-free emulation was
+- Standard engine benchmark against `51c25b6`, three runs per variant: mean update
+  1.936 → 1.899 ms; run spread 0.071 ms before and 0.025 ms after, so no speedup is
+  established. Vehicles out (1,512) and deliveries/minute (265,200) were identical. Engine-free emulation was
   identical in instructions, API calls, path requests, commands and deliveries.
-- One focused independent review found no concrete defects.
-- **Untested:** an actual Z-key press and modded inserters/loaders in the graphical client.
-  The headless scenario supplies the event payload to the production handler because the engine
-  cannot raise this event by script; it does not prove keyboard-input timing.
+- **Graphical check passed (owner-confirmed):** Z-dropping loads the depot as expected and
+  loaders do not immediately extract the dropped freighter. This confirms the observed
+  keyboard-drop outcome; the exact event order was not instrumented, and individual modded
+  inserter/loader variants were not recorded. The headless scenario supplies the event payload
+  to the production handler because the engine cannot raise this event by script.
 
 ## Freighter network command center: automated checks passed; visual check pending
 
