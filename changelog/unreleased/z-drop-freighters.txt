@@ -1,0 +1,2 @@
+  Bugfixes:
+    - Move freighters dropped into depots with Z into the freighter slot immediately, before inserters or loaders can take them.

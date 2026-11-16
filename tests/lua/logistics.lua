@@ -516,6 +516,52 @@ do -- Freighters robots bring into a request depot's truck chest go to its slot;
   check("and those in its own chest stay, as cargo", own.get_item_count() == 3)
 end
 
+do -- An inserter removing an observed leftover must not mask a later Z drop's arrival.
+  for _, role in ipairs({ "request", "buffer" }) do
+    for removed = 1, 2 do
+      local logistics = reset()
+      package.loaded["scripts.request-gui"] = nil
+      local gui = require("scripts.request-gui")
+      local freighter = logistics.freighter
+      local request = entity("jatz-" .. role .. "-depot", 0.5, 0.5)
+      logistics.add(request)
+      local own = script_inventory(4)
+      own.get_insertable_count = request.chest.get_insertable_count
+      request.get_inventory = function()
+        return own
+      end
+      assert(logistics.put_freighters(request, stack(freighter, 100)) == 100)
+      assert(own.insert({ name = freighter, count = 2 }) == 2)
+      logistics.on_tick()
+      own[1].count = 2 - removed
+      if own[1].count == 0 then
+        own[1].clear()
+      end
+      local cursor, pockets = stack(), script_inventory(4)
+      assert(logistics.take_freighters(request, cursor, 1) == 1)
+      cursor.count = 3
+      local player = {
+        index = 1,
+        cursor_stack = cursor,
+        get_main_inventory = function()
+          return pockets
+        end,
+      }
+      game.get_player = function()
+        return player
+      end
+      gui.on_player_main_inventory_changed({ player_index = 1 })
+      assert(own.insert({ name = freighter, count = 1 }) == 1)
+      cursor.count = 2
+      gui.on_player_main_inventory_changed({ player_index = 1, entity = request })
+      check(role .. " Z drop fills the slot after leftover extraction", logistics.freighter_counts(request) == 100)
+      check(role .. " Z drop preserves remaining leftovers", own.get_item_count() == 2 - removed)
+      gui.on_player_cursor_stack_changed({ player_index = 1 })
+      check(role .. " delayed cursor event preserves leftovers", own.get_item_count() == 2 - removed)
+    end
+  end
+end
+
 do -- A request depot gone before on_object_destroyed reaches it (Factorio raises that at the end of
   -- the tick or the next), its check coming first: forgotten as on_object_destroyed would, its
   -- freighters in the slot and in its truck chest left where it stood, the truck chest removed.

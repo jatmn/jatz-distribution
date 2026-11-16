@@ -4129,8 +4129,9 @@ end
 -- more than the chest gained since it was last seen, so freighters already in the chest, put
 -- there by an inserter, say, stay. Every other item put in stays in the chest, as in any
 -- container. Not if freighters are what the depot requests: then they are cargo. Returns how many
--- went into the slot and how many went back.
-function logistics.take_in_freighters(entity, give_back, moved)
+-- went into the slot and how many went back. `dropped` confirms a single-item arrival instead of
+-- inferring it from net chest gain: an inserter may have removed an observed leftover meanwhile.
+function logistics.take_in_freighters(entity, give_back, moved, dropped)
   local depot = request_depot(entity)
   if not depot or (depot.request and depot.request.item == FREIGHTER) then
     return 0, 0
@@ -4139,7 +4140,8 @@ function logistics.take_in_freighters(entity, give_back, moved)
   -- truck chest).
   local chest = inventory(depot.fluid and truck_chest(entity) or entity)
   local now = count_freighters(chest)
-  local new = math.min(math.max(0, now - (depot.chest_seen or 0)), math.floor(tonumber(moved) or 0))
+  local gained = dropped and math.min(now, 1) or math.max(0, now - (depot.chest_seen or 0))
+  local new = math.min(gained, math.floor(tonumber(moved) or 0))
   if new <= 0 then
     depot.chest_seen = now
     return 0, 0

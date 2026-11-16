@@ -973,9 +973,14 @@ function request_gui.on_player_main_inventory_changed(event)
     return
   end
   local selected = player.selected
-  local entity = opened_depot(player, true) or (selected and selected.valid and REQUESTING[selected.name] and selected)
-  if entity then
-    local taken = logistics.take_in_freighters(entity, pockets, before - now)
+  -- A single-item drop supplies its actual destination. Cursor/inventory notifications don't.
+  local entity = event.entity
+    or opened_depot(player, true)
+    or (selected and selected.valid and REQUESTING[selected.name] and selected)
+  if entity and entity.valid and REQUESTING[entity.name] then
+    -- The drop event confirms one arrival; inventory/cursor changes only infer a transfer.
+    local dropped = event.entity ~= nil
+    local taken = logistics.take_in_freighters(entity, pockets, dropped and 1 or before - now, dropped)
     local frame = taken > 0 and opened_depot(player, true) == entity and frame_of(player)
     if frame then
       show_freighters(frame.children[1], entity)
