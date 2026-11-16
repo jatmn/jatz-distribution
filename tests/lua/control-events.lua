@@ -1089,6 +1089,9 @@ local function element(spec, parent)
     end
     return child
   end
+  function self.add_tab(tab, content)
+    assert(self.type == "tabbed-pane" and tab.type == "tab" and tab.parent == self and content.parent == self)
+  end
   function self.destroy()
     self.valid = false
     for index, child in ipairs(parent.children) do
@@ -4631,11 +4634,12 @@ do -- Undoing a request depot replaced by a buffer depot by hand (one undo item:
   surface.find_entities_filtered = search
 end
 
-do -- The freighter network window, which the shortcut bar opens: the player's force's freighters
-  -- (in slots and out), those out, its depots of each kind and what its provider and buffer depots
-  -- hold, on all surfaces or on the planet or space platform chosen (scripts/network-gui.lua).
+do -- Network command center: real GUI events and production snapshots, fake engine objects.
+  local network = require("scripts.network-gui")
   local logistics = require("scripts.logistics")
   local force, other = { index = 30 }, { index = 31 }
+  storage.depots, storage.trips, storage.coming = {}, {}, {}
+  storage.promised, storage.promise_totals = {}, {}
   surface.valid, surface.name = true, "nauvis"
   surface.planet = { name = "nauvis", prototype = { localised_name = { "space-location-name.nauvis" } } }
   game.surfaces[2] = {
@@ -4645,77 +4649,91 @@ do -- The freighter network window, which the shortcut bar opens: the player's f
     planet = { name = "vulcanus", prototype = { localised_name = { "space-location-name.vulcanus" } } },
   }
   game.surfaces[3] = { valid = true, index = 3, name = "platform-1", platform = { name = "Platform 1" } }
-  for _, name in ipairs({
-    "jatz-provider-depot",
-    "jatz-request-depot",
-    "jatz-buffer-depot",
-    "jatz-liquid-provider-depot",
-    "jatz-liquid-request-depot",
-    "jatz-liquid-buffer-depot",
-    "jatz-fuel-depot",
-  }) do
-    prototypes.entity[name] = { localised_name = { "entity-name." .. name } }
-  end
   script.active_mods = { base = "2.1.24" }
-  local function placed(name, x, surface_index, contents, owner)
-    local entity = depot(x)
-    entity.name, entity.force, entity.surface_index = name, owner or force, surface_index
+  local reads = 0
+  local function placed(name, index, contents, owner)
+    local entity = depot(1000 + next_unit * 4)
+    entity.name, entity.force, entity.surface_index = name, owner or force, index
+    prototypes.entity[name] = { localised_name = { "entity-name." .. name } }
+    local inv = { valid = true }
+    function inv.get_contents()
+      reads = reads + 1
+      return contents or {}
+    end
+    function inv.get_item_count(id)
+      local n, grade = type(id) == "table" and id.name or id, type(id) == "table" and id.quality or "normal"
+      local total = 0
+      for _, item in ipairs(contents or {}) do
+        if item.name == n and item.quality == grade then
+          total = total + item.count
+        end
+      end
+      return total
+    end
+    function inv.get_item_count_filtered(filter)
+      local total = 0
+      for _, item in ipairs(contents or {}) do
+        if item.name == filter.name and (not filter.quality or item.quality == filter.quality) then
+          total = total + item.count
+        end
+      end
+      return total
+    end
+    function inv.get_insertable_count()
+      return 1000
+    end
     entity.get_inventory = function()
-      return {
-        get_item_count = function()
-          return 0
-        end,
-        get_contents = function()
-          return contents or {}
-        end,
-      }
+      return inv
+    end
+    entity.get_fluid_contents = function()
+      reads = reads + 1
+      return contents or {}
+    end
+    entity.get_fluid_count = function(n)
+      return (contents or {})[n] or 0
+    end
+    entity.get_fluid_capacity = function()
+      return 25000
     end
     logistics.add(entity)
-    return entity
+    return entity, storage.depots[entity.unit_number]
   end
-  -- Freighters in a requesting depot's slot, and trips out.
-  local trips = {}
-  local function freighters(entity, home, out)
-    local depot_ = storage.depots[entity.unit_number]
-    local slot = script_inventory()
-    slot[1].name, slot[1].count, slot[1].valid_for_read = "jatz-quinityn-freighter", home, home > 0
-    depot_.trucks = slot
-    for index = 1, out do
-      local key = entity.unit_number * 100 + index
-      storage.trips[key] = {
-        truck = {
-          valid = true,
-          is_empty = function()
-            return false
-          end,
-        },
-      }
-      depot_.trips[key] = true
-      trips[#trips + 1] = key
-    end
-  end
-  -- Nauvis: a provider with 10 normal and 2 uncommon iron, a request depot holding wood with 3
-  -- freighters home and 2 out, a Fuel depot. Vulcanus: a buffer depot with 3 iron and a liquid
-  -- request depot with one freighter home. A platform: a liquid provider with 1500.5 water.
-  -- Another force's provider, with copper, on Nauvis.
-  placed("jatz-provider-depot", 1000, 1, {
+  local provider = placed("jatz-provider-depot", 1, {
     { name = "iron-plate", quality = "normal", count = 10 },
     { name = "iron-plate", quality = "uncommon", count = 2 },
   })
-  local request = placed("jatz-request-depot", 1004, 1, { { name = "wood", quality = "normal", count = 5 } })
-  freighters(request, 3, 2)
-  placed("jatz-fuel-depot", 1008, 1)
+  storage.promise_totals[provider.unit_number] = { ["iron-plate"] = 4 }
+  local request, requester = placed("jatz-request-depot", 1, { { name = "iron-plate", quality = "normal", count = 5 } })
+  requester.request = { item = "iron-plate", count = 20 }
+  storage.coming[request.unit_number] = { ["iron-plate"] = { [12345] = 3 } }
   local buffer_contents = { { name = "iron-plate", quality = "normal", count = 3 } }
-  placed("jatz-buffer-depot", 1012, 2, buffer_contents)
-  freighters(placed("jatz-liquid-request-depot", 1016, 2), 1, 0)
-  local water = placed("jatz-liquid-provider-depot", 1020, 3)
-  water.get_fluid_contents = function()
-    return { water = 1500.5 }
+  local _, buffer = placed("jatz-buffer-depot", 2, buffer_contents)
+  buffer.request = { item = "iron-plate", count = 10 }
+  placed("jatz-fuel-depot", 1, { { name = "coal", quality = "normal", count = 900 } })
+  placed("jatz-liquid-provider-depot", 3, { water = 1500.5 })
+  local _, liquid = placed("jatz-liquid-request-depot", 2, { water = 100 })
+  liquid.reserve = { name = "water", amount = 250 }
+  liquid.request = { item = "water", count = 500 }
+  placed("jatz-provider-depot", 1, { { name = "copper-plate", quality = "normal", count = 7 } }, other)
+  for _, name in ipairs({ "iron-plate", "copper-plate", "wood" }) do
+    prototypes.item[name] = prototypes.item[name] or { stack_size = 100 }
+    prototypes.item[name].localised_name = name
   end
-  placed("jatz-provider-depot", 1024, 1, { { name = "copper-plate", quality = "normal", count = 7 } }, other)
-
-  local screen = element()
-  local toggled = {}
+  prototypes.fluid.water.localised_name = "Water"
+  local parked = script_inventory()
+  parked[1].name, parked[1].count, parked[1].valid_for_read = "jatz-quinityn-freighter", 3, true
+  requester.trucks = parked
+  for i = 1, 2 do
+    storage.trips[90000 + i] =
+      { truck = {
+        valid = true,
+        is_empty = function()
+          return false
+        end,
+      } }
+    requester.trips[90000 + i] = true
+  end
+  local screen, toggled = element(), {}
   local player = {
     index = 30,
     valid = true,
@@ -4726,135 +4744,310 @@ do -- The freighter network window, which the shortcut bar opens: the player's f
       toggled[name] = on
     end,
   }
-  game.get_player = function()
-    return player
+  local players = { [30] = player }
+  game.get_player = function(index)
+    return players[index]
   end
   local function press(name)
     fire("on_lua_shortcut", { player_index = 30, prototype_name = name or "jatz-network" })
   end
-  local function shown()
-    local inner = screen.jatz_network_frame.inner
-    local depots = {}
-    for name in pairs(prototypes.entity) do
-      depots[name] = inner.depots[name] and inner.depots[name].caption
+  local function advance(n)
+    for _ = 1, n or 1 do
+      game.tick = game.tick + 1
+      network.refresh(game.tick)
     end
-    local items = {}
-    for position, button in ipairs(inner.items_frame.items_pane.item_slots.children) do
-      items[position] = button.sprite .. ":" .. tostring(button.quality) .. "=" .. button.number
-    end
-    return {
-      total = inner.freighters.total.caption,
-      active = inner.freighters.active.caption,
-      depots = depots,
-      items = table.concat(items, " "),
-      none = inner.no_items.visible,
-    }
   end
-
+  local function sample()
+    advance(301)
+    while storage.network_scan do
+      advance()
+    end
+    advance()
+  end
+  local function row(kind, index)
+    return screen.jatz_network_frame.inner.jatz_network_tabs[kind .. "_content"].resource_rows["row_" .. (index or 1)]
+  end
   press("toggle-alt-mode")
   check("another shortcut opens nothing", screen.jatz_network_frame == nil)
   press()
   local frame = screen.jatz_network_frame
-  check("the shortcut opens the window, toggled on", frame and player.opened == frame and toggled["jatz-network"])
-  local seen = shown()
-  check("every freighter of the force's depots, home and out", seen.total == "6" and seen.active == "2")
   check(
-    "its depots of each kind, on every surface",
-    seen.depots["jatz-provider-depot"] == "1"
-      and seen.depots["jatz-request-depot"] == "1"
-      and seen.depots["jatz-buffer-depot"] == "1"
-      and seen.depots["jatz-liquid-provider-depot"] == "1"
-      and seen.depots["jatz-liquid-request-depot"] == "1"
-      and seen.depots["jatz-liquid-buffer-depot"] == "0"
-      and seen.depots["jatz-fuel-depot"] == "1"
+    "shortcut opens native tabs without scanning inventories",
+    frame and player.opened == frame and toggled["jatz-network"] and reads == 0
+  )
+  sample()
+  check(
+    "freighter summary retains parked and outbound counts",
+    frame.inner.freighters.total.caption == "5" and frame.inner.freighters.active.caption == "2"
+  )
+  local iron = storage.network_data[30].all.items["item/iron-plate"]
+  check(
+    "contents are split by role, counting a multi-quality provider once",
+    iron.provider.held == 12 and iron.provider.depots == 1 and iron.request.held == 5 and iron.buffer.held == 3
+  )
+  check("offerings exclude promised stock", iron.provider.offered == 8 and iron.provider.offers == 1)
+  check(
+    "request and buffer demand stays separate and subtracts inbound",
+    iron.request.requested == 1
+      and iron.request.target == 20
+      and iron.request.missing == 12
+      and iron.buffer.requested == 1
+      and iron.buffer.missing == 7
+  )
+  check("quality breakdown is preserved", iron.provider.grades.normal == 10 and iron.provider.grades.uncommon == 2)
+  check(
+    "rendered role and demand values match actual depots",
+    row("item").provider_cell.stock.caption == "12"
+      and row("item").request_cell.stock.caption == "5"
+      and row("item").need_cell.needed.caption == "19"
   )
   check(
-    "what provider and buffer depots hold, most first: no request depot's wood, no other force's copper",
-    seen.items == "fluid/water:nil=1500 item/iron-plate:normal=13 item/iron-plate:uncommon=2" and not seen.none
+    "other forces and fuel are absent",
+    storage.network_data[30].all.items["item/copper-plate"] == nil
+      and storage.network_data[30].all.items["item/coal"] == nil
   )
-  local slot = frame.inner.items_frame.items_pane.item_slots.children[3]
+  local water = storage.network_data[30].all.items["fluid/water"]
   check(
-    "an item's slot names it with its quality",
-    slot.elem_tooltip.type == "item-with-quality" and slot.elem_tooltip.quality == "uncommon"
+    "fluid reserves count as held and reduce unmet requests",
+    water.request.held == 350 and water.request.depots == 1 and water.request.missing == 150
+  )
+  local tabs = frame.inner.jatz_network_tabs
+  local before = reads
+  tabs.selected_tab_index = 2
+  fire("on_gui_selected_tab_changed", { player_index = 30, element = tabs })
+  check(
+    "Fluids tab uses cached data only",
+    reads == before
+      and row("fluid").provider_cell.stock.caption == "1500"
+      and row("fluid").request_cell.stock.caption == "350"
   )
   local dropdown = frame.inner.jatz_network_surface
   check(
-    "a drop-down lists all surfaces, then each planet and platform with depots",
-    dropdown.visible
-      and #dropdown.items == 4
-      and dropdown.items[1][1] == "jatz-network.all-surfaces"
-      and dropdown.items[2][2] == "[planet=nauvis] "
-      and dropdown.items[3][3][1] == "space-location-name.vulcanus"
-      and dropdown.items[4] == "Platform 1"
-      and dropdown.selected_index == 1
+    "surfaces show planet icons and platform names",
+    #dropdown.items == 4 and dropdown.items[2][2] == "[planet=nauvis] " and dropdown.items[4] == "Platform 1"
   )
   dropdown.selected_index = 3
   fire("on_gui_selection_state_changed", { player_index = 30, element = dropdown })
-  seen = shown()
   check(
-    "choosing Vulcanus shows only its depots and freighters",
-    seen.total == "1"
-      and seen.active == "0"
-      and seen.depots["jatz-buffer-depot"] == "1"
-      and seen.depots["jatz-provider-depot"] == "0"
-      and seen.items == "item/iron-plate:normal=3"
+    "surface changes do not scan and show only that surface",
+    reads == before and row("fluid").provider_cell.stock.caption == "0"
+  )
+  tabs.selected_tab_index = 1
+  fire("on_gui_selected_tab_changed", { player_index = 30, element = tabs })
+  check(
+    "Vulcanus holds only its buffer iron",
+    row("item").provider_cell.stock.caption == "0" and row("item").buffer_cell.stock.caption == "3"
   )
   buffer_contents[1].count = 8
-  nth[60]()
-  seen = shown()
-  check("once a second it counts again, on the surface chosen", seen.items == "item/iron-plate:normal=8")
-  check("which stays chosen", dropdown.selected_index == 3 and screen.jatz_network_frame == frame)
-  -- Out of the game, the window isn't counted; back, it is again.
-  player.connected = false
-  buffer_contents[1].count = 9
-  nth[60]()
-  check("a player out of the game isn't counted for", shown().items == "item/iron-plate:normal=8")
-  player.connected = true
-  nth[60]()
-  check("and is again once back", shown().items == "item/iron-plate:normal=9")
-  -- A space platform renamed: the drop-down says so.
+  advance(20)
+  check("quiet interval does not read inventories", reads == before and row("item").buffer_cell.stock.caption == "3")
+  sample()
+  check(
+    "next sample keeps surface choice and reuses rows",
+    dropdown.selected_index == 3 and row("item").buffer_cell.stock.caption == "8" and screen.jatz_network_frame == frame
+  )
   game.surfaces[3].platform.name = "Platform 2"
-  nth[60]()
-  check("a renamed platform is renamed in the drop-down", dropdown.items[4] == "Platform 2")
-  -- Another force, with depots on one surface only: no drop-down without Space Age.
+  sample()
+  check("platform names update", dropdown.items[4] == "Platform 2")
+  -- Configured requests with no stock are visible, including switched-off/deconstruction targets.
+  local _, empty = placed("jatz-request-depot", 1)
+  empty.request = { item = "wood", count = 40 }
+  empty.entity.to_be_deconstructed = function()
+    return true
+  end
+  sample()
+  local wood = storage.network_data[30].all.items["item/wood"]
+  check(
+    "an empty deconstructing requester still has a configured request, no active need",
+    wood.request.requested == 1 and wood.request.held == 0 and wood.request.missing == 0
+  )
+  -- Native filters and the searchable resource picker never rescan inventories.
+  dropdown.selected_index = 1
+  fire("on_gui_selection_state_changed", { player_index = 30, element = dropdown })
+  local filter = frame.inner.jatz_network_filter
+  filter.selected_index = 2
+  before = reads
+  fire("on_gui_selection_state_changed", { player_index = 30, element = filter })
+  check(
+    "shortages filter keeps active demand and removes the paused empty request",
+    row("item").visible and not row("item", 2).visible and reads == before
+  )
+  filter.selected_index = 1
+  fire("on_gui_selection_state_changed", { player_index = 30, element = filter })
+  local picker = tabs.item_content.children[1].jatz_network_item
+  picker.elem_value = "wood"
+  fire("on_gui_elem_changed", { player_index = 30, element = picker })
+  check(
+    "resource picker finds an empty configured request without a scan",
+    row("item").request_cell.activity.caption[2] == 1
+      and row("item").request_cell.stock.caption == "0"
+      and not row("item", 2).visible
+      and reads == before
+  )
+  picker.elem_value = nil
+  fire("on_gui_elem_changed", { player_index = 30, element = picker })
+  -- Fully reserved providers still hold stock but are not offering; a stopped request remains counted.
+  storage.promise_totals[provider.unit_number] = { ["iron-plate"] = 10, ["iron-plate/uncommon"] = 2 }
+  request.to_be_deconstructed = function()
+    return true
+  end
+  sample()
+  iron = storage.network_data[30].all.items["item/iron-plate"]
+  check(
+    "held and offered are distinct when every item is reserved",
+    iron.provider.held == 12 and iron.provider.offers == 0 and iron.provider.offered == 0
+  )
+  check(
+    "deconstruction suppresses need without losing the configured request",
+    iron.request.requested == 1 and iron.request.missing == 0
+  )
+  request.to_be_deconstructed = function()
+    return false
+  end
+  -- More resource types than fit on one page; one row per resource, eight visible at most.
+  local many = {}
+  for i = 1, 12 do
+    local name = "test-resource-" .. i
+    prototypes.item[name] = { localised_name = name, stack_size = 100 }
+    many[#many + 1] = { name = name, quality = "normal", count = 1 }
+  end
+  placed("jatz-provider-depot", 1, many)
+  sample()
+  check(
+    "large catalogs have a bounded first page",
+    #tabs.item_content.resource_rows.children == 8 and frame.inner.paging.jatz_network_next.enabled
+  )
+  before = reads
+  fire("on_gui_click", { player_index = 30, element = frame.inner.paging.jatz_network_next })
+  check(
+    "next page uses cached rows and no depot reads",
+    frame.inner.paging.page_label.caption[2] == 2 and reads == before
+  )
+  filter.selected_index = 3
+  fire("on_gui_selection_state_changed", { player_index = 30, element = filter })
+  check(
+    "stock without requests filter resets paging and excludes iron demand",
+    frame.inner.paging.page_label.caption[2] == 1 and row("item").request_cell.activity.caption[2] == 0
+  )
+  filter.selected_index = 1
+  fire("on_gui_selection_state_changed", { player_index = 30, element = filter })
+  -- A second player shares the completed snapshot; neither opening nor controls trigger reads.
+  local second = {
+    index = 32,
+    valid = true,
+    connected = true,
+    force = force,
+    gui = { screen = element() },
+    set_shortcut_toggled = function() end,
+  }
+  players[32] = second
+  before = reads
+  network.open(second)
+  check(
+    "another player reuses this force's snapshot",
+    reads == before and second.gui.screen.jatz_network_frame.inner.freighters.total.caption ~= "…"
+  )
+  -- Add enough depots to span several ticks. Deletion during a scan is safe.
+  local extras = {}
+  for i = 1, 24 do
+    extras[i] = placed("jatz-provider-depot", 1, { { name = "wood", quality = "normal", count = 1 } })
+  end
+  advance(storage.network_next - game.tick - 1)
+  local maximum = 0
+  repeat
+    before = reads
+    storage.depots[extras[24].unit_number] = nil
+    advance()
+    maximum = math.max(maximum, reads - before)
+  until not storage.network_scan
+  check("inventory work is bounded across both viewers", maximum > 0 and maximum <= 16)
+  -- Two different forces also share one global depot budget and never share data.
+  second.force = other
+  sample()
+  check(
+    "different forces have isolated snapshots",
+    storage.network_data[31].all.items["item/copper-plate"].provider.held == 7
+      and not storage.network_data[31].all.items["item/iron-plate"]
+  )
+  player.connected, second.connected = false, false
+  before = reads
+  advance(600)
+  check(
+    "disconnected viewers do no work and retain no snapshots",
+    reads == before and storage.network_scan == nil and storage.network_data == nil
+  )
+  player.connected = true
+  sample()
+  check(
+    "reconnected viewer gets a new snapshot",
+    storage.network_data[30].all.items["item/iron-plate"].buffer.held == 8
+  )
   player.force = other
   fire("on_player_changed_force", { player_index = 30, force = force })
-  seen = shown()
+  frame = screen.jatz_network_frame
   check(
-    "a player's own force's network only, the surface chosen elsewhere forgotten",
-    seen.total == "0" and seen.items == "item/copper-plate:normal=7" and dropdown.selected_index == 1
+    "force change clears old force's display immediately",
+    not frame.inner.jatz_network_tabs.item_content.resource_rows.row_1.visible
   )
-  check("one surface: no drop-down", not dropdown.visible)
+  sample()
+  check(
+    "force change gets only new force's stock",
+    row("item").provider_cell.stock.caption == "7" and not frame.inner.jatz_network_surface.visible
+  )
   script.active_mods["space-age"] = "2.1.24"
-  nth[60]()
-  check("with Space Age, the drop-down still, to show it is per planet", dropdown.visible)
-  player.force = force
+  sample()
+  check("Space Age always exposes the surface selector", frame.inner.jatz_network_surface.visible)
+  network.on_configuration_changed()
+  check(
+    "configuration change rebuilds an open saved GUI",
+    screen.jatz_network_frame ~= frame and storage.network_data == nil
+  )
+  sample()
   press()
-  check("the shortcut again closes it, toggled off", screen.jatz_network_frame == nil and not toggled["jatz-network"])
-  check("and nothing is counted for it any more", next(storage.network_gui) == nil)
+  check("shortcut closes and unlights", screen.jatz_network_frame == nil and not toggled["jatz-network"])
   press()
-  frame = screen.jatz_network_frame
-  fire("on_gui_closed", { player_index = 30, element = frame })
-  check("E or Esc closes it", screen.jatz_network_frame == nil and not toggled["jatz-network"])
+  fire("on_gui_closed", { player_index = 30, element = screen.jatz_network_frame })
+  check("E or Esc closes", screen.jatz_network_frame == nil and not toggled["jatz-network"])
   press()
-  frame = screen.jatz_network_frame
-  fire("on_gui_click", { player_index = 30, element = frame.children[1].jatz_network_close })
-  check("so does its close button", screen.jatz_network_frame == nil and not toggled["jatz-network"])
-  fire("on_player_changed_force", { player_index = 30, force = other })
-  check("a force change with it closed opens nothing", screen.jatz_network_frame == nil)
-  -- Taken away by another mod's script, which raises no on_gui_closed: once a second it is noticed,
-  -- the button unlit and nothing counted for it any more.
+  fire("on_gui_click", { player_index = 30, element = screen.jatz_network_frame.children[1].jatz_network_close })
+  check("close button closes", screen.jatz_network_frame == nil and not toggled["jatz-network"])
   press()
   screen.jatz_network_frame.destroy()
-  nth[60]()
+  before = reads
+  advance()
   check(
-    "a window taken away by a script unlights the button",
-    not toggled["jatz-network"] and next(storage.network_gui) == nil
+    "external GUI destruction stops counting and unlights",
+    not toggled["jatz-network"] and reads == before and storage.network_scan == nil
   )
-  nth[60]()
-  for _, key in ipairs(trips) do
-    storage.trips[key] = nil
+  advance(600)
+  check("no open connected GUI means no data updates", reads == before and storage.network_data == nil)
+  -- More viewers than ticks between age-label changes must all receive a snapshot.
+  for i = 1, 61 do
+    local viewer = {
+      index = 100 + i,
+      valid = true,
+      connected = true,
+      force = force,
+      gui = { screen = element() },
+      set_shortcut_toggled = function() end,
+    }
+    players[viewer.index] = viewer
+    network.open(viewer)
   end
+  advance(500)
+  local served = true
+  for i = 1, 61 do
+    served = served and storage.network_gui[100 + i].shown ~= nil
+  end
+  check("61 simultaneous viewers all receive snapshots despite age-label updates", served)
+  for i = 1, 61 do
+    network.on_gui_closed({ player_index = 100 + i, element = players[100 + i].gui.screen.jatz_network_frame })
+  end
+  advance()
+  check(
+    "last connected viewer stops and discards shared work",
+    storage.network_data == nil and storage.network_scan == nil
+  )
 end
 
 print("all control event checks passed")

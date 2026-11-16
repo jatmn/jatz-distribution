@@ -1,0 +1,5 @@
+  Features:
+    - Split the freighter network window into Items and Fluids, with provider, requester and buffer stock, depot counts, configured requests and unmet demand.
+    - Find resources with the game's searchable picker, focus on shortages or stock without requests, and inspect quality and supply details on hover.
+  Optimizations:
+    - Share network snapshots between viewers, spread depot reads over ticks and refresh after five seconds. Stop counting when no connected player has the window open.

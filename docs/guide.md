@@ -14,6 +14,7 @@ Everything you need to know to run Jat'z Distribution in your factory. New to th
 - [Buffer depots](#buffer-depots)
 - [Priority](#priority)
 - [Liquid depots](#liquid-depots)
+- [Freighter network window](#freighter-network-window)
 - [Circuit network](#circuit-network)
 - [Copy, paste and blueprints](#copy-paste-and-blueprints)
 - [Good to know](#good-to-know)
@@ -180,6 +181,16 @@ With [Mining Drones](https://mods.factorio.com/mod/Mining_Drones), [Mining Drone
 
 - Freighters load at the tile just behind the depot, on the side away from its mining area. The depot lays road there, like our depots do, so connect your road to it.
 - Mining depots have the same priority slider and circuit condition as provider depots, in a panel beside their window.
+
+## Freighter network window
+
+After Freight system research, click the freighter shortcut to open your network overview. Choose **Items** or **Fluids**, then all surfaces or a single planet/platform. Each resource has separate **Providers**, **Requesters** and **Buffers** columns: stock held, how many depots hold it, and how many are offering or have a request configured. Hover stock for its quality breakdown; hover the requesting count for the target and unmet amount.
+
+**Still needed** is the amount active request and buffer depots lack after their matching stock and inbound commitments. Parked freighter fluid storage counts as held; cargo on the road does not. **Offering** counts enabled suppliers with unreserved stock, without promising that a road connects them to a particular requester or that they satisfy its quality/minimum-load rules. Disabled or deconstructing requests remain in the configured count but add no active need. Fuel depots appear in the depot summary, but their fuel is not freight stock.
+
+Unmet demand sorts first. Use the filter to show only unmet demand or stock with no configured requests, and the game's searchable resource picker to find one item or fluid (right-click to clear it). The eight-row pages keep the window manageable. Item totals combine qualities, while unmet demand respects each depot's actual quality filter. All-surfaces totals are an overview: stock on another planet is not automatically available to a requester.
+
+The window samples depots across ticks, then waits five seconds before collecting again. Players share the counting work. A snapshot can span changes in the factory; its age is shown above the tabs. Closing the window stops work when no connected player is viewing it. E, Esc, the close button and the shortcut all close it.
 
 ## Circuit network
 
