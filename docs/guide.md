@@ -188,11 +188,13 @@ With [Mining Drones](https://mods.factorio.com/mod/Mining_Drones), [Mining Drone
 
 After Freight system research, click the freighter shortcut to open your network overview. Choose **Items** or **Fluids**, then all surfaces or a single planet/platform. Each resource has separate **Providers**, **Requesters** and **Buffers** columns: stock held, how many depots hold it, and how many are offering or have a request configured. Hover stock for its quality breakdown; hover the requesting count for the target and unmet amount.
 
+The fleet summary sits beside a depot matrix: item and liquid rows line up under their roles, with Fuel and any Mining Drones depots included. Each depot icon carries its count; hover for the exact count and name. Resources use their in-game icons too. Below each stock amount, the depot icon counts holding depots, the export icon counts offering providers and the import icon counts configured requests. Hover any count for its definition and details.
+
 **Still needed** is the amount active request and buffer depots lack after their matching stock and inbound commitments. Parked freighter fluid storage counts as held; cargo on the road does not. **Offering** counts enabled suppliers with unreserved stock, without promising that a road connects them to a particular requester or that they satisfy its quality/minimum-load rules. Disabled or deconstructing requests remain in the configured count but add no active need. Fuel depots appear in the depot summary, but their fuel is not freight stock.
 
 Unmet demand sorts first. Use the filter to show only unmet demand or stock with no configured requests, and the game's searchable resource picker to find one item or fluid (right-click to clear it). The eight-row pages keep the window manageable. Item totals combine qualities, while unmet demand respects each depot's actual quality filter. All-surfaces totals are an overview: stock on another planet is not automatically available to a requester.
 
-The window samples depots across ticks, then waits five seconds before collecting again. Players share the counting work. A snapshot can span changes in the factory; its age is shown above the tabs. Closing the window stops work when no connected player is viewing it. E, Esc, the close button and the shortcut all close it.
+The window samples depots across ticks, then waits five seconds before collecting again. Players share the counting work. A snapshot can span changes in the factory; its age is shown beside the page arrows. Closing the window stops work when no connected player is viewing it. E, Esc, the close button and the shortcut all close it.
 
 ## Circuit network
 

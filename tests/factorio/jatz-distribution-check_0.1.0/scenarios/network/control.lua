@@ -85,7 +85,24 @@ script.on_event(defines.events.on_tick, function(event)
         and iron.buffer.missing == (script.active_mods.quality and 10 or 15)
     )
     assert(row("item").need_cell.needed.caption == (script.active_mods.quality and "45" or "50"))
-    assert(inner().freighters.total.caption == "3")
+    assert(inner().overview.freighters.total.caption == "3")
+    local depots = inner().overview.depot_summary.depots
+    assert(depots.column_count == 5)
+    for _, name in ipairs({
+      "jatz-provider-depot",
+      "jatz-request-depot",
+      "jatz-buffer-depot",
+      "jatz-liquid-provider-depot",
+      "jatz-liquid-request-depot",
+      "jatz-liquid-buffer-depot",
+    }) do
+      assert(depots[name].sprite == "entity/" .. name and depots[name].number == 1)
+      assert(depots[name].tooltip[2][1] == prototypes.entity[name].localised_name[1])
+    end
+    assert(depots["jatz-fuel-depot"].number == 0)
+    assert(row("item").resource_icon.sprite == "item/iron-plate")
+    assert(row("item").provider_cell.details.depot_count.caption == "1")
+    assert(row("item").provider_cell.details.activity.caption == "1")
     if script.active_mods.quality then
       assert(iron.provider.grades.rare == 20)
     end
@@ -95,6 +112,8 @@ script.on_event(defines.events.on_tick, function(event)
     assert(row("fluid").request_cell.stock.caption == "150")
     assert(row("fluid").buffer_cell.stock.caption == "200")
     assert(row("fluid").need_cell.needed.caption == "450")
+    assert(row("fluid").resource_icon.sprite == "fluid/water")
+    assert(row("fluid").request_cell.details.holding_icon.sprite == "entity/jatz-liquid-request-depot")
     network.on_configuration_changed()
     assert(not row("item").visible and storage.network_data == nil)
   elseif event.tick == 10 then

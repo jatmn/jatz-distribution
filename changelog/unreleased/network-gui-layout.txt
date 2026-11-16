@@ -1,0 +1,3 @@
+  Gui:
+    - Group the freighter network summary into a fleet panel and an item/liquid depot matrix with counted icons.
+    - Use resource and status icons, compact stock rows and page arrows, retaining names, exact counts and definitions on hover.

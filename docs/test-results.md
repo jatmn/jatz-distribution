@@ -2,6 +2,39 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Compact network window: automated checks passed; graphical and multiplayer checks pending (November 16, 2026)
+
+Candidate `feat/network-gui-polish`, based on `683882b4f40f96286f6b1191f460882be4cca194`.
+Runtime blob: `scripts/network-gui.lua` `989089feb2d33c54959befff1e05fd11b0df7eda`.
+Factorio 2.1.25 (build 88022), Linux x86_64 headless; Lua 5.2.4.
+
+- The production GUI groups item/liquid depots by role, keeps Fuel and optional Mining Drones
+  counts, and uses resource/status icons with stock, request, offering and quality details on hover.
+  The new layout expectations fail against the baseline's missing overview and pass on the candidate.
+- `tools/test_mod.py`: base game and Space Age passed, including real GUI elements, depot icon/count
+  overlays (including zero), resource icons, stock and demand, configuration rebuild and keyboard close.
+  The network scenario uses explicit reservation/inbound state; road deliveries have their own checks.
+- `tools/test_mod_setup.py`: 16 passed, including the existing shared inventory budget, force isolation,
+  cached controls, disconnect/close behavior and fair updates for 61 fake viewers. These are production
+  handlers with simulated engine objects, not a live multiplayer session.
+- `tools/test_emulate_ups.py`: 6 passed; release tests: 14; portal tests: 7. Lua 5.2 syntax,
+  Luacheck 1.2.0, StyLua 2.5.2, Ruff 0.17.3, portal content, package bytes/checksum and whitespace passed.
+- Standard engine benchmark, three alternating runs per variant: mean update 1.125 → 1.124 ms,
+  script 0.449 → 0.452 ms, p99 3.451 → 3.564 ms, median worst tick 5.811 → 6.286 ms.
+  Individual worst ticks ranged 5.745–8.137 ms before and 6.199–7.110 ms after; no tail-latency
+  improvement is claimed. Both variants had 1,512 freighters out and delivered 265,200 items/minute.
+  This benchmark has the GUI closed; its per-tick execution path is unchanged.
+- Engine-free standard comparison: identical mean/p99/worst Lua instructions and API calls,
+  path requests, commands, freighter counts and deliveries.
+- A separate run-owned headless probe measured real GUI updates with 24 depots and eight item rows:
+  500 warm-ups, then 5,000 forced full-page refreshes, three alternating runs each. Median refresh
+  cost was 0.353 → 0.329 ms after moving fixed status sprites to window creation and reducing repeated
+  GUI lookups. This isolates refresh work for one viewer; it does not measure drawing or multiplayer
+  latency. Shared scan/render budgets are unchanged, and depot counts are only rewritten when changed.
+- **Still required:** inspect the window in a graphical client at normal resolution/UI scale, with long
+  names and large counts, and perform the live multiplayer/save-load checks in `docs/testing.md`.
+  Headless API checks and the fake-viewer tests cannot prove visual quality or live join behavior.
+
 ## Z-key freighter drops: automated checks passed (November 16, 2026)
 
 Candidate `fix/z-drop-freighter-absorption`, based on `51c25b67643c4f1e07bf8ea57575f67f6d272d3b`.
