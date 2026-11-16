@@ -2,6 +2,25 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Buffers pull by priority: passed (automated)
+
+**November 15, 2026.** Against `main` at `a826850320c5b1f5b2f3658c895fb0a56628f9be`,
+Factorio 2.1.24 headless on Linux, base game and Space Age.
+
+- `tools/test_mod.py`: the packaged mod passed, including undo, bonuses and Quality scenarios.
+  With the new startup setting enabled, item and liquid buffers at priorities 2, 5 and 8 moved
+  stock upward: the middle buffer refilled after the central one collected its stock. A second
+  priority-2 buffer received nothing. The liquid arrived at its original 80 degrees.
+- `tools/test_mod_setup.py`: 16 tests passed. The logistics checks cover disabled, equal and
+  descending priorities for both kinds, completed transfers, shared ranking with normal providers,
+  and priority changes during a pending search and before pickup. The new upward-transfer check
+  fails on the original production code, which admits no buffer source for another buffer.
+- `tools/benchmark_ups.py --compare origin/main`: standard preset, three runs per revision.
+  Mean update was 1.124 ms before and 1.120 ms after (within run variation); deliveries remained
+  265,200 items/minute with 1,512 active freighters. This checks default settings on the existing
+  benchmark map; it does not measure a large network of opt-in buffer chains.
+- No graphics changed; graphical-client inspection was not performed.
+
 ## Freighter network command center: automated checks passed; visual check pending
 
 **November 15, 2026.** Uncommitted `feat/network-supply-demand` candidate based on

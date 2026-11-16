@@ -898,6 +898,46 @@ local function setup_deliveries(surface, result)
   assert(remote.call("jatz-distribution", "set_request", buffering.filling, "copper-cable", 15), "buffer: refused")
   result.buffer_has_no_from_buffers = remote.call("jatz-distribution", "set_from_buffers", buffering.filling, true)
   deliveries.buffering = buffering
+  -- On a separate road for each kind, a central buffer empties the middle buffer, which refills
+  -- from the local one. The local and its equal-priority neighbour cannot pull stock back down.
+  do
+    local area = game.create_surface("jatz-buffer-priority", { width = 96, height = 96 })
+    area.request_to_generate_chunks({ 0, 0 }, 2)
+    area.force_generate_chunk_requests()
+    for _, object in pairs(area.find_entities()) do
+      object.destroy()
+    end
+    local tiles = {}
+    for x = -40, 40 do
+      for y = -20, 20 do
+        tiles[#tiles + 1] = { name = "concrete", position = { x, y } }
+      end
+    end
+    area.set_tiles(tiles)
+    deliveries.upward = {}
+    for index, fluid in ipairs({ false, true }) do
+      local role, item, amount =
+        fluid and "liquid-buffer" or "buffer", fluid and "water" or "iron-plate", fluid and 300 or 20
+      local y = index * 10 - 15.5
+      local row = { fluid = fluid, item = item, depots = {} }
+      for n, priority in ipairs({ 2, 5, 8, 2 }) do
+        local buffer = depot(area, role, -30.5 + (n - 1) * 20, y, 0)
+        assert(remote.call("jatz-distribution", "add_freighters", buffer, 1) == 1)
+        assert(remote.call("jatz-distribution", "set_priority", buffer, priority))
+        assert(remote.call("jatz-distribution", "set_request", buffer, item, amount))
+        if n <= 2 then
+          if fluid then
+            assert(buffer.insert_fluid({ name = item, amount = amount, temperature = 80 }) == amount)
+          else
+            assert(buffer.insert({ name = item, count = amount }) == amount)
+          end
+        end
+        row.depots[n] = buffer
+      end
+      lay_road(area, -31, math.floor(y) + 2, 30, math.floor(y) + 2)
+      deliveries.upward[index] = row
+    end
+  end
   -- Priority, on one road (loading zones at y -25): a request depot for 10 stone, a provider 10
   -- tiles away at priority 2 and one 30 tiles away at priority 9, each holding 20. The freighter
   -- goes to the farther one, for its higher priority.
@@ -2858,6 +2898,15 @@ local function deliveries_finished(surface, tick, result)
   result.buffer_taken_from = 30 - count(buffering.stocked, "copper-cable")
   result.buffer_filled = count(buffering.filling, "copper-cable")
   result.buffer_provider_left = count(buffering.provider, "copper-cable")
+  result.upward_buffers = {}
+  for index, row in ipairs(deliveries.upward) do
+    local held = {}
+    for n, buffer in ipairs(row.depots) do
+      held[n] = row.fluid and buffer.get_fluid_count(row.item) or count(buffer, row.item)
+    end
+    result.upward_buffers[index] = held
+  end
+  result.upward_temperature = deliveries.upward[2].depots[3].get_fluid(1).temperature
   local circuit = deliveries.circuit
   result.circuit_before = circuit.before
   result.circuit_walls = count(circuit.request, "stone-wall")

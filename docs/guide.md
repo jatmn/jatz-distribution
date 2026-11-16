@@ -130,7 +130,9 @@ A light beside the request shows at a glance whether it can be filled. Hover it 
 
 ## Buffer depots
 
-Buffer depots keep stock close to where it's needed. They work like request depots, with their own request and freighters, but they fetch only from provider depots and send nothing anywhere themselves.
+Buffer depots keep stock close to where it's needed. They work like request depots, with their own request and freighters, but by default they fetch only from provider depots and send nothing anywhere themselves.
+
+Turn on **Buffers pull by priority** under **Settings → Mod settings → Startup** to let item and liquid buffers also fetch from buffers with a strictly lower priority. It is off by default. For example, local buffers at priority 3 can supply a central buffer at priority 8; equal-priority buffers never fetch from each other. Eligible buffers and normal providers are ranked together by priority, then distance by road. Normal providers remain eligible at any priority. A priority change before pickup is checked again; cargo already loaded finishes its trip.
 
 Request depots take from buffer depots too. The **Request from buffer depots** checkbox (like a requester chest's "request from buffer chests") decides which come first:
 
@@ -144,7 +146,7 @@ Request and buffer depots replace each other in place, as chests do. Place a buf
 Provider and buffer depots have a **priority** slider from 1 to 10 (5 to start with) in the panel beside their window.
 
 - Freighters go to the highest-priority depot they can reach by road, even when a lower one is nearer, and to the nearest among equals.
-- Priority only orders depots of the same kind: with **Request from buffer depots** ticked, a buffer at 1 still comes before a provider at 10; unticked, a provider at 1 still comes before a buffer at 10.
+- For request depots, priority only orders depots of the same kind: with **Request from buffer depots** ticked, a buffer at 1 still comes before a provider at 10; unticked, a provider at 1 still comes before a buffer at 10.
 - Copy and Paste settings, blueprints and clones keep it.
 
 ## Liquid depots
@@ -153,7 +155,7 @@ Liquid depots work the same way for fluids. Research **Liquid freight** to unloc
 
 - Opening a liquid depot shows your inventory on the left of its tank window, as opening an item depot does. On a liquid request depot or a liquid buffer depot, click a freighter there to pick it up, then click the slot. Shift-click puts that stack in the slot, and ctrl-click puts in every freighter you are carrying. Anything else stays in your inventory: a liquid depot has no chest for items. A liquid provider depot shows the inventory too, and has no freighter slot.
 - A **liquid request** depot keeps a fluid in its tank, sending its freighters to liquid provider depots and liquid buffer depots (buffers first if **Request from buffer depots** is ticked, only when no provider can supply it otherwise), 750 units at a time (more with fluid capacity research).
-- A **liquid buffer** depot fills from liquid providers only.
+- A **liquid buffer** depot fills from liquid providers, and with **Buffers pull by priority** enabled, from lower-priority liquid buffers too.
 - Liquid provider and buffer depots have the same priority slider.
 - Every liquid depot's tank holds 25,000 by default. You can change the tank size of liquid provider, liquid request and liquid buffer depots separately under **Settings → Mod settings → Startup**. Making a tank smaller on an existing save can lose the fluid above the new size. A liquid request or buffer depot can't request more than its tank holds: a larger amount is set to the tank's size. Its freighters only set off for what still fits in the tank, counting what is already on its way, so a 25,000 tank with freighters carrying 2,625 each has room for 9 full loads out at once, and a tenth freighter for the last 1,375 (not with **Full loads only** ticked); a bigger tank lets more go. A request keeps the amount you typed and asks for as much of it as the tank holds, so it follows the tank's size; one set in an older version of the mod at as much as it could then ask for (25,000 for a liquid request depot; a liquid buffer depot's tank size, if that hasn't changed since) asks to fill the depot, and any other keeps its amount. With **Use freighter storage** ticked, a depot can hold more than its tank (see above).
 - Fluids keep their temperature on the way.

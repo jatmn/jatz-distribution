@@ -1046,11 +1046,111 @@ do -- A buffer depot fetches only from providers, never from another buffer.
     logistics.add(depot)
   end
   assert(logistics.set_request(filling, "a", 10))
+  assert(logistics.set_priority(filling, 10))
+  assert(logistics.set_priority(other, 1))
   check("buffer depots have no request-from-buffers setting", logistics.set_from_buffers(filling, true) == false)
   assert(logistics.put_freighters(filling, stack("jatz-quinityn-freighter", 2)) == 2)
   logistics.on_tick()
   check("a buffer depot asks only about providers", #requests == 1 and requests[1].goal.x == 40.5)
 end
+
+-- The startup opt-in allows only upward buffer transfers, for items and liquids. Exercise the
+-- real search, promise, pickup and delivery path, with both buffers requesting the same stock.
+for _, fluid in ipairs({ false, true }) do
+  for _, enabled in ipairs({ false, true }) do
+    for _, source_priority in ipairs({ 4, 5, 6 }) do
+      local logistics = reset()
+      harness.STARTUP["jatz-buffer-priority-pull"].value = enabled
+      local kind, item, amount =
+        fluid and "jatz-liquid-buffer-depot" or "jatz-buffer-depot", fluid and "water" or "a", fluid and 300 or 10
+      local filling = fluid and tank(kind, 0.5, 0.5) or entity(kind, 0.5, 0.5)
+      local source = fluid and tank(kind, 20.5, 0.5, "water", 600, 80) or entity(kind, 20.5, 0.5, { a = 20 })
+      if not fluid then
+        for _, depot in ipairs({ filling, source }) do
+          local chest = script_inventory(4)
+          chest.get_insertable_count = depot.chest.get_insertable_count
+          depot.chest = chest
+          depot.get_inventory = function()
+            return chest
+          end
+        end
+        source.chest.insert({ name = "a", count = 20 })
+      end
+      for _, depot in ipairs({ filling, source }) do
+        logistics.add(depot)
+        assert(logistics.set_request(depot, item, amount))
+      end
+      assert(logistics.set_priority(source, source_priority))
+      assert(logistics.put_freighters(filling, stack("jatz-quinityn-freighter", 1)) == 1)
+      logistics.on_tick()
+      if enabled and source_priority < 5 then
+        check("higher-priority buffer searches lower buffer", #requests == 1)
+        answer(logistics, 1, "route")
+        local trip = trip_of(filling)
+        check("buffer promises stock from lower buffer", trip and trip.provider == source.unit_number)
+        arrive(logistics, trip)
+        arrive(logistics, trip)
+        local held = fluid and filling.get_fluid_count(item) or filling.chest.get_item_count(item)
+        check("buffer receives its requested stock", held == amount and not has_trip(filling))
+        if fluid then
+          check("buffer transfer preserves fluid temperature", filling.get_fluid(1).temperature == 80)
+        end
+      else
+        check("disabled, equal and downward buffer transfers send nothing", #requests == 0 and not has_trip(filling))
+      end
+    end
+  end
+end
+-- Buffers share the provider priority rank; providers remain eligible even above the receiver.
+for _, provider_priority in ipairs({ 3, 10 }) do
+  local logistics = reset()
+  harness.STARTUP["jatz-buffer-priority-pull"].value = true
+  local filling = entity("jatz-buffer-depot", 0.5, 0.5)
+  local provider = entity("jatz-provider-depot", 10.5, 0.5, { a = 20 })
+  local buffer = entity("jatz-buffer-depot", 40.5, 0.5, { a = 20 })
+  for _, depot in ipairs({ filling, provider, buffer }) do
+    logistics.add(depot)
+  end
+  logistics.set_priority(filling, 9)
+  logistics.set_priority(buffer, 7)
+  logistics.set_priority(provider, provider_priority)
+  logistics.set_request(filling, "a", 10)
+  logistics.put_freighters(filling, stack("jatz-quinityn-freighter", 1))
+  logistics.on_tick()
+  answer(logistics, 1, "route")
+  local expected = provider_priority == 10 and provider or buffer
+  check("eligible buffers and providers share priority ranking", trip_of(filling).provider == expected.unit_number)
+end
+
+-- Changed priorities invalidate a pending search; once travelling, pickup checks the rule again.
+for _, pending in ipairs({ true, false }) do
+  local logistics = reset()
+  harness.STARTUP["jatz-buffer-priority-pull"].value = true
+  local filling = tank("jatz-liquid-buffer-depot", 0.5, 0.5)
+  local source = tank("jatz-liquid-buffer-depot", 20.5, 0.5, "water", 600)
+  for _, depot in ipairs({ filling, source }) do
+    logistics.add(depot)
+  end
+  logistics.set_priority(filling, 8)
+  logistics.set_request(filling, "water", 300)
+  logistics.put_freighters(filling, stack("jatz-quinityn-freighter", 1))
+  logistics.on_tick()
+  if not pending then
+    answer(logistics, 1, "route")
+  end
+  logistics.set_priority(source, 8)
+  if pending then
+    answer(logistics, 1, "route")
+    check("stale buffer search cannot dispatch after priorities become equal", not has_trip(filling))
+  else
+    local trip = trip_of(filling)
+    arrive(logistics, trip)
+    check("pickup refuses a buffer whose priority is no longer lower", source.held.amount == 600)
+    arrive(logistics, trip)
+    check("refused pickup returns its freighter without cargo", not has_trip(filling) and filling.held.amount == 0)
+  end
+end
+harness.STARTUP["jatz-buffer-priority-pull"].value = false
 
 do -- Changing "request from buffer depots" restarts searches under way, freighters' included, and
   -- applies at once, without waiting out a retry delay.

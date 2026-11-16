@@ -1359,8 +1359,16 @@ function logistics.full_load(depot, trip)
   return math.min(capacity, request.count), capacity
 end
 
+-- Buffer stock can flow upward only with the startup opt-in. Kept shared with pickup so a
+-- priority changed while a freighter is travelling cannot make it take stock downward.
+function logistics.buffer_source(depot, provider)
+  return settings.startup["jatz-buffer-priority-pull"].value
+    and (provider.priority or PRIORITY_DEFAULT) < (depot.priority or PRIORITY_DEFAULT)
+end
+
 -- Every depot that could serve a requesting depot: provider depots, and for a request depot,
--- buffer depots too (a buffer depot itself fetches only from providers). A request depot set to
+-- buffer depots too. With the startup opt-in, a buffer also takes from lower-priority buffers,
+-- ranked with providers. A request depot set to
 -- request from buffer depots ranks buffers first, however near a provider is; one not set to ranks
 -- them last, so it falls back to a buffer only for what no provider can supply. All on the same
 -- surface and force, with road at its loading zone, holding the item and not on cooldown for this
@@ -1399,7 +1407,11 @@ local function candidates(depot, from, full, passed, carries, fits)
   for index = 1, #ids do
     local id, provider = ids[index], depots[index]
     -- (The one passed is neither ready nor waiting: the freighter goes on, or home.)
-    if id ~= passed and (provider.role == "provider" or (buffers and id ~= own)) then
+    if
+      id ~= passed
+      and id ~= own
+      and (provider.role == "provider" or buffers or logistics.buffer_source(depot, provider))
+    then
       if fits and ledger.allocate(provider, request, math.huge, nil, fits.size, fits) <= 0 then
         cramped = true
       elseif
@@ -1416,8 +1428,8 @@ local function candidates(depot, from, full, passed, carries, fits)
         distances[count] = math.sqrt(dx * dx + dy * dy)
         -- With "request from buffer depots", buffer depots come first, nearer providers or not,
         -- whatever either's priority; without it, providers come first. Then the higher
-        -- priority, nearer or not.
-        ranks[count] = (provider.role == first and 0 or PRIORITY_MAX)
+        -- priority, nearer or not. A buffer treats eligible buffers as providers.
+        ranks[count] = ((not buffers or provider.role == first) and 0 or PRIORITY_MAX)
           + PRIORITY_MAX
           - (provider.priority or PRIORITY_DEFAULT)
       end
@@ -2736,6 +2748,10 @@ local function arrived_at_provider(id, trip, depot)
   -- with Full loads only too: that rule decides when a freighter sets off (dispatch, reroute), and
   -- once it is here, bringing what fits beats driving home empty for the same trip.
   if provider and request and request.item == trip.item then
+    local source = storage.depots[trip.provider]
+    if depot.role == "buffer" and source.role == "buffer" and not logistics.buffer_source(depot, source) then
+      return logistics.give_up(id, trip)
+    end
     -- What it promised, as far as the depot (counting its other freighters) still needs it.
     local _, room, _, _, fits = need(depot, id)
     local left, lefts

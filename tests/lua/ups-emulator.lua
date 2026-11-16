@@ -272,7 +272,7 @@ local function strict(values, kind)
 end
 settings = {
   global = strict({ ["jatz-freighter-fuel-capacity"] = 20, ["jatz-freighter-fuel-per-tile"] = 10 }, "global"),
-  startup = strict({ ["jatz-default-full-loads"] = false }, "startup"),
+  startup = strict({ ["jatz-default-full-loads"] = false, ["jatz-buffer-priority-pull"] = false }, "startup"),
 }
 -- Alt-mode cargo icons: drawn, never read back.
 rendering = natives({
