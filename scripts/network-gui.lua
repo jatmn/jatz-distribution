@@ -12,7 +12,11 @@ local PREVIOUS, NEXT = "jatz_network_previous", "jatz_network_next"
 local INTERVAL, PER_TICK, PAGE_SIZE = 300, 8, 8
 local ROLES = { "provider", "request", "buffer" }
 local CONTENT_WIDTH, ROW_WIDTH, SLOT_SIZE, ROLE_WIDTH, NEED_WIDTH = 760, 744, 48, 176, 120
-local RESOURCE_SIZE, ROW_DEPOT_SIZE = 40, 48
+-- Each role spans a stock column and a depot-count column; every number has its own fixed,
+-- right-aligned column so values line up from row to row whatever their width.
+local RESOURCE_SIZE, HEADER_DEPOT_SIZE, STOCK_WIDTH, COUNT_WIDTH, GAP = 40, 32, 104, 64, 8
+-- Bumped whenever the window's element tree changes, so a window saved by an older build rebuilds.
+local LAYOUT = 6
 network_gui.shortcut = SHORTCUT
 -- The depots in the crafting menu's order; any other (Mining Drones' mining depot) after them.
 local KINDS = {
@@ -163,6 +167,27 @@ local function amount(number)
   return tostring(math.floor(number))
 end
 
+-- Short like the game's own slot counts (63.8k, 190k, 1.2M); the exact amount is in the tooltip.
+-- Zero is a dash, so the numbers that matter stand out.
+local function short(number)
+  number = math.floor(number)
+  if number == 0 then
+    return "–"
+  elseif number < 10000 then
+    return tostring(number)
+  end
+  for _, unit in ipairs({ { 1e9, "G" }, { 1e6, "M" }, { 1e3, "k" } }) do
+    if number >= unit[1] then
+      local value = number / unit[1]
+      if value < 100 then
+        value = math.floor(value * 10) / 10
+        return (value % 1 == 0 and string.format("%d", value) or string.format("%.1f", value)) .. unit[2]
+      end
+      return string.format("%d", math.floor(value)) .. unit[2]
+    end
+  end
+end
+
 local function held_tooltip(r)
   local tip = { "", { "jatz-network.held-tooltip", amount(r.held), r.depots } }
   local grades = {}
@@ -178,6 +203,11 @@ local function held_tooltip(r)
 end
 
 local function show(player, frame, counts)
+  -- A window saved by an earlier build of the same version can still have another hierarchy.
+  if frame.tags.layout ~= LAYOUT then
+    network_gui.open(player)
+    return
+  end
   local state, inner = storage.network_gui[player.index], frame.inner
   -- Surfaces in the drop-down: those where the force has depots, in the order they were made.
   local listed = {}
@@ -218,11 +248,6 @@ local function show(player, frame, counts)
   local overview = inner.overview
   local freighters = overview.freighters
   local fleet = freighters.fleet
-  -- A saved window from the previous same-version draft can still have the old hierarchy.
-  if not (fleet and fleet.freighter_icon) then
-    network_gui.open(player)
-    return
-  end
   fleet.total.caption = tostring(shown.freighters)
   freighters.on_road.count.caption = tostring(shown.active)
   local depots = overview.depot_summary.depots
@@ -292,27 +317,26 @@ local function show(player, frame, counts)
       resource.sprite = item.type .. "/" .. item.name
       resource.tooltip = { "", prototype.localised_name, "\n", { "jatz-network.resource-tooltip" } }
       for _, role in ipairs(ROLES) do
-        local r, cell = item[role], row[role .. "_cell"]
-        local stock = cell.stock
-        stock.caption = amount(r.held)
+        local r = item[role]
+        local stock = row[role .. "_stock"]
+        stock.caption = short(r.held)
         stock.tooltip = held_tooltip(r)
-        local details = cell.details
-        details.depot_count.caption = tostring(r.depots)
-        local activity = details.activity
+        -- Providers: depots holding it. Requesters and buffers: depots requesting it.
+        local count = row[role .. "_count"]
         if role == "provider" then
-          activity.caption = { "jatz-network.offering", r.offers }
-          activity.tooltip = { "jatz-network.offering-tooltip", r.offers, amount(r.offered) }
+          count.caption = short(r.depots)
+          count.tooltip = { "jatz-network.offering-tooltip", r.depots, r.offers, amount(r.offered) }
         else
-          activity.caption = { "jatz-network.requesting", r.requested }
-          local tip = { "jatz-network.requesting-tooltip", r.requested, amount(r.target), amount(r.missing) }
+          count.caption = short(r.requested)
+          local tip = { "jatz-network.requesting-tooltip", r.requested, amount(r.target), amount(r.missing), r.depots }
           tip = role == "buffer" and { "jatz-network.buffer-requesting-tooltip", tip, r.offers, amount(r.offered) }
             or tip
-          activity.tooltip = tip
+          count.tooltip = tip
         end
       end
       local missing = item.request.missing + item.buffer.missing
-      local needed = row.need_cell.needed
-      needed.caption = amount(missing)
+      local needed = row.needed
+      needed.caption = short(missing)
       needed.style.font_color = missing >= 1 and { 1, 0.75, 0.3 } or { 0.7, 0.7, 0.7 }
       needed.tooltip = { "jatz-network.needed-tooltip", amount(item.request.missing), amount(item.buffer.missing) }
     end
@@ -337,11 +361,19 @@ end
 
 -- Headers and rows share exactly the same columns, insets and spacing. Reserve the remaining
 -- 16 px of the content width for the scrollbar instead of letting it shift the numbers.
-local function resource_grid(parent, name, visible)
-  local grid = parent.add({ type = "table", name = name, column_count = 5, visible = visible })
+local function resource_grid(parent, name, column_count)
+  local grid = parent.add({ type = "table", name = name, column_count = column_count })
   grid.style.width, grid.style.padding = ROW_WIDTH, { 4, 8 }
-  grid.style.horizontal_spacing, grid.style.vertical_spacing = 8, 0
+  grid.style.horizontal_spacing, grid.style.vertical_spacing = GAP, 0
   return grid
+end
+
+-- A fixed-width, right-aligned number column: values line up whatever their width.
+local function number(parent, name, width, font)
+  local e = parent.add({ type = "label", name = name })
+  e.style.width, e.style.horizontal_align = width, "right"
+  e.style.font = font
+  return e
 end
 
 function network_gui.open(player)
@@ -351,7 +383,8 @@ function network_gui.open(player)
   end
   storage.network_gui = storage.network_gui or {}
   storage.network_gui[player.index] = { filter = 1, page = 1, force = player.force.index }
-  local frame = player.gui.screen.add({ type = "frame", name = FRAME, direction = "vertical" })
+  local frame =
+    player.gui.screen.add({ type = "frame", name = FRAME, direction = "vertical", tags = { layout = LAYOUT } })
   frame.auto_center = true
   local titlebar = frame.add({ type = "flow", direction = "horizontal" })
   titlebar.drag_target = frame
@@ -447,19 +480,19 @@ function network_gui.open(player)
   local depots = depot_summary.add({ type = "table", name = "depots", column_count = 4 })
   depots.style.horizontal_spacing, depots.style.vertical_spacing = 12, 8
   depots.add({ type = "empty-widget" })
+  -- Headings start where their icons start, in fixed-width columns.
   for index, role in ipairs(ROLES) do
-    local heading = label(depots, { "jatz-network." .. role }, 96)
-    heading.style.font, heading.style.horizontal_align = "default-semibold", "center"
-    depots.style.column_alignments[index + 1] = "top-center"
+    label(depots, { "jatz-network." .. role }, 96).style.font = "default-semibold"
+    depots.style.column_alignments[index + 1] = "middle-left"
   end
+  depots.style.column_alignments[1] = "middle-left"
   -- Support depots have their own group, so Mining Drones does not add a mostly empty third row.
   local support = overview.add({ type = "flow", name = "support", direction = "vertical" })
   support.style.width = 196
-  support.style.vertical_spacing = 4
-  local support_heading = label(support, { "jatz-network.support" }, 196)
-  support_heading.style.font, support_heading.style.horizontal_align = "default-semibold", "center"
+  -- The same heading-to-icon spacing as the depot matrix, so both headings sit on one line.
+  support.style.vertical_spacing = 8
+  label(support, { "jatz-network.support" }, 196).style.font = "default-semibold"
   local support_depots = support.add({ type = "table", name = "depots", column_count = 2 })
-  support_depots.style.width, support_depots.style.horizontal_align = 196, "center"
   support_depots.style.horizontal_spacing, support_depots.style.vertical_spacing = 4, 8
   local function depot_slot(parent, name)
     local prototype = prototypes.entity[name]
@@ -503,7 +536,9 @@ function network_gui.open(player)
     local tab = tabs.add({ type = "tab", name = kind .. "_tab", caption = { "jatz-network." .. kind .. "s" } })
     local content = tabs.add({ type = "flow", name = kind .. "_content", direction = "vertical" })
     content.style.width = CONTENT_WIDTH
-    local picker = resource_grid(content, "headers", true)
+    -- Two header lines: each role's depot icon and name over its pair of columns, then what each
+    -- column counts. Rows below hold numbers only, in exactly these columns.
+    local picker = resource_grid(content, "headers", 5)
     local chooser = picker.add({
       type = "choose-elem-button",
       name = "jatz_network_" .. kind,
@@ -512,64 +547,53 @@ function network_gui.open(player)
     })
     chooser.style.size, chooser.style.right_margin = RESOURCE_SIZE, SLOT_SIZE - RESOURCE_SIZE
     for _, role in ipairs(ROLES) do
-      local heading = picker.add({ type = "flow", direction = "horizontal" })
-      heading.style.width, heading.style.horizontal_align = ROLE_WIDTH, "right"
-      heading.style.vertical_align = "center"
+      local heading = picker.add({ type = "flow", name = role, direction = "horizontal" })
+      heading.style.width, heading.style.horizontal_align = ROLE_WIDTH, "center"
+      heading.style.vertical_align, heading.style.horizontal_spacing = "center", 4
       heading.add({
         type = "sprite",
         resize_to_sprite = false,
         sprite = "entity/jatz-" .. (kind == "fluid" and "liquid-" or "") .. role .. "-depot",
         tooltip = { "jatz-network." .. role },
       }).style.size =
-        ROW_DEPOT_SIZE
-      heading.add({ type = "label", caption = { "jatz-network." .. role } })
+        HEADER_DEPOT_SIZE
+      heading.add({ type = "label", caption = { "jatz-network." .. role } }).style.font = "default-semibold"
     end
-    label(picker, { "jatz-network.needed" }, NEED_WIDTH).style.horizontal_align = "right"
+    picker.add({ type = "empty-widget" }).style.width = NEED_WIDTH
+    local columns = resource_grid(content, "columns", 8)
+    columns.style.top_padding = 0
+    columns.add({ type = "empty-widget" }).style.width = SLOT_SIZE
+    for _, role in ipairs(ROLES) do
+      local stock = number(columns, role .. "_stock", STOCK_WIDTH, "default-semibold")
+      stock.caption, stock.tooltip = { "jatz-network.stock" }, { "jatz-network.stock-tooltip" }
+      local count = number(columns, role .. "_count", COUNT_WIDTH, "default-semibold")
+      local caption = role == "provider" and "depots" or "requests"
+      count.caption, count.tooltip = { "jatz-network." .. caption }, { "jatz-network." .. caption .. "-tooltip" }
+    end
+    local needed_heading = number(columns, "needed", NEED_WIDTH, "default-semibold")
+    needed_heading.caption, needed_heading.tooltip =
+      { "jatz-network.needed" }, { "jatz-network.needed-heading-tooltip" }
+    content.add({ type = "line", direction = "horizontal" }).style.width = ROW_WIDTH
     content.add({ type = "label", name = "no_items", caption = { "jatz-network.no-items" } })
     local pane = content.add({ type = "scroll-pane", name = "resource_rows", style = "naked_scroll_pane" })
     pane.style.width, pane.style.padding = CONTENT_WIDTH, 0
-    pane.style.maximal_height = 360
+    -- A whole page of single-line rows without scrolling at the default UI scale.
+    pane.style.maximal_height = 440
     for index = 1, PAGE_SIZE do
       local group = pane.add({ type = "flow", name = "row_" .. index, direction = "vertical", visible = false })
       group.style.vertical_spacing = 0
-      local row = resource_grid(group, "cells", true)
+      local row = resource_grid(group, "cells", 8)
+      row.style.column_alignments[1] = "middle-left"
+      for column = 2, 8 do
+        row.style.column_alignments[column] = "middle-right"
+      end
       local resource = row.add({ type = "sprite", name = "resource_icon", resize_to_sprite = false })
       resource.style.size, resource.style.right_margin = RESOURCE_SIZE, SLOT_SIZE - RESOURCE_SIZE
       for _, role in ipairs(ROLES) do
-        local cell = row.add({ type = "flow", name = role .. "_cell", direction = "vertical" })
-        cell.style.width, cell.style.vertical_spacing = ROLE_WIDTH, 4
-        local stock = cell.add({ type = "label", name = "stock" })
-        stock.style.width, stock.style.height = ROLE_WIDTH, 20
-        stock.style.horizontal_align, stock.style.font = "right", "default-semibold"
-        stock.style.vertical_align = "center"
-        local details = cell.add({ type = "flow", name = "details", direction = "horizontal" })
-        details.style.width, details.style.height = ROLE_WIDTH, ROW_DEPOT_SIZE
-        details.style.horizontal_align, details.style.vertical_align = "right", "center"
-        details.style.horizontal_spacing = 4
-        details.add({
-          type = "sprite",
-          name = "holding_icon",
-          sprite = "entity/jatz-" .. (kind == "fluid" and "liquid-" or "") .. role .. "-depot",
-          resize_to_sprite = false,
-          tooltip = { "jatz-network.holding-tooltip" },
-        }).style.size =
-          ROW_DEPOT_SIZE
-        local holding =
-          details.add({ type = "label", name = "depot_count", tooltip = { "jatz-network.holding-tooltip" } })
-        holding.style.minimal_width, holding.style.maximal_width = 0, 28
-        holding.style.right_margin = 12
-        holding.style.horizontal_align = "left"
-        local activity = details.add({ type = "label", name = "activity" })
-        activity.style.minimal_width = 0
-        activity.style.maximal_width, activity.style.horizontal_align = 80, "left"
-        activity.style.single_line = false
+        number(row, role .. "_stock", STOCK_WIDTH, "default-semibold")
+        number(row, role .. "_count", COUNT_WIDTH, "default")
       end
-      local need = row.add({ type = "flow", name = "need_cell", direction = "vertical" })
-      need.style.width, need.style.height = NEED_WIDTH, 24 + ROW_DEPOT_SIZE
-      local needed = need.add({ type = "label", name = "needed" })
-      needed.style.width, needed.style.height = NEED_WIDTH, 20
-      needed.style.horizontal_align, needed.style.vertical_align = "right", "center"
-      needed.style.font = "default-semibold"
+      number(row, "needed", NEED_WIDTH, "default-semibold")
       local separator = group.add({ type = "line", name = "separator", direction = "horizontal" })
       separator.style.width = ROW_WIDTH
       separator.style.top_margin, separator.style.bottom_margin = 2, 2

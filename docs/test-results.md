@@ -2,6 +2,33 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Single-line network rows with named number columns (November 16, 2026)
+
+PR #115 follow-up to the owner's screenshot of `9449454ab06d2518ea66b975efd7c6df0de3c910`
+(misaligned rows, unclear counts, labels wasting space). Factorio 2.1.25 headless; Lua 5.2.4.
+
+- Each resource is one line: its icon, then numbers only, in fixed-width right-aligned columns.
+  The header names every column once: each role's depot icon and name over **Stock** and
+  **Depots** (providers holding it) or **Requests** (depots requesting it), then **Still needed**.
+  Per-cell depot icons and "offering"/"requesting" captions are gone; holding, offering, target
+  and unmet details stay in each number's tooltip. Amounts of 10,000 or more are shortened
+  (63.8k, 189k, 1.2M; exact on hover) and zero shows as a dash. Summary headings start at their
+  icons. A layout tag rebuilds windows saved by any earlier build of this version.
+- `tools/test_mod.py` passed with base and Space Age, including identical header/row column
+  widths, right alignment, the role headings spanning their two columns, captions, counts and
+  rebuilding an untagged window. `tests/lua/control-events.lua` (via `tools/test_mod_setup.py`)
+  checks counts, tooltips, dashes and rebuilding untagged and older windows without a scan.
+- Lua syntax, Luacheck, StyLua, Ruff, setup, emulator boundaries, releases, portal, package
+  build/validation and whitespace passed.
+- `tools/emulate_ups.py` (standard) against `683882b`: identical mean/p99/worst instructions,
+  API calls, path requests, commands, freighters and deliveries. `tools/benchmark_ups.py` against
+  `683882b`, three runs each: mean update 1.139 → 1.135 ms, script 0.458 → 0.451 ms, p99
+  3.626 → 3.414 ms, same 1,512 vehicles out and 265,200 items/minute (GUI closed).
+- Open-window probe (8 rows, 5,000 forced full-page refreshes, five alternating runs) against
+  `9449454`: median 0.349 → 0.321 ms per refresh (ranges 0.340–0.412 and
+  0.308–0.355); each row now has 8 cells instead of 21 elements. Scan limits unchanged.
+- **Still needed:** graphical confirmation of the alignment and spacing, and live multiplayer.
+
 ## Row depot icon sizing and metric meanings (November 16, 2026)
 
 PR #115 follow-up to the owner's screenshot and count/arrow clarification at

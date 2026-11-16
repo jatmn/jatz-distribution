@@ -4954,9 +4954,9 @@ do -- Network command center: real GUI events and production snapshots, fake eng
   check("quality breakdown is preserved", iron.provider.grades.normal == 10 and iron.provider.grades.uncommon == 2)
   check(
     "rendered role and demand values match actual depots",
-    row("item").provider_cell.stock.caption == "12"
-      and row("item").request_cell.stock.caption == "5"
-      and row("item").need_cell.needed.caption == "19"
+    row("item").provider_stock.caption == "12"
+      and row("item").request_stock.caption == "5"
+      and row("item").needed.caption == "19"
   )
   check(
     "resource icons replace names without losing hover definitions",
@@ -4965,22 +4965,20 @@ do -- Network command center: real GUI events and production snapshots, fake eng
       and row("item").resource_icon.tooltip[4][1] == "jatz-network.resource-tooltip"
   )
   check(
-    "compact role metrics keep holding and activity counts and their definitions",
-    row("item").provider_cell.details.depot_count.caption == "1"
-      and row("item").provider_cell.details.depot_count.tooltip[1] == "jatz-network.holding-tooltip"
-      and row("item").provider_cell.details.activity.caption[2] == 1
-      and row("item").provider_cell.details.activity.tooltip[1] == "jatz-network.offering-tooltip"
-      and row("item").request_cell.details.activity.tooltip[1] == "jatz-network.requesting-tooltip"
+    "one depot count per role, with holding, offering and request details on hover",
+    row("item").provider_count.caption == "1"
+      and row("item").provider_count.tooltip[1] == "jatz-network.offering-tooltip"
+      and row("item").provider_count.tooltip[2] == 1
+      and row("item").provider_count.tooltip[3] == 1
+      and row("item").request_count.caption == "1"
+      and row("item").request_count.tooltip[1] == "jatz-network.requesting-tooltip"
+      and row("item").buffer_count.tooltip[2][1] == "jatz-network.requesting-tooltip"
   )
-  -- A saved window from the earlier draft has no fleet container. Same-version test builds
-  -- need not raise on_configuration_changed, so the cached render must rebuild this layout.
-  for _, previous_layout in ipairs({ "fleet", "freighter_icon" }) do
+  -- A window saved by an earlier build of this version has another element tree. Same-version
+  -- test builds need not raise on_configuration_changed, so the cached render must rebuild it.
+  for _, previous_layout in ipairs({ "untagged", "older" }) do
     local previous_frame, previous_reads = frame, reads
-    if previous_layout == "fleet" then
-      frame.inner.overview.freighters.fleet.destroy()
-    else
-      frame.inner.overview.freighters.fleet.freighter_icon.destroy()
-    end
+    frame.tags = previous_layout == "untagged" and {} or { layout = 5 }
     fire("on_gui_selected_tab_changed", { player_index = 30, element = frame.inner.jatz_network_tabs })
     frame = screen.jatz_network_frame
     depot_grid = frame.inner.overview.depot_summary.depots
@@ -5006,8 +5004,8 @@ do -- Network command center: real GUI events and production snapshots, fake eng
   check(
     "Fluids tab uses cached data only",
     reads == before
-      and row("fluid").provider_cell.stock.caption == "1500"
-      and row("fluid").request_cell.stock.caption == "350"
+      and row("fluid").provider_stock.caption == "1500"
+      and row("fluid").request_stock.caption == "350"
       and row("fluid").resource_icon.sprite == "fluid/water"
   )
   local dropdown = frame.inner.controls.jatz_network_surface
@@ -5020,7 +5018,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
   check(
     "surface changes do not scan and show only that surface",
     reads == before
-      and row("fluid").provider_cell.stock.caption == "0"
+      and row("fluid").provider_stock.caption == "–"
       and depot_grid["jatz-provider-depot"].count.caption == "0"
       and depot_grid["jatz-buffer-depot"].count.caption == "1"
   )
@@ -5028,15 +5026,15 @@ do -- Network command center: real GUI events and production snapshots, fake eng
   fire("on_gui_selected_tab_changed", { player_index = 30, element = tabs })
   check(
     "Vulcanus holds only its buffer iron",
-    row("item").provider_cell.stock.caption == "0" and row("item").buffer_cell.stock.caption == "3"
+    row("item").provider_stock.caption == "–" and row("item").buffer_stock.caption == "3"
   )
   buffer_contents[1].count = 8
   advance(20)
-  check("quiet interval does not read inventories", reads == before and row("item").buffer_cell.stock.caption == "3")
+  check("quiet interval does not read inventories", reads == before and row("item").buffer_stock.caption == "3")
   sample()
   check(
     "next sample keeps surface choice and reuses rows",
-    dropdown.selected_index == 3 and row("item").buffer_cell.stock.caption == "8" and screen.jatz_network_frame == frame
+    dropdown.selected_index == 3 and row("item").buffer_stock.caption == "8" and screen.jatz_network_frame == frame
   )
   game.surfaces[3].platform.name = "Platform 2"
   sample()
@@ -5071,8 +5069,8 @@ do -- Network command center: real GUI events and production snapshots, fake eng
   fire("on_gui_elem_changed", { player_index = 30, element = picker })
   check(
     "resource picker finds an empty configured request without a scan",
-    row("item").request_cell.details.activity.caption[2] == 1
-      and row("item").request_cell.stock.caption == "0"
+    row("item").request_count.caption == "1"
+      and row("item").request_stock.caption == "–"
       and not row("item", 2).parent.visible
       and reads == before
   )
@@ -5119,7 +5117,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
   fire("on_gui_selection_state_changed", { player_index = 30, element = filter })
   check(
     "stock without requests filter resets paging and excludes iron demand",
-    frame.inner.paging.page_label.caption[2] == 1 and row("item").request_cell.details.activity.caption[2] == 0
+    frame.inner.paging.page_label.caption[2] == 1 and row("item").request_count.caption == "–"
   )
   filter.selected_index = 1
   fire("on_gui_selection_state_changed", { player_index = 30, element = filter })
@@ -5184,7 +5182,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
   sample()
   check(
     "force change gets only new force's stock",
-    row("item").provider_cell.stock.caption == "7" and not frame.inner.controls.jatz_network_surface.visible
+    row("item").provider_stock.caption == "7" and not frame.inner.controls.jatz_network_surface.visible
   )
   script.active_mods["space-age"] = "2.1.24"
   sample()
