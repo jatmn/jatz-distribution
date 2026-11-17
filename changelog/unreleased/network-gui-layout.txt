@@ -1,6 +1,0 @@
-  Gui:
-    - Group the freighter network summary into a fleet panel and an item/liquid depot matrix with counted icons.
-    - Use resource and status icons, compact stock rows and page arrows, retaining names, exact counts and definitions on hover.
-    - Align resource columns and use consistent square icons, a balanced summary band and a separate support-depot group.
-    - Separate resource rows with horizontal dividers, enlarge depot icons and spacing, and show read-only summaries without inactive button skins.
-    - Show each resource as one row of numbers in fixed, right-aligned columns named once in the header: stock and a depot or request count per role, shortened amounts (63.8k) with exact values on hover, and seven rows per page that fit without scrolling.
