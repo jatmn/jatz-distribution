@@ -240,9 +240,8 @@ local function show(player, frame, counts)
     end
   end
   local key = table.concat(keys, ",")
-  if not selected then
-    state.surface = nil
-  end
+  -- Keep the choice if a shared snapshot predates this surface's first depot. Render all
+  -- surfaces until it appears; choosing All surfaces explicitly still clears state.surface.
   local dropdown = inner.controls[SURFACE]
   dropdown.visible = #listed > 1 or script.active_mods["space-age"] ~= nil
   -- Set again only when the surfaces change, so a list a player has open stays open.
@@ -387,17 +386,21 @@ end
 
 -- Opens on the surface the player looks at: where they stand, or the planet or platform they view
 -- in remote view (LuaPlayer::surface; physical_surface is where they stand). "All surfaces" when
--- the force has no depots there. A window rebuilt while open stays pinned.
+-- the force has no depots there. A rebuild keeps the window's surface choice and pin.
 function network_gui.open(player)
   local old = frame_of(player)
   local previous = storage.network_gui and storage.network_gui[player.index]
   local pinned = old and previous and previous.pinned or nil
+  local surface = player.surface.index
+  if old and previous then
+    surface = previous.surface -- nil is an explicit All surfaces choice.
+  end
   if old then
     old.destroy()
   end
   storage.network_gui = storage.network_gui or {}
   storage.network_gui[player.index] =
-    { filter = 1, page = 1, force = player.force.index, surface = player.surface.index, pinned = pinned }
+    { filter = 1, page = 1, force = player.force.index, surface = surface, pinned = pinned }
   local frame =
     player.gui.screen.add({ type = "frame", name = FRAME, direction = "vertical", tags = { layout = LAYOUT } })
   frame.auto_center = true

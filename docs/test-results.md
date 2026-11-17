@@ -2,13 +2,14 @@
 
 The latest test result for each area of the mod. When you test an area again, replace its entry rather than adding another; superseded rounds stay in git history. Screenshots and reports from before November 3, 2026 are kept in the private `jatz-distribution-archive` repository.
 
-## Freighter network window: automated checks passed (November 16, 2026)
+## Freighter network window: automated checks passed (November 17, 2026)
 
-PR #115, last checked on `e6e02e3` plus its review fix; Factorio 2.1.24 and 2.1.25 headless on Linux, Lua 5.2.4.
+PR #119 at `f66fbba` plus its surface-selection repair; Factorio 2.1.25 (build 88022) headless on Linux, Lua 5.2.4.
 
-- Rows are single lines with named, right-aligned number columns; pages hold seven rows (a row is about 60 px at the default UI scale, so eight overflowed); a window saved by an earlier build is rebuilt from the cached snapshot on any write, an age-label update included.
-- `tools/test_mod.py` passed with base and Space Age, including the `network` scenario. `tests/lua/control-events.lua` (via `tools/test_mod_setup.py`), lint, release, portal and package checks passed. `tools/emulate_ups.py` was identical to the base.
-- **Still needed:** graphical confirmation of the alignment and spacing, that seven rows show with no scrollbar, and live multiplayer.
+- The window opens on the viewed surface. Rebuilds after travelling keep its selected surface or explicit All surfaces choice. If a shared snapshot predates the viewed surface's first depot, the next snapshot selects it; explicitly choosing All surfaces cancels that initial choice.
+- Both new surface-selection regressions fail on the starting PR head and pass with the repair. `tools/test_mod_setup.py` passed all 16 tests, including the production GUI handlers and shared snapshot collection against a fake runtime. It covers configuration, layout, age-refresh and force-change rebuilds, pin lifecycle and the stale shared snapshot.
+- `tools/test_mod.py` passed with base and Space Age, including the extended `network` scenario's real GUI rebuilds, explicit All surfaces and remote-view checks. Its existing pin check proves event timing, not the pin's appearance or persistence in this scenario (the mod's separate Lua state closes the scenario's namesake frame).
+- **Still needed:** graphical confirmation of the pin's normal, toggled and hover states, alignment and spacing, that seven rows show with no scrollbar, and live multiplayer. Headless checks do not establish these results.
 
 ## Z-key freighter drops: passed (November 16, 2026)
 

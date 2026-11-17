@@ -190,6 +190,21 @@ script.on_event(defines.events.on_tick, function(event)
     assert(#dropdown.items == 2 and dropdown.selected_index == 2)
     assert(storage.network_gui[1].surface == depots_surface.index)
     assert(row("item").provider_stock.caption == (script.active_mods.quality and "120" or "100"))
+    -- A mod-change rebuild after travelling keeps the window's selected surface.
+    player.set_controller({ type = defines.controllers.remote, surface = player.physical_surface, position = { 0, 0 } })
+    network.on_configuration_changed()
+  elseif event.tick == 20 then
+    assert(player.surface ~= depots_surface)
+    assert(inner().controls.jatz_network_surface.selected_index == 2)
+    assert(row("item").provider_stock.caption == (script.active_mods.quality and "120" or "100"))
+    -- Explicit All surfaces is also a choice, even when viewing a surface with depots.
+    local dropdown = inner().controls.jatz_network_surface
+    dropdown.selected_index = 1
+    network.on_gui_selection_state_changed({ player_index = 1, element = dropdown })
+    player.set_controller({ type = defines.controllers.remote, surface = depots_surface, position = { 0, 0 } })
+    network.on_configuration_changed()
+  elseif event.tick == 25 then
+    assert(inner().controls.jatz_network_surface.selected_index == 1)
     -- Pinning: the window stops being the opened GUI, and the engine raises on_gui_closed for it
     -- during the click, with the pin already set, so the handler keeps it. The jatz-distribution
     -- mod's own Lua state gets that event too and closes its namesake frame, so the frame itself

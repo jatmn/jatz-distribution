@@ -5267,6 +5267,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
     "pinned, the window stays open but is not the opened GUI",
     pin.toggled and player.opened == nil and screen.jatz_network_frame == frame and toggled["jatz-network"]
   )
+  player.surface = surface -- Travelling must not change the window's selected Vulcanus.
   network.on_configuration_changed()
   sample()
   frame = screen.jatz_network_frame
@@ -5275,6 +5276,40 @@ do -- Network command center: real GUI events and production snapshots, fake eng
     "a rebuilt window stays pinned and does not take the opened GUI",
     pin.toggled and player.opened == nil and row("item").buffer_stock.caption == "8"
   )
+  for _, route in ipairs({ "layout event", "age refresh", "force event" }) do
+    if route == "force event" then
+      player.force = other
+      fire("on_player_changed_force", { player_index = 30, force = force })
+      sample()
+      check("a force without the selected surface falls back to all", row("item").provider_stock.caption == "7")
+      player.force = force
+      fire("on_player_changed_force", { player_index = 30, force = other })
+    else
+      frame.tags = {}
+      if route == "layout event" then
+        fire("on_gui_selected_tab_changed", { player_index = 30, element = frame.inner.jatz_network_tabs })
+      else
+        advance(60)
+      end
+    end
+    sample()
+    frame = screen.jatz_network_frame
+    pin = frame.children[1].jatz_network_pin
+    check(
+      "rebuild preserves the selected surface: " .. route,
+      frame.inner.controls.jatz_network_surface.selected_index == 3
+        and row("item").buffer_stock.caption == "8"
+        and pin.toggled
+    )
+  end
+  local all = frame.inner.controls.jatz_network_surface
+  all.selected_index = 1
+  fire("on_gui_selection_state_changed", { player_index = 30, element = all })
+  network.on_configuration_changed()
+  sample()
+  frame = screen.jatz_network_frame
+  pin = frame.children[1].jatz_network_pin
+  check("rebuild preserves explicit All surfaces", frame.inner.controls.jatz_network_surface.selected_index == 1)
   fire("on_gui_click", { player_index = 30, element = pin })
   check("unpinned, the window is the opened GUI again", not pin.toggled and player.opened == frame)
   fire("on_gui_closed", { player_index = 30, element = frame })
@@ -5289,6 +5324,37 @@ do -- Network command center: real GUI events and production snapshots, fake eng
     not screen.jatz_network_frame.children[1].jatz_network_pin.toggled and player.opened == screen.jatz_network_frame
   )
   press()
+  -- Another viewer holds a snapshot taken before this surface gets its first depot.
+  second.force, second.connected = force, true
+  network.open(second)
+  sample()
+  local late = placed("jatz-provider-depot", 4, { { name = "wood", quality = "normal", count = 17 } })
+  player.surface = game.surfaces[4]
+  before = reads
+  press()
+  check(
+    "opening from an older shared snapshot does not scan and falls back to all",
+    reads == before and screen.jatz_network_frame.inner.controls.jatz_network_surface.selected_index == 1
+  )
+  sample()
+  check(
+    "the next shared snapshot selects the originally viewed surface",
+    screen.jatz_network_frame.inner.controls.jatz_network_surface.selected_index == 5
+      and row("item").provider_stock.caption == "17"
+      and not row("item", 2).parent.visible
+  )
+  press()
+  storage.depots[late.unit_number] = nil
+  sample()
+  press()
+  all = screen.jatz_network_frame.inner.controls.jatz_network_surface
+  all.selected_index = 1
+  fire("on_gui_selection_state_changed", { player_index = 30, element = all })
+  placed("jatz-provider-depot", 4, { { name = "wood", quality = "normal", count = 17 } })
+  sample()
+  check("explicit All surfaces cancels the initial surface choice", all.selected_index == 1)
+  press()
+  second.connected = false
   -- More viewers than ticks between age-label changes must all receive a snapshot.
   for i = 1, 61 do
     local viewer = {
