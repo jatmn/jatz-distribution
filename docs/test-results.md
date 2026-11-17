@@ -2,6 +2,20 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Seven-row pages without a cut-off row (November 16, 2026)
+
+PR #115 follow-up to the owner's in-game screenshot of `6a87e105e6f62b0766f32fccbee2ddf69475a77f`:
+rows measure about 60 px at the default UI scale, so eight rows (about 480 px) overflowed the
+440 px pane cap and the eighth row hid behind a scrollbar. Pages now hold seven rows and the pane
+has no height cap, so a page always shows whole. The layout tag moves to 7 so open windows rebuild.
+
+- `tools/test_mod.py` passed with base and Space Age; the Lua setup tests check a bounded first
+  page of seven. Lint, emulator boundaries, releases, portal, package and whitespace passed.
+- `tools/emulate_ups.py` (standard) against `683882b`: identical instructions, calls and deliveries.
+  `tools/benchmark_ups.py` against `683882b` (GUI closed, three runs): mean update 1.129 → 1.135 ms,
+  script 0.455 → 0.448 ms, p99 3.484 → 3.221 ms, same vehicles and deliveries; within run spread.
+- **Still needed:** graphical confirmation that seven rows show with no scrollbar.
+
 ## Single-line network rows with named number columns (November 16, 2026)
 
 PR #115 follow-up to the owner's screenshot of `9449454ab06d2518ea66b975efd7c6df0de3c910`

@@ -5094,7 +5094,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
   request.to_be_deconstructed = function()
     return false
   end
-  -- More resource types than fit on one page; one row per resource, eight visible at most.
+  -- More resource types than fit on one page; one row per resource, seven visible at most.
   local many = {}
   for i = 1, 12 do
     local name = "test-resource-" .. i
@@ -5105,7 +5105,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
   sample()
   check(
     "large catalogs have a bounded first page",
-    #tabs.item_content.resource_rows.children == 8 and frame.inner.paging.jatz_network_next.enabled
+    #tabs.item_content.resource_rows.children == 7 and frame.inner.paging.jatz_network_next.enabled
   )
   before = reads
   fire("on_gui_click", { player_index = 30, element = frame.inner.paging.jatz_network_next })

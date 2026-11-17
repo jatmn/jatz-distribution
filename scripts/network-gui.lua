@@ -9,14 +9,15 @@ local SHORTCUT, FRAME = "jatz-network", "jatz_network_frame"
 local CLOSE, SURFACE = "jatz_network_close", "jatz_network_surface"
 local TABS, FILTER = "jatz_network_tabs", "jatz_network_filter"
 local PREVIOUS, NEXT = "jatz_network_previous", "jatz_network_next"
-local INTERVAL, PER_TICK, PAGE_SIZE = 300, 8, 8
+-- Seven single-line rows fit the window without scrolling at the default UI scale.
+local INTERVAL, PER_TICK, PAGE_SIZE = 300, 8, 7
 local ROLES = { "provider", "request", "buffer" }
 local CONTENT_WIDTH, ROW_WIDTH, SLOT_SIZE, ROLE_WIDTH, NEED_WIDTH = 760, 744, 48, 176, 120
 -- Each role spans a stock column and a depot-count column; every number has its own fixed,
 -- right-aligned column so values line up from row to row whatever their width.
 local RESOURCE_SIZE, HEADER_DEPOT_SIZE, STOCK_WIDTH, COUNT_WIDTH, GAP = 40, 32, 104, 64, 8
 -- Bumped whenever the window's element tree changes, so a window saved by an older build rebuilds.
-local LAYOUT = 6
+local LAYOUT = 7
 network_gui.shortcut = SHORTCUT
 -- The depots in the crafting menu's order; any other (Mining Drones' mining depot) after them.
 local KINDS = {
@@ -576,9 +577,8 @@ function network_gui.open(player)
     content.add({ type = "line", direction = "horizontal" }).style.width = ROW_WIDTH
     content.add({ type = "label", name = "no_items", caption = { "jatz-network.no-items" } })
     local pane = content.add({ type = "scroll-pane", name = "resource_rows", style = "naked_scroll_pane" })
+    -- No height cap: the pane fits a whole page, so no row is ever cut off behind a scrollbar.
     pane.style.width, pane.style.padding = CONTENT_WIDTH, 0
-    -- A whole page of single-line rows without scrolling at the default UI scale.
-    pane.style.maximal_height = 440
     for index = 1, PAGE_SIZE do
       local group = pane.add({ type = "flow", name = "row_" .. index, direction = "vertical", visible = false })
       group.style.vertical_spacing = 0
