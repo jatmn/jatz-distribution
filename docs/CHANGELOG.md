@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.10](https://github.com/jatmn/jatz-distribution/compare/v0.1.9...v0.1.10) (2026-11-17)
+
+
+### Features
+
+* polish freighter network GUI (validation needed) ([#115](https://github.com/jatmn/jatz-distribution/issues/115)) ([c3dbf2e](https://github.com/jatmn/jatz-distribution/commit/c3dbf2ec28644f4c54ad2b2d8f0462788eefb453))
+
 ## [0.1.9](https://github.com/jatmn/jatz-distribution/compare/v0.1.8...v0.1.9) (2026-11-16)
 
 
