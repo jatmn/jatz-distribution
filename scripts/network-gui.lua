@@ -203,10 +203,18 @@ local function held_tooltip(r)
   return tip
 end
 
-local function show(player, frame, counts)
-  -- A window saved by an earlier build of the same version can still have another hierarchy.
+-- A window saved by an earlier build of the same version can still have another hierarchy.
+-- Rebuilds it, which draws the cached snapshot; every write to the window's elements checks first.
+local function rebuilt(player, frame)
   if frame.tags.layout ~= LAYOUT then
     network_gui.open(player)
+    return true
+  end
+  return false
+end
+
+local function show(player, frame, counts)
+  if rebuilt(player, frame) then
     return
   end
   local state, inner = storage.network_gui[player.index], frame.inner
@@ -831,8 +839,11 @@ function network_gui.refresh(tick)
       local age = math.floor((tick - counts.tick) / 60)
       local state = storage.network_gui[player.index]
       if state.age ~= age then
-        frame_of(player).inner.paging.snapshot.caption = { "jatz-network.snapshot", age }
-        state.age = age
+        local frame = frame_of(player)
+        if not rebuilt(player, frame) then
+          frame.inner.paging.snapshot.caption = { "jatz-network.snapshot", age }
+          state.age = age
+        end
         storage.network_viewer = player.index
         break
       end

@@ -2,6 +2,21 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Saved windows rebuild on an age update too (November 16, 2026)
+
+PR #115 review follow-up (Pullfrog, on `e6e02e339c328f9b3c7d10345ef7e16bbdcd1c26`): only a full
+render checked the window's layout tag. A window saved by an earlier build of this version that
+already showed the current snapshot got no new render, and its next age-label update wrote to
+`inner.paging.snapshot`, which the base build's tree lacks, stopping the tick handler. Every write
+to the window now goes through the same check, so that update rebuilds the window from the cached
+snapshot instead.
+
+- `tests/lua/control-events.lua` restores an already-drawn base-build window (untagged, its label
+  on `inner`) and advances ticks only: it failed with that error before the fix and now rebuilds
+  with no inventory reads or new scan. Setup tests, Lua syntax, Luacheck, StyLua and whitespace passed.
+- `tools/test_mod.py` (Factorio 2.1.24 headless) passed with base and Space Age, including the
+  network scenario. `tools/emulate_ups.py` (standard) against `e6e02e3`: identical.
+
 ## Seven-row pages without a cut-off row (November 16, 2026)
 
 PR #115 follow-up to the owner's in-game screenshot of `6a87e105e6f62b0766f32fccbee2ddf69475a77f`:

@@ -4981,10 +4981,33 @@ do -- Network command center: real GUI events and production snapshots, fake eng
     frame.tags = previous_layout == "untagged" and {} or { layout = 5 }
     fire("on_gui_selected_tab_changed", { player_index = 30, element = frame.inner.jatz_network_tabs })
     frame = screen.jatz_network_frame
-    depot_grid = frame.inner.overview.depot_summary.depots
     check(
       "prior draft window rebuilds without scanning: " .. previous_layout,
       frame ~= previous_frame and frame.inner.overview.freighters.fleet.total.caption == "5" and reads == previous_reads
+    )
+  end
+  -- Restored with its snapshot already drawn, the window gets no event and no new render: its next
+  -- write is the age label's alone. The base build kept that label on `inner`, not in `paging`.
+  do
+    local previous_frame, previous_reads = frame, reads
+    check(
+      "the saved window already shows the current snapshot",
+      storage.network_gui[30].shown == storage.network_data[30].tick and storage.network_scan == nil
+    )
+    frame.tags = {}
+    frame.inner.paging.snapshot.destroy()
+    frame.inner.add({ type = "label", name = "snapshot" })
+    advance(60)
+    frame = screen.jatz_network_frame
+    depot_grid = frame.inner.overview.depot_summary.depots
+    check(
+      "prior window rebuilds on an age update alone, without scanning",
+      frame ~= previous_frame
+        and frame.tags.layout ~= nil
+        and frame.inner.paging.snapshot.caption[1] == "jatz-network.snapshot"
+        and frame.inner.overview.freighters.fleet.total.caption == "5"
+        and reads == previous_reads
+        and storage.network_scan == nil
     )
   end
   check(
