@@ -6,7 +6,7 @@ local ledger = require("scripts.promises")
 local quality = require("scripts.quality")
 local network_gui = {}
 local SHORTCUT, FRAME = "jatz-network", "jatz_network_frame"
-local CLOSE, SURFACE = "jatz_network_close", "jatz_network_surface"
+local CLOSE, PIN, SURFACE = "jatz_network_close", "jatz_network_pin", "jatz_network_surface"
 local TABS, FILTER = "jatz_network_tabs", "jatz_network_filter"
 local PREVIOUS, NEXT = "jatz_network_previous", "jatz_network_next"
 -- Seven single-line rows fit the window without scrolling at the default UI scale.
@@ -17,7 +17,7 @@ local CONTENT_WIDTH, ROW_WIDTH, SLOT_SIZE, ROLE_WIDTH, NEED_WIDTH = 760, 744, 48
 -- right-aligned column so values line up from row to row whatever their width.
 local RESOURCE_SIZE, HEADER_DEPOT_SIZE, STOCK_WIDTH, COUNT_WIDTH, GAP = 40, 32, 104, 64, 8
 -- Bumped whenever the window's element tree changes, so a window saved by an older build rebuilds.
-local LAYOUT = 7
+local LAYOUT = 8
 network_gui.shortcut = SHORTCUT
 -- The depots in the crafting menu's order; any other (Mining Drones' mining depot) after them.
 local KINDS = {
@@ -385,13 +385,19 @@ local function number(parent, name, width, font)
   return e
 end
 
+-- Opens on the surface the player looks at: where they stand, or the planet or platform they view
+-- in remote view (LuaPlayer::surface; physical_surface is where they stand). "All surfaces" when
+-- the force has no depots there. A window rebuilt while open stays pinned.
 function network_gui.open(player)
   local old = frame_of(player)
+  local previous = storage.network_gui and storage.network_gui[player.index]
+  local pinned = old and previous and previous.pinned or nil
   if old then
     old.destroy()
   end
   storage.network_gui = storage.network_gui or {}
-  storage.network_gui[player.index] = { filter = 1, page = 1, force = player.force.index }
+  storage.network_gui[player.index] =
+    { filter = 1, page = 1, force = player.force.index, surface = player.surface.index, pinned = pinned }
   local frame =
     player.gui.screen.add({ type = "frame", name = FRAME, direction = "vertical", tags = { layout = LAYOUT } })
   frame.auto_center = true
@@ -407,6 +413,15 @@ function network_gui.open(player)
     titlebar.add({ type = "empty-widget", style = "draggable_space_header", ignored_by_interaction = true })
   handle.style.height = 24
   handle.style.horizontally_stretchable = true
+  -- Pinned, the window is not the player's opened GUI, so E, Esc and opening another GUI leave it.
+  titlebar.add({
+    type = "sprite-button",
+    name = PIN,
+    style = "frame_action_button",
+    sprite = "utility/track_button_white",
+    tooltip = { "jatz-network.pin-tooltip" },
+    toggled = pinned == true,
+  })
   titlebar.add({
     type = "sprite-button",
     name = CLOSE,
@@ -639,7 +654,9 @@ function network_gui.open(player)
     tooltip = { "jatz-network.snapshot-tooltip" },
   })
   show_cached(player)
-  player.opened = frame
+  if not pinned then
+    player.opened = frame
+  end
   player.set_shortcut_toggled(SHORTCUT, true)
 end
 -- The shortcut: opens the window, or closes it if open. Returns whether it was ours.
@@ -658,28 +675,47 @@ function network_gui.on_lua_shortcut(event)
   return true
 end
 
--- The window closed (E, Esc or opening something else). Returns whether it was ours.
+-- The window closed (E, Esc or opening something else). Returns whether it was ours. Pinning
+-- raises this too, as the window stops being the opened GUI; a pinned window stays.
 function network_gui.on_gui_closed(event)
   local element = event.element
   if not (element and element.valid and element.name == FRAME) then
     return false
   end
   local player = game.get_player(event.player_index)
-  if player then
+  local state = storage.network_gui and storage.network_gui[event.player_index]
+  if player and not (state and state.pinned) then
     close(player)
   end
   return true
 end
 
+-- Pinned: no longer the opened GUI. Unpinned: the opened GUI again, so E and Esc close it.
+local function toggle_pin(player, button)
+  local state, frame = storage.network_gui and storage.network_gui[player.index], frame_of(player)
+  if not (state and frame) then
+    return
+  end
+  state.pinned = not state.pinned or nil
+  button.toggled = state.pinned == true
+  if not state.pinned then
+    player.opened = frame
+  elseif player.opened == frame then
+    player.opened = nil
+  end
+end
+
 function network_gui.on_gui_click(event)
   local name = event.element.name
-  if name ~= CLOSE and name ~= PREVIOUS and name ~= NEXT then
+  if name ~= CLOSE and name ~= PIN and name ~= PREVIOUS and name ~= NEXT then
     return false
   end
   local player = game.get_player(event.player_index)
   if player then
     if name == CLOSE then
       close(player)
+    elseif name == PIN then
+      toggle_pin(player, event.element)
     else
       local state = storage.network_gui and storage.network_gui[player.index]
       if state then

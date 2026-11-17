@@ -10,6 +10,10 @@ end
 local function row(kind)
   return inner().jatz_network_tabs[kind .. "_content"].resource_rows.row_1.cells
 end
+local function pin()
+  return game.get_player(1).gui.screen.jatz_network_frame.children[1].jatz_network_pin
+end
+local depots_surface
 script.on_event(defines.events.on_gui_closed, network.on_gui_closed)
 script.on_event(defines.events.on_gui_click, network.on_gui_click)
 script.on_event(defines.events.on_gui_selected_tab_changed, network.on_gui_selection_state_changed)
@@ -21,6 +25,7 @@ script.on_event(defines.events.on_tick, function(event)
   end
   if event.tick == 1 then
     local surface = game.create_surface("network-check", { width = 128, height = 128 })
+    depots_surface = surface
     surface.request_to_generate_chunks({ 0, 0 }, 2)
     surface.force_generate_chunk_requests()
     player.force.technologies["jatz-freight-system"].researched = true
@@ -67,6 +72,8 @@ script.on_event(defines.events.on_tick, function(event)
     network.on_lua_shortcut({ player_index = 1, prototype_name = "jatz-network" })
     assert(player.opened == player.gui.screen.jatz_network_frame)
     assert(not row("item").parent.visible)
+    -- The player stands on Nauvis, where the force has no depots: all surfaces.
+    assert(player.surface ~= surface and storage.network_gui[1].surface == player.surface.index)
   end
   network.refresh(event.tick)
   if event.tick == 5 then
@@ -168,10 +175,33 @@ script.on_event(defines.events.on_tick, function(event)
     network.on_configuration_changed()
     assert(not row("item").parent.visible and storage.network_data == nil)
   elseif event.tick == 10 then
+    assert(inner().controls.jatz_network_surface.selected_index == 1)
     player.opened = nil -- Real engine on_gui_closed, not an invented close event.
     assert(not player.gui.screen.jatz_network_frame)
     assert(not player.is_shortcut_toggled("jatz-network"))
     assert(storage.network_scan == nil and storage.network_data == nil)
+    -- In remote view, LuaPlayer::surface is the surface viewed; the window opens on it.
+    player.set_controller({ type = defines.controllers.remote, surface = depots_surface, position = { 0, 0 } })
+    assert(player.surface == depots_surface and player.physical_surface ~= depots_surface)
+    network.on_lua_shortcut({ player_index = 1, prototype_name = "jatz-network" })
+    assert(storage.network_gui[1].surface == depots_surface.index)
+  elseif event.tick == 15 then
+    local dropdown = inner().controls.jatz_network_surface
+    assert(#dropdown.items == 2 and dropdown.selected_index == 2)
+    assert(storage.network_gui[1].surface == depots_surface.index)
+    assert(row("item").provider_stock.caption == (script.active_mods.quality and "120" or "100"))
+    -- Pinning: the window stops being the opened GUI, and the engine raises on_gui_closed for it
+    -- during the click, with the pin already set, so the handler keeps it. The jatz-distribution
+    -- mod's own Lua state gets that event too and closes its namesake frame, so the frame itself
+    -- doesn't survive here; tests/lua/control-events.lua covers the rest of pinning.
+    assert(pin().type == "sprite-button" and not pin().toggled)
+    local closing
+    script.on_event(defines.events.on_gui_closed, function(closed)
+      closing = closing or { pinned = storage.network_gui[1].pinned, ours = network.on_gui_closed(closed) }
+    end)
+    network.on_gui_click({ player_index = 1, element = pin() })
+    assert(closing and closing.pinned and closing.ours and player.opened == nil)
+    assert(storage.network_gui[1] and storage.network_gui[1].pinned)
     helpers.write_file("jatz-network-check.json", helpers.table_to_json({ passed = true }))
     script.finish_test(true)
   end

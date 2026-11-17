@@ -4778,6 +4778,13 @@ do -- Network command center: real GUI events and production snapshots, fake eng
     planet = { name = "vulcanus", prototype = { localised_name = { "space-location-name.vulcanus" } } },
   }
   game.surfaces[3] = { valid = true, index = 3, name = "platform-1", platform = { name = "Platform 1" } }
+  -- Where the player stands at first: a planet without depots.
+  game.surfaces[4] = {
+    valid = true,
+    index = 4,
+    name = "gleba",
+    planet = { name = "gleba", prototype = { localised_name = { "space-location-name.gleba" } } },
+  }
   script.active_mods = { base = "2.1.24" }
   local reads = 0
   local function placed(name, index, contents, owner)
@@ -4868,6 +4875,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
     valid = true,
     connected = true,
     force = force,
+    surface = game.surfaces[4],
     gui = { screen = screen, relative = element() },
     set_shortcut_toggled = function(name, on)
       toggled[name] = on
@@ -5032,6 +5040,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
       and row("fluid").resource_icon.sprite == "fluid/water"
   )
   local dropdown = frame.inner.controls.jatz_network_surface
+  check("opened where the force has no depots, the window shows all surfaces", dropdown.selected_index == 1)
   check(
     "surfaces show planet icons and platform names",
     #dropdown.items == 4 and dropdown.items[2][2] == "[planet=nauvis] " and dropdown.items[4] == "Platform 1"
@@ -5150,6 +5159,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
     valid = true,
     connected = true,
     force = force,
+    surface = surface,
     gui = { screen = element() },
     set_shortcut_toggled = function() end,
   }
@@ -5234,6 +5244,51 @@ do -- Network command center: real GUI events and production snapshots, fake eng
   )
   advance(600)
   check("no open connected GUI means no data updates", reads == before and storage.network_data == nil)
+  -- Opened, the window shows the surface the player looks at: in remote view, the planet viewed
+  -- (LuaPlayer::surface), not the one they stand on.
+  player.force = force
+  player.surface = game.surfaces[2]
+  press()
+  sample()
+  frame = screen.jatz_network_frame
+  check(
+    "the window opens on the surface the player views",
+    frame.inner.controls.jatz_network_surface.selected_index == 3
+      and row("item").buffer_stock.caption == "8"
+      and row("item").provider_stock.caption == "–"
+  )
+  -- Pinned, the window is no longer the opened GUI: the game's close request that follows (and
+  -- E or Esc's) leaves it open. A rebuild keeps it pinned; unpinned, E or Esc close it again.
+  local pin = frame.children[1].jatz_network_pin
+  check("the window starts unpinned", pin.type == "sprite-button" and not pin.toggled and player.opened == frame)
+  fire("on_gui_click", { player_index = 30, element = pin })
+  fire("on_gui_closed", { player_index = 30, element = frame })
+  check(
+    "pinned, the window stays open but is not the opened GUI",
+    pin.toggled and player.opened == nil and screen.jatz_network_frame == frame and toggled["jatz-network"]
+  )
+  network.on_configuration_changed()
+  sample()
+  frame = screen.jatz_network_frame
+  pin = frame.children[1].jatz_network_pin
+  check(
+    "a rebuilt window stays pinned and does not take the opened GUI",
+    pin.toggled and player.opened == nil and row("item").buffer_stock.caption == "8"
+  )
+  fire("on_gui_click", { player_index = 30, element = pin })
+  check("unpinned, the window is the opened GUI again", not pin.toggled and player.opened == frame)
+  fire("on_gui_closed", { player_index = 30, element = frame })
+  check("unpinned, E or Esc closes", screen.jatz_network_frame == nil and not toggled["jatz-network"])
+  press()
+  fire("on_gui_click", { player_index = 30, element = screen.jatz_network_frame.children[1].jatz_network_pin })
+  press()
+  check("the shortcut closes a pinned window", screen.jatz_network_frame == nil and not toggled["jatz-network"])
+  press()
+  check(
+    "reopened, the window starts unpinned",
+    not screen.jatz_network_frame.children[1].jatz_network_pin.toggled and player.opened == screen.jatz_network_frame
+  )
+  press()
   -- More viewers than ticks between age-label changes must all receive a snapshot.
   for i = 1, 61 do
     local viewer = {
@@ -5241,6 +5296,7 @@ do -- Network command center: real GUI events and production snapshots, fake eng
       valid = true,
       connected = true,
       force = force,
+      surface = surface,
       gui = { screen = element() },
       set_shortcut_toggled = function() end,
     }
