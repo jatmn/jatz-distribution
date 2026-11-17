@@ -328,7 +328,8 @@ function road_monitor.counted(unit_number, network)
 end
 logistics.monitor_counts = road_monitor.counted
 
--- A depot replaced by a new entity of itself (scripts/legacy-depots.lua): the monitors count it
+-- A depot replaced by a new entity (scripts/legacy-depots.lua, scripts/depot-swap.lua,
+-- scripts/depot-upgrades.lua): the monitors count it
 -- under its new unit number, so a condition reading the network still leaves its own share out
 -- before the monitors next work out their roads.
 function road_monitor.replaced(old_unit_number, new_unit_number)

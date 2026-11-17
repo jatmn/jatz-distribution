@@ -422,8 +422,8 @@ local function count_freighters(inventory_)
 end
 
 -- Freighters in a requesting depot's chests, waiting to move into its slot or to be taken away by
--- robots: its truck chest's, and an item depot's own chest's. (A field, not a local: this file has
--- as many locals as Lua allows.)
+-- robots: its truck chest's, and an item depot's own chest's. (A field, not a local, to spare this file's
+-- main chunk a local.)
 function logistics.waiting_freighters(entity)
   local count = count_freighters(freighter_chest(entity))
   if not LIQUID[entity.name] then
@@ -968,8 +968,7 @@ logistics.monitor_counts = nil
 -- A promise is filed under the trip's key, and found by it in storage.trips: a trip holding one is
 -- driving out (TO_PROVIDER, set only in start_trip), carrying nothing, in the empty paint it was
 -- made in, so `repaint` (which would give it a new unit number) never touches it until it has
--- loaded and its promise is gone. (A field, not a local: this file has as many locals as Lua
--- allows.)
+-- loaded and its promise is gone. (A field, not a local, to spare this file's main chunk a local.)
 function logistics.ahead(key, trip)
   local other = storage.trips[key]
   if not other then
@@ -1329,7 +1328,7 @@ end
 -- capacity, which arrived_at_provider reads as it loads. A liquid depot not set to full loads
 -- still never sends one for less than logistics.least_fluid (or its whole request, if less). nil
 -- for item depots not set to full loads, which send a freighter for any amount. (On the module table, as `missing`
--- is, to spare this file's main chunk a local: Lua allows 200, and it is close; see issue #69.)
+-- is, to spare this file's main chunk a local; see AGENTS.md, "Top-level locals".)
 --
 -- Intentional: the threshold is the whole request, not what is still missing. A depot whose
 -- request is smaller than one load, with some of it already in stock, has less room than the
@@ -1800,7 +1799,7 @@ end
 
 -- A failed pickup: home empty, through set_off like any leg, so a freighter short of fuel for the
 -- way fills up at a Fuel depot first (as one that found nothing to load at its provider always
--- did). (A field, not a local: this file has as many locals as Lua allows.)
+-- did). (A field, not a local, to spare this file's main chunk a local.)
 function logistics.home_empty(id, trip, depot)
   if trip.movement == "departing" then
     -- Still at home, never set off (waiting to hear where to fill up): it parks there and then, as
@@ -1862,7 +1861,7 @@ end
 -- inserter, a player) or a condition switched off since leaves the last promised without a load
 -- first, and the stock left after earlier promises is all a later freighter may take, even
 -- arriving first. For one freighter (arriving to load); keep_promises works the same out for all of
--- a provider's in one pass. (A field, not a local: this file has as many locals as Lua allows.)
+-- a provider's in one pass. (A field, not a local, to spare this file's main chunk a local.)
 -- For a trip planning several qualities (scripts/quality.lua), each is its own stock and queue:
 -- second, what it can load of each, by key.
 --
@@ -2245,8 +2244,8 @@ end
 -- or bringing cargo home, aren't changed, nor are those sent for a larger request than it now has
 -- (`trip.request_count`; trips from before have none): a lower request isn't stock got elsewhere,
 -- and the request panel sets the amount as it is typed, so typing 200 passes through 2 and 20 on
--- the way, which cut freighters on the road for good (review of this change). (A field, not a local:
--- this file has as many locals as Lua allows. The owner's decision, November 7, 2026, from
+-- the way, which cut freighters on the road for good (review of this change). (A field, not a local,
+-- to spare this file's main chunk a local. The owner's decision, November 7, 2026, from
 -- Sourcery's review of 2559152.)
 function logistics.release_excess(depot, excess)
   local outbound = {}
@@ -3134,7 +3133,7 @@ end
 -- The commands freighters failed (on_ai_command_completed), the tick after, from control.lua's
 -- on_tick: a freighter gone by now died as it failed and is lost; any other lost its way, unless
 -- it has had a newer command since (the failure is then the old command's, and over), or waits
--- for a reroute search. (A field, not a local: this file has as many locals as Lua allows.)
+-- for a reroute search. (A field, not a local, to spare this file's main chunk a local.)
 function logistics.failed_commands()
   local failed = storage.failed_trips
   storage.failed_trips = nil

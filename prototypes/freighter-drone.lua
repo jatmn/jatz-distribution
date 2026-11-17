@@ -85,7 +85,7 @@ local function drone(name, cargo)
     -- when faster). With the 0.8-tile box it had, that pinned the freighter against the off-road
     -- corner across the junction, where it slid sideways before driving back at an angle (the
     -- owner's video, November 6, 2026); with this one it swerves and settles. Run-over reach
-    -- doesn't follow it (IMPACT_REACH in scripts/logistics.lua).
+    -- doesn't follow it (IMPACT_REACH in scripts/impact.lua).
     collision_box = { { -0.2, -0.2 }, { 0.2, 0.2 } },
     collision_mask = {
       layers = { [constants.off_road_layer] = true },

@@ -3,9 +3,9 @@
 -- The Fuel depot is both: a container for fuel items, with a hidden storage tank under it for
 -- liquid fuel (FUEL_TANK below), since no entity type has an item inventory and a fluid box
 -- of its own. Each draws its loading zone marking on the ground beside it, south when placed
--- unrotated (prototypes/orientation.lua). Deliveries and refuelling are in scripts/logistics.lua;
--- liquid request and buffer depots get an invisible truck chest for their freighters
--- (prototypes/truck-chest.lua).
+-- unrotated (prototypes/orientation.lua). Deliveries are in scripts/logistics.lua and refuelling in
+-- scripts/fuel.lua; liquid request and buffer depots get an invisible truck chest for their
+-- freighters (prototypes/truck-chest.lua).
 local util = require("util")
 local constants = require("prototypes.constants")
 local definitions = require("prototypes.depot-definitions")
@@ -93,9 +93,9 @@ end
 -- Liquid depots have it where a 3x3 assembling machine does, on the skid's front corner. Item
 -- depots (and the Fuel depot) would have it on the edge of their loading opening there, so theirs
 -- sits higher and further out, on the right-hand pillar below its painted band, which every one of
--- their four views has in the same place (checked on the sprite sheets). Lowering the depots
--- (assets/depots/README.md) brought the band 6 frame pixels down, so the connector moved 3 pixels
--- down with it, keeping the gap it had below the band; it stays on solid pillar in every view.
+-- their four views has in the same place (checked on the sprite sheets). It keeps a fixed gap below
+-- the band (lowering the depots, assets/depots/README.md, moved both together) and stays on solid
+-- pillar in every view.
 local CIRCUIT_CONNECTOR = {
   variation = 18,
   main_offset = util.by_pixel(24, 25),

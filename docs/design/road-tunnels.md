@@ -28,7 +28,7 @@ The engine's pathfinder knows nothing of tunnels. The mod works out which road n
 
 ### Recipe and research
 
-The recipe makes two portals, one for each end. It is 20 stone brick, 10 steel plate and 10 iron gear wheels, 10 s. It was proposed with road tunnels for the owner's approval and has shipped since; see [research and recipes](research-and-recipes.md).
+The recipe makes two portals, one for each end. It is 20 stone brick, 10 steel plate and 10 iron gear wheels, 10 s. The owner approved it with road tunnels; see [research and recipes](research-and-recipes.md).
 
 `jatz-road-tunnels` research (after `jatz-freight-system` and `logistics`, 300 × red and green) unlocks it. It is not in `research.unlocks`, the list that saves from before research get unlocked, because no such save had tunnels. The check mod adds it to the research it unlocks.
 

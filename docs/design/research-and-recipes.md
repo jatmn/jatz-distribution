@@ -81,7 +81,7 @@ This came from Pullfrog's review of `c1d45da` and was probed on 2.1.24 by loadin
 
 ## Recipes
 
-The owner approved the depot, freighter, road and monitor recipes on November 6, 2026. `tools/test_mod.py`'s `RECIPES` holds the list, and the check mod reports each recipe's ingredients, time and amount for it to compare, so change both together. The Mod Portal page (`portal/description.md`) lists them too.
+The owner approved the depot, freighter, road and monitor recipes on November 6, 2026, and the road tunnel recipe with road tunnels. `tools/test_mod.py`'s `RECIPES` holds the list, and the check mod reports each recipe's ingredients, time and amount for it to compare, so change both together. The Mod Portal page (`portal/description.md`) lists them too.
 
 Every ingredient must be craftable once its research is done in Factorio 2.1. Iron sticks are not: circuit network, railway and concrete unlock them.
 
@@ -107,7 +107,7 @@ Every ingredient must be craftable once its research is done in Factorio 2.1. Ir
 ### Road network monitor and road tunnels
 
 - The road network monitor (`prototypes/road-monitor.lua`, 5 s): a constant combinator, 5 electronic circuits and 5 copper cable.
-- Road tunnels (`prototypes/road-tunnel.lua`, 10 s): 20 stone brick, 10 steel plate and 10 iron gear wheels make two, one for each end. This recipe was proposed with road tunnels on November 8, 2026 (PR #81) for the owner's approval. It has shipped since and is on the Mod Portal page, but no record of that approval was found; `tools/test_mod.py` still calls it proposed.
+- Road tunnels (`prototypes/road-tunnel.lua`, 10 s): 20 stone brick, 10 steel plate and 10 iron gear wheels make two, one for each end. Added with road tunnels on November 8, 2026 (PR #81) and approved by the owner.
 
 ## Tests
 
