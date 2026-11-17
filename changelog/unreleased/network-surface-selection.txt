@@ -1,0 +1,3 @@
+  Bugfixes:
+    - Keep the freighter network window's selected surface when it rebuilds after the player travels.
+    - Keep the initially viewed surface when a shared snapshot has not yet counted its first depot.

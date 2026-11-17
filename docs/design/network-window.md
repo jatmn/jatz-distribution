@@ -24,6 +24,13 @@ An open window must never scan the whole network in one tick.
 - At most one viewer is updated a tick, rotating from `storage.network_viewer`.
 - Clicks, filters, tabs and paging redraw from the cached snapshot (`show_cached`) without scanning.
 
+## Opening, pinning and surfaces
+
+- A new window preselects `player.surface`: the surface viewed, so in remote view the planet or platform looked at (`physical_surface` is where the player stands). Rebuilds keep the window's selected surface, including an explicit All surfaces choice, even after the player travels.
+- `show` falls back to all surfaces while the selected surface is absent from the snapshot, retaining the choice so a shared snapshot taken before its first depot doesn't lose it. A later snapshot selects it when present; choosing All surfaces explicitly clears the choice.
+- Pinned (`state.pinned`), the window is not `player.opened`, so E, Esc and other GUIs leave it. Pinning sets `opened` to nil, which raises `on_gui_closed` for the frame; `on_gui_closed` ignores a pinned window. Unpinning makes it `opened` again.
+- A rebuild through `open` (layout, force or mod change) keeps the pin and doesn't take `opened`. `close` forgets it, so the window opens unpinned.
+
 ## Layout and force changes
 
 - The frame carries `tags.layout`, set to `LAYOUT`. Bump `LAYOUT` on any change to the window's element tree.

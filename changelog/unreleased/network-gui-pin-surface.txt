@@ -1,0 +1,3 @@
+  Gui:
+    - Add a pin button to the freighter network window: pinned, E, Esc and other windows no longer close it.
+    - Open the freighter network window on the surface the player is on, or the planet or platform they are viewing in remote view.
