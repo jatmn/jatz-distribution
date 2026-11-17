@@ -89,58 +89,19 @@ That's it. Freighters set off, load up and bring the goods home. A status light 
 
 ---
 
-## Recipes
+## Recipes and research
 
-Every recipe uses things you can already make when its research finishes. Click a sheet for full size.
-
-**Item and fuel depots** (Freight system)
-
-[![Factoriopedia recipes for the provider, request, buffer and fuel depots](portal/images/recipes-depots.jpg)](portal/images/recipes-depots.jpg)
-
-**Freighter, road and road network monitor** (Freight system; the monitor has its own research)
-
-[![Factoriopedia recipes for the Quinityn freighter, its Space Age carbon version, road and the road network monitor](portal/images/recipes-freighter-road-monitor.jpg)](portal/images/recipes-freighter-road-monitor.jpg)
-
-**Road tunnels** (Road tunnels research): 20 stone brick, 10 steel plate and 10 iron gear wheels make a pair.
-
-The 5 coal in a freighter is its first full tank. With **Space Age**, you can make freighters with 10 carbon instead, for planets without coal. Road is cheap slag: 5 stone and 5 iron ore make 10 tiles. It stacks to 250, and a Space Age rocket carries two stacks of it; both are startup settings.
-
-**Liquid depots** (Liquid freight)
-
-[![Factoriopedia recipes for the liquid provider, liquid request and liquid buffer depots](portal/images/recipes-liquid-depots.jpg)](portal/images/recipes-liquid-depots.jpg)
-
----
-
-## Research
-
-| Technology | Requires | Cost | Gives you |
-| --- | --- | --- | --- |
-| **Freight system** | Engine | 200 × red and green, 30 s | Provider, request, buffer and fuel depots, the freighter and road |
-| **Liquid freight** | Freight system, Fluid handling | 200 × red and green, 30 s | The three liquid depots |
-| **Road network monitor** | Freight system, Circuit network | 500 × red and green, 30 s | The road network monitor |
-| **Road tunnels** | Freight system, Logistics | 300 × red and green, 30 s | Road tunnels |
-| **Freighter speed** 1–4, then infinite | Freight system | From 200 × red and green | +20% freighter speed per level, freighters already on the road included |
-| **Freighter item capacity** 1–10 | Freight system | From 200 × red and green | +1 stack per trip per level |
-| **Freighter fluid capacity** 1–10 | Liquid freight | From 200 × red and green | +375 fluid per trip per level |
-
-Upgrade levels add science packs as they climb, from red and green up to utility. The infinite speed levels take every pack through space science, and each costs twice the last.
+**Freight system** (after Engine, 200 × red and green) unlocks the item and fuel depots, the freighter and road. **Liquid freight**, **Road network monitor** and **Road tunnels** follow, and upgrades make freighters faster (with infinite levels) and carry up to 12 stacks or 4,500 fluid. Every recipe uses things you can already make when its research finishes. The [Mod Portal page](https://mods.factorio.com/mod/jatz-distribution) shows each recipe, and the [player guide](docs/guide.md#research) has the research tree.
 
 ---
 
 ## Fuel that works like fuel
 
-- A new freighter comes with a full tank: 20 MJ for a normal freighter, about 2,000 tiles of driving. With Quality, a better freighter's tank holds more.
-- Before every leg of a trip (setting off from home, leaving the provider, or heading for a new provider after a reroute) a freighter checks its tank against that leg's road distance, plus 25% to spare and a 10% reserve.
-- If it's short, it **re-routes to the fuel depot nearest by road** from where it stands, fills up, then carries on to where it was going, cargo and all.
-- Freighters that can't reach a provider on what they have wait at home until there is fuel to get, rather than queueing at an empty fuel depot. The request depot's light tells you why.
-- A freighter that runs dry anyway crawls on at a tenth of its speed, so it's never stranded.
-- Fuel in other depots is ordinary cargo: freighters deliver it like anything else and never burn it.
-- Hover a freighter to see its fuel. Tank size and use per tile are map settings, and setting the use to 0 turns fuel off.
-- Piped in something that doesn't burn? The fuel depot's window says so, with a button to flush it.
+- A new freighter comes with a full tank: 20 MJ, about 2,000 tiles of driving.
+- Before each leg of a trip it checks its tank against the road ahead. If it's short, it **re-routes to the fuel depot nearest by road**, fills up, then carries on, cargo and all.
+- One that runs dry anyway crawls on at a tenth of its speed, so it's never stranded.
 
-**Where you put fuel depots matters.** A freighter low on fuel goes to the nearest fuel depot by road, however far away that is, before it finishes its delivery. If your only fuel depot is on the other side of the factory, every freighter that runs low drives all the way over there, then all the way to where it was going, and its delivery waits the whole time. Put fuel depots along the routes your freighters already drive, near busy provider and request depots, and add more as your road network grows. A detour of a few tiles costs almost nothing. One across the map ties up freighters, and on a large network a freighter can even run dry on the way and crawl the rest at a tenth of its speed.
-
-[![A fuel depot's window warning that the water piped into it doesn't burn, with a flush button](portal/images/fuel-depot-flush.jpg)](portal/gallery/09-fuel-depot-flush.png)
+**Where you put fuel depots matters.** Put them along the routes your freighters already drive, near busy depots: a fuel depot across the map ties up every freighter that runs low. The [player guide](docs/guide.md#fuel) has the details.
 
 ---
 
@@ -239,7 +200,7 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md), and read [AGENTS.md](AGENTS.md) b
 | [`assets/roads/`](assets/roads/README.md) | The road tile art, from Yuoki Industries - Railways (CC BY-NC-SA 4.0) |
 | [`concepts/`](concepts/README.md) | Approved concept art for the depots, with links to the freighter concept |
 | [`docs/`](docs/) | [Player guide](docs/guide.md), [design notes](docs/design/), [runtime states](docs/runtime-state.md), [testing](docs/testing.md), [test results](docs/test-results.md), [UPS benchmark](docs/benchmark.md), [releases](docs/releases.md) and README images |
-| [`portal/`](portal/README.md) | The Mod Portal page: summary, description and screenshots, synced by each release. This README mirrors it |
+| [`portal/`](portal/README.md) | The Mod Portal page: summary, description and screenshots, synced by each release. This README follows it |
 | [`tests/`](tests/) | Lua test harnesses and the Factorio test mods |
 | [`tools/`](tools/) | Mod packager, test runners, UPS benchmark and CI tools |
 

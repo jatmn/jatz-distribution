@@ -36,147 +36,63 @@ This builds the installable zip with `tools/package_mod.py` and loads it, with t
 
 It runs with the base game only and, if your Factorio includes Space Age and the mods it needs, again with Space Age. To look around yourself, open the newest save under `.local/mod-check/` in the full game with that run's `config.ini` and `mods` folder (see [Depots](#depots) for the command).
 
-The expected results are `EXPECTED` and its siblings in `tools/test_mod.py`; this page summarizes them. Extend the check mod's `control.lua` along with new behavior.
+The full list of what it checks is `EXPECTED` and its siblings (`RECIPES`, `EXPECTED_UNDO`, `EXPECTED_BONUSES`, `EXPECTED_QUALITY`, ...) in `tools/test_mod.py`, and the check mod's `control.lua` and scenarios. Extend the check mod along with new behavior. Its `EXPECTED_PORTS` table is the designed pipe layout, kept independent of the generated data (see AGENTS.md).
 
-### Recipes, research and placement
+### What it covers
 
-- Every recipe takes the ingredients, time and amount in `tools/test_mod.py`'s `RECIPES` (with Space Age, `RECIPES_SPACE_AGE`, which adds the freighter made with carbon, also unlocked by Freight system).
-- Every recipe is locked at the start. The Freight system technology (after Engine) unlocks the six item and Fuel depot, freighter and road recipes. The three liquid depots stay locked until Liquid freight (after Freight system and Fluid handling), the road network monitor until Road network monitor (after Freight system and Circuit network), and the road tunnel until Road tunnels (after Freight system and Logistics). The road item lays the road tile.
-- Freighter speed has four levels then an infinite one, and item capacity ten and fluid capacity ten, each after the last (fluid capacity after Liquid freight). The mod's research levels read the game's own technologies (an infinite level written to 7 counts 6, item capacity 1-2 counts 2, fluid capacity 1-3 counts 3). A pair on a force with six speed and two capacity levels must send its freighter at 2.2 times the speed, slow it to 1.6 times on the road when speed level 4 is undone, and bring 400 iron plates (4 stacks) in its first load, 2000 in all.
-- Every depot can be placed, as a ghost and for real, in all four directions, and rotated through a full turn.
-- Every depot destroyed facing east, south and west leaves its own wreck (`jatz-<role>-depot-remnants`), facing as it did.
-- Each depot's pipe ports match the designed layout (`EXPECTED_PORTS` in the check mod, kept independent of the generated data) and all 20 connect.
-- Containers hold items and tanks hold fluid (the Fuel depot both: its port and fluid are on the hidden tank under it).
-- The freighter item doesn't place the car (the `jatz-freighter-drivable` startup setting is off by default), whose entity stays defined but hidden, and a character can enter a fuelled freighter made by script and drive it. The freighter's collision box is 60% of the 1.5 × 4.5 tiles measured on the art (about 0.9 × 2.7), as its sprites are.
-- Every item, recipe and entity name the game shows has an English translation.
-- Our row sits directly above the car and tank row in the same tab, with the items in their intended order.
-- Building a depot clears decoratives from its loading zone tile and keeps those beyond it, for all 7 depots in all 4 directions.
-- Road stacks to 250 and a rocket lifts 500 of it (the startup settings' defaults).
+- **Recipes, research and placement:** every recipe locked until its technology, research levels and bonuses, every depot placed, rotated and destroyed (its own wreck) in all four directions, pipe ports, the freighter's hidden drivable car, English names, the crafting-menu row, decoratives cleared from loading zones, road stack size.
+- **Deliveries over road:** freighters stay on road, cargo keeps its data (equipment, spoilage), lost freighters are replaced and repaired, enemies are run over or destroy a freighter, road tunnels, promises let go, the 1-second stops, cargo paint and alt-mode icons, road cuts and mended roads, the shortest provider by road.
+- **Blueprints and settings:** requests and freighters in blueprint tags and parametrisable request settings, pasting over depots, matching freighter counts.
+- **Depot road**, **freighters in the slot** (ctrl+click, remote view, robots), **buffers, priority, full loads and liquids**, **what road allows**, **fuel** (refuelling legs, petroleum gas, `no-fuel` status, Fuel depot clones) and the **circuit network** (depot conditions, the road network monitor).
 
-### Deliveries over road
-
-- **Road only.** A provider holding 50 iron plates and a request depot asking for 30 stand 20 tiles apart, joined by a U-shaped road that detours 10 tiles south over concrete. The request must receive exactly 30, the freighter must reach the bottom of the U, and every 10 ticks all four corners of every delivering freighter must be on road. A request depot whose loading zone is an isolated road tile must receive nothing and report no route, and one without road at its loading zone must send nothing.
-- **Cargo.** More pairs on straight roads check that armor arrives with its equipment, and (with Space Age) food with its spoilage. A request depot with no room fetches nothing. A request changed to another item mid-trip must not load the old one. Nothing may be left on the ground.
-- **Lost freighters.** A freighter destroyed on its way is replaced: its request is filled by another freighter, and robots bring a replacement freighter. Robots repair a damaged freighter.
-- **Enemies.** A medium biter held still on a road must be run over (killed by the freighter's impact damage) while a player standing beside it is unhurt, and that request must still be filled. Behemoth biters set on another freighter must destroy it, and it must explode and leave the freighter's own wreck (`jatz-freighter-remnants`) where it died, facing the way it drove. Its depot must ask robots for a replacement at once, and the request must be filled by the depot's other freighters from what the provider has left. Freighters out must show up in the pollution statistics.
-- **Road tunnels.** Two road networks with stone walls between them, joined by a road tunnel's two portals (which must pair up), must bring a request depot its 10 radars from the provider on the other network, its freighter seen going under ground (`jatz-freighter-drone-underground`). The same layout with a road 8 tiles longer round the walls too, joining the two sides into one road network, must bring 10 small lamps through the tunnel, its freighter never seen on the road round. Two tunnels one after the other on one road network, with roads round them at least 10 tiles longer, must bring 10 medium electric poles through both, the freighter seen going under at all three mouths and never on the roads round.
-- **Promises let go.** A request depot filled by script while its freighter is on the way out must let its promise go: the freighter turns home without coming near the provider 48 tiles away, which keeps all 20 stone furnaces. So must one marked for deconstruction (out of every roboport's reach, so it stays marked): its freighter turns home before reaching the provider 48 tiles away, which keeps all 20 boilers, and it receives none.
-- **Stops.** The freighter must stand about 1 second (50 to 70 ticks) at the provider's loading zone before it loads, and again at the request depot's before it unloads.
-- **Cargo paint.** The freighter must arrive at the provider in the empty (light grey) paint, and loading iron plates must swap it for the freighter in their paint (iron ore's map color), which drives them home; water must have its own paint. On another pair, a freighter with a mild fire-like sticker stuck to it (hitting every 10 ticks) must load without being swapped, the same sticker still stuck to the same freighter, so its damage goes on untouched; once the sticker wears off it must take iron plates' paint on the road home, and deliver its 10 plates.
-- **Alt mode.** The freighter must show no icon when it reaches the provider empty and the iron plate icon when it gets home loaded, and a freighter carrying water must show the water icon; the freighter with the sticker must show it both before and after it is painted.
-- **Road changes.** When the road is cut behind a loaded freighter, the cargo must go back to the provider within 4 seconds (its 1-second stop to unload included), rather than after the freighter stands stuck. A road with a gap must be used within about 9 seconds of being mended (the round trip with its two 1-second stops), well before a delivery that waited out the 10-second retry cooldown could arrive. When the nearer of two providers is removed mid-trip, the same freighter must go on to the other one. When a request depot is removed mid-trip, its freighter must leave within 2 ticks.
-- **Shortest by road.** Of two providers, the one 8 tiles away in a straight line but 34 tiles by road must lose to one 16 tiles away on a straight road. A request with no road route to any provider or buffer depot must never send a freighter.
-
-### Blueprints and settings
-
-- Blueprinting a request depot (7 wood, 3 freighters) must give the blueprint its request and its freighters as tags (no freighter insert plan), and a depot built from that ghost must ask for 7 wood and request 3 freighters.
-- The blueprint must also hold the request and freighters as request settings for parametrisation (7 wood, 3 freighters). Changed to 11 iron plates and 5 freighters, as parametrising them would, and pasted, the depot built from it must ask for 11 iron plates and 5 freighters, with no request settings left in the world. The freighters must be a number with no signal, so parametrising offers no item for them.
-- Request settings beside a depot a script builds at once without tags must give it their request and freighters and go. A request at a condition's int32 limit must go in the settings while one above it goes in tags only, the settings' tag setting it on a depot the blueprint is pasted over.
-- A depot requesting freighter items as cargo with 3 freighters must keep both in its settings, and the depot built from them must ask for both.
-- A blueprint of a depot with no request, pasted over one asking for 7 wood and 5 freighters, must clear both, and a forced paste of an item depot's blueprint over a liquid depot must leave its request and freighter requests alone.
-- Matching a depot holding 1 freighter to 3 must request 2, and freighter requests that no longer fit after the slot is filled by hand must be trimmed.
-- Copy and Paste settings, blueprint setup and building with tags need a player: `tests/lua/control-events.lua` fires them through `control.lua`.
-
-### Depot road
-
-- Depots lay road under their loading zone: a provider and a request depot whose road stops one tile short of each loading zone must still deliver.
-- Removing depots must put back concrete and grass. Road that was already there, or a tile laid over the depot's road, must stay. Two depots loading from one tile must keep the road until the second goes, and nothing may be laid on water.
-- Turning a depot, mining or covering its road by hand, and loading older saves need a player, so `tests/lua/depot-road.lua` checks those against a fake runtime.
-
-### Freighters in the slot
-
-- Request depots get freighters in their slot (3 unless a check needs otherwise). A request for 60 sticks, with 30 at a provider 10 tiles away and 40 at one 30 tiles away, must be met by two freighters leaving about a second apart, one to each provider, with all 5 back in the slot afterwards.
-- A depot without freighters must send none and say so. Freighters put in the chest must move to the slot.
-- Freighters ctrl+clicked into a depot holding 95 must fill it to 100 and give the other 10 back, leaving none in the chest, while 20 iron plates moved in with them stay in the chest.
-- Request depots destroyed or removed by script must leave all their freighters on the ground, including freighters still in a destroyed depot's chest (100 in a full slot plus 2 in the chest), and the remote interface must not overfill the slot.
-- Freighters requested as from remote view must be capped at the slot's room, cancellable, and delivered into the slot by real construction robots from a storage chest (a powered roboport is built for this). A removal marked and cancelled must put its freighter back, and 2 freighters marked for removal must be carried back to storage by the robots.
-- Mining a depot (refund to the miner) and clicking the slot need a player: `tests/lua/logistics.lua` and `tests/lua/control-events.lua` cover those, including that a freighter ghost requests freighters and that remote view never moves items by hand.
-
-### Buffers, priority, full loads and liquids
-
-- On one road, a request depot set to request from buffer depots must take its 20 copper cable from a buffer 20 tiles away rather than a provider 10 tiles away, while a buffer beside it fills its 15 from the provider only.
-- A request depot for 10 stone must take them all from a provider 30 tiles away at priority 9, none from one 10 tiles away at priority 2.
-- A request depot set to full loads only, asking for 30 iron chests (less than a load, so a full load is all 30), must take all 30 from a provider 24 tiles away holding 40, none from one 10 tiles away holding 10.
-- A liquid request depot whose 35,000 tank is full, using its 50 freighters as storage, must ask for 37,500 and take all 2,000 water from a provider into its parked freighters.
-- Liquid depots must deliver 1200 water in loads of 750, take 300 steam from a liquid buffer at its 500 degrees rather than from a nearer liquid provider, take 300 crude oil from a liquid buffer when not set to request from buffer depots and the only liquid provider is empty, and get freighters from robots through their truck chest.
-
-### Requests and what road allows
-
-- Requests for unknown items, or with a count that isn't a number, are refused without changing the request. Clones keep their request.
-- Road is laid from a ghost on grass but not on water.
-- Nothing but belts, pipes, train tracks and vehicles can be placed on road: not a depot or its ghost (though one whose loading zone alone is on road can), a pole, an inserter or a chest.
-- Road can't be laid under a pole, a closed gate or a gate standing open, nor through a cliff (as building a tile does, or from a ghost), while two road tunnel portals either side of that cliff pair up under it.
-
-### Fuel
-
-- A freighter set to fuel for 10 tiles, sent to a provider 20 tiles east, must first stop at the Fuel depot 4 tiles west, take 5 of its 10 coal (20 MJ), then fetch its 10 iron ore and park with 19 MJ left. It must show its fuel on hover as a yellow status (`custom_status`, read back) when it reaches that Fuel depot low.
-- Another must fill up with 50 of a Fuel depot's 100 petroleum gas (the mod's `data-final-fixes.lua` makes it burn at 0.4 MJ, as the base game has no burnable fluid) and fetch 10 copper ore.
-- One with an empty tank, whose only Fuel depot holds stone, must stay home with the status `no-fuel` (yellow: its road reaches that Fuel depot, though Fuel depots with fuel stand on other roads) until coal is put in that depot at tick 300, then set off at once (its status `delivering` by tick 420, well before its 10-second wait ends), crawl there, fill up and fetch 10 sulfur.
-- Every Fuel depot must get its hidden tank, facing as it does, and one turned by script must turn its tank within a second.
-- A Fuel depot holding 10 coal and 1,234 water must keep both when cloned, whether alone (`LuaEntity::clone`, its new tank given the original's fluid) or with its hidden tank (`LuaSurface::clone_entities`, that tank kept), each clone with exactly one tank, and the original unchanged.
-
-### Circuit network
-
-- Every depot must take a red wire in all four directions.
-- A provider holding 30 iron chests and switched on only while its own contents hold more than 25, with two request depots for 10 each on its road, must send exactly one freighter: 10 delivered in all and 20 left, since the 20 left once the first freighter's 10 are counted are not more than 25.
-- A provider switched off by its circuit condition (a combinator's signal-A > 0) must supply nothing, its request depot finding no provider, until the combinator switches it on at tick 300; a request depot switched off must send nothing, saying so, until then. The switched-off provider's hover status must read "switched off by its circuit condition" with a red light, and go back to its own once switched on.
-- A road network monitor beside one road must show the 1000 water of the liquid provider on that road but not the switched-off provider's stone walls, the request depot's, or the small lamps on another road, and after the deliveries the provider's 10 walls left.
-- Two more monitors on that road, reading what request depots hold and what they still need, must show no walls and 10 walls needed before tick 300, and 10 walls held and none needed after; an unknown reading must be refused.
-- A provider holding 300 wood wired to one holding 2800 (the wire carries 3100), and another holding 300 wired to a road network monitor that counts the 2800, must both stay off for wood > 3000 read from the circuit network, and be on for wood > 2700. A provider reading its own 200 wood, with no wire, must be on for wood > 100 and off for wood > 300, and an unknown mode must be refused.
-- 200 wood taken out of the wired depot in the same tick it is read (after the mod sampled it) must leave its condition reading the 2800 elsewhere, as the wire still carries its 300.
-- Another force's provider on that road, holding 50 copper plates, must be left out of the monitor until its force merges into the player's at tick 299, then counted with no road or depot changing.
-- A monitor counting a provider's 100 iron plates, cloned at tick 301 and wired to that provider, must put nothing on the wire before its first update (200, not 300), so the provider's iron plate > 0 read from the network must not hold.
-- A combinator's settings pasted onto a monitor leave the monitor showing its own reading, and each depot condition must agree with a lamp's on the same wires.
+What needs a player or input a script can't raise (Copy and Paste settings, blueprint setup, building with tags, mining a depot, clicking the slot, turning a depot or covering its road, loading older saves) is checked against a fake runtime in `tests/lua/control-events.lua`, `tests/lua/logistics.lua` and `tests/lua/depot-road.lua`.
 
 ### Scenarios with a player
 
-- **`undo`.** A cut depot changed before robots took it, and one mined by hand with freighters in its chest, keep their settings on the player's undo actions, and the depots rebuilt from the ghosts (by robots, and by the player) get their request and freighters back. A cut depot the player fails to mine stays marked and keeps its request when robots take it. A depot mined by hand and a bare replacement marked at its spot in the same tick each keep their own settings, as do two mined by hand at one spot in one tick (with the undo history at its 100-item limit) or in adjacent ticks. A request depot replaced by a buffer depot from the player's hand, a buffer depot by a request depot from a ghost robots build, a request depot by a buffer depot from an upgrade planner, and one upgraded at once by a script (`apply_upgrade`) keep their request, freighters and chest, and the player is handed no freighters. A request depot marked for that upgrade but destroyed by a script leaves all 3 of its freighters on the ground. With Space Age, a liquid request depot cut on a space platform is taken and rebuilt there by the platform with its settings.
-- **`bonuses`.** Opening the Bonuses window with nothing researched shows no freighter panel, while two speed, three item capacity and one fluid capacity levels finished with it open bring a "Freighters" panel beside it listing +40% speed, +3 stacks and +375 fluid. Undoing an item capacity level makes it +2 stacks (the same when opened again), resetting the force takes the panel away, and research finished with the window closed leaves it alone. With it open again, moving the player to a force with one item capacity level shows +1 stack, and merging that force back into theirs (opened again in between) shows +20% speed. That it looks right beside the window needs the graphical client.
-- **`network`.** The freighter network window, with real GUI elements, inventories, item quality, role counts, reservations, inbound commitments, parked fluid storage and keyboard-close events. The scenario calls the production shortcut handler because the engine cannot raise `on_lua_shortcut` by script. It owns its own logistics state and explicitly supplies known reservations and inbound commitments; delivery behavior is checked by the road-delivery checks above. `tests/lua/control-events.lua` covers the actual event wiring, force isolation, shared and bounded scans, idle, closed and disconnected behavior, pagination and filters.
-- **`drop-freighters`.** It supplies the single-item-drop event payload to the production inventory handler after moving one real item, and checks request and buffer slots, robot-request trimming, overflow, unrelated items, cargo and a burner inserter. The engine cannot raise that event by script; `tests/lua/control-events.lua` checks its registration.
-- **`quality`** (the Space Age run, with the Quality mod). On one road, each pair in its own item, a request for rare iron plates gets the 15 rare ones and none of the provider's 40 normal or 5 epic; one for any quality of copper plates gets the legendary 30 and rare 15 on its first trip (highest first, filling a freighter's two stacks), then the 40 normal; and an epic request depot asking for steel at least rare gets a rare provider's 10 rare and 10 epic and leaves its 20 normal, all with normal freighters. A rare freighter, alone in its depot, must have 800 health (the game's for a rare unit), drive 1.6 times as fast, bring 3 stacks (150 stone) on its first trip and park with a 32 MJ tank. A rare request depot's chest and a rare Fuel depot's hidden tank must be 1.6 times a normal one's (rounded down), and a rare liquid request depot must hold and accept a request of 56,000 (1.6 times the check mod's 35,000). A request depot robots upgrade to rare must keep its request (7 wood) and 3 freighters; a provider a player builds a rare one over must keep its priority (7) and robot access, on the removal's undo action too; and a rare request depot a player builds a normal one over must keep its request, cut to the smaller chest. A blueprint of a depot asking for gears at least rare must keep the quality and comparator in its tag and settings, and the depot built from it must ask for the same.
+- **`undo`:** depots cut, mined by hand, replaced (from the hand, a ghost or an upgrade planner) or upgraded by a script (`apply_upgrade`) keep their settings on the player's undo actions, also with the undo history at its 100-item limit, and get them back when rebuilt; with Space Age, also on a space platform. The undo key press itself can't be scripted.
+- **`bonuses`:** the "Freighters" panel beside the Bonuses window follows research, undone levels and force changes. That it looks right needs the graphical client.
+- **`network`:** the freighter network window with real GUI elements and inventories. The scenario calls the production shortcut handler because the engine cannot raise `on_lua_shortcut` by script; `tests/lua/control-events.lua` covers the event wiring, force isolation, scans, pagination and filters.
+- **`drop-freighters`:** the single-item-drop event payload supplied to the production inventory handler. The engine cannot raise that event by script; `tests/lua/control-events.lua` checks its registration.
+- **`quality`** (the Space Age run, with the Quality mod): requests by quality, better freighters and depots (a rare freighter has the game's 800 health for a rare unit), quality upgrades by robots and by a player, and blueprints keeping the quality and comparator.
 
 ### Other mods
 
-With `--mod path/to/Mining_Drones_2.1.1.zip` (or Mining Drones 2 Remastered's or Mining Drones Mod's zip, downloaded from the mod portal), that mod loads too, and a request depot must also fetch 30 of the 40 iron ore in a mining depot's output, from the road the mining depot lays behind it.
+With `--mod path/to/Mining_Drones_2.1.1.zip` (or Mining Drones 2 Remastered's or Mining Drones Mod's zip, from the mod portal), a request depot must also fetch iron ore from a mining depot's output, over the road the mining depot lays behind it.
 
-With `--mod path/to/Milestones_1.5.2.zip`, Milestones must log that it loaded our preset addon when the game is created. Milestones only tracks forces with players, so whether the milestones are reached needs the graphical client: start a new game with Milestones, craft a freighter, and check that the "first freighter" milestone is announced and listed under Progress. Every run, with or without Milestones, also checks that each item in the addon is a real item.
+With `--mod path/to/Milestones_1.5.2.zip`, Milestones must log that it loaded our preset addon. Milestones only tracks forces with players, so whether the milestones are reached needs the graphical client: start a new game with Milestones, craft a freighter, and check that the "first freighter" milestone is announced and listed under Progress. Every run also checks that each item in the addon is a real item.
 
 The option can be repeated for other mods, which then only have to load.
 
 ### In the graphical client
 
-The cargo paint is only colors, so look at it in the graphical client too: freighters heading to a provider have light grey cargo bays, and ones coming back carry their load's color (blue-grey for iron plates, orange for copper, blue for water), with the cab and clamps unchanged.
+Headless runs prove API behavior, not visual layout or live multiplayer latency. Check these in the full game:
 
-The request panel needs a player, so check it in the graphical client:
-- Open a liquid request depot and check your inventory is on the left of the tank window, and that ctrl-clicking a freighter there fills the slot (shift-click moves one stack).
-- Open a request depot, choose an item and amount in the panel on the right of its window, and watch the status light beside them. Hover it to check its tooltip shows the status in words, and that its color follows (green while stocked or on its way, yellow while something is in the way, red when no provider or buffer depot has the item, grey with nothing requested).
-- With the Quality mod, check the **Quality** row under them reads left to right as "Quality", the comparator and the quality with its icon ("Quality ≥ rare"), that the quality hides while **Any quality** is chosen, and that nothing stands between the item and its amount.
+- **Cargo paint:** freighters heading to a provider have light grey cargo bays; ones coming back carry their load's color (blue-grey for iron plates, orange for copper, blue for water), with the cab and clamps unchanged.
+- **Loading zone:** each depot's marking lies on the right side and stays there as you rotate the depot.
+- **Freighter drops:** hold several freighters and press Z over a request or buffer depot being unloaded by an inserter or loader, with its window closed: each drop must reach the freighter slot.
+
+The request panel:
+- Open a liquid request depot: your inventory is on the left of the tank window, and ctrl-clicking a freighter fills the slot (shift-click moves one stack).
+- Open a request depot, choose an item and amount, and hover the status light: its tooltip shows the status in words, and its color follows (green while stocked or on its way, yellow while something is in the way, red when no provider or buffer depot has the item, grey with nothing requested).
+- With the Quality mod, the **Quality** row under them reads "Quality ≥ rare" (with the quality's icon), the quality hides while **Any quality** is chosen, and nothing stands between the item and its amount.
 - Use Copy and Paste settings onto another request depot.
-- Check the **Use freighter storage** checkbox on a liquid request and a liquid buffer depot, and on no item depot: it sits under **Full loads only**, its tooltip fits the panel, ticking it with enough freighters raises the request amount in the field, the field keeps an amount above the limit while you type it and shows the limit on Enter or a moment after, and the line under it shows what the freighters hold.
-- Check the **Full loads only** checkbox on a request, a buffer, a liquid request and a liquid buffer depot: it sits under the request row (below **Request from buffer depots** on a request depot), its caption and tooltip fit the panel (the liquid tooltip names 500), and with it ticked while no provider holds a full load the light turns yellow and its tooltip reads "Waiting for a full load". Ticking it on one depot must show within half a second in another player's open panel of that depot, and pasting settings must carry it.
-- Open a provider and a buffer depot and check the **Logistic robots can use it** checkbox under the priority slider: unticked on a new depot, its caption and tooltip fit the panel, and the depot's own window (a logistic container's, with a buffer depot's logistic requests) still has the panel on its right. Ticked inside a roboport's range, robots take from it for a requester chest, and unticking stops them.
-- Load a save made before provider and buffer depots were logistic containers and check its depots still face the way they did, with their contents and settings.
-- Open a Fuel depot and check the panel beside its window shows the fluid piped in and its amount, and that the flush button empties it.
-- Hover a freighter on the road and check its fuel shows as a status line (green, yellow when low, red when dry). Open a request depot and check the fuel line under its freighter slot, and its tooltip listing every freighter's fuel.
-- Put a fuel item worth more than 20 MJ in a Fuel depot (a mod's) and check the freighter's hover shows the whole amount after filling up, and still does on its next trip.
+- **Use freighter storage** shows on a liquid request and a liquid buffer depot, and on no item depot: it sits under **Full loads only**, its tooltip fits, ticking it with enough freighters raises the request amount, the field keeps an amount above the limit while you type and shows the limit on Enter or a moment after, and the line under it shows what the freighters hold.
+- **Full loads only** on a request, a buffer, a liquid request and a liquid buffer depot: it sits under the request row (below **Request from buffer depots** on a request depot), caption and tooltip fit (the liquid tooltip names 750), and ticked while no provider holds a full load the light turns yellow with "Waiting for a full load". It must show within half a second in another player's open panel of that depot, and pasting settings must carry it.
+- **Logistic robots can use it** on a provider and a buffer depot: under the priority slider, unticked on a new depot, caption and tooltip fit, and the depot's own window (a logistic container's) still has the panel on its right. Ticked inside a roboport's range, robots take from it for a requester chest; unticking stops them.
+- Load a save made before provider and buffer depots were logistic containers: its depots still face the way they did, with their contents and settings.
+- Open a Fuel depot: the panel shows the fluid piped in and its amount, and the flush button empties it.
+- Hover a freighter on the road: its fuel shows as a status line (green, yellow when low, red when dry). A request depot shows a fuel line under its freighter slot, its tooltip listing every freighter's fuel. With a fuel item worth more than 20 MJ (a mod's), the hover shows the whole amount after filling up and on the next trip.
 
-The freighter network window needs a graphical-client check too. Click the freighter shortcut after Freight system research, then:
-- Check the summary: fleet counts align, item and liquid depots align by role, Fuel and optional Mining Drones depots remain under Support, and read-only depot icons and counts have no button chrome or misleading click feedback. Hover both the larger icon and its count, including zero.
-- Check every resource is one line, full-width horizontal dividers separate the rows, the depot icon and name head each role, and the Stock/Depots/Requests/Still needed headings sit right over their right-aligned numbers.
-- Check a whole page of seven rows shows with no scrollbar and no cut-off row, large amounts read as 63.8k/189k with the exact amount on hover, and zero shows as a dash.
-- Check the Items and Fluids tabs, resource-icon hover names, stock, depot and request counts and their holding/offering details on hover, quality and demand tooltips, empty requests, and shortages first.
-- Try the resource picker's search and right-click clear, all three filters, and the page arrows with over seven resources, at your normal resolution and UI scale. Check long platform names and large counts fit the wider layout and the snapshot age beside the arrows updates.
+The freighter network window (click the freighter shortcut after Freight system research):
+- Summary: fleet counts align, item and liquid depots align by role, Fuel and optional Mining Drones depots stay under Support, and read-only depot icons and counts have no button chrome or click feedback. Hover the icons and counts, zero included.
+- Each resource is one line, full-width dividers separate rows, the depot icon and name head each role, and the Stock/Depots/Requests/Still needed headings sit over their right-aligned numbers.
+- A page of seven rows shows with no scrollbar and no cut-off row; large amounts read as 63.8k/189k with the exact amount on hover; zero shows as a dash.
+- The Items and Fluids tabs, hover details, quality and demand tooltips, empty requests, and shortages first.
+- The resource picker's search and right-click clear, all three filters, and the page arrows with over seven resources, at your normal resolution and UI scale. Long platform names and large counts fit, and the snapshot age beside the arrows updates.
 - Pick a planet and a platform, then rename the platform.
-- Open the window with a second player: their force and surface choice must remain independent and deliveries must stay smooth. Close both and check the mod's update-time display returns to its closed-window level.
-- Test E, Esc, close and the shortcut toggle.
-- Save with the window open, load it and join in multiplayer; the snapshot should complete and refresh without desync. Update the mod with the old window open and check it rebuilds.
-
-Headless runs prove API behavior, not visual layout or live multiplayer latency.
-
-The headless server can't show sprites, so in the graphical client also check that each depot's loading zone marking lies on the right side and stays there as you rotate the depot.
-
-For freighter drops, hold several freighters and press Z over a request or buffer depot being unloaded by an inserter or loader, with its window closed: each drop must reach the freighter slot.
+- With a second player, force and surface choices stay independent and deliveries stay smooth. Close both and check the update-time display returns to its closed-window level.
+- E, Esc, close and the shortcut toggle.
+- Save with the window open, load it and join in multiplayer: the snapshot completes and refreshes without desync. Update the mod with the old window open and check it rebuilds.
 
 ## Freighter
 
@@ -259,4 +175,4 @@ The first `/c` command in a save may need to be entered twice to enable console 
 
 ## Recording results
 
-Add a short entry to [test-results.md](test-results.md) for each test run. Include the commit tested, Factorio version, OS and graphics backend, then a passed, failed or untested result for each check. Attach screenshots to the pull request instead of committing them. Only images used by the README belong in `docs/images/`, and only the Mod Portal page's in `portal/gallery/` and `portal/images/`.
+Record each run in [test-results.md](test-results.md), replacing the area's previous entry. Include the commit tested, Factorio version, OS and graphics backend, then a passed, failed or untested result for each check. Attach screenshots to the pull request instead of committing them. Only images used by the README belong in `docs/images/`, and only the Mod Portal page's in `portal/gallery/` and `portal/images/`.
