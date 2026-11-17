@@ -9,8 +9,15 @@ local SHORTCUT, FRAME = "jatz-network", "jatz_network_frame"
 local CLOSE, SURFACE = "jatz_network_close", "jatz_network_surface"
 local TABS, FILTER = "jatz_network_tabs", "jatz_network_filter"
 local PREVIOUS, NEXT = "jatz_network_previous", "jatz_network_next"
-local INTERVAL, PER_TICK, PAGE_SIZE = 300, 8, 8
+-- Seven single-line rows fit the window without scrolling at the default UI scale.
+local INTERVAL, PER_TICK, PAGE_SIZE = 300, 8, 7
 local ROLES = { "provider", "request", "buffer" }
+local CONTENT_WIDTH, ROW_WIDTH, SLOT_SIZE, ROLE_WIDTH, NEED_WIDTH = 760, 744, 48, 176, 120
+-- Each role spans a stock column and a depot-count column; every number has its own fixed,
+-- right-aligned column so values line up from row to row whatever their width.
+local RESOURCE_SIZE, HEADER_DEPOT_SIZE, STOCK_WIDTH, COUNT_WIDTH, GAP = 40, 32, 104, 64, 8
+-- Bumped whenever the window's element tree changes, so a window saved by an older build rebuilds.
+local LAYOUT = 7
 network_gui.shortcut = SHORTCUT
 -- The depots in the crafting menu's order; any other (Mining Drones' mining depot) after them.
 local KINDS = {
@@ -161,6 +168,27 @@ local function amount(number)
   return tostring(math.floor(number))
 end
 
+-- Short like the game's own slot counts (63.8k, 190k, 1.2M); the exact amount is in the tooltip.
+-- Zero is a dash, so the numbers that matter stand out.
+local function short(number)
+  number = math.floor(number)
+  if number == 0 then
+    return "–"
+  elseif number < 10000 then
+    return tostring(number)
+  end
+  for _, unit in ipairs({ { 1e9, "G" }, { 1e6, "M" }, { 1e3, "k" } }) do
+    if number >= unit[1] then
+      local value = number / unit[1]
+      if value < 100 then
+        value = math.floor(value * 10) / 10
+        return (value % 1 == 0 and string.format("%d", value) or string.format("%.1f", value)) .. unit[2]
+      end
+      return string.format("%d", math.floor(value)) .. unit[2]
+    end
+  end
+end
+
 local function held_tooltip(r)
   local tip = { "", { "jatz-network.held-tooltip", amount(r.held), r.depots } }
   local grades = {}
@@ -175,7 +203,20 @@ local function held_tooltip(r)
   return tip
 end
 
+-- A window saved by an earlier build of the same version can still have another hierarchy.
+-- Rebuilds it, which draws the cached snapshot; every write to the window's elements checks first.
+local function rebuilt(player, frame)
+  if frame.tags.layout ~= LAYOUT then
+    network_gui.open(player)
+    return true
+  end
+  return false
+end
+
 local function show(player, frame, counts)
+  if rebuilt(player, frame) then
+    return
+  end
   local state, inner = storage.network_gui[player.index], frame.inner
   -- Surfaces in the drop-down: those where the force has depots, in the order they were made.
   local listed = {}
@@ -202,7 +243,7 @@ local function show(player, frame, counts)
   if not selected then
     state.surface = nil
   end
-  local dropdown = inner[SURFACE]
+  local dropdown = inner.controls[SURFACE]
   dropdown.visible = #listed > 1 or script.active_mods["space-age"] ~= nil
   -- Set again only when the surfaces change, so a list a player has open stays open.
   if state.key ~= key then
@@ -213,19 +254,30 @@ local function show(player, frame, counts)
   dropdown.selected_index = selected or 1
   local shown = state.surface and counts.surfaces[state.surface] or counts.all
 
-  local freighters = inner.freighters
-  freighters.total.caption = tostring(shown.freighters)
-  freighters.active.caption = tostring(shown.active)
-  for _, name in ipairs(KINDS) do
-    local count = inner.depots[name]
-    if count then
-      count.caption = tostring(shown.depots[name] or 0)
+  local overview = inner.overview
+  local freighters = overview.freighters
+  local fleet = freighters.fleet
+  fleet.total.caption = tostring(shown.freighters)
+  freighters.on_road.count.caption = tostring(shown.active)
+  local depots = overview.depot_summary.depots
+  local support = overview.support.depots
+  for index, name in ipairs(KINDS) do
+    local summary = (index >= 7 and support or depots)[name]
+    if summary then
+      local total = shown.depots[name] or 0
+      local count, caption = summary.count, tostring(total)
+      if count.caption ~= caption then
+        local tooltip = { "jatz-network.depot-tooltip", prototypes.entity[name].localised_name, total }
+        count.caption, count.tooltip = caption, tooltip
+        summary.tooltip, summary.icon.tooltip = tooltip, tooltip
+      end
     end
   end
 
-  inner.snapshot.caption = { "jatz-network.snapshot", math.floor((game.tick - counts.tick) / 60) }
-  local kind = inner[TABS].selected_tab_index == 2 and "fluid" or "item"
-  local content = inner[TABS][kind .. "_content"]
+  local paging, tabs = inner.paging, inner[TABS]
+  paging.snapshot.caption = { "jatz-network.snapshot", math.floor((game.tick - counts.tick) / 60) }
+  local kind = tabs.selected_tab_index == 2 and "fluid" or "item"
+  local content = tabs[kind .. "_content"]
   local rows = {}
   local totals = { item = 0, fluid = 0 }
   for _, item in pairs(shown.items) do
@@ -248,7 +300,7 @@ local function show(player, frame, counts)
     end
   end
   for _, t in ipairs({ "item", "fluid" }) do
-    inner[TABS][t .. "_tab"].badge_text = tostring(totals[t])
+    tabs[t .. "_tab"].badge_text = tostring(totals[t])
   end
   table.sort(rows, function(a, b)
     local ma, mb = a.request.missing + a.buffer.missing, b.request.missing + b.buffer.missing
@@ -259,38 +311,43 @@ local function show(player, frame, counts)
   end)
   local pages = math.max(1, math.ceil(#rows / PAGE_SIZE))
   state.page = math.min(state.page or 1, pages)
-  inner.paging.page_label.caption = { "jatz-network.page", state.page, pages }
-  inner.paging[PREVIOUS].enabled, inner.paging[NEXT].enabled = state.page > 1, state.page < pages
+  paging.page_label.caption = { "jatz-network.page", state.page, pages }
+  paging[PREVIOUS].enabled, paging[NEXT].enabled = state.page > 1, state.page < pages
   content.no_items.visible = #rows == 0
+  local resource_rows = content.resource_rows
   for index = 1, PAGE_SIZE do
-    local row = content.resource_rows["row_" .. index]
+    local group = resource_rows["row_" .. index]
     local item = rows[(state.page - 1) * PAGE_SIZE + index]
-    row.visible = item ~= nil
+    group.visible = item ~= nil
     if item then
+      local row = group.cells
       local prototype = prototypes[item.type][item.name]
-      row.resource_label.caption = { "", "[" .. item.type .. "=" .. item.name .. "] ", prototype.localised_name }
-      row.resource_label.tooltip = { "jatz-network.resource-tooltip" }
+      local resource = row.resource_icon
+      resource.sprite = item.type .. "/" .. item.name
+      resource.tooltip = { "", prototype.localised_name, "\n", { "jatz-network.resource-tooltip" } }
       for _, role in ipairs(ROLES) do
-        local r, cell = item[role], row[role .. "_cell"]
-        cell.stock.caption = amount(r.held)
-        cell.stock.tooltip = held_tooltip(r)
-        cell.depot_count.caption = { "jatz-network.holding", r.depots }
+        local r = item[role]
+        local stock = row[role .. "_stock"]
+        stock.caption = short(r.held)
+        stock.tooltip = held_tooltip(r)
+        -- Providers: depots holding it. Requesters and buffers: depots requesting it.
+        local count = row[role .. "_count"]
         if role == "provider" then
-          cell.activity.caption = { "jatz-network.offering", r.offers }
-          cell.activity.tooltip = { "jatz-network.offering-tooltip", amount(r.offered) }
+          count.caption = short(r.depots)
+          count.tooltip = { "jatz-network.offering-tooltip", r.depots, r.offers, amount(r.offered) }
         else
-          cell.activity.caption = { "jatz-network.requesting", r.requested }
-          local tip = { "jatz-network.requesting-tooltip", amount(r.target), amount(r.missing) }
-          cell.activity.tooltip = role == "buffer"
-              and { "jatz-network.buffer-requesting-tooltip", tip, r.offers, amount(r.offered) }
+          count.caption = short(r.requested)
+          local tip = { "jatz-network.requesting-tooltip", r.requested, amount(r.target), amount(r.missing), r.depots }
+          tip = role == "buffer" and { "jatz-network.buffer-requesting-tooltip", tip, r.offers, amount(r.offered) }
             or tip
+          count.tooltip = tip
         end
       end
       local missing = item.request.missing + item.buffer.missing
-      row.need_cell.needed.caption = amount(missing)
-      row.need_cell.needed.style.font_color = missing >= 1 and { 1, 0.75, 0.3 } or { 0.7, 0.7, 0.7 }
-      row.need_cell.needed.tooltip =
-        { "jatz-network.needed-tooltip", amount(item.request.missing), amount(item.buffer.missing) }
+      local needed = row.needed
+      needed.caption = short(missing)
+      needed.style.font_color = missing >= 1 and { 1, 0.75, 0.3 } or { 0.7, 0.7, 0.7 }
+      needed.tooltip = { "jatz-network.needed-tooltip", amount(item.request.missing), amount(item.buffer.missing) }
     end
   end
   state.shown = counts.tick
@@ -311,6 +368,23 @@ local function label(parent, caption, width)
   return e
 end
 
+-- Headers and rows share exactly the same columns, insets and spacing. Reserve the remaining
+-- 16 px of the content width for the scrollbar instead of letting it shift the numbers.
+local function resource_grid(parent, name, column_count)
+  local grid = parent.add({ type = "table", name = name, column_count = column_count })
+  grid.style.width, grid.style.padding = ROW_WIDTH, { 4, 8 }
+  grid.style.horizontal_spacing, grid.style.vertical_spacing = GAP, 0
+  return grid
+end
+
+-- A fixed-width, right-aligned number column: values line up whatever their width.
+local function number(parent, name, width, font)
+  local e = parent.add({ type = "label", name = name })
+  e.style.width, e.style.horizontal_align = width, "right"
+  e.style.font = font
+  return e
+end
+
 function network_gui.open(player)
   local old = frame_of(player)
   if old then
@@ -318,7 +392,8 @@ function network_gui.open(player)
   end
   storage.network_gui = storage.network_gui or {}
   storage.network_gui[player.index] = { filter = 1, page = 1, force = player.force.index }
-  local frame = player.gui.screen.add({ type = "frame", name = FRAME, direction = "vertical" })
+  local frame =
+    player.gui.screen.add({ type = "frame", name = FRAME, direction = "vertical", tags = { layout = LAYOUT } })
   frame.auto_center = true
   local titlebar = frame.add({ type = "flow", direction = "horizontal" })
   titlebar.drag_target = frame
@@ -346,31 +421,11 @@ function network_gui.open(player)
     direction = "vertical",
   })
 
-  inner.add({ type = "drop-down", name = SURFACE })
-  local freighters = inner.add({ type = "table", name = "freighters", column_count = 4 })
-  freighters.add({
-    type = "label",
-    caption = { "jatz-network.freighters" },
-    tooltip = { "jatz-network.freighters-tooltip" },
-  })
-  freighters.add({ type = "label", name = "total", caption = "…" })
-  freighters.add({ type = "label", caption = { "jatz-network.active" }, tooltip = { "jatz-network.active-tooltip" } })
-  freighters.add({ type = "label", name = "active", caption = "…" })
-  local depots = inner.add({ type = "flow", name = "depots", direction = "horizontal" })
-  for _, name in ipairs(KINDS) do
-    local prototype = prototypes.entity[name]
-    if prototype then
-      depots.add({ type = "sprite", sprite = "entity/" .. name, tooltip = prototype.localised_name }).style.width = 24
-      depots.add({ type = "label", name = name, caption = "…", tooltip = prototype.localised_name })
-    end
-  end
-  inner.add({
-    type = "label",
-    name = "snapshot",
-    caption = { "jatz-network.loading" },
-    tooltip = { "jatz-network.snapshot-tooltip" },
-  })
-  inner.add({
+  local controls = inner.add({ type = "flow", name = "controls", direction = "horizontal" })
+  controls.style.width = CONTENT_WIDTH
+  controls.style.bottom_margin = 8
+  controls.add({ type = "drop-down", name = SURFACE }).style.width = 220
+  controls.add({
     type = "drop-down",
     name = FILTER,
     items = {
@@ -379,50 +434,210 @@ function network_gui.open(player)
       { "jatz-network.filter-idle" },
     },
     selected_index = 1,
+  }).style.width = CONTENT_WIDTH
+    - 224
+  local overview = inner.add({
+    type = "frame",
+    name = "overview",
+    style = "inside_shallow_frame_with_padding",
+    direction = "horizontal",
   })
-  local tabs = inner.add({ type = "tabbed-pane", name = TABS })
+  overview.style.width = CONTENT_WIDTH
+  overview.style.vertical_align = "top"
+  local freighters = overview.add({
+    type = "flow",
+    name = "freighters",
+    direction = "vertical",
+  })
+  freighters.style.width, freighters.style.right_margin = 136, 12
+  freighters.style.vertical_spacing = 4
+  label(freighters, { "jatz-network.freighters" }, 136).style.font = "default-semibold"
+  local fleet = freighters.add({ type = "flow", name = "fleet", direction = "horizontal" })
+  fleet.style.height = SLOT_SIZE
+  fleet.style.vertical_align = "center"
+  fleet.add({
+    type = "sprite",
+    name = "freighter_icon",
+    sprite = "item/jatz-quinityn-freighter",
+    resize_to_sprite = false,
+    tooltip = { "jatz-network.freighters-tooltip" },
+  }).style.size =
+    SLOT_SIZE
+  fleet.add({ type = "label", name = "total", caption = "…", tooltip = { "jatz-network.freighters-tooltip" } }).style.font =
+    "default-large-semibold"
+  local active = freighters.add({ type = "flow", name = "on_road", direction = "horizontal" })
+  active.style.height = SLOT_SIZE
+  active.style.vertical_align = "center"
+  local marker = active.add({ type = "flow", name = "marker", direction = "horizontal" })
+  marker.style.size = SLOT_SIZE
+  marker.style.horizontal_align, marker.style.vertical_align = "center", "center"
+  marker.add({
+    type = "sprite",
+    sprite = "utility/status_working",
+    resize_to_sprite = false,
+    tooltip = { "jatz-network.active-tooltip" },
+  }).style.size =
+    10
+  active.add({ type = "label", name = "count", caption = "…", tooltip = { "jatz-network.active-tooltip" } })
+  active.add({ type = "label", caption = { "jatz-network.active" } })
+  local depot_summary = overview.add({
+    type = "flow",
+    name = "depot_summary",
+    direction = "vertical",
+  })
+  depot_summary.style.width, depot_summary.style.right_margin = 372, 12
+  local depots = depot_summary.add({ type = "table", name = "depots", column_count = 4 })
+  depots.style.horizontal_spacing, depots.style.vertical_spacing = 12, 8
+  depots.add({ type = "empty-widget" })
+  -- Headings start where their icons start, in fixed-width columns.
+  for index, role in ipairs(ROLES) do
+    label(depots, { "jatz-network." .. role }, 96).style.font = "default-semibold"
+    depots.style.column_alignments[index + 1] = "middle-left"
+  end
+  depots.style.column_alignments[1] = "middle-left"
+  -- Support depots have their own group, so Mining Drones does not add a mostly empty third row.
+  local support = overview.add({ type = "flow", name = "support", direction = "vertical" })
+  support.style.width = 196
+  -- The same heading-to-icon spacing as the depot matrix, so both headings sit on one line.
+  support.style.vertical_spacing = 8
+  label(support, { "jatz-network.support" }, 196).style.font = "default-semibold"
+  local support_depots = support.add({ type = "table", name = "depots", column_count = 2 })
+  support_depots.style.horizontal_spacing, support_depots.style.vertical_spacing = 4, 8
+  local function depot_slot(parent, name)
+    local prototype = prototypes.entity[name]
+    if prototype then
+      local summary = parent.add({
+        type = "flow",
+        name = name,
+        direction = "horizontal",
+        tooltip = prototype.localised_name,
+      })
+      summary.style.width, summary.style.height = 96, SLOT_SIZE
+      summary.style.vertical_align = "center"
+      summary.add({
+        type = "sprite",
+        name = "icon",
+        resize_to_sprite = false,
+        sprite = "entity/" .. name,
+        tooltip = prototype.localised_name,
+      }).style.size =
+        SLOT_SIZE
+      local count = summary.add({ type = "label", name = "count", caption = "…", tooltip = prototype.localised_name })
+      count.style.width, count.style.font = 40, "default-semibold"
+    else
+      parent.add({ type = "empty-widget" })
+    end
+  end
+  label(depots, { "jatz-network.items" }, 48)
+  for index = 1, 3 do
+    depot_slot(depots, KINDS[index])
+  end
+  label(depots, { "jatz-network.fluids" }, 48)
+  for index = 4, 6 do
+    depot_slot(depots, KINDS[index])
+  end
+  for index = 7, #KINDS do
+    depot_slot(support_depots, KINDS[index])
+  end
+  local tabs = inner.add({ type = "tabbed-pane", name = TABS, style = "tabbed_pane_with_no_side_padding" })
+  tabs.style.top_margin = 12
   for _, kind in ipairs({ "item", "fluid" }) do
     local tab = tabs.add({ type = "tab", name = kind .. "_tab", caption = { "jatz-network." .. kind .. "s" } })
     local content = tabs.add({ type = "flow", name = kind .. "_content", direction = "vertical" })
-    local picker = content.add({ type = "flow", direction = "horizontal" })
-    picker.add({ type = "label", caption = { "jatz-network.find-resource" } })
-    picker.add({
+    content.style.width = CONTENT_WIDTH
+    -- Two header lines: each role's depot icon and name over its pair of columns, then what each
+    -- column counts. Rows below hold numbers only, in exactly these columns.
+    local picker = resource_grid(content, "headers", 5)
+    local chooser = picker.add({
       type = "choose-elem-button",
       name = "jatz_network_" .. kind,
       elem_type = kind,
       tooltip = { "jatz-network.find-resource-tooltip" },
     })
-    local headers = content.add({ type = "flow", direction = "horizontal" })
-    label(headers, { "jatz-network.resource" }, 190)
+    chooser.style.size, chooser.style.right_margin = RESOURCE_SIZE, SLOT_SIZE - RESOURCE_SIZE
     for _, role in ipairs(ROLES) do
-      label(headers, { "jatz-network." .. role }, 135)
+      local heading = picker.add({ type = "flow", name = role, direction = "horizontal" })
+      heading.style.width, heading.style.horizontal_align = ROLE_WIDTH, "center"
+      heading.style.vertical_align, heading.style.horizontal_spacing = "center", 4
+      heading.add({
+        type = "sprite",
+        resize_to_sprite = false,
+        sprite = "entity/jatz-" .. (kind == "fluid" and "liquid-" or "") .. role .. "-depot",
+        tooltip = { "jatz-network." .. role },
+      }).style.size =
+        HEADER_DEPOT_SIZE
+      heading.add({ type = "label", caption = { "jatz-network." .. role } }).style.font = "default-semibold"
     end
-    label(headers, { "jatz-network.needed" }, 80)
+    picker.add({ type = "empty-widget" }).style.width = NEED_WIDTH
+    local columns = resource_grid(content, "columns", 8)
+    columns.style.top_padding = 0
+    columns.add({ type = "empty-widget" }).style.width = SLOT_SIZE
+    for _, role in ipairs(ROLES) do
+      local stock = number(columns, role .. "_stock", STOCK_WIDTH, "default-semibold")
+      stock.caption, stock.tooltip = { "jatz-network.stock" }, { "jatz-network.stock-tooltip" }
+      local count = number(columns, role .. "_count", COUNT_WIDTH, "default-semibold")
+      local caption = role == "provider" and "depots" or "requests"
+      count.caption, count.tooltip = { "jatz-network." .. caption }, { "jatz-network." .. caption .. "-tooltip" }
+    end
+    local needed_heading = number(columns, "needed", NEED_WIDTH, "default-semibold")
+    needed_heading.caption, needed_heading.tooltip =
+      { "jatz-network.needed" }, { "jatz-network.needed-heading-tooltip" }
+    content.add({ type = "line", direction = "horizontal" }).style.width = ROW_WIDTH
     content.add({ type = "label", name = "no_items", caption = { "jatz-network.no-items" } })
-    local pane = content.add({ type = "scroll-pane", name = "resource_rows" })
-    pane.style.maximal_height = 360
+    local pane = content.add({ type = "scroll-pane", name = "resource_rows", style = "naked_scroll_pane" })
+    -- No height cap: the pane fits a whole page, so no row is ever cut off behind a scrollbar.
+    pane.style.width, pane.style.padding = CONTENT_WIDTH, 0
     for index = 1, PAGE_SIZE do
-      local row = pane.add({ type = "flow", name = "row_" .. index, direction = "horizontal", visible = false })
-      local resource_label = row.add({ type = "label", name = "resource_label" })
-      resource_label.style.width, resource_label.style.single_line = 190, false
-      for _, role in ipairs(ROLES) do
-        local cell = row.add({ type = "flow", name = role .. "_cell", direction = "vertical" })
-        cell.style.width = 135
-        cell.add({ type = "label", name = "stock" })
-        cell.add({ type = "label", name = "depot_count" })
-        cell.add({ type = "label", name = "activity" })
+      local group = pane.add({ type = "flow", name = "row_" .. index, direction = "vertical", visible = false })
+      group.style.vertical_spacing = 0
+      local row = resource_grid(group, "cells", 8)
+      row.style.column_alignments[1] = "middle-left"
+      for column = 2, 8 do
+        row.style.column_alignments[column] = "middle-right"
       end
-      local need = row.add({ type = "flow", name = "need_cell", direction = "vertical" })
-      need.style.width = 80
-      need.add({ type = "label", name = "needed" })
+      local resource = row.add({ type = "sprite", name = "resource_icon", resize_to_sprite = false })
+      resource.style.size, resource.style.right_margin = RESOURCE_SIZE, SLOT_SIZE - RESOURCE_SIZE
+      for _, role in ipairs(ROLES) do
+        number(row, role .. "_stock", STOCK_WIDTH, "default-semibold")
+        number(row, role .. "_count", COUNT_WIDTH, "default")
+      end
+      number(row, "needed", NEED_WIDTH, "default-semibold")
+      local separator = group.add({ type = "line", name = "separator", direction = "horizontal" })
+      separator.style.width = ROW_WIDTH
+      separator.style.top_margin, separator.style.bottom_margin = 2, 2
     end
     tabs.add_tab(tab, content)
   end
   tabs.selected_tab_index = 1
   local paging = inner.add({ type = "flow", name = "paging", direction = "horizontal" })
-  paging.add({ type = "button", name = PREVIOUS, caption = { "jatz-network.previous" }, enabled = false })
+  paging.style.width, paging.style.horizontal_spacing = CONTENT_WIDTH, 8
+  paging.style.vertical_align = "center"
+  paging.style.top_margin = 12
+  paging.add({
+    type = "sprite-button",
+    name = PREVIOUS,
+    style = "tool_button",
+    sprite = "utility/backward_arrow",
+    tooltip = { "jatz-network.previous" },
+    enabled = false,
+  }).style.size =
+    28
   paging.add({ type = "label", name = "page_label", caption = { "jatz-network.page", 1, 1 } })
-  paging.add({ type = "button", name = NEXT, caption = { "jatz-network.next" }, enabled = false })
+  paging.add({
+    type = "sprite-button",
+    name = NEXT,
+    style = "tool_button",
+    sprite = "utility/forward_arrow",
+    tooltip = { "jatz-network.next" },
+    enabled = false,
+  }).style.size =
+    28
+  paging.add({
+    type = "label",
+    name = "snapshot",
+    caption = { "jatz-network.loading" },
+    tooltip = { "jatz-network.snapshot-tooltip" },
+  })
   show_cached(player)
   player.opened = frame
   player.set_shortcut_toggled(SHORTCUT, true)
@@ -624,8 +839,11 @@ function network_gui.refresh(tick)
       local age = math.floor((tick - counts.tick) / 60)
       local state = storage.network_gui[player.index]
       if state.age ~= age then
-        frame_of(player).inner.snapshot.caption = { "jatz-network.snapshot", age }
-        state.age = age
+        local frame = frame_of(player)
+        if not rebuilt(player, frame) then
+          frame.inner.paging.snapshot.caption = { "jatz-network.snapshot", age }
+          state.age = age
+        end
         storage.network_viewer = player.index
         break
       end

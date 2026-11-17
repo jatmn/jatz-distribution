@@ -2,6 +2,191 @@
 
 Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
 
+## Saved windows rebuild on an age update too (November 16, 2026)
+
+PR #115 review follow-up (Pullfrog, on `e6e02e339c328f9b3c7d10345ef7e16bbdcd1c26`): only a full
+render checked the window's layout tag. A window saved by an earlier build of this version that
+already showed the current snapshot got no new render, and its next age-label update wrote to
+`inner.paging.snapshot`, which the base build's tree lacks, stopping the tick handler. Every write
+to the window now goes through the same check, so that update rebuilds the window from the cached
+snapshot instead.
+
+- `tests/lua/control-events.lua` restores an already-drawn base-build window (untagged, its label
+  on `inner`) and advances ticks only: it failed with that error before the fix and now rebuilds
+  with no inventory reads or new scan. Setup tests, Lua syntax, Luacheck, StyLua and whitespace passed.
+- `tools/test_mod.py` (Factorio 2.1.24 headless) passed with base and Space Age, including the
+  network scenario. `tools/emulate_ups.py` (standard) against `e6e02e3`: identical.
+
+## Seven-row pages without a cut-off row (November 16, 2026)
+
+PR #115 follow-up to the owner's in-game screenshot of `6a87e105e6f62b0766f32fccbee2ddf69475a77f`:
+rows measure about 60 px at the default UI scale, so eight rows (about 480 px) overflowed the
+440 px pane cap and the eighth row hid behind a scrollbar. Pages now hold seven rows and the pane
+has no height cap, so a page always shows whole. The layout tag moves to 7 so open windows rebuild.
+
+- `tools/test_mod.py` passed with base and Space Age; the Lua setup tests check a bounded first
+  page of seven. Lint, emulator boundaries, releases, portal, package and whitespace passed.
+- `tools/emulate_ups.py` (standard) against `683882b`: identical instructions, calls and deliveries.
+  `tools/benchmark_ups.py` against `683882b` (GUI closed, three runs): mean update 1.129 → 1.135 ms,
+  script 0.455 → 0.448 ms, p99 3.484 → 3.221 ms, same vehicles and deliveries; within run spread.
+- **Still needed:** graphical confirmation that seven rows show with no scrollbar.
+
+## Single-line network rows with named number columns (November 16, 2026)
+
+PR #115 follow-up to the owner's screenshot of `9449454ab06d2518ea66b975efd7c6df0de3c910`
+(misaligned rows, unclear counts, labels wasting space). Factorio 2.1.25 headless; Lua 5.2.4.
+
+- Each resource is one line: its icon, then numbers only, in fixed-width right-aligned columns.
+  The header names every column once: each role's depot icon and name over **Stock** and
+  **Depots** (providers holding it) or **Requests** (depots requesting it), then **Still needed**.
+  Per-cell depot icons and "offering"/"requesting" captions are gone; holding, offering, target
+  and unmet details stay in each number's tooltip. Amounts of 10,000 or more are shortened
+  (63.8k, 189k, 1.2M; exact on hover) and zero shows as a dash. Summary headings start at their
+  icons. A layout tag rebuilds windows saved by any earlier build of this version.
+- `tools/test_mod.py` passed with base and Space Age, including identical header/row column
+  widths, right alignment, the role headings spanning their two columns, captions, counts and
+  rebuilding an untagged window. `tests/lua/control-events.lua` (via `tools/test_mod_setup.py`)
+  checks counts, tooltips, dashes and rebuilding untagged and older windows without a scan.
+- Lua syntax, Luacheck, StyLua, Ruff, setup, emulator boundaries, releases, portal, package
+  build/validation and whitespace passed.
+- `tools/emulate_ups.py` (standard) against `683882b`: identical mean/p99/worst instructions,
+  API calls, path requests, commands, freighters and deliveries. `tools/benchmark_ups.py` against
+  `683882b`, three runs each: mean update 1.139 → 1.135 ms, script 0.458 → 0.451 ms, p99
+  3.626 → 3.414 ms, same 1,512 vehicles out and 265,200 items/minute (GUI closed).
+- Open-window probe (8 rows, 5,000 forced full-page refreshes, five alternating runs) against
+  `9449454`: median 0.349 → 0.321 ms per refresh (ranges 0.340–0.412 and
+  0.308–0.355); each row now has 8 cells instead of 21 elements. Scan limits unchanged.
+- **Still needed:** graphical confirmation of the alignment and spacing, and live multiplayer.
+
+## Row depot icon sizing and metric meanings (November 16, 2026)
+
+PR #115 follow-up to the owner's screenshot and count/arrow clarification at
+`3fe3c07d9a611e1d03e95b45218e3cedf70dd36e`. Runtime blob:
+`scripts/network-gui.lua` `68489a8a55f2334cc281995212ec2b8ee2856f5d`.
+
+- Restored resource/picker icons to 40 px while row/header depot symbols are 48 px, matching
+  the readable summary icons. Matching margins retain the existing first-column alignment.
+- Holding counts use natural-width left-aligned labels beside the depot image. Ambiguous arrows
+  are removed; the other count explicitly says offering or requesting. Row height accommodates
+  the larger models; window width, dividers, summaries, controls and data accounting are retained.
+- `tools/test_mod.py` passed with base and Space Age, including native 40/48 px sizing,
+  zero forced count-label minimum, left alignment, labeled activity count values, absence of arrow
+  widgets, retained geometry/counts/quality, and rebuilding earlier same-version GUI layouts.
+  Lua harnesses retain force isolation, shared work budget, cached controls and 61-viewer checks.
+- Lua syntax, Luacheck 1.2.0, StyLua 2.5.2, Ruff 0.17.3, setup (16), emulator boundaries (6),
+  releases (14), portal (7), portal content, package bytes/checksum and whitespace passed.
+- Engine comparison against `683882b`, three alternating runs each: mean update 1.143 → 1.135 ms,
+  script 0.454 → 0.450 ms, p99 3.345 → 3.582 ms, median worst tick 6.361 → 6.111 ms.
+  Individual worst ticks overlapped (5.624–8.274 before, 5.914–6.425 after). Both variants retained
+  1,512 vehicles out and 265,200 items/minute. No speedup or zero-cost claim; the GUI is closed here.
+- Engine-free standard comparison against the upstream base was identical in instruction counts,
+  API calls, path requests, commands, freighters and deliveries.
+- The real-engine eight-row GUI API probe against the starting repair head measured median
+  0.342 → 0.346 ms, with overlapping ranges, after 500 warm-ups and 5,000 refreshes per run,
+  three alternating runs. Global scan/refresh limits are unchanged. This is one viewer's update
+  work, not a graphical rendering or live multiplayer result.
+- **Still needed:** graphical confirmation of depot-icon legibility, count proximity and clear
+  labeled metrics, plus live multiplayer/save/load checks. The submitted screenshot shows the
+  previous sizes and ambiguous arrows, not this candidate.
+
+## Network window row separation and read-only summaries (November 16, 2026)
+
+PR #115 follow-up to the owner's screenshot at `6f5ce9c8f767218155baf97671ea16d4d7ec1d12`.
+Runtime blob: `scripts/network-gui.lua` `4c888a53bbe8b04843b4ad7997bd856e564c4e13`.
+Factorio 2.1.25 headless; Lua 5.2.4.
+
+- Added a native horizontal line under each resource row, with row visibility controlling the line.
+  Widened the shared grid and increased row padding/spacing and the bounded scroll area.
+- Depot/resource summaries use read-only 48 px sprites and adjacent depot counts; the picker,
+  page arrows and close remain buttons. Header/metric depot symbols are 24 px rather than 16 px.
+- `tools/test_mod.py`: base and Space Age passed, including native line direction/full width,
+  read-only widget types, exact counts/zeros, icon sizes, shared header/row geometry and close/rebuild
+  behavior. The event harness verifies both previous-draft layouts rebuild without inventory reads,
+  as well as the existing force isolation, scan budget, cached controls and 61-viewer fairness.
+- Lua syntax, Luacheck 1.2.0, StyLua 2.5.2, Ruff 0.17.3, setup (16), emulator boundaries (6),
+  releases (14), portal (7), portal content, package bytes/checksum and whitespace passed.
+- Standard engine comparison against `683882b`, three alternating runs each: mean update
+  1.120 → 1.135 ms (+1.3%), script 0.445 → 0.458 ms, p99 3.419 → 3.618 ms, median worst tick
+  6.354 → 6.575 ms. Individual worst ticks overlapped (5.227–8.345 before, 6.054–7.702 after).
+  Both variants had 1,512 vehicles out and delivered 265,200 items/minute. These are GUI-closed
+  measurements; the small timing increase is disclosed, with no speedup or zero-cost claim.
+- Engine-free standard comparison against the upstream base was identical in instruction counts,
+  API calls, path requests, commands, freighters and deliveries.
+- The real-engine eight-row refresh probe against `6f5ce9c`, three alternating runs of 5,000
+  refreshes after 500 warm-ups, measured median 0.330 → 0.338 ms. This is about 0.009 ms extra
+  per full page, with overlapping ranges. Shared scan/render budgets are unchanged; this probe
+  measures one viewer's GUI API work, not drawing or live multiplayer latency.
+- **Validation still needed:** the new row rules, icon legibility, read-only appearance and roomier
+  layout in the graphical client, plus live multiplayer/save/load checks. The supplied screenshot
+  shows the previous layout, not this candidate.
+
+## Network window proportions and alignment: screenshot repair (November 16, 2026)
+
+PR #115 follow-up to the owner's graphical screenshot at `4403d7d2192036394341edf690baa2b3264638d4`.
+Runtime blob: `scripts/network-gui.lua` `4c6299ad73a9f86083c1420c7ce4d84b065fe43e`.
+Factorio 2.1.25 (build 88022), Linux x86_64 headless; Lua 5.2.4.
+
+- The screenshot showed the first draft's uneven summary panels, mostly empty Other row,
+  rectangular resource/picker slots and disproportionate active arrow. The repair uses one summary
+  band with Fuel/Mining Drones in Support, native 40 px square slots, bounded status sprites and
+  shared header/row table geometry. Primary numbers share label height and right alignment.
+- `tools/test_mod.py`: base game and Space Age passed. The real GUI scenario checks equal header/row
+  widths, padding, spacing and column widths; square resource/picker sizes; equal primary-value
+  label height; centered depot columns; explicit sprite resizing; counts, quality and demand.
+- Both development ZIPs use unreleased version 0.1.10. A saved previous-draft window can lack the
+  new fleet container without a configuration-change event. The regression fails before the guard;
+  it now rebuilds through the existing cached-open path, preserving counts without inventory reads.
+  The event harness and real-engine scenario both check the rebuild.
+- Lua syntax, Luacheck 1.2.0, StyLua 2.5.2, Ruff 0.17.3, setup (16 tests), emulator boundaries (6),
+  releases (14), portal (7), portal content, package bytes/checksum and whitespace passed.
+- Standard engine comparison against `683882b`, three alternating runs each: mean update
+  1.131 → 1.138 ms, script 0.455 → 0.453 ms, p99 3.512 → 3.410 ms, median worst tick
+  5.862 → 6.232 ms. Individual worst ticks overlapped (5.384–7.027 ms before, 5.576–7.185 after).
+  Mean differences are within run variation; no speedup or tail improvement is claimed.
+  Both variants had 1,512 vehicles out and 265,200 items delivered/minute. The GUI is closed here.
+- Engine-free standard comparison against the upstream base was identical in instructions, API calls,
+  path requests, commands, freighters and deliveries.
+- The eight-row real-engine GUI update probe compared the repair with the starting draft:
+  500 warm-ups and 5,000 forced refreshes per run, three alternating runs. Median 0.331 → 0.335 ms,
+  with overlapping ranges (0.330–0.339 before, 0.328–0.337 after). No material change established.
+  This is one viewer's API/update work; it does not measure drawing or multiplayer latency.
+- **Validation still needed:** inspect this revised layout in the graphical client and perform the
+  live multiplayer/save/load checks. The owner's screenshot proves the previous layout failed;
+  it does not validate this revised layout. Shared scan and render budgets remain unchanged.
+
+## Compact network window: automated checks passed; graphical and multiplayer checks pending (November 16, 2026)
+
+Candidate `feat/network-gui-polish`, based on `683882b4f40f96286f6b1191f460882be4cca194`.
+Runtime blob: `scripts/network-gui.lua` `989089feb2d33c54959befff1e05fd11b0df7eda`.
+Factorio 2.1.25 (build 88022), Linux x86_64 headless; Lua 5.2.4.
+
+- The production GUI groups item/liquid depots by role, keeps Fuel and optional Mining Drones
+  counts, and uses resource/status icons with stock, request, offering and quality details on hover.
+  The new layout expectations fail against the baseline's missing overview and pass on the candidate.
+- `tools/test_mod.py`: base game and Space Age passed, including real GUI elements, depot icon/count
+  overlays (including zero), resource icons, stock and demand, configuration rebuild and keyboard close.
+  The network scenario uses explicit reservation/inbound state; road deliveries have their own checks.
+- `tools/test_mod_setup.py`: 16 passed, including the existing shared inventory budget, force isolation,
+  cached controls, disconnect/close behavior and fair updates for 61 fake viewers. These are production
+  handlers with simulated engine objects, not a live multiplayer session.
+- `tools/test_emulate_ups.py`: 6 passed; release tests: 14; portal tests: 7. Lua 5.2 syntax,
+  Luacheck 1.2.0, StyLua 2.5.2, Ruff 0.17.3, portal content, package bytes/checksum and whitespace passed.
+- Standard engine benchmark, three alternating runs per variant: mean update 1.125 → 1.124 ms,
+  script 0.449 → 0.452 ms, p99 3.451 → 3.564 ms, median worst tick 5.811 → 6.286 ms.
+  Individual worst ticks ranged 5.745–8.137 ms before and 6.199–7.110 ms after; no tail-latency
+  improvement is claimed. Both variants had 1,512 freighters out and delivered 265,200 items/minute.
+  This benchmark has the GUI closed; its per-tick execution path is unchanged.
+- Engine-free standard comparison: identical mean/p99/worst Lua instructions and API calls,
+  path requests, commands, freighter counts and deliveries.
+- A separate run-owned headless probe measured real GUI updates with 24 depots and eight item rows:
+  500 warm-ups, then 5,000 forced full-page refreshes, three alternating runs each. Median refresh
+  cost was 0.353 → 0.329 ms after moving fixed status sprites to window creation and reducing repeated
+  GUI lookups. This isolates refresh work for one viewer; it does not measure drawing or multiplayer
+  latency. Shared scan/render budgets are unchanged, and depot counts are only rewritten when changed.
+- **Still required:** inspect the window in a graphical client at normal resolution/UI scale, with long
+  names and large counts, and perform the live multiplayer/save-load checks in `docs/testing.md`.
+  Headless API checks and the fake-viewer tests cannot prove visual quality or live join behavior.
+
 ## Z-key freighter drops: automated checks passed (November 16, 2026)
 
 Candidate `fix/z-drop-freighter-absorption`, based on `51c25b67643c4f1e07bf8ea57575f67f6d272d3b`.

@@ -8,7 +8,7 @@ local function inner()
   return game.get_player(1).gui.screen.jatz_network_frame.inner
 end
 local function row(kind)
-  return inner().jatz_network_tabs[kind .. "_content"].resource_rows.row_1
+  return inner().jatz_network_tabs[kind .. "_content"].resource_rows.row_1.cells
 end
 script.on_event(defines.events.on_gui_closed, network.on_gui_closed)
 script.on_event(defines.events.on_gui_click, network.on_gui_click)
@@ -66,7 +66,7 @@ script.on_event(defines.events.on_tick, function(event)
     request.trucks.insert({ name = "jatz-quinityn-freighter", count = 3 })
     network.on_lua_shortcut({ player_index = 1, prototype_name = "jatz-network" })
     assert(player.opened == player.gui.screen.jatz_network_frame)
-    assert(not row("item").visible)
+    assert(not row("item").parent.visible)
   end
   network.refresh(event.tick)
   if event.tick == 5 then
@@ -84,19 +84,89 @@ script.on_event(defines.events.on_tick, function(event)
         and iron.buffer.requested == 1
         and iron.buffer.missing == (script.active_mods.quality and 10 or 15)
     )
-    assert(row("item").need_cell.needed.caption == (script.active_mods.quality and "45" or "50"))
-    assert(inner().freighters.total.caption == "3")
+    assert(row("item").needed.caption == (script.active_mods.quality and "45" or "50"))
+    assert(inner().overview.freighters.fleet.total.caption == "3")
+    local depots = inner().overview.depot_summary.depots
+    assert(depots.column_count == 4)
+    for _, name in ipairs({
+      "jatz-provider-depot",
+      "jatz-request-depot",
+      "jatz-buffer-depot",
+      "jatz-liquid-provider-depot",
+      "jatz-liquid-request-depot",
+      "jatz-liquid-buffer-depot",
+    }) do
+      assert(
+        depots[name].type == "flow"
+          and depots[name].icon.type == "sprite"
+          and depots[name].icon.sprite == "entity/" .. name
+          and depots[name].count.caption == "1"
+      )
+      assert(depots[name].tooltip[2][1] == prototypes.entity[name].localised_name[1])
+    end
+    assert(inner().overview.support.depots["jatz-fuel-depot"].count.caption == "0")
+    -- Summary headings start at their icons' left edge.
+    assert(depots.style.column_alignments[2] == "middle-left")
+    assert(inner().overview.freighters.on_road.marker.children[1].resize_to_sprite == false)
+    local resource = row("item")
+    assert(resource.resource_icon.sprite == "item/iron-plate")
+    assert(resource.provider_count.caption == "1" and resource.request_count.caption == "1")
+    -- One line per resource: an icon, then numbers only, in the header's fixed columns.
+    local content = inner().jatz_network_tabs.item_content
+    local headers, columns = content.headers, content.columns
+    assert(headers.type == "table" and columns.type == "table" and resource.type == "table")
+    assert(#resource.children == 8 and columns.column_count == 8 and headers.column_count == 5)
+    for _, grid in ipairs({ headers, columns }) do
+      assert(grid.style.minimal_width == resource.style.minimal_width)
+      assert(grid.style.left_padding == resource.style.left_padding)
+      assert(grid.style.horizontal_spacing == resource.style.horizontal_spacing)
+    end
+    local icon = resource.resource_icon.style
+    assert(resource.resource_icon.type == "sprite" and icon.minimal_width == 40 and icon.minimal_height == 40)
+    assert(headers.jatz_network_item.style.minimal_width == icon.minimal_width)
+    assert(headers.jatz_network_item.style.right_margin == icon.right_margin)
+    assert(columns.children[1].style.minimal_width == icon.minimal_width + icon.right_margin)
+    for column = 2, 8 do
+      local cell, heading = resource.children[column], columns.children[column]
+      assert(cell.type == "label" and heading.name == cell.name)
+      assert(heading.style.minimal_width == cell.style.minimal_width)
+      assert(heading.style.horizontal_align == "right" and cell.style.horizontal_align == "right")
+      assert(resource.style.column_alignments[column] == "middle-right")
+    end
+    local spacing = resource.style.horizontal_spacing
+    for _, role in ipairs({ "provider", "request", "buffer" }) do
+      assert(
+        headers[role].style.minimal_width
+          == resource[role .. "_stock"].style.minimal_width + spacing + resource[role .. "_count"].style.minimal_width
+      )
+      assert(headers[role].children[1].sprite == "entity/jatz-" .. role .. "-depot")
+    end
+    assert(headers.children[5].style.minimal_width == resource.needed.style.minimal_width)
+    assert(columns.provider_count.caption[1] == "jatz-network.depots")
+    assert(columns.request_count.caption[1] == "jatz-network.requests")
+    assert(resource.parent.separator.type == "line" and resource.parent.separator.direction == "horizontal")
+    assert(resource.parent.separator.style.minimal_width == resource.style.minimal_width)
+    local old_frame = player.gui.screen.jatz_network_frame
+    assert(old_frame.tags.layout ~= nil)
+    old_frame.tags = {}
+    network.on_gui_selection_state_changed({ player_index = 1, element = old_frame.inner.jatz_network_tabs })
+    assert(player.gui.screen.jatz_network_frame ~= old_frame)
+    assert(inner().overview.freighters.fleet.total.caption == "3")
+    assert(row("item").resource_icon.sprite == "item/iron-plate")
     if script.active_mods.quality then
       assert(iron.provider.grades.rare == 20)
     end
     inner().jatz_network_tabs.selected_tab_index = 2
     network.on_gui_selection_state_changed({ player_index = 1, element = inner().jatz_network_tabs })
-    assert(row("fluid").provider_cell.stock.caption == "1000")
-    assert(row("fluid").request_cell.stock.caption == "150")
-    assert(row("fluid").buffer_cell.stock.caption == "200")
-    assert(row("fluid").need_cell.needed.caption == "450")
+    assert(row("fluid").provider_stock.caption == "1000")
+    assert(row("fluid").request_stock.caption == "150")
+    assert(row("fluid").buffer_stock.caption == "200")
+    assert(row("fluid").needed.caption == "450")
+    assert(row("fluid").resource_icon.sprite == "fluid/water")
+    local fluid_headers = inner().jatz_network_tabs.fluid_content.headers
+    assert(fluid_headers.request.children[1].sprite == "entity/jatz-liquid-request-depot")
     network.on_configuration_changed()
-    assert(not row("item").visible and storage.network_data == nil)
+    assert(not row("item").parent.visible and storage.network_data == nil)
   elseif event.tick == 10 then
     player.opened = nil -- Real engine on_gui_closed, not an invented close event.
     assert(not player.gui.screen.jatz_network_frame)
