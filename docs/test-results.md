@@ -1,8 +1,12 @@
 # Test results
 
-Latest in-game results for the current artwork. The full screenshots and reports from every test round are kept in the private `jatz-distribution-archive` repository.
+The latest test result for each area of the mod. When you test an area again, replace its entry rather than adding another; superseded rounds stay in git history. Screenshots and reports from before November 3, 2026 are kept in the private `jatz-distribution-archive` repository.
 
-## Saved windows rebuild on an age update too (November 16, 2026)
+## Freighter network window: automated checks passed (PR #115, November 16, 2026)
+
+The three checks of the merged layout, newest first.
+
+### Saved windows rebuild on an age update too (November 16, 2026)
 
 PR #115 review follow-up (Pullfrog, on `e6e02e339c328f9b3c7d10345ef7e16bbdcd1c26`): only a full
 render checked the window's layout tag. A window saved by an earlier build of this version that
@@ -17,7 +21,7 @@ snapshot instead.
 - `tools/test_mod.py` (Factorio 2.1.24 headless) passed with base and Space Age, including the
   network scenario. `tools/emulate_ups.py` (standard) against `e6e02e3`: identical.
 
-## Seven-row pages without a cut-off row (November 16, 2026)
+### Seven-row pages without a cut-off row (November 16, 2026)
 
 PR #115 follow-up to the owner's in-game screenshot of `6a87e105e6f62b0766f32fccbee2ddf69475a77f`:
 rows measure about 60 px at the default UI scale, so eight rows (about 480 px) overflowed the
@@ -31,7 +35,7 @@ has no height cap, so a page always shows whole. The layout tag moves to 7 so op
   script 0.455 → 0.448 ms, p99 3.484 → 3.221 ms, same vehicles and deliveries; within run spread.
 - **Still needed:** graphical confirmation that seven rows show with no scrollbar.
 
-## Single-line network rows with named number columns (November 16, 2026)
+### Single-line network rows with named number columns (November 16, 2026)
 
 PR #115 follow-up to the owner's screenshot of `9449454ab06d2518ea66b975efd7c6df0de3c910`
 (misaligned rows, unclear counts, labels wasting space). Factorio 2.1.25 headless; Lua 5.2.4.
@@ -57,135 +61,6 @@ PR #115 follow-up to the owner's screenshot of `9449454ab06d2518ea66b975efd7c6df
   `9449454`: median 0.349 → 0.321 ms per refresh (ranges 0.340–0.412 and
   0.308–0.355); each row now has 8 cells instead of 21 elements. Scan limits unchanged.
 - **Still needed:** graphical confirmation of the alignment and spacing, and live multiplayer.
-
-## Row depot icon sizing and metric meanings (November 16, 2026)
-
-PR #115 follow-up to the owner's screenshot and count/arrow clarification at
-`3fe3c07d9a611e1d03e95b45218e3cedf70dd36e`. Runtime blob:
-`scripts/network-gui.lua` `68489a8a55f2334cc281995212ec2b8ee2856f5d`.
-
-- Restored resource/picker icons to 40 px while row/header depot symbols are 48 px, matching
-  the readable summary icons. Matching margins retain the existing first-column alignment.
-- Holding counts use natural-width left-aligned labels beside the depot image. Ambiguous arrows
-  are removed; the other count explicitly says offering or requesting. Row height accommodates
-  the larger models; window width, dividers, summaries, controls and data accounting are retained.
-- `tools/test_mod.py` passed with base and Space Age, including native 40/48 px sizing,
-  zero forced count-label minimum, left alignment, labeled activity count values, absence of arrow
-  widgets, retained geometry/counts/quality, and rebuilding earlier same-version GUI layouts.
-  Lua harnesses retain force isolation, shared work budget, cached controls and 61-viewer checks.
-- Lua syntax, Luacheck 1.2.0, StyLua 2.5.2, Ruff 0.17.3, setup (16), emulator boundaries (6),
-  releases (14), portal (7), portal content, package bytes/checksum and whitespace passed.
-- Engine comparison against `683882b`, three alternating runs each: mean update 1.143 → 1.135 ms,
-  script 0.454 → 0.450 ms, p99 3.345 → 3.582 ms, median worst tick 6.361 → 6.111 ms.
-  Individual worst ticks overlapped (5.624–8.274 before, 5.914–6.425 after). Both variants retained
-  1,512 vehicles out and 265,200 items/minute. No speedup or zero-cost claim; the GUI is closed here.
-- Engine-free standard comparison against the upstream base was identical in instruction counts,
-  API calls, path requests, commands, freighters and deliveries.
-- The real-engine eight-row GUI API probe against the starting repair head measured median
-  0.342 → 0.346 ms, with overlapping ranges, after 500 warm-ups and 5,000 refreshes per run,
-  three alternating runs. Global scan/refresh limits are unchanged. This is one viewer's update
-  work, not a graphical rendering or live multiplayer result.
-- **Still needed:** graphical confirmation of depot-icon legibility, count proximity and clear
-  labeled metrics, plus live multiplayer/save/load checks. The submitted screenshot shows the
-  previous sizes and ambiguous arrows, not this candidate.
-
-## Network window row separation and read-only summaries (November 16, 2026)
-
-PR #115 follow-up to the owner's screenshot at `6f5ce9c8f767218155baf97671ea16d4d7ec1d12`.
-Runtime blob: `scripts/network-gui.lua` `4c888a53bbe8b04843b4ad7997bd856e564c4e13`.
-Factorio 2.1.25 headless; Lua 5.2.4.
-
-- Added a native horizontal line under each resource row, with row visibility controlling the line.
-  Widened the shared grid and increased row padding/spacing and the bounded scroll area.
-- Depot/resource summaries use read-only 48 px sprites and adjacent depot counts; the picker,
-  page arrows and close remain buttons. Header/metric depot symbols are 24 px rather than 16 px.
-- `tools/test_mod.py`: base and Space Age passed, including native line direction/full width,
-  read-only widget types, exact counts/zeros, icon sizes, shared header/row geometry and close/rebuild
-  behavior. The event harness verifies both previous-draft layouts rebuild without inventory reads,
-  as well as the existing force isolation, scan budget, cached controls and 61-viewer fairness.
-- Lua syntax, Luacheck 1.2.0, StyLua 2.5.2, Ruff 0.17.3, setup (16), emulator boundaries (6),
-  releases (14), portal (7), portal content, package bytes/checksum and whitespace passed.
-- Standard engine comparison against `683882b`, three alternating runs each: mean update
-  1.120 → 1.135 ms (+1.3%), script 0.445 → 0.458 ms, p99 3.419 → 3.618 ms, median worst tick
-  6.354 → 6.575 ms. Individual worst ticks overlapped (5.227–8.345 before, 6.054–7.702 after).
-  Both variants had 1,512 vehicles out and delivered 265,200 items/minute. These are GUI-closed
-  measurements; the small timing increase is disclosed, with no speedup or zero-cost claim.
-- Engine-free standard comparison against the upstream base was identical in instruction counts,
-  API calls, path requests, commands, freighters and deliveries.
-- The real-engine eight-row refresh probe against `6f5ce9c`, three alternating runs of 5,000
-  refreshes after 500 warm-ups, measured median 0.330 → 0.338 ms. This is about 0.009 ms extra
-  per full page, with overlapping ranges. Shared scan/render budgets are unchanged; this probe
-  measures one viewer's GUI API work, not drawing or live multiplayer latency.
-- **Validation still needed:** the new row rules, icon legibility, read-only appearance and roomier
-  layout in the graphical client, plus live multiplayer/save/load checks. The supplied screenshot
-  shows the previous layout, not this candidate.
-
-## Network window proportions and alignment: screenshot repair (November 16, 2026)
-
-PR #115 follow-up to the owner's graphical screenshot at `4403d7d2192036394341edf690baa2b3264638d4`.
-Runtime blob: `scripts/network-gui.lua` `4c6299ad73a9f86083c1420c7ce4d84b065fe43e`.
-Factorio 2.1.25 (build 88022), Linux x86_64 headless; Lua 5.2.4.
-
-- The screenshot showed the first draft's uneven summary panels, mostly empty Other row,
-  rectangular resource/picker slots and disproportionate active arrow. The repair uses one summary
-  band with Fuel/Mining Drones in Support, native 40 px square slots, bounded status sprites and
-  shared header/row table geometry. Primary numbers share label height and right alignment.
-- `tools/test_mod.py`: base game and Space Age passed. The real GUI scenario checks equal header/row
-  widths, padding, spacing and column widths; square resource/picker sizes; equal primary-value
-  label height; centered depot columns; explicit sprite resizing; counts, quality and demand.
-- Both development ZIPs use unreleased version 0.1.10. A saved previous-draft window can lack the
-  new fleet container without a configuration-change event. The regression fails before the guard;
-  it now rebuilds through the existing cached-open path, preserving counts without inventory reads.
-  The event harness and real-engine scenario both check the rebuild.
-- Lua syntax, Luacheck 1.2.0, StyLua 2.5.2, Ruff 0.17.3, setup (16 tests), emulator boundaries (6),
-  releases (14), portal (7), portal content, package bytes/checksum and whitespace passed.
-- Standard engine comparison against `683882b`, three alternating runs each: mean update
-  1.131 → 1.138 ms, script 0.455 → 0.453 ms, p99 3.512 → 3.410 ms, median worst tick
-  5.862 → 6.232 ms. Individual worst ticks overlapped (5.384–7.027 ms before, 5.576–7.185 after).
-  Mean differences are within run variation; no speedup or tail improvement is claimed.
-  Both variants had 1,512 vehicles out and 265,200 items delivered/minute. The GUI is closed here.
-- Engine-free standard comparison against the upstream base was identical in instructions, API calls,
-  path requests, commands, freighters and deliveries.
-- The eight-row real-engine GUI update probe compared the repair with the starting draft:
-  500 warm-ups and 5,000 forced refreshes per run, three alternating runs. Median 0.331 → 0.335 ms,
-  with overlapping ranges (0.330–0.339 before, 0.328–0.337 after). No material change established.
-  This is one viewer's API/update work; it does not measure drawing or multiplayer latency.
-- **Validation still needed:** inspect this revised layout in the graphical client and perform the
-  live multiplayer/save/load checks. The owner's screenshot proves the previous layout failed;
-  it does not validate this revised layout. Shared scan and render budgets remain unchanged.
-
-## Compact network window: automated checks passed; graphical and multiplayer checks pending (November 16, 2026)
-
-Candidate `feat/network-gui-polish`, based on `683882b4f40f96286f6b1191f460882be4cca194`.
-Runtime blob: `scripts/network-gui.lua` `989089feb2d33c54959befff1e05fd11b0df7eda`.
-Factorio 2.1.25 (build 88022), Linux x86_64 headless; Lua 5.2.4.
-
-- The production GUI groups item/liquid depots by role, keeps Fuel and optional Mining Drones
-  counts, and uses resource/status icons with stock, request, offering and quality details on hover.
-  The new layout expectations fail against the baseline's missing overview and pass on the candidate.
-- `tools/test_mod.py`: base game and Space Age passed, including real GUI elements, depot icon/count
-  overlays (including zero), resource icons, stock and demand, configuration rebuild and keyboard close.
-  The network scenario uses explicit reservation/inbound state; road deliveries have their own checks.
-- `tools/test_mod_setup.py`: 16 passed, including the existing shared inventory budget, force isolation,
-  cached controls, disconnect/close behavior and fair updates for 61 fake viewers. These are production
-  handlers with simulated engine objects, not a live multiplayer session.
-- `tools/test_emulate_ups.py`: 6 passed; release tests: 14; portal tests: 7. Lua 5.2 syntax,
-  Luacheck 1.2.0, StyLua 2.5.2, Ruff 0.17.3, portal content, package bytes/checksum and whitespace passed.
-- Standard engine benchmark, three alternating runs per variant: mean update 1.125 → 1.124 ms,
-  script 0.449 → 0.452 ms, p99 3.451 → 3.564 ms, median worst tick 5.811 → 6.286 ms.
-  Individual worst ticks ranged 5.745–8.137 ms before and 6.199–7.110 ms after; no tail-latency
-  improvement is claimed. Both variants had 1,512 freighters out and delivered 265,200 items/minute.
-  This benchmark has the GUI closed; its per-tick execution path is unchanged.
-- Engine-free standard comparison: identical mean/p99/worst Lua instructions and API calls,
-  path requests, commands, freighter counts and deliveries.
-- A separate run-owned headless probe measured real GUI updates with 24 depots and eight item rows:
-  500 warm-ups, then 5,000 forced full-page refreshes, three alternating runs each. Median refresh
-  cost was 0.353 → 0.329 ms after moving fixed status sprites to window creation and reducing repeated
-  GUI lookups. This isolates refresh work for one viewer; it does not measure drawing or multiplayer
-  latency. Shared scan/render budgets are unchanged, and depot counts are only rewritten when changed.
-- **Still required:** inspect the window in a graphical client at normal resolution/UI scale, with long
-  names and large counts, and perform the live multiplayer/save-load checks in `docs/testing.md`.
-  Headless API checks and the fake-viewer tests cannot prove visual quality or live join behavior.
 
 ## Z-key freighter drops: automated checks passed (November 16, 2026)
 
@@ -220,23 +95,11 @@ Factorio 2.1.25 (build 88022), Linux x86_64 headless; Lua 5.2.4.
   inserter/loader variants were not recorded. The headless scenario supplies the event payload
   to the production handler because the engine cannot raise this event by script.
 
-## Buffer pull wording: checks passed; text only
+## Buffers pull by priority: passed (automated, PR #112)
 
-**November 16, 2026.** PR #112 review repair on `8ad87c90f1d7021089e78ada74e8c5918f63998f`, against
-`main` at `51c25b67643c4f1e07bf8ea57575f67f6d272d3b`. Locale and documentation only; no code,
-test or behaviour change, so Factorio and the UPS benchmark were not rerun.
+The feature's own check and its last review repair, newest first.
 
-- The `searching` status text and the guide's status legend now name lower-priority buffers for a
-  buffer depot with the setting, as `no-provider` and `unreachable` already did.
-- The setting description, the guide and `AGENTS.md` state the rule as where a buffer sends its
-  freighters. A pickup a request depot sent before it was swapped for a buffer depot still loads,
-  as the swap checks require; the guide and `AGENTS.md` say so, and that a buffer pull whose source
-  became a request depot takes nothing there.
-- `tools/test_mod_setup.py`: 16 passed; `tools/test_releases.py`: 14 passed;
-  `tools/test_portal_page.py`: 7 passed; `tools/test_ci_changes.py`: 18 passed (1 skipped);
-  `git diff --check` passed.
-
-## Buffer pulls from a replaced source: passed (automated)
+### Buffer pulls from a replaced source: passed (automated)
 
 **November 16, 2026.** PR #112 review repair on `7bbe41722aeebd2f484ad7be3dcbc1b2968f5079`, against
 `main` at `51c25b67643c4f1e07bf8ea57575f67f6d272d3b`; Factorio 2.1.24 headless on Linux x86-64.
@@ -256,48 +119,7 @@ test or behaviour change, so Factorio and the UPS benchmark were not rerun.
 - StyLua 2.5.2, Luacheck 1.2.0, Lua 5.2 syntax, `git diff --check`, and the CI package job's release,
   portal and package build/validation steps passed. No visual changes.
 
-## Pre-update pickups and disabled buffer scans: Lua checks passed; Factorio not rerun
-
-**November 16, 2026.** PR #112 review repair on `a545788313b39dcef11489c3c1b5beb12c1a6c95`, against
-`main` at `51c25b67643c4f1e07bf8ea57575f67f6d272d3b`. No Factorio executable was available, so
-`tools/test_mod.py` and `tools/benchmark_ups.py` were not rerun for this revision.
-
-- A requester dispatched to a buffer on `main`, its home replaced by a buffer and saved before
-  pickup, received 0 of 10 after reloading with the previous PR revision. A trip without an
-  admission record now counts as a requester's pickup, as no earlier version sent buffers to buffers.
-  The same state, made by `main`'s own `scripts/logistics.lua`, now delivers 10 and leaves 10, as
-  on `main`, with the setting on or off. The changed swap check fails on the previous revision.
-- With the setting off, buffer searches read it once each instead of once for each other buffer.
-  For 400 stocked buffers over 60 `on_tick_share` ticks (Lua instructions in `scripts/`):
-  `main` 2,049,416; previous revision 3,963,816 with 159,600 setting reads; this one 2,214,616 with
-  400. A new logistics check fails on the previous revision.
-- `tools/test_mod_setup.py`: 16 passed; `tools/test_emulate_ups.py`: 6 passed;
-  `tools/emulate_ups.py --base` against that `main`: mean +0.1%, p99 +0.2%, worst +0.1%, deliveries unchanged.
-- StyLua 2.5.2, Luacheck 1.2.0, Lua 5.2 syntax, Ruff 0.17.3, `git diff --check`, and the CI package
-  job's release, portal and package build/validation steps passed. No visual changes.
-
-## Buffer pickup after home replacement: passed (automated)
-
-**November 16, 2026.** PR #112 repair working tree on `0b1d467b72550e9b30f4f69a933864cb1de59b33`,
-against `main` at `51c25b67643c4f1e07bf8ea57575f67f6d272d3b`; Factorio 2.1.24 headless on Linux x86-64.
-
-- `tools/test_mod.py`: passed with base game and Space Age, including undo, bonuses, network and
-  Quality scenarios. The new engine case dispatches a requester to a buffer, applies a scripted
-  request-to-buffer upgrade before pickup, and requires all 10 promised wood at home and 10 left
-  at the source. Equal priorities prevent a fresh buffer pull from hiding a cancelled pickup.
-- `tools/test_mod_setup.py`: 16 tests passed; `tools/test_emulate_ups.py`: 6 passed. Added swap
-  checks cover both startup values and requester source modes, new and older saved trip records,
-  module/configuration reload, both reroute admission changes, and older buffer trips' priority
-  refusal. Reload here uses the Lua harness; it is not a second Factorio process save/load test.
-- The home-replacement regression fails on the starting PR code. Isolated mutations omitting the
-  reroute update or legacy snapshot, or bypassing an older trip's priority guard, fail the intended
-  delivered-stock assertions. The existing buffer-origin priority refusals pass with the repair.
-- Lua 5.2 syntax, Luacheck 1.2.0, StyLua 2.5.2, package build/validation and `git diff --check` passed.
-- Standard UPS: three paired runs against that `main`; stress: one paired run. Both kept the same
-  delivered stock and active freighters. These use the default provider/request maps, not a large
-  enabled buffer-chain network; no speed-up claimed. No visual changes or graphical-client check.
-
-## Buffers pull by priority: passed (automated)
+### The feature: passed (automated)
 
 **November 15, 2026.** Against `main` at `a826850320c5b1f5b2f3658c895fb0a56628f9be`,
 Factorio 2.1.24 headless on Linux, base game and Space Age.
@@ -315,35 +137,6 @@ Factorio 2.1.24 headless on Linux, base game and Space Age.
   265,200 items/minute with 1,512 active freighters. This checks default settings on the existing
   benchmark map; it does not measure a large network of opt-in buffer chains.
 - No graphics changed; graphical-client inspection was not performed.
-
-## Freighter network command center: automated checks passed; visual check pending
-
-**November 15, 2026.** Uncommitted `feat/network-supply-demand` candidate based on
-`a826850320c5b1f5b2f3658c895fb0a56628f9be`; network module blob `b313d80ba593ddbcae3512229fb9229148a24008`.
-Factorio 2.1.24 (build 87808), Linux x86_64 headless; Python 3.13.5 and Lua 5.2.4.
-
-- `tools/test_mod.py`: passed with base game and Space Age. The new network scenario exercises
-  real tabbed GUI construction, item/fluid and depot-role stock, quality-aware need, reservations,
-  explicitly supplied inbound commitments, parked fluid storage, rebuilding and engine close events.
-- `tools/test_mod_setup.py`: 16 tests passed, including the control-event GUI regressions;
-  `tools/test_emulate_ups.py`, release and portal/package validation passed. Lua syntax,
-  Luacheck 1.2.0, StyLua 2.5.2, Ruff 0.17.3 and whitespace checks passed.
-- The new first-open regression fails against the baseline GUI and its original event wiring.
-  Independent review found starvation with 61 simultaneous viewers; the added regression fails
-  before the correction and passes with rotating viewer service. Multiplayer clients themselves
-  were not connected; the harness checks shared work, isolation, disconnects and closed-window behavior.
-- Repository engine benchmarks (three runs per variant, GUI closed): standard mean update
-  1.334 → 1.353 ms (+1.4%); stress 7.220 → 7.275 ms (+0.8%). Delivery totals and active freighters
-  were identical; changes are small relative to run spread. These measured the initial candidate;
-  later open-window fairness/tooltip changes leave the measured closed-window path unchanged.
-  Final-tree engine-free emulation: +0.1% mean instructions, unchanged API calls and deliveries.
-- Separate real-engine GUI probes, one player and 600 stationary depots: worst open-window GUI tick
-  6.320 → 0.591 ms with one resource per chest; 30.616 → 7.227 ms with 48 resources per chest.
-  The dense probe's mean GUI work rose 0.391 → 0.418 ms while being spread across ticks. These
-  single-run timings exclude other game update work and graphical rendering; they do not guarantee
-  latency on every factory or machine. No inventory reads occur once all connected viewers close.
-- **Untested:** graphical layout, normal UI scales and live multiplayer join/latency. The graphical
-  client gate remains pending before submission; headless runs are not visual approval.
 
 ## Quality: passed (automated)
 

@@ -1,6 +1,6 @@
 # Player guide
 
-Everything you need to know to run Jat'z Distribution in your factory. New to the mod? Start with [How it works](../README.md#how-it-works) in the README.
+Everything you need to know to run Jat'z Distribution in your factory. New to the mod? Start with [Up and running in five steps](../README.md#up-and-running-in-five-steps) in the README.
 
 - [Research](#research)
 - [Roads](#roads)
@@ -13,9 +13,13 @@ Everything you need to know to run Jat'z Distribution in your factory. New to th
 - [When roads or depots change](#when-roads-or-depots-change)
 - [Buffer depots](#buffer-depots)
 - [Priority](#priority)
+- [Logistic robots](#logistic-robots)
 - [Liquid depots](#liquid-depots)
+- [Quality](#quality)
+- [Mining Drones](#mining-drones)
 - [Freighter network window](#freighter-network-window)
 - [Circuit network](#circuit-network)
+- [Milestones](#milestones)
 - [Copy, paste and blueprints](#copy-paste-and-blueprints)
 - [Good to know](#good-to-know)
 
@@ -29,15 +33,17 @@ Upgrades make freighters better:
 - **Freighter item capacity:** each of ten levels lets a freighter carry one more stack of items (two to start with, twelve at the last).
 - **Freighter fluid capacity:** after Liquid freight, each of ten levels lets a freighter carry 375 more fluid (750 to start with, 4,500 at the last level).
 
-A freighter already out keeps the load size it set off with.
+A freighter already out keeps the load size it set off with. Open the game's Bonuses window to see what you have researched: a **Freighters** panel beside it lists the freighter speed, item capacity and fluid capacity bonuses.
 
 ## Roads
 
-Freighters drive **only on road**. Road is a floor tile you craft and place like stone path; it's in our row of the crafting menu. It stacks to 250, and with Space Age a rocket carries two stacks of it (500) to a space platform. You can change both under **Settings → Mod settings → Startup** (**Road stack size** and **Road rocket capacity**, in stacks).
+Freighters drive **only on road**. Road is a floor tile you craft and place like stone path; it's in our row of the crafting menu. It stacks to 250, and with Space Age a rocket carries two stacks of it (500) to a space platform. You can change both under **Settings → Mod settings → Startup** (**Road stack size** and **Road rocket capacity (stacks)**). You run 50% faster on road.
 
 - Every depot lays a road tile under its loading zone sign (the marked tile) when you build it, except on space platforms. You only need to bring road up to it: road that ends one tile away connects.
 - Removing the depot takes that tile away again and puts back the ground that was there, unless you laid your own road or tile over it.
 - Only belts, pipes and train tracks can be built on road (and vehicles can drive on it). Nothing else can: not depots, though their loading zone sits on road, nor poles, inserters or other buildings. Road can't be laid under them either.
+- Road can't be laid through cliffs. To get past one, use [road tunnels](#road-tunnels), which go under cliffs as under anything else.
+- On the map and minimap, road shows light green and freighters violet.
 
 ## Road tunnels
 
@@ -53,7 +59,7 @@ Freighters can't drive over buildings, but they can go under them. Road tunnels 
 ## Setting up a delivery
 
 1. Lay road between a provider depot's loading zone and a request depot's.
-2. Open the request depot and choose an item and an amount to keep in stock. A request or buffer depot can't request more of the item than fills every one of its slots: a larger amount is set to that (with the default 48 slots, 4,800 of an item that stacks to 100, 480 of one that stacks to 10). If you choose an item without typing an amount, the request starts at one stack of it. You can change that under **Settings → Mod settings → Startup** (**Default item request**, in stacks). A fluid on a liquid depot starts at 1,000, set by **Default fluid request** there. Changing either one doesn't change requests that are already set.
+2. Open the request depot and choose an item and an amount to keep in stock. A request or buffer depot can't request more of the item than fills every one of its slots: a larger amount is set to that (with the default 48 slots, 4,800 of an item that stacks to 100, 480 of one that stacks to 10). If you choose an item without typing an amount, the request starts at one stack of it. You can change that under **Settings → Mod settings → Startup** (**Default item request (stacks)**). A fluid on a liquid depot starts at 1,000, set by **Default fluid request** there. Changing either one doesn't change requests that are already set.
 3. Put freighters in its freighter slot.
 
 Within a second, a freighter sets off for a provider depot that has the item. It stops for about a second to load what the request depot still needs and has room for, up to two stacks (more with item capacity research), then drives back, stops again for about a second to unload and parks in the slot again.
@@ -76,8 +82,9 @@ A request depot holds up to **100 freighters** in its freighter slot.
 
 | To… | Do this |
 | --- | --- |
-| Fill the slot | Ctrl+click freighters in your inventory while the depot is open, or ctrl+click the depot. Any that don't fit stay with you. Freighters dropped into the depot's chest move to the slot too. |
-| Have robots bring freighters | In remote view, or with no freighters on you, click the slot with a freighter ghost in your cursor. Right-click adds one more. In remote view, a click with an empty cursor cancels. |
+| Fill the slot | Ctrl+click freighters in your inventory while the depot is open, or ctrl+click the depot. Any that don't fit stay with you. Freighters put in the depot's chest move to the slot too, and so does one you drop into the depot with Z, at once, before an inserter or loader can take it. |
+| Put in or take out by hand | Click the slot with freighters in your hand to put them in (right-click: one). Click it with an empty hand to take them (right-click: half), or shift-click to move them to your inventory. |
+| Have robots bring freighters | In remote view, or with no freighters on you, click the slot with a freighter ghost in your cursor: robots bring as many as fit. Right-click adds one more. In remote view, a click with an empty cursor cancels. |
 | Have robots take freighters away | In remote view, right-click the slot. Right-click again to cancel. |
 | Grab a freighter | Pipette (Q) over the slot picks up a freighter, or its ghost. |
 | Get them all back | Mine the depot. You get all its freighters, including those out on deliveries. |
@@ -85,6 +92,8 @@ A request depot holds up to **100 freighters** in its freighter slot.
 The line beside the slot shows how many freighters are out on the road, and a green **+N** while N more have been requested for the depot. Hover it for the full breakdown.
 
 Other items ctrl+clicked in go into the depot's inventory as usual.
+
+For the full count of a request depot's freighters (in the slot, out, in the chest, requested and leaving), open the depot or point at it and type `/jatz-freighters` in the console.
 
 ## How freighters choose where to go
 
@@ -125,14 +134,15 @@ A light beside the request shows at a glance whether it can be filled. Hover it 
 ## When roads or depots change
 
 - As soon as you lay road, or build or turn a depot, waiting requests try again. Otherwise they try again after 10 seconds.
-- Removing road re-routes freighters straight away. If the road is cut behind a loaded freighter, it takes the cargo back to the provider.
+- Removing road re-routes the freighters whose way it was on, within a second or so of the last tile removed. If the road is cut behind a loaded freighter, it takes the cargo back to the provider.
 - If a provider is removed while a freighter is heading there, the freighter goes on to the next one.
+- A request or buffer depot marked for deconstruction fetches nothing, so robots can empty it. Its freighters still on their way out turn home empty.
 
 ## Buffer depots
 
 Buffer depots keep stock close to where it's needed. They work like request depots, with their own request and freighters, but by default they send their freighters only to provider depots and send nothing anywhere themselves.
 
-Turn on **Buffers pull by priority** under **Settings → Mod settings → Startup** to let item and liquid buffers also fetch from buffers with a strictly lower priority. It is off by default. For example, local buffers at priority 3 can supply a central buffer at priority 8; equal-priority buffers never send freighters to each other. Eligible buffers and normal providers are ranked together by priority, then distance by road. Normal providers remain eligible at any priority. A priority change before pickup is checked again; cargo already loaded finishes its trip.
+Turn on **Buffers pull by priority** under **Settings → Mod settings → Startup** to let item and liquid buffer depots also fetch from buffer depots with a strictly lower priority. It is off by default. For example, local buffers at priority 3 can supply a central buffer at priority 8; buffers of equal priority never send freighters to each other. A buffer depot then ranks those lower-priority buffers and provider depots together, by priority, then by distance by road. Provider depots stay in the running whatever their priority. If a buffer's priority changes while a freighter is on its way to it, the freighter checks again when it gets there, and takes nothing there if the rule no longer allows it; cargo already loaded finishes its trip.
 
 Request depots take from buffer depots too. The **Request from buffer depots** checkbox (like a requester chest's "request from buffer chests") decides which come first:
 
@@ -148,6 +158,16 @@ Provider and buffer depots have a **priority** slider from 1 to 10 (5 to start w
 - Freighters go to the highest-priority depot they can reach by road, even when a lower one is nearer, and to the nearest among equals.
 - For request depots, priority only orders depots of the same kind: with **Request from buffer depots** ticked, a buffer at 1 still comes before a provider at 10; unticked, a provider at 1 still comes before a buffer at 10.
 - Copy and Paste settings, blueprints and clones keep it.
+
+## Logistic robots
+
+Item provider and buffer depots can join the logistic network. Tick **Logistic robots can use it** in the depot's window:
+
+- A **provider depot** then works like a passive provider chest: logistic and construction robots take items from it. Freighters still fetch from it, skipping what robots have taken.
+- A **buffer depot** then works like a buffer chest: robots take items from it for requester chests and construction, and fill the logistic requests set in its window. Its freighters keep its own request stocked as before.
+- It's off by default, on every new depot.
+- If the game's own **Enable/disable** condition in the depot's circuit network settings (the one every logistic chest has) is on, that decides whether robots can use it, and the checkbox only shows it.
+- Request depots and liquid depots are not part of the logistic network.
 
 ## Liquid depots
 
@@ -186,15 +206,15 @@ With [Mining Drones](https://mods.factorio.com/mod/Mining_Drones), [Mining Drone
 
 ## Freighter network window
 
-After Freight system research, click the freighter shortcut to open your network overview. Choose **Items** or **Fluids**, then all surfaces or a single planet/platform. Each resource is one row of numbers under **Providers**, **Requesters** and **Buffers**: each role shows the **Stock** held, then a depot count: **Depots** holding it for providers, **Requests** (depots with a request set for it) for requesters and buffers. Large amounts are shortened like the game's own counts (63.8k, 189k) and a dash means none; hover any number for the exact amount, its quality breakdown, how many depots hold or offer it, and the request target and unmet amount.
+After **Freight system** research, the **Freighter network** button on the shortcut bar opens an overview of your freighters, depots and stock. Click the button again, press E or Esc, or click the close button to close it.
 
-The summary groups the fleet beside an item/liquid depot matrix, with Fuel and any Mining Drones depots under **Support**. Large depot icons have their counts beside them; these are read-only summaries, with exact counts and names on hover. Resource icons are read-only too; the resource picker above them is a button. Every number in the resource table has its own right-aligned column under its heading, and horizontal dividers separate resource rows.
-
-**Still needed** is the amount active request and buffer depots lack after their matching stock and inbound commitments. Parked freighter fluid storage counts as held; cargo on the road does not. **Offering** counts enabled suppliers with unreserved stock, without promising that a road connects them to a particular requester or that they satisfy its quality/minimum-load rules. Disabled or deconstructing requests remain in the configured count but add no active need. Fuel depots appear in the depot summary, but their fuel is not freight stock.
-
-Unmet demand sorts first. Use the filter to show only unmet demand or stock with no configured requests, and the game's searchable resource picker to find one item or fluid (right-click to clear it). The seven-row pages keep the window manageable. Item totals combine qualities, while unmet demand respects each depot's actual quality filter. All-surfaces totals are an overview: stock on another planet is not automatically available to a requester.
-
-The window samples depots across ticks, then waits five seconds before collecting again. Players share the counting work. A snapshot can span changes in the factory; its age is shown beside the page arrows. Closing the window stops work when no connected player is viewing it. E, Esc, the close button and the shortcut all close it.
+- **At the top:** **Freighters** is how many freighters your request and buffer depots have, parked and out; **Active** is how many are out on the road. Beside them, each kind of depot with how many you have: item and liquid providers, requesters and buffers, then Fuel depots and any Mining Drones mining depots under **Support**. Hover an icon for its name and count.
+- **Surface:** with Space Age, or with depots on more than one surface, a drop-down picks **All surfaces** or one planet or space platform. All-surfaces totals are only an overview: stock on another planet isn't available to a request depot here.
+- **Items** and **Fluids** tabs list one row per item or fluid. Under **Providers**, **Requesters** and **Buffers**, each row has a **Stock** column (what those depots hold) and a count: **Depots** holding it for providers, **Requests** (depots with a request set for it) for requesters and buffers. **Still needed** is what active request and buffer depots still lack, after what they hold and what freighters are already bringing them. Large amounts are shortened like the game's own counts (63.8k, 189k), and a dash means none.
+- **Hover any number** for the exact amount, its breakdown by quality, how many depots hold or offer it, and a request's target and unmet amount.
+- **What counts:** fluid waiting in parked freighters (**Use freighter storage**) counts as held; cargo on the road doesn't. Fuel depots are counted as depots, but their fuel isn't stock. Item amounts add up every quality, but **Still needed** follows each request's own quality. Depots switched off by their circuit condition, or marked for deconstruction, still count under **Requests** but need nothing. The stock a provider is shown as offering is what freighters haven't already claimed; it doesn't check that a road joins it to a request depot, nor a request's quality or minimum load.
+- **Finding things:** rows with the most still needed come first. The other drop-down at the top shows **All stock and requests**, only shortages (**Unmet demand first — only shortages**), or stock nobody requests (**Stock without configured requests**). The button above the rows opens the game's searchable picker to show one item or fluid; right-click it to show them all again. A page holds seven rows; the arrows at the bottom turn pages.
+- **How fresh it is:** the window counts the depots a few at a time, then waits five seconds before counting again, so its numbers are a snapshot, and its age shows beside the page arrows. Players with the window open share one count, and nothing is counted while no connected player has it open.
 
 ## Circuit network
 
@@ -232,18 +252,20 @@ For example, wire a backup provider to a monitor and give it the condition *iron
 
 ## Milestones
 
-With [Milestones](https://mods.factorio.com/mod/Milestones) installed, its list (in the Progress group) also tracks your first freighter, 100 freighters and 1,000 road, then every tenfold after those, alongside whatever preset it uses.
+With [Milestones](https://mods.factorio.com/mod/Milestones) installed, its list (in the Progress group) also tracks your first freighter, then 100 freighters and 1,000 road and every tenfold after those, alongside whatever preset it uses.
 
 ## Copy, paste and blueprints
 
 - Copy and Paste settings, copy and paste, and blueprints carry a request depot's request, its **Request from buffer depots**, **Full loads only** and **Use freighter storage** settings, and its number of freighters. The new depot asks for the freighters (as a ghost request), and construction robots, or you by hand, bring them. This works for liquid depots too.
-- They carry every depot's circuit condition too.
+- They carry every depot's circuit condition too, a provider or buffer depot's priority, and whether **Logistic robots can use it**.
+- Undoing the removal of a depot or road network monitor (cut, deconstruction planner or mined by hand) brings back its settings: a request depot gets its request back and asks robots for its freighters again.
 - Blueprint parametrisation works on request and buffer depots' requests and freighters: a blueprint of a depot offers its request's item or fluid and amount as parameters, and its number of freighters (as a number only, with no item to swap), and the depots built from it request what you fill in and ask robots for that many freighters. The blueprint lists one "Depot request settings" per request or buffer depot; it is how the game sees the request and freighters, and never stays in the world. Pasting a blueprint over the same kind of depot already built sets its request (clearing it if the blueprint's depot had none) and freighters too. A request above 2,147,483,647 (the most a blueprint parameter holds) is kept, pasting over a depot included, but can't be parametrised.
 - Cloned depots keep their request and circuit condition.
 
 ## Good to know
 
 - Freighters are for depots to send out: you can't place one and drive it yourself. To allow that, turn on **Place freighters as cars** under **Settings → Mod settings → Startup**. Freighters already placed stay drivable either way, and you can pick them up.
+- Construction robots repair damaged freighters, as they do your other vehicles. Freighters drive faster than robots fly, so robots mostly catch up with them while they stop to load or unload.
 - Enemies can attack and destroy freighters. Freighters never fight back or turn aside: they drive on until they arrive or are destroyed. A freighter that drives through an enemy unit runs it over, as a train does, but it never harms players or other freighters.
 - A freighter destroyed on the road explodes and leaves a freighter wreck, which disappears after 15 minutes. It is lost, with its cargo. Its request depot then asks construction robots for a replacement freighter. You can also put one in by hand.
 - Freighters taken out of a depot (by hand, robots or mining it) and put back come with a full tank again.
@@ -252,4 +274,4 @@ With [Milestones](https://mods.factorio.com/mod/Milestones) installed, its list 
 - In alt mode, a loaded freighter shows the icon of the item or fluid it carries, as machines show their recipe. Empty freighters show nothing.
 - Requests are for normal-quality items unless you choose otherwise (see [Quality](#quality)).
 - Provider, request, buffer and fuel depots have 48 slots each by default, like a steel chest. You can change each kind's slot count separately (1 to 1,000) under **Settings → Mod settings → Startup**. Making it smaller on an existing save can lose the items in the slots taken away.
-- By default, provider depots are red, request depots blue, buffer depots green and the fuel depot amber. Every color can be changed.
+- Provider depots are red, request depots blue, buffer depots green and the fuel depot amber. These are the default paint of the artwork, which has three paint layers that can be recolored (see [the depot art](../assets/depots/README.md#paint-layers)); there is no in-game setting for it.

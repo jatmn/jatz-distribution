@@ -4,7 +4,7 @@
 
 ## Checks run
 
-<!-- Commands you ran and their results (see CONTRIBUTING.md and AGENTS.md). -->
+<!-- Commands you ran and their results (see CONTRIBUTING.md and docs/testing.md). -->
 
 ## UPS before and after
 

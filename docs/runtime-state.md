@@ -13,18 +13,21 @@ and `scripts/routes.lua` use the same transitions when they start, finish or inv
 | Dimension | Representation | States and data |
 | --- | --- | --- |
 | Mission | `trip.state` | `to-provider`, `to-request`, `returning`; provider/request IDs and item remain on the trip |
-| Search | `owner.search` (trip or depot) | absent = idle; `{kind = provider/fuel, phase = pending/retry, token, since}`; only pending owns a token; a trip's pending search also holds `again`, the search whose question the pathfinder was too busy for, until its next check asks it again |
-| Service | `trip.service` | absent = no service stop; `{kind = loading/unloading/refueling, since}`; the engine's timed command controls completion |
+| Search | `owner.search` (trip or depot) | absent = idle; `{kind = provider/fuel, phase = pending/retry, token, since}`; only pending owns a token; a trip's pending search also holds `again`, the search whose question the pathfinder was too busy for, until its next check asks it again. The search itself (candidates, best answer, hold) is a separate table, kept in `storage.searches` by path request or in `storage.road_answers` |
+| Service | `trip.service` | absent = no service stop; `{kind = loading/unloading/refueling, since}`, only while `movement` is `road`; the engine's timed command controls completion |
 | Movement | `trip.movement` | `departing`, `road`, `approaching-tunnel`, `waiting-at-tunnel`, `underground`, `exiting-tunnel`, `ended` |
 | Tunnel | `trip.tunnel` | entry/exit, portal IDs, length and orientation, present only during approach/wait/crossing |
 | Plan | `trip.plan`, `trip.planning` | `plan = {to, hops, step}`: the tunnels to its destination in turn (scripts/tunnels.lua, `plan`), with where the way starts (`hops.from`) and the length of each road of it (`hops.roads`, one more than its tunnels), absent for no tunnels or unknown; `planning = {to, token, since}` while it stands waiting for road lengths to be measured, cleared by `drive`, `begin_search` and `clear_route_search` |
-| Road cut | `trip.road_cut` | `true` from road removed on its surface (`on_roads_changed`, which also clears `plan` and `origin`) until the check at which it plans its way again (`logistics.replan_cut`, once no road has been removed there for `cut_quiet` ticks), a `planning` trip's `SEARCH_TIMEOUT` re-plan waiting for it meanwhile; absent otherwise |
+| Road cut | `trip.road_cut` | `true` from road removed on its surface (`on_roads_changed`, which also clears `plan` and `origin`) until the check at which it plans its way again (`logistics.replan_cut`, once no road has been removed there for `cut_quiet` ticks), a `planning` trip's `SEARCH_TIMEOUT` re-plan waiting for it meanwhile; absent otherwise. On a surface with tunnels, a trip with a plan (or standing at a depot) whose remaining roads the removed tiles cannot have been on (`tunnels.untouched`) is left alone |
 | Fuel decision | `trip.fuel_check` | `unchecked` for a new leg; `checked` after refueling or deciding to continue without it; `trip.refuel` identifies the fuel stop |
 
 Quality (`scripts/quality.lua`) adds data, not states: `trip.freighter_quality` (the freighter's
 own quality, nil for normal: its unit's quality, cargo stacks, speed and tank) and `trip.mix`
 (quality -> amount it plans to load, adding up to `trip.planned`; nil when it is all normal, as
-every trip before quality). `logistics.set_parts` sets both from amounts by key. A depot's
+every trip before quality), with `trip.graded` set once a trip has had a mix, so its cargo is
+counted by quality all the way home. `logistics.set_parts` sets `planned`, `mix` and `graded` from
+amounts by key. Parked freighters of a better quality keep their fuel in `depot.graded_fuel[quality]`
+beside the normal `depot.fuel`. A depot's
 `request` gains `quality` and `comparator` (nil for normal `=`, so older requests are unchanged).
 
 `entering-tunnel` is a synchronous transition while replacing the visible unit and installing
@@ -40,8 +43,9 @@ stateDiagram-v2
     approaching_tunnel --> waiting_at_tunnel: sticker prevents repaint
     waiting_at_tunnel --> underground: sticker gone, timed command installed
     approaching_tunnel --> underground: timed command installed
+    approaching_tunnel --> road: tunnel closed, plan afresh
     underground --> exiting_tunnel: crossing completes
-    underground --> road: exit while search is pending
+    underground --> road: exit while search is pending, or no mouth to clear
     exiting_tunnel --> road: clear the mouth
     road --> ended: park or lose freighter
     departing --> ended: cannot leave home
@@ -66,7 +70,8 @@ belongs to it.
 
 Path requests retain the token issued to them. `owns_search` accepts only the current pending
 token; an old answer cannot dispatch, change cooldowns or replace a newer route. All commands
-pass through `logistics.command`, which increments the generation. Deferred failures use the
+pass through `logistics.command`, which increments the generation (`trip.command_id`); while
+`underground` it gives none, and `out_of_tunnel` drives the freighter on to its current destination. Deferred failures use the
 generation they captured, so a failure from an earlier approach cannot complete a newer crossing.
 
 Cargo paint and depot status remain projections. Repainting changes the engine unit ID but not
@@ -101,7 +106,7 @@ second framework or duplicate saved state.
 | Impact sampling | `impact.lua` | Paused/fresh/active sampling and per-target cooldown; underground trips are excluded and exit resets the position sample |
 | Research and legacy entities | `research.lua`, `legacy-depots.lua` | Engine owns research levels; event invalidation refreshes caches; configuration migration preserves or refunds existing entities |
 | Cargo and paint | `cargo.lua`, `freighter-paint.lua` | Transfers preserve real stacks/fluid temperature; paint is derived from cargo and movement, not a second mission |
-| Scheduling | `logistics.lua`, `control.lua` | Stable trip phases spread work; deferred failures retain command generation; removed trip identities are skipped |
+| Scheduling | `logistics.lua`, `control.lua` | Stable trip phases (`storage.trip_phases`) and a per-second depot plan (`storage.passes`, `storage.check_phases`) spread work; deferred failures retain command generation; removed trip identities are skipped. See [Spreading the work](design/spreading-the-work.md) |
 
 ## Save compatibility
 
@@ -119,10 +124,10 @@ The normal release configuration change runs them; no migration is performed in 
 
 ## Regression protection
 
-`tests/lua/logistics.lua` and `tests/lua/quality.lua` (through the shared `check` of
-`tests/lua/harness.lua`) check lifecycle invariants at each behavioral checkpoint alongside
+`tests/lua/logistics.lua` (with the files it runs), `tests/lua/quality.lua` and
+`tests/lua/depot-swap.lua` (through the shared `check` of `tests/lua/harness.lua`) check lifecycle invariants at each behavioral checkpoint alongside
 its reservation/incoming-cargo accounting checks. Live trips have unique logical identities,
-consistent entity/home indexes, valid search ownership, no search/service overlap, matching
+consistent entity/home indexes, valid search ownership, no search/service overlap, service only on road, matching
 tunnel payloads and no retired flags. Event-sequence tests cover migration while loading and
 while searching underground, stale answers after exit, stale failures before a new crossing,
 repainting and duplicate completion/destruction events. Fleet, undo and road tests cover old

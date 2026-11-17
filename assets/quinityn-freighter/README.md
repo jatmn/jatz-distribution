@@ -38,7 +38,7 @@ The masks are neutral grayscale (equal R, G and B) with alpha, so any tint color
 
 ## Using it in Factorio
 
-Copy the five `sheets/freighter-*.png` game layers (all except `preview`) into your mod's `graphics/freighter/` folder, and `factorio/freighter-animation.lua` into its prototypes. To keep the sheets elsewhere, pass their folder as a third argument, relative to the mod root; Jat'z Distribution passes `"assets/quinityn-freighter/sheets/"` (see `prototypes/freighter.lua`). Then:
+Copy the five `sheets/freighter-*.png` game layers (all except `preview`) into your mod's `graphics/freighter/` folder, and `factorio/freighter-animation.lua` into its prototypes. To keep the sheets elsewhere, pass their folder as a third argument, relative to the mod root; Jat'z Distribution passes `"assets/quinityn-freighter/sheets/"` (`freighter_sheets` in `prototypes/constants.lua`, used by `prototypes/freighter-art.lua`). Then:
 
 ```lua
 local make_animation = require("prototypes.freighter-animation")
@@ -50,8 +50,8 @@ prototype.animation = make_animation("your-mod-name", {
 ```
 
 - **Directions:** each atlas is an 8×8 grid read left to right, top to bottom. Direction 0 is north, and each step turns 5.625° clockwise (16 = east, 32 = south, 48 = west). `apply_projection` must stay `false`; the frames are already evenly spaced.
-- **Scale:** 0.395. The body is about 4.6 tiles long and 1.5 wide inside a 6.32-tile frame. Collision and selection boxes, speed and capacity belong to the mod prototype. The mod draws the freighter at 75% of this scale (`prototypes/freighter-art.lua`), so it is about 3.4 by 1.1 tiles in game; this helper and its checksum stay unchanged.
-- **Tint:** palette colors are per prototype. Factorio's runtime vehicle color is one shared tint, so per-entity control of all three colors needs extra mod logic.
+- **Scale:** 0.395. The body is about 4.6 tiles long and 1.5 wide inside a 6.32-tile frame. Collision and selection boxes, speed and capacity belong to the mod prototype. The mod draws the freighter at 60% of this scale (`freighter_scale` in `prototypes/constants.lua`, applied by `prototypes/freighter-art.lua`), so it is about 2.7 by 0.9 tiles in game; this helper and its checksum stay unchanged.
+- **Tint:** palette colors are per prototype. Factorio's runtime vehicle color is one shared tint, and units such as the delivering freighter have none, so per-entity control of the colors needs extra mod logic. Jat'z Distribution gives each cargo paint its own drone prototype (`scripts/freighter-paint.lua`, `prototypes/freighter-drone.lua`).
 - **Animation:** there is one static frame per direction, with no wheel-rolling animation yet.
 
 ## Editing the model
@@ -85,6 +85,6 @@ python3 $A/tools/render_freighter.py        # add --blender /path/to/blender if 
 
 The renderer skips directions that already have output, so the driver refuses to resume over renders from another, or an unknown, model. Before re-rendering a changed model, delete the local `masters/exr`, `masters/shadow-silhouettes` and `masters/render-inputs.json`. Rendering 64 directions takes a while on CPU, and an interrupted run resumes where it stopped.
 
-The default palette appears in four places: `asset.json`, `factorio/freighter-animation.lua`, `tools/package_sprites.py` and `tools/create_preview.py`. Change them together.
+The default palette appears in five places: `asset.json`, `factorio/freighter-animation.lua`, `tools/package_sprites.py`, `tools/create_preview.py` (as hex colors) and `remnants/freighter/asset.json` (the wreck's preview sheet). Change them together.
 
 `validate_assets.py` checks every atlas cell: size, neutral grayscale masks, no clipping at frame edges, and that the paint layers recombine into the preview. If render intermediates exist locally, it checks them too. Afterwards, test in game; see [docs/testing.md](../../docs/testing.md).
