@@ -69,7 +69,7 @@ Every depot is 3×3, can face any direction, and has a worn "no parking: loading
 
 Every depot takes red and green wires. Item depots and the fuel depot have 48 slots, and liquid depots connect to ordinary pipes and hold 25,000 fluid. You can change the slots of each item depot and of the fuel depot, and the tanks of liquid provider, liquid request, liquid buffer and fuel depots, in the startup settings.
 
-Request and buffer depots replace each other in place, as chests do: build one over the other, or use an upgrade planner, and it keeps its stock, request and freighters.
+Item request and buffer depots replace each other in place, as chests do: build one over the other, or use an upgrade planner, and it keeps its stock, request and freighters.
 
 ---
 
