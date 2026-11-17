@@ -16,6 +16,7 @@ Seven 3×3 depot buildings: Provider, Request, Buffer, Fuel, Liquid Provider, Li
 | `icons/<role>-depot.png` | In-game icons: each depot facing south, taken from the south frame of its `sheets/preview.png` by `tools/make_icons.py`. 64 px with three custom mipmaps (120 × 64); `icons/icons.json` records their sources |
 | `technology/liquid-provider-depot.png` | Technology icon (Liquid freight research): the liquid provider depot's south frame at 256 px, no mipmaps, made by `tools/make_icons.py`; `technology/icons.json` records its source |
 | `technology/road-monitor.png` | Technology icon (Road network monitor research): the road network monitor's north frame, as its item icon shows it, at 256 px, no mipmaps, made by `tools/make_icons.py` |
+| `technology/road-tunnel.png` | Technology icon (Road tunnels research): the road tunnel's south frame, as its item icon shows it, at 256 px, no mipmaps, made by `tools/make_icons.py` |
 | `<role>/3/previews/four-directions.png` | Four-direction preview strip |
 | `<role>/3/asset.json` | Palette, scale, pipe-port positions and source model |
 | `connectors/sheets/` | Connector game sprites and shadow |
@@ -23,7 +24,7 @@ Seven 3×3 depot buildings: Provider, Request, Buffer, Fuel, Liquid Provider, Li
 | `connectors/validation.json` | Connector registration data. **Tools read this file**, so keep it. |
 | `factorio/` | Lua helpers for depot pictures and pipe pictures, plus generated definitions |
 | `previews/` | All depots in a grid, all depots at in-game scale, and `recolor.html`, a recoloring viewer you open in a browser |
-| `tools/` | Builders, renderers, packagers, geometry inspectors, preview generator and `lower_depots.py`, which lowered the masters (see below) |
+| `tools/` | Builders, renderers, packagers, geometry and junction inspectors, the connector and mask-probe checks, the preview generator, the generated Lua writer (`depot_lua.py`), the loading zone's drawer (`make_loading_zone.py`) and `lower_depots.py`, which lowered the masters (see below) |
 | `remnants/<name>/` | What destroyed depots and the freighter leave; see [Remnants](#remnants) |
 | `archive/1x1/` | Retired 1×1 versions of all seven depots; see its [README](archive/1x1/README.md) |
 | `*validation.json` | Results from the most recent geometry, junction and packaging checks |
@@ -51,7 +52,7 @@ Masks are neutral grayscale with alpha, so any tint color works. Bare metal, cop
 **In Jat'z Distribution**, every depot placed unrotated has its loading zone to the south (`prototypes/orientation.lua`):
 - Provider, Request, Buffer and Fuel load through an opening at their front, so the mod shows their `south` artwork by default and turns their pipe ports with it. The Fuel depot's port is then on the east.
 - The liquid depots keep their pipes to the north and load from the opposite, south side.
-- The loading zone marking is the depot's `integration_patch`, drawn on the `decals` layer one tile beyond the footprint. It rotates with the depot, shows on ghosts and disappears with it.
+- The loading zone marking is the depot's `integration_patch`, drawn on the `ground-patch-higher2` render layer one tile beyond the footprint. It rotates with the depot, shows on ghosts and disappears with it.
 
 The rest of this section describes the helpers for any mod, using the artwork's own direction names.
 
@@ -102,7 +103,7 @@ Open `source/<role>-3.blend`. Things to preserve:
 
 `tools/build_depots.py` rebuilds the models from scratch, but it **overwrites** the `.blend` files. If you edit a file by hand, either carry the change into the builder or don't run it. Use `--role fuel` (for example) to limit a build or render to one depot.
 
-**The masters are lowered.** The depots stood taller than the game's own 3×3 buildings and hid what stood behind them, so `tools/lower_depots.py` squashed every master above 0.75 (the top of the pipes, their adapters, belts and loading floor, which don't move) to 0.6 of its height (the owner's choice, November 7, 2026): item depots now rise about 0.9 tiles above their footprint instead of 1.3, liquid depots about 0.7 instead of 1.0. The assembly records it (`height_scale`, `height_pivot`), `inspect_depots.py` moves its clearance probes with it, and the tool refuses a master already lowered. The builder doesn't lower, and it doesn't reproduce the current masters anyway (their `fidelity_pass` is older than its own), so a rebuilt master needs `lower_depots.py -- --scale 0.6` before inspection and rendering:
+**The masters are lowered.** The depots stood taller than the game's own 3×3 buildings and hid what stood behind them, so `tools/lower_depots.py` squashed every master above 0.75 (the top of the pipes, their adapters, belts and loading floor, which don't move) to 0.6 of its height (the owner's choice, November 7, 2026): item depots rise about 0.9 tiles above their footprint, liquid depots about 0.7. The assembly records it (`height_scale`, `height_pivot`), `inspect_depots.py` moves its clearance probes with it, and the tool refuses a master already lowered. The builder doesn't lower, and it doesn't reproduce the current masters anyway (their `fidelity_pass` is older than its own), so a rebuilt master needs `lower_depots.py -- --scale 0.6` before inspection and rendering:
 
 ```sh
 blender -b assets/depots/source/<role>-3.blend --python-exit-code 1 --python assets/depots/tools/lower_depots.py -- --scale 0.6
@@ -110,7 +111,7 @@ blender -b assets/depots/source/<role>-3.blend --python-exit-code 1 --python ass
 
 ## Re-rendering the sprites
 
-Rendering creates EXR masters, PNG layers and frames under each `<role>/3/masters/` and `<role>/3/frames/`. These are regenerated and not stored in Git. Run from the repository root:
+Rendering creates EXR masters, PNG layers and frames under each `<role>/3/masters/` and `<role>/3/frames/`. These are regenerated and not stored in Git. Run from the repository root; the scripts that read or write images need the `.venv` from [docs/testing.md](../../docs/testing.md), while the render drivers and `check_connector_registration.py` use only the standard library:
 
 ```sh
 T=assets/depots/tools
@@ -118,8 +119,8 @@ blender -b --python-exit-code 1 --python $T/build_depots.py -- --size 3   # only
 blender -b --python-exit-code 1 --python $T/inspect_depots.py
 blender -b --python-exit-code 1 --python $T/inspect_junctions.py
 python3 $T/render_depots.py            # add --role <role> for one depot
-python3 $T/package_depots.py           # add --role <role> to package one, keeping the others' records
-python3 $T/create_preview.py
+.venv/bin/python $T/package_depots.py   # add --role <role> to package one, keeping the others' records
+.venv/bin/python $T/create_preview.py
 .venv/bin/python tools/make_icons.py   # the icons are made from the packaged sprites
 ```
 
@@ -128,7 +129,7 @@ The road network monitor alone:
 ```sh
 blender -b --python-exit-code 1 --python $T/build_depots.py -- --role road-monitor --size 1
 python3 $T/render_depots.py --role road-monitor
-(cd $T && ../../../.venv/bin/python package_depots.py --role road-monitor)
+.venv/bin/python $T/package_depots.py --role road-monitor
 .venv/bin/python tools/make_icons.py
 ```
 
@@ -139,7 +140,7 @@ The road tunnel alone:
 ```sh
 blender -b --python-exit-code 1 --python $T/build_depots.py -- --role road-tunnel --size 1
 python3 $T/render_depots.py --role road-tunnel
-(cd $T && ../../../.venv/bin/python package_depots.py --role road-tunnel)
+.venv/bin/python $T/package_depots.py --role road-tunnel
 .venv/bin/python tools/make_icons.py
 ```
 
@@ -148,14 +149,14 @@ After changing the pipe connector:
 ```sh
 blender -b --python-exit-code 1 --python $T/build_connector.py   # only if rebuilding from the builder
 blender -b assets/depots/source/pipe-connector.blend --python-exit-code 1 --python $T/render_connector.py
-python3 $T/package_connector.py
+.venv/bin/python $T/package_connector.py
 python3 $T/check_connector_registration.py
 ```
 
-- `render_depots.py` runs two Blender processes with six threads each, at 2048px and 64 samples. It records the model's hash in a local `masters/render-inputs.json`. If the model has changed since an earlier local render, it stops. Delete that depot's local `masters/exr`, `masters/shadow-silhouettes`, `masters/layers`, `frames` and `masters/render-inputs.json`, then run it again.
+- `render_depots.py` runs two Blender processes with six threads each, at 2048px and 64 samples. It records the model's and the renderer's hashes and the render settings in a local `masters/render-inputs.json`. If any of them changed since an earlier local render, it stops. Delete that depot's local `masters/exr`, `masters/shadow-silhouettes`, `masters/layers`, `frames` and `masters/render-inputs.json`, then run it again.
 - The presentation render is only created when `masters/hero-default-palette.png` is missing. Delete it to get a new one.
 - `inspect_depots.py` checks footprints, port positions, loading paths and belt heights. `inspect_junctions.py` checks that every pipe seats into its tank at the native diameter with no clipping in any direction. `package_depots.py` checks the masks, frame edges and atlas contents.
-- Optional quick check before a full render: `render_mask_probe.py` (in Blender) followed by `check_mask_probe.py` makes low-resolution renders of all 28 views to catch hidden paint areas.
+- Optional quick check before a full render: `render_mask_probe.py` (in Blender) followed by `check_mask_probe.py` (with the `.venv` Python, as it reads EXR files) makes low-resolution renders of all 28 views to catch hidden paint areas.
 
 Afterwards, test in game; see [docs/testing.md](../../docs/testing.md).
 
@@ -179,11 +180,11 @@ The wrecks keep the depots' three paint masks, so each depot's corpse (`prototyp
 ```sh
 python3 assets/depots/tools/render_remnants.py      # add --name cargo for one; builds masters/wreck.blend, then renders
                                                     # (every wreck, the freighter's too)
-(cd assets/depots/tools && ../../../.venv/bin/python package_remnants.py)
+.venv/bin/python assets/depots/tools/package_remnants.py    # add --name cargo for one
 ```
 
 Rendering takes about a minute a frame. Like `render_depots.py`, it stops if that wreck's local renders came from other inputs: delete its `masters/` contents and `frames/`, then run it again. `validation.json` records the hashes of the wreck's `asset.json` (seed, directions, `sheet_order`), its master, the builder and the renderer, which `tools/check_blender_sources.py` compares with the committed files, so changing any of them needs the wreck rendered again. Each area's art check covers its own wrecks; CI's art checkout of an area also fetches the other area's `tools/`, and a change to the builder or renderer runs both art checks.
 
 ## Not yet implemented
 
-These are static loading-state sprites. Moving belts and shutter animation are not drawn. In the mod, freighters already carry items from provider to request depots (`scripts/logistics.lua`); fluid transfer, buffer and fuel depot gameplay, and the Fuel depot's combined solid and liquid inventory are still to come. Native tank ports are two-way.
+These are static loading-state sprites. Moving belts and shutter animation are not drawn. Native tank ports are two-way.

@@ -1,7 +1,8 @@
 -- SPDX-License-Identifier: LGPL-3.0-only
 -- The road network monitor: a constant combinator, built beside road, that puts on its red
--- and green wires what the provider and buffer depots on that road network hold, like a roboport
--- reading its logistic network's contents. scripts/road-monitor.lua sets its signals once a
+-- and green wires what the depots on that road network hold or need, like a roboport reading its
+-- logistic network's contents. Its reading is chosen in its panel; by default it is what the
+-- provider and buffer depots hold. scripts/road-monitor.lua sets its signals once a
 -- second; players can't edit them.
 -- Its art is our own: a 1x1 model in the liquid depots' grey and bronze finish
 -- (assets/depots/road-monitor/1/, built and rendered with the depots), drawn with its default

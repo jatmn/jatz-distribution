@@ -6,7 +6,7 @@
 -- the default requests (scripts/request-gui.lua) and whether new depots start with "Full loads only"
 -- ticked (scripts/logistics.lua), like the rest of the depot settings, and road's stack size and
 -- rocket capacity (prototypes/roads.lua).
--- Freighter fuel is runtime: scripts/logistics.lua reads it as freighters drive and refuel.
+-- Freighter fuel is runtime: scripts/fuel.lua reads it as freighters drive and refuel.
 data:extend({
   {
     type = "int-setting",

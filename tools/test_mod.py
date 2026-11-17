@@ -6,8 +6,10 @@ Builds the mod zip with tools/package_mod.py, installs it in an isolated workspa
 under .local/mod-check/ with the check mod from tests/factorio/, creates a save
 (placing every depot in four directions with pipes, a fuelled, driven freighter
 and road-connected provider and request depots) and runs it until the deliveries
-are done. Then runs the check mod's undo scenario, which has a player (the undo stack is a
-player's), and its bonuses scenario (the freighter bonuses beside a player's Bonuses window).
+are done. Then runs the check mod's scenarios, which have a player: undo (the undo stack is a
+player's), bonuses (the freighter bonuses beside a player's Bonuses window), network (the
+freighter network window), drop-freighters (freighters dropped into depots with Z) and, with
+the Quality mod, quality.
 Runs once with the base game only and,
 when the installation includes Space Age and everything it needs, once more with
 Space Age. Also checks that every item, recipe and entity name the game shows has
@@ -58,7 +60,7 @@ RECIPES = {
     'jatz-road': {'time': 1, 'made': 10, 'ingredients': {'stone': 5, 'iron-ore': 5}},
     'jatz-road-monitor': {'time': 5, 'made': 1, 'ingredients': {
         'constant-combinator': 1, 'electronic-circuit': 5, 'copper-cable': 5}},
-    # Proposed with road tunnels (November 8, 2026), for the owner's approval: a pair of portals.
+    # Approved with road tunnels (November 8, 2026): a pair of portals.
     'jatz-road-tunnel': {'time': 10, 'made': 2, 'ingredients': {
         'stone-brick': 20, 'steel-plate': 10, 'iron-gear-wheel': 10}},
 }
@@ -368,7 +370,7 @@ EXPECTED = {'recipes': RECIPES,
             # only 10; off by default; provider depots have no such setting.
             'full_loads_default': False, 'provider_has_no_full_loads': False,
             'full_loads_received': 30, 'full_loads_from_near': 0, 'full_loads_from_far': 30,
-            # Liquid depots: 1200 water in 500 loads from a liquid provider holding 2000; a liquid
+            # Liquid depots: 1200 water in loads of 750 from a liquid provider holding 2000; a liquid
             # request depot set to request from buffers takes 300 steam from a liquid buffer, at its
             # 500 degrees, not from a nearer provider; only liquid request depots get a truck chest;
             # robots bring a liquid depot's 2 freighters through it; items and fluids don't mix.

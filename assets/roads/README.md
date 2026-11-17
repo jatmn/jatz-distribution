@@ -1,6 +1,6 @@
 # Roads
 
-Freighters drive only on road tiles. The road tile, `jatz-road`, uses the slag path artwork from **Yuoki Industries - Railways**.
+Freighters drive only on road tiles. The road tile, `jatz-road`, and the road a depot lays under its loading zone, `jatz-depot-road` (both in `prototypes/roads.lua`), use the slag path artwork from **Yuoki Industries - Railways**.
 
 ## Third-party artwork
 
@@ -17,6 +17,6 @@ These files are not covered by this project's LGPL-3.0 licence. They may be used
 | `slag2.png` | Four 2×2 variants |
 | `slag4.png` | Four 4×4 variants |
 | `concrete-*.png` | Edges where road meets other ground (transitions) |
-| `pslag_icon.png` | Road item icon (32 px) |
+| `pslag_icon.png` | Road item icon (32 px), also the badge on the road network monitor's icon |
 
 The game mixes the 1×1, 2×2 and 4×4 variants so long roads don't visibly repeat.

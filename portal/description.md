@@ -39,9 +39,11 @@ You'll feel at home: roads, provider and request depots, buffers, fluids and fue
 
 - **Cargo you can read at a glance.** A freighter's cargo bays are light grey while empty, then take the color of what it picked up: copper orange, sulfur yellow, water blue. In alt mode, loaded freighters show their cargo's icon.
 - **Cargo stays intact.** Armor keeps its equipment and food keeps track of its spoilage on the way.
-- **You choose who supplies whom.** Rank provider and buffer depots from 1 to 10, and decide per depot whether buffers or providers come first.
+- **You choose who supplies whom.** Rank provider and buffer depots from 1 to 10, and decide per depot whether buffers or providers come first. A startup setting lets buffers pull from lower-priority buffers, to gather stock centrally.
 - **Road tunnels.** Like underground belts for your roads: freighters drive in at one end and come out at the other, under whatever stands between.
 - **Circuit control built in.** Switch provider, request and buffer depots on or off with a circuit condition that reads the network or just the depot's own contents. The **road network monitor** reads what a whole road network holds, or what its request depots still need.
+- **See your whole network.** The **Freighter network** button on the shortcut bar shows your freighters and depots, and every item and fluid: what your depots hold, how many request it, and what is still needed. With Space Age, pick a planet or platform.
+- **Robots welcome, if you want them.** Tick a box to let logistic robots use a provider depot as a passive provider chest, or a buffer depot as a buffer chest.
 - **Losses replace themselves.** A request depot that loses a freighter asks construction robots for a new one.
 - **Blueprint everything.** Copy and paste and blueprints keep requests, priorities, circuit conditions and freighter counts, and construction robots bring the trucks.
 
@@ -66,6 +68,8 @@ Every depot is 3×3, can face any direction, and has a worn "no parking: loading
 | **Liquid buffer** | Stocks a fluid from liquid providers. Two pipe connections |
 
 Every depot takes red and green wires. Item depots and the fuel depot have 48 slots, and liquid depots connect to ordinary pipes and hold 25,000 fluid. You can change the slots of each item depot and of the fuel depot, and the tanks of liquid provider, liquid request, liquid buffer and fuel depots, in the startup settings.
+
+Item request and buffer depots replace each other in place, as chests do: build one over the other, or use an upgrade planner, and it keeps its stock, request and freighters.
 
 ---
 
