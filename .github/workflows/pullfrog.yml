@@ -34,7 +34,7 @@ jobs:
       - name: Run Pullfrog
         if: steps.authorize.outputs.authorized == 'true'
         # Keep this bootstrap and PULLFROG_VERSION in the helper in sync.
-        uses: pullfrog/pullfrog@6ea756a2610692d1c241dfb985e0240c46bb1925 # v0.1.125
+        uses: pullfrog/pullfrog@44b58efe7fe431053c58aafa05e51e190f969685 # v0.1.130
         with:
           prompt: ${{ steps.authorize.outputs.payload }}
           model: openai/gpt-sol
