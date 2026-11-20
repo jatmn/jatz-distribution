@@ -1,0 +1,37 @@
+name: Set up Lua 5.2
+description: Install the checksum-pinned Ubuntu 24.04 x64 Lua interpreter and compiler.
+runs:
+  using: composite
+  steps:
+    - name: Restore the Lua package
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      id: cache
+      with:
+        path: ${{ runner.temp }}/lua5.2_5.2.4-3build2_amd64.deb
+        key: lua-deb-de75fdb69ad75802cff02ac7c081d7953082fc34fed4091d7fffc7498a55564c
+    - name: Verify and unpack Lua
+      shell: bash
+      env:
+        CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+        LUA_DEB: lua5.2_5.2.4-3build2_amd64.deb
+      run: |
+        if [ "$CACHE_HIT" != true ]; then
+          curl --fail --silent --show-error --location --max-time 8 \
+            "https://security.ubuntu.com/ubuntu/pool/universe/l/lua5.2/$LUA_DEB" \
+            -o "$RUNNER_TEMP/$LUA_DEB"
+        fi
+        echo "de75fdb69ad75802cff02ac7c081d7953082fc34fed4091d7fffc7498a55564c  $RUNNER_TEMP/$LUA_DEB" |
+          sha256sum --check
+        dpkg-deb --extract "$RUNNER_TEMP/$LUA_DEB" "$RUNNER_TEMP/lua"
+        # The Lua tests skip themselves without Lua, so fail here if it can't run.
+        "$RUNNER_TEMP/lua/usr/bin/lua5.2" -v
+        "$RUNNER_TEMP/lua/usr/bin/luac5.2" -v
+        echo "$RUNNER_TEMP/lua/usr/bin" >> "$GITHUB_PATH"
+    - name: Seed the Lua package cache on the default branch
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: >-
+        steps.cache.outputs.cache-hit != 'true' && github.event_name == 'push' &&
+        github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+      with:
+        path: ${{ runner.temp }}/lua5.2_5.2.4-3build2_amd64.deb
+        key: ${{ steps.cache.outputs.cache-primary-key }}
