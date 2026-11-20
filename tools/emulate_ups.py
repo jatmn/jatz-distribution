@@ -19,7 +19,6 @@ comment's text; the workflow posts it, editing its earlier comment on later push
 warning; the job fails only if the emulator itself fails on the working tree.
 """
 import argparse
-from concurrent.futures import ThreadPoolExecutor
 import io
 import json
 import os
@@ -27,6 +26,7 @@ from pathlib import Path
 import subprocess
 import tarfile
 import tempfile
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 EMULATOR = ROOT / 'tests/lua/ups-emulator.lua'
@@ -34,18 +34,40 @@ EMULATOR = ROOT / 'tests/lua/ups-emulator.lua'
 RUNTIME = ('control.lua', 'scripts', 'prototypes')
 # Marks the workflow's comment so later pushes edit it instead of adding another.
 COMMENT_MARKER = '<!-- ups-benchmark -->'
+TIMEOUT = 1800  # seconds an emulation may take
 METRICS = (('instructions_per_tick', 'Mean per tick'), ('instructions_p99', 'p99 tick'),
            ('instructions_max', 'Worst tick'), ('api_calls_per_tick', 'API calls per tick'),
            ('path_requests', 'Path requests'),
            ('commands', 'Unit commands'), ('vehicles_out', 'Freighters out'), ('delivered', 'Items delivered'))
 
 
+def start(mod_root, preset, lua):
+    """Starts the emulator on a mod tree; finish() waits for its report."""
+    return subprocess.Popen([lua, str(EMULATOR), str(mod_root), preset], stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, text=True)
+
+
+def finish(process, deadline):
+    with process:
+        try:
+            stdout, stderr = process.communicate(timeout=max(deadline - time.monotonic(), 0))
+        except BaseException:
+            process.kill()
+            raise
+    if process.returncode != 0:
+        raise RuntimeError(stderr.strip() or stdout.strip())
+    return json.loads(stdout.strip().splitlines()[-1])
+
+
+def stop(process):
+    """Kills an emulator that hasn't been waited for, and reaps it."""
+    if process.returncode is None:
+        with process:
+            process.kill()
+
+
 def emulate(mod_root, preset, lua):
-    result = subprocess.run([lua, str(EMULATOR), str(mod_root), preset], capture_output=True, text=True,
-                            timeout=1800)
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
-    return json.loads(result.stdout.strip().splitlines()[-1])
+    return finish(start(mod_root, preset, lua), time.monotonic() + TIMEOUT)
 
 
 def extract(revision, target):
@@ -54,15 +76,6 @@ def extract(revision, target):
                              capture_output=True, check=True).stdout
     with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
         tar.extractall(target, filter='data')
-
-
-def emulate_base(revision, preset, lua):
-    with tempfile.TemporaryDirectory() as directory:
-        try:
-            extract(revision, directory)
-            return emulate(directory, preset, lua), ''
-        except (subprocess.CalledProcessError, RuntimeError) as error:
-            return None, f'\n\nThe base revision could not be emulated: {str(error).splitlines()[-1]}'
 
 
 def table(preset, before, after, warn):
@@ -94,11 +107,29 @@ def main():
     args = parser.parse_args()
     before, note = None, ''
     if args.base:
-        # The two Lua processes use independent trees and can run on separate cores.
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            baseline = pool.submit(emulate_base, args.base, args.preset, args.lua)
-            after = emulate(ROOT, args.preset, args.lua)
-            before, note = baseline.result()
+        # The two Lua processes use independent trees and run at once, on separate cores. If the
+        # working tree's fails, the base's is stopped rather than waited for.
+        with tempfile.TemporaryDirectory() as directory:
+            deadline = time.monotonic() + TIMEOUT
+            candidate, baseline, failure = start(ROOT, args.preset, args.lua), None, None
+            try:
+                try:
+                    extract(args.base, directory)
+                    baseline = start(directory, args.preset, args.lua)
+                except subprocess.CalledProcessError as error:
+                    failure = error
+                after = finish(candidate, deadline)
+                if baseline:
+                    try:
+                        before = finish(baseline, deadline)
+                    except RuntimeError as error:
+                        failure = error
+            finally:
+                for process in (candidate, baseline):
+                    if process:
+                        stop(process)
+            if failure:
+                note = f'\n\nThe base revision could not be emulated: {str(failure).splitlines()[-1]}'
     else:
         after = emulate(ROOT, args.preset, args.lua)
     markdown, flagged = table(args.preset, before, after, args.warn)
