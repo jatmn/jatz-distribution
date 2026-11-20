@@ -26,7 +26,8 @@ for layer in ['base','shadow']:
                 frame.save(out/'frames'/f'{layer}-{i:02}.png');atlas.paste(frame,(i*512,0))
     atlas.save(out/'sheets'/f'{layer}.png')
     for i in range(4):
-        assert np.array_equal(np.asarray(Image.open(out/'frames'/f'{layer}-{i:02}.png')),np.asarray(atlas.crop((512*i,0,512*(i+1),512))))
+        frame=np.asarray(Image.open(out/'frames'/f'{layer}-{i:02}.png'))
+        assert np.array_equal(frame,np.asarray(atlas.crop((512*i,0,512*(i+1),512))))
 shift=record['picture_shift'][1]
 lua=pipe_pictures_lua(shift)
 (ROOT/'factorio/depot-pipe-pictures.lua').write_text(lua)

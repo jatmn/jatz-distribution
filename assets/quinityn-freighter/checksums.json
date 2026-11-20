@@ -19,7 +19,7 @@
   "source/approved-concept.png": "34a919877285ae1eaa807ccaeba8c38e469b26ab427766d0b382643ccf178caa",
   "source/modeling-turnaround.png": "fa6f59d09235e0b9b43ad8c86129f9e5f2d34684530d09c76690ba5b1555d218",
   "source/quinityn-freighter.blend": "2ee3b273ea7b84552537abe88fea851550420ad7b4953aa46f527447fb934299",
-  "tools/build_master.py": "88827d45b6d3e2432bd0f9c7d694cdc4fe0dbdf62d7aca593102c5527dc63d8a",
+  "tools/build_master.py": "6689866f5e73c8abe61893ff13d7a2dbd7b16353be6ea02a2c57500e34e3c44e",
   "tools/create_preview.py": "e6c9a1eba5591ab2afb0eb4bbadf3b9424d97a34145cf0b07ffba80b10e4ac70",
   "tools/inspect_geometry.py": "41f5a8f0cd39c1306ff3ccc1d948afccd5b5b55dd81c21504457150943aa50e6",
   "tools/package_sprites.py": "5aa837bacd93390fd6dd177938a0338d1a94373d5aedcfa6bea1952c1c3a8abe",
