@@ -22,15 +22,20 @@ KEYS = ('freighter', 'freighter_art', 'depots', 'depots_art', 'mod', 'repository
 NO_COMMIT = '0' * 40
 
 
-def workflow_block(workflow, name):
-    """The shell script of a named step; the step must appear exactly once."""
+def workflow_step(workflow, name):
+    """The YAML block of a named step; the step must appear exactly once."""
     text = (WORKFLOWS / workflow).read_text()
     steps = [re.split(r'\n(?=      - |  \S)', step, maxsplit=1)[0]
              for step in text.split(f'      - name: {name}\n')[1:]]
     if len(steps) != 1:
         raise AssertionError(f'{workflow}: expected one {name!r} step, found {len(steps)}')
+    return steps[0]
+
+
+def workflow_block(workflow, name):
+    """The shell script of a named step."""
     lines = []
-    for line in steps[0].split('        run: |\n', 1)[1].splitlines():
+    for line in workflow_step(workflow, name).split('        run: |\n', 1)[1].splitlines():
         if line.strip() and not line.startswith('          '):
             break
         lines.append(line)
@@ -130,6 +135,7 @@ class RoutingTests(unittest.TestCase):
         repo = Repo(self)
         control = (REPO / 'control.lua').read_text()
         repo.write('control.lua', control)
+        repo.write('untouched.lua')
         repo.write('.luacheckrc', (REPO / '.luacheckrc').read_text())
         repo.write('tools/ci_changes.py', 'print("\\n".join(k + "=false" for k in %r))\n' % (KEYS,))
         base = repo.commit('base with faulty PR selection')
@@ -140,6 +146,12 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(pr.returncode, 0, pr.stderr)
         self.assertEqual(outputs, {f'{key}=false' for key in KEYS})
 
+        # The area step runs the checked-out selector. Keep the fake router in
+        # the committed diff so changing it can't trigger full selection on its own.
+        shutil.copy(ROUTER, repo.root / 'tools/ci_changes.py')
+        select = workflow_block('area.yml', "Select this area's files")
+        self.assertIn("        if: steps.files.outputs.lua == 'true'\n",
+                      workflow_step('area.yml', 'Check Lua syntax'))
         syntax = workflow_block('area.yml', 'Check Lua syntax')
         result_step = workflow_block('ci.yml', 'Require every selected check to pass')
         for event in ('merge_group', 'push'):
@@ -147,16 +159,25 @@ class RoutingTests(unittest.TestCase):
                 full, outputs = repo.run_step(self.route_step, BASE=base, EVENT_NAME=event)
                 self.assertEqual(full.returncode, 0, full.stderr)
                 self.assertEqual(outputs, {f'{key}=true' for key in KEYS})
-                self.assertEqual(repo.select('mod', base, event)['lua'], {b'control.lua'})
+                files, outputs = repo.run_step(select, AREA='mod', BASE=base, EVENT_NAME=event)
+                self.assertEqual(files.returncode, 0, files.stderr)
+                self.assertIn('lua=true', outputs)
+                lua = (repo.root / '.cache/ci-lua-files').read_bytes().split(b'\0')
+                self.assertEqual(set(filter(None, lua)), {b'control.lua', b'untouched.lua'})
                 lint, _ = repo.run_step(syntax)
                 self.assertNotEqual(lint.returncode, 0)
                 self.assertIn('control.lua:', lint.stderr)
 
-                statuses = json.dumps({'mod': {'result': 'failure'}, 'repository': {'result': 'skipped'}})
+                statuses = json.dumps({'changes': {'result': 'success'}, 'mod': {'result': 'failure'},
+                                       'repository': {'result': 'skipped'}})
                 result, _ = repo.run_step(result_step, EVENT_NAME=event, RESULTS=statuses)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('mod finished with failure', result.stdout)
                 self.assertIn('repository finished with skipped', result.stdout)
+
+        statuses = json.dumps({'changes': {'result': 'success'}, 'mod': {'result': 'skipped'}})
+        result, _ = repo.run_step(result_step, RESULTS=statuses)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_text_size_guard_matches_the_clone_filter(self):
         # Git's blob:limit omits blobs of *at least* the limit, so the guard must reject that size too.
@@ -301,6 +322,7 @@ class RoutingTests(unittest.TestCase):
 
 class ReleaseNotesHoldTests(unittest.TestCase):
     hold_step = workflow_block('ci.yml', 'Hold the package check for the release notes')
+    result_step = workflow_block('ci.yml', 'Require every selected check to pass')
 
     def test_only_release_pleases_unfinalized_commit_skips_the_package_check(self):
         history = SEPARATOR + 'Version: 0.1.0\nDate: 2026-11-04\n  Info:\n    - First release.\n'
@@ -334,7 +356,7 @@ class ReleaseNotesHoldTests(unittest.TestCase):
                         finalize(repo.root, '2026-11-06')
                         self.assertTrue((repo.root / 'changelog.txt').read_text().startswith(
                             SEPARATOR + 'Version: 0.1.1\n'))
-                    repo.commit('release')
+                    release_head = repo.commit('release')
                     result, outputs = repo.run_step(self.hold_step, BASE=base)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(outputs, {f'release_pending={str(expected).lower()}'})
@@ -344,13 +366,57 @@ class ReleaseNotesHoldTests(unittest.TestCase):
                         with self.assertRaisesRegex(ValueError, 'top version'):
                             package_metadata(repo.root)
 
-    def test_package_job_waits_only_on_the_hold(self):
+                    # A queue snapshot integrates the release into a potentially
+                    # newer base and has a different commit ID from the release head.
+                    repo.git('checkout', '-q', '--detach', base)
+                    repo.write('docs/new-on-main.md')
+                    queue_base = repo.commit('main advanced')
+                    repo.git('merge', '-q', '--squash', release_head)
+                    repo.commit('queued release')
+                    release_ref = 'refs/remotes/origin/release-please--branches--main'
+                    with self.subTest(event='merge_group'):
+                        if expected:
+                            result, outputs = repo.run_step(self.hold_step, BASE=queue_base, EVENT_NAME='merge_group')
+                            self.assertEqual(result.returncode, 0, result.stderr)
+                            self.assertEqual(outputs, {'release_pending=false'})
+                        repo.git('update-ref', release_ref, release_head)
+                        result, outputs = repo.run_step(self.hold_step, BASE=queue_base, EVENT_NAME='merge_group')
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(outputs, {f'release_pending={str(expected).lower()}'})
+                        self.assertEqual('Skipping the installable package check' in result.stdout, expected)
+                        if expected:
+                            repo.write('control.lua', 'return false\n')
+                            repo.commit('group with an additional change')
+                            result, outputs = repo.run_step(self.hold_step, BASE=queue_base, EVENT_NAME='merge_group')
+                            self.assertEqual(result.returncode, 0, result.stderr)
+                            self.assertEqual(outputs, {'release_pending=false'})
+
+    def test_release_hold_wiring(self):
         workflow = (WORKFLOWS / 'ci.yml').read_text()
-        hold = workflow.split('      - name: Hold the package check for the release notes\n')[1].split('        run: |')[0]
+        hold = workflow_step('ci.yml', 'Hold the package check for the release notes').split('        run: |')[0]
+        self.assertIn("github.event_name == 'merge_group' || (", hold)
+        self.assertIn("github.event_name == 'pull_request' &&", hold)
         self.assertIn("github.head_ref == 'release-please--branches--main'", hold)
         self.assertIn('github.event.pull_request.head.repo.full_name == github.repository', hold)
+        self.assertIn('BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}', hold)
+        self.assertIn('EVENT_NAME: ${{ github.event_name }}', hold)
+        self.assertIn('release_pending: ${{ steps.release.outputs.release_pending }}', workflow)
         package = workflow.split('\n  package:\n')[1].split('\n    runs-on:')[0]
         self.assertIn("needs.changes.outputs.release_pending != 'true' && (", package)
+
+    def test_only_an_expected_package_skip_is_allowed_in_a_full_run(self):
+        for event, hold, skipped, accepted in (
+            ('merge_group', True, 'package', True),
+            ('merge_group', False, 'package', False),
+            ('merge_group', True, 'mod', False),
+            ('push', False, 'package', False),
+        ):
+            with self.subTest(event=event, hold=hold, skipped=skipped):
+                statuses = {'changes': {'result': 'success', 'outputs': {'release_pending': str(hold).lower()}},
+                            'package': {'result': 'success'}, 'mod': {'result': 'success'}}
+                statuses[skipped]['result'] = 'skipped'
+                result, _ = Repo(self).run_step(self.result_step, EVENT_NAME=event, RESULTS=json.dumps(statuses))
+                self.assertEqual(result.returncode == 0, accepted, result.stdout + result.stderr)
 
 
 class SelectionTests(unittest.TestCase):

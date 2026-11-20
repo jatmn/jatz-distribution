@@ -95,12 +95,25 @@ jobs:
       - name: Hold the package check for the release notes
         id: release
         if: >-
+          github.event_name == 'merge_group' || (
           github.event_name == 'pull_request' &&
           github.head_ref == 'release-please--branches--main' &&
-          github.event.pull_request.head.repo.full_name == github.repository
+          github.event.pull_request.head.repo.full_name == github.repository)
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
+          # Queue refs identify the group, which may combine changes from several PRs.
+          # Apply the hold only if the fetched release branch produces exactly this tree.
+          if [ "$EVENT_NAME" = merge_group ]; then
+            release_ref=refs/remotes/origin/release-please--branches--main
+            if ! git show-ref --verify --quiet "$release_ref" ||
+               ! release_tree="$(git merge-tree --write-tree "$BASE" "$release_ref")" ||
+               [ "$release_tree" != "$(git rev-parse 'HEAD^{tree}')" ]; then
+              echo 'release_pending=false' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
           pending=true
           # Only the release metadata may differ from the base.
           changed="$(git diff --name-only --no-renames "$BASE" HEAD)"
@@ -249,7 +262,7 @@ jobs:
           python3 tools/validate_package.py
 
   # Stable name for a required status check: routed jobs are skipped or renamed
-  # for PR feedback. All constituent jobs are required on a merge group or push.
+  # for PR feedback. Full runs require every job except a held release package.
   result:
     name: CI result
     needs: [changes, freighter, depots, mod, repository, ups, package]
@@ -266,10 +279,14 @@ jobs:
           import json
           import os
 
+          results = json.loads(os.environ['RESULTS'])
+          event = os.environ['EVENT_NAME']
+          release_pending = results['changes'].get('outputs', {}).get('release_pending') == 'true'
           failed = False
-          for name, job in json.loads(os.environ['RESULTS']).items():
+          for name, job in results.items():
               outcome = job['result']
-              if outcome == 'success' or (outcome == 'skipped' and os.environ['EVENT_NAME'] == 'pull_request'):
+              expected_skip = event == 'pull_request' or (event == 'merge_group' and name == 'package' and release_pending)
+              if outcome == 'success' or (outcome == 'skipped' and expected_skip):
                   continue
               print(f'::error::{name} finished with {outcome}')
               failed = True
