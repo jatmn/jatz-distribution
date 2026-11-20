@@ -12,17 +12,17 @@ runs:
     - name: Verify and unpack Lua
       shell: bash
       env:
-        CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
         LUA_DEB: lua5.2_5.2.4-3build2_amd64.deb
       run: |
-        if [ "$CACHE_HIT" != true ]; then
+        package="$RUNNER_TEMP/$LUA_DEB"
+        checksum="de75fdb69ad75802cff02ac7c081d7953082fc34fed4091d7fffc7498a55564c  $package"
+        if ! sha256sum --check --status <<< "$checksum" 2>/dev/null; then
           curl --fail --silent --show-error --location --max-time 8 \
             "https://security.ubuntu.com/ubuntu/pool/universe/l/lua5.2/$LUA_DEB" \
-            -o "$RUNNER_TEMP/$LUA_DEB"
+            -o "$package"
+          sha256sum --check <<< "$checksum"
         fi
-        echo "de75fdb69ad75802cff02ac7c081d7953082fc34fed4091d7fffc7498a55564c  $RUNNER_TEMP/$LUA_DEB" |
-          sha256sum --check
-        dpkg-deb --extract "$RUNNER_TEMP/$LUA_DEB" "$RUNNER_TEMP/lua"
+        dpkg-deb --extract "$package" "$RUNNER_TEMP/lua"
         # The Lua tests skip themselves without Lua, so fail here if it can't run.
         "$RUNNER_TEMP/lua/usr/bin/lua5.2" -v
         "$RUNNER_TEMP/lua/usr/bin/luac5.2" -v
