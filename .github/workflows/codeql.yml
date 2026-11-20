@@ -42,6 +42,11 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: none
           queries: security-and-quality
+          # The retired 1x1 depots are frozen (AGENTS.md), so their tools are
+          # never fixed; Ruff exempts them from Pyflakes for the same reason.
+          config: |
+            paths-ignore:
+              - assets/depots/archive/1x1
       # Same categories as default setup, so its existing alerts carry over.
       - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:

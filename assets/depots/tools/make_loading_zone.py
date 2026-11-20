@@ -160,7 +160,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--check', action='store_true', help='compare with the committed image; write nothing')
     if parser.parse_args().check:
-        return check()
+        check()
+        return
     OUTPUT.mkdir(exist_ok=True)
     image = tile()
     encoded = BytesIO()

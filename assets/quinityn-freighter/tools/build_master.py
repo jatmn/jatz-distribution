@@ -581,7 +581,7 @@ for side in [-1,1]:
             cylinder("Spring ring",(side*1.07,y-.10,1.05+j*.10),.12,.055,steel)
 
 for y in bay_centers:
-    for j in range(45):
+    for _ in range(45):
         x=random.uniform(-1.12,1.12)
         dy=random.uniform(-.78,.78)
         box("Roof paint chip",(x,y+dy,4.026),(random.uniform(.015,.065),random.uniform(.008,.035),.006),edge,.002)
@@ -591,7 +591,7 @@ for y in [.82,-1.18,-3.18,-5.18]:
     for dy in [-.12,.12]:
         box("Roof band machined edge",(0,y+dy,4.16),(2.17,.032,.035),edge,.006)
 for side in [-1,1]:
-    for j in range(22):
+    for _ in range(22):
         box("Cab paint chip",(side*1.325,random.uniform(3.0,3.92),random.uniform(1.91,2.36)),
             (.008,random.uniform(.015,.05),.012),edge,.002)
     for z in [2.52,3.64]:
@@ -603,36 +603,36 @@ for side in [-1,1]:
 # expose untinted substrate and oxide; repainting does not recolor the damage.
 for side in [-1,1]:
     for y in bay_centers:
-        for j in range(28):
+        for _ in range(28):
             dy=random.uniform(-.79,.79)
             z=random.choice([random.uniform(1.92,2.24),random.uniform(3.43,3.72)])
             wear_patch("Chipped cargo perimeter",(side*1.341,y+dy,z),(0,1,0),(0,0,1),
                        random.uniform(.06,.24),random.uniform(.018,.07),random.choice([rust,scuff,edge]))
-        for j in range(12):
+        for _ in range(12):
             dy=random.uniform(-.76,.76)
             z=random.uniform(2.35,3.46)
             wear_patch("Cargo rain streak",(side*1.342,y+dy,z),(0,0,1),(0,1,0),
                        random.uniform(.16,.48),random.uniform(.012,.048),rust)
-        for j in range(11):
+        for _ in range(11):
             wear_patch("Cargo handling scrape",(side*1.343,y+random.uniform(-.70,.70),random.uniform(2.02,3.57)),
                        (0,1,.17),(0,0,1),random.uniform(.13,.39),random.uniform(.006,.018),edge)
-    for j in range(32):
+    for _ in range(32):
         wear_patch("Cab door worn coating",(side*1.325,random.uniform(3.0,3.92),random.uniform(1.91,2.36)),
                    (0,1,.12),(0,0,1),random.uniform(.04,.17),random.uniform(.012,.045),random.choice([rust,scuff,edge]))
     for y in axles:
-        for j in range(9):
+        for _ in range(9):
             wear_patch("Mudguard scuffed crown",(side*1.66,y+random.uniform(-.62,.62),1.889),
                        (0,1,0),(1,0,0),random.uniform(.05,.22),random.uniform(.01,.035),random.choice([edge,scuff]))
 for y in bay_centers:
-    for j in range(48):
+    for _ in range(48):
         x=random.choice([random.uniform(-1.11,-.85),random.uniform(.85,1.11),random.uniform(-1,1)])
         dy=random.uniform(-.79,.79)
         wear_patch("Roof chipped coating",(x,y+dy,4.027),(1,0,0),(0,1,0),
                    random.uniform(.06,.25),random.uniform(.018,.075),random.choice([rust,scuff,edge]))
-    for j in range(17):
+    for _ in range(17):
         wear_patch("Roof dragging scratch",(random.uniform(-1,1),y+random.uniform(-.7,.7),4.029),
                    (1,.14,0),(0,1,0),random.uniform(.14,.46),random.uniform(.007,.019),edge)
-for j in range(48):
+for _ in range(48):
     wear_patch("Cab roof service wear",(random.uniform(-.86,.86),random.uniform(2.72,4.00),3.922),
                (1,.10,0),(0,1,0),random.uniform(.05,.20),random.uniform(.012,.04),random.choice([rust,edge,scuff]))
 
