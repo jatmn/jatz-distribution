@@ -19,6 +19,7 @@ comment's text; the workflow posts it, editing its earlier comment on later push
 warning; the job fails only if the emulator itself fails on the working tree.
 """
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import io
 import json
 import os
@@ -55,6 +56,15 @@ def extract(revision, target):
         tar.extractall(target, filter='data')
 
 
+def emulate_base(revision, preset, lua):
+    with tempfile.TemporaryDirectory() as directory:
+        try:
+            extract(revision, directory)
+            return emulate(directory, preset, lua), ''
+        except (subprocess.CalledProcessError, RuntimeError) as error:
+            return None, f'\n\nThe base revision could not be emulated: {str(error).splitlines()[-1]}'
+
+
 def table(preset, before, after, warn):
     lines = [f'Engine-free emulation, preset `{preset}`: Lua instructions the mod\'s own code runs per tick (lower is '
              'better), and its calls into the runtime\'s functions. Machine-independent; the game\'s pathfinding and '
@@ -82,15 +92,15 @@ def main():
     parser.add_argument('--warn', type=float, default=5.0, help='flag rises above this many percent')
     parser.add_argument('--lua', default='lua5.2')
     args = parser.parse_args()
-    after = emulate(ROOT, args.preset, args.lua)
     before, note = None, ''
     if args.base:
-        with tempfile.TemporaryDirectory() as directory:
-            try:
-                extract(args.base, directory)
-                before = emulate(directory, args.preset, args.lua)
-            except (subprocess.CalledProcessError, RuntimeError) as error:
-                note = f'\n\nThe base revision could not be emulated: {str(error).splitlines()[-1]}'
+        # The two Lua processes use independent trees and can run on separate cores.
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            baseline = pool.submit(emulate_base, args.base, args.preset, args.lua)
+            after = emulate(ROOT, args.preset, args.lua)
+            before, note = baseline.result()
+    else:
+        after = emulate(ROOT, args.preset, args.lua)
     markdown, flagged = table(args.preset, before, after, args.warn)
     markdown += note
     print(markdown)
