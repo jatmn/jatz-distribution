@@ -284,6 +284,8 @@ class ReleaseBranchGuard(unittest.TestCase):
                 commands.mkdir()
                 (commands / 'gh').write_text('#!/bin/sh\nprintf "%s\\n" "$TEST_RELEASE_HEAD"\n')
                 (commands / 'gh').chmod(0o755)
+                (commands / 'sleep').write_text('#!/bin/sh\nprintf "%s\\n" "$1" >> "$RUNNER_TEMP/sleep-calls"\n')
+                (commands / 'sleep').chmod(0o755)
                 env = {**os.environ, 'PATH': str(commands) + os.pathsep + os.environ['PATH'],
                        'TEST_RELEASE_HEAD': base if scenario == 'stale head' else head,
                        'GITHUB_SHA': base, 'RUNNER_TEMP': str(root)}
@@ -296,6 +298,11 @@ class ReleaseBranchGuard(unittest.TestCase):
                 else:
                     self.assertNotEqual(result.returncode, 0)
                     self.assertEqual(git('rev-parse', 'HEAD'), base)
+                sleep_calls = root / 'sleep-calls'
+                if scenario == 'stale head':
+                    self.assertEqual(sleep_calls.read_text().splitlines(), ['5'] * 12)
+                else:
+                    self.assertFalse(sleep_calls.exists())
 
     def test_consumed_note_deletions_pass_and_rewritten_notes_do_not(self):
         workflow = (REPO / '.github/workflows/release.yml').read_text()
