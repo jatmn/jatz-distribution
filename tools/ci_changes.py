@@ -22,7 +22,8 @@ AREAS = ('freighter', 'depots', 'mod', 'repository')
 EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 NO_COMMIT = '0' * 40
 # Changes that can alter any area's results: re-check every area, including art.
-EVERYTHING = {'.github/workflows/ci.yml', '.github/workflows/area.yml', 'tools/ci_changes.py'}
+EVERYTHING = {'.github/workflows/ci.yml', '.github/workflows/area.yml',
+              '.github/actions/setup-lua/action.yml', 'tools/ci_changes.py'}
 # Shared lint configuration: every area's code is checked again, in full.
 SHARED_LINT = {'.luacheckrc', '.stylua.toml', '.ruff.toml', '.gitattributes'}
 DOCUMENTATION = {'README.md', 'AGENTS.md', 'CONTRIBUTING.md', 'SECURITY.md', 'NOTICE', 'COPYING',

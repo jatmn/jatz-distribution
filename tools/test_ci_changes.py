@@ -232,6 +232,7 @@ class RoutingTests(unittest.TestCase):
             (['tools/test_art_dependencies.py'], {'freighter', 'freighter_art', 'depots', 'depots_art', 'repository'}),
             (['.github/workflows/ci.yml'], set(KEYS)),
             (['.github/workflows/area.yml'], set(KEYS)),
+            (['.github/actions/setup-lua/action.yml'], set(KEYS)),
             (['tools/ci_changes.py'], set(KEYS)),
             (['control.lua', 'assets/depots/source/fuel-3.blend'], {'mod', 'depots', 'depots_art'}),
             ([], set()),
