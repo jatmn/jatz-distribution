@@ -6,6 +6,7 @@ leave every number unchanged, and work added to a mod handler must show up exact
 CI's UPS benchmark check runs it before comparing a pull request with its base. It also checks that
 the comparison (tools/emulate_ups.py --base) stops the base's emulation as soon as the working tree's
 fails, rather than waiting for it."""
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -152,10 +153,9 @@ class ComparisonTests(unittest.TestCase):
 
     @staticmethod
     def kill_survivor(running):
-        try:
+        # Only a failed run leaves the base's process behind: it may also never have started, or be gone.
+        with contextlib.suppress(FileNotFoundError, ProcessLookupError, ValueError):
             os.kill(int(running.read_text()), signal.SIGKILL)
-        except (FileNotFoundError, ProcessLookupError, ValueError):
-            pass
 
 
 if __name__ == '__main__':
