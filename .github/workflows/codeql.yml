@@ -13,11 +13,11 @@ on:
 permissions:
   contents: read
 
-# A new push to a pull request cancels the scan of its previous commit;
-# pushes to main and scheduled scans never cancel each other.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+  # Only first-run PR events supersede each other. Reruns of older commits are
+  # isolated by run ID, as are pushes, merge groups and scheduled checks.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.run_attempt == '1' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == '1' }}
 
 jobs:
   analyze:
