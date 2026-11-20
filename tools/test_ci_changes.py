@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 """Regressions for CI area routing and file selection; no game, Blender or dependency mods are loaded."""
 from pathlib import Path
+import json
 import os
 import re
 import shutil
@@ -77,7 +78,8 @@ class Repo:
         output.unlink(missing_ok=True)
         result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', command], cwd=self.root,
                                 capture_output=True, text=True,
-                                env={**os.environ, 'GITHUB_OUTPUT': str(output), 'RUNNER_TEMP': str(scratch), **env})
+                                env={**os.environ, 'GITHUB_OUTPUT': str(output), 'RUNNER_TEMP': str(scratch),
+                                     'EVENT_NAME': 'pull_request', **env})
         return result, (set(output.read_text().splitlines()) if output.exists() else set())
 
 
@@ -114,15 +116,47 @@ class RoutingTests(unittest.TestCase):
         repo = Repo(self)
         repo.write('control.lua')
         repo.commit('first commit')
-        result, outputs = repo.run_step(self.route_step, BASE=NO_COMMIT)
+        result, outputs = repo.run_step(self.route_step, BASE=NO_COMMIT, EVENT_NAME='push')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(outputs, {f'{key}=true' for key in KEYS})
         # The whole tree is checked for whitespace errors.
         repo.write('notes.txt', 'trailing space \n')
         repo.commit('whitespace error')
-        result, _ = repo.run_step(self.route_step, BASE=NO_COMMIT)
+        result, _ = repo.run_step(self.route_step, BASE=NO_COMMIT, EVENT_NAME='push')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('trailing whitespace', result.stdout + result.stderr)
+
+    def test_full_checks_catch_a_real_lua_change_hidden_by_pr_routing(self):
+        repo = Repo(self)
+        control = (REPO / 'control.lua').read_text()
+        repo.write('control.lua', control)
+        repo.write('.luacheckrc', (REPO / '.luacheckrc').read_text())
+        repo.write('tools/ci_changes.py', 'print("\\n".join(k + "=false" for k in %r))\n' % (KEYS,))
+        base = repo.commit('base with faulty PR selection')
+        repo.write('control.lua', control + '\nlocal = 42\n')
+        repo.commit('break a real Lua file')
+
+        pr, outputs = repo.run_step(self.route_step, BASE=base)
+        self.assertEqual(pr.returncode, 0, pr.stderr)
+        self.assertEqual(outputs, {f'{key}=false' for key in KEYS})
+
+        syntax = workflow_block('area.yml', 'Check Lua syntax')
+        result_step = workflow_block('ci.yml', 'Require every selected check to pass')
+        for event in ('merge_group', 'push'):
+            with self.subTest(event=event):
+                full, outputs = repo.run_step(self.route_step, BASE=base, EVENT_NAME=event)
+                self.assertEqual(full.returncode, 0, full.stderr)
+                self.assertEqual(outputs, {f'{key}=true' for key in KEYS})
+                self.assertEqual(repo.select('mod', base, event)['lua'], {b'control.lua'})
+                lint, _ = repo.run_step(syntax)
+                self.assertNotEqual(lint.returncode, 0)
+                self.assertIn('control.lua:', lint.stderr)
+
+                statuses = json.dumps({'mod': {'result': 'failure'}, 'repository': {'result': 'skipped'}})
+                result, _ = repo.run_step(result_step, EVENT_NAME=event, RESULTS=statuses)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('mod finished with failure', result.stdout)
+                self.assertIn('repository finished with skipped', result.stdout)
 
     def test_text_size_guard_matches_the_clone_filter(self):
         # Git's blob:limit omits blobs of *at least* the limit, so the guard must reject that size too.

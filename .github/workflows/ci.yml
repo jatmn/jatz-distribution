@@ -3,6 +3,8 @@ name: CI
 # Do not use event-level path filters: GitHub truncates their changed-file list.
 on:
   pull_request:
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main]
 
@@ -49,7 +51,8 @@ jobs:
       - name: Route the complete Git diff
         id: paths
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           # A push that creates the branch has no previous commit: compare with the empty tree.
           if [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
@@ -71,14 +74,14 @@ jobs:
           PY
           # Binary files have no whitespace to check, and their contents aren't downloaded.
           git diff --check "$BASE" HEAD -- ':(exclude,attr:binary)'
-          # An edited router must not decide whether its own checks run.
-          git ls-tree "$BASE" -- tools/ci_changes.py > "$RUNNER_TEMP/ci-router-entry"
-          if [ -s "$RUNNER_TEMP/ci-router-entry" ]; then
-            git show "$BASE:tools/ci_changes.py" > "$RUNNER_TEMP/ci-router.py"
-            python3 "$RUNNER_TEMP/ci-router.py" --base "$BASE" > "$RUNNER_TEMP/ci-routes"
-          else
-            # The initial installation has no base router: validate everything.
-            : > "$RUNNER_TEMP/ci-routes"
+          # Only a PR may select a subset. The base controls its routing.
+          : > "$RUNNER_TEMP/ci-routes"
+          if [ "$EVENT_NAME" = pull_request ]; then
+            git ls-tree "$BASE" -- tools/ci_changes.py > "$RUNNER_TEMP/ci-router-entry"
+            if [ -s "$RUNNER_TEMP/ci-router-entry" ]; then
+              git show "$BASE:tools/ci_changes.py" > "$RUNNER_TEMP/ci-router.py"
+              python3 "$RUNNER_TEMP/ci-router.py" --base "$BASE" > "$RUNNER_TEMP/ci-routes"
+            fi
           fi
           # Run any check the base router doesn't know about yet.
           for check in freighter freighter_art depots depots_art mod repository; do
@@ -159,7 +162,7 @@ jobs:
   ups:
     name: UPS benchmark
     needs: changes
-    if: needs.changes.outputs.mod == 'true' && github.event_name == 'pull_request'
+    if: needs.changes.outputs.mod == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     # Comments the results on the pull request. Pull requests from forks get a read-only token
@@ -189,12 +192,18 @@ jobs:
         run: python3 tools/test_emulate_ups.py
       - name: Compare the mod's cost per tick with the base
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-        run: >-
-          python3 tools/emulate_ups.py --base "$BASE" --summary "$GITHUB_STEP_SUMMARY"
-          --comment "$RUNNER_TEMP/ups-benchmark.md"
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          # The first commit of a new branch has no previous revision to compare.
+          args=()
+          if [ "$BASE" != 0000000000000000000000000000000000000000 ]; then
+            args+=(--base "$BASE")
+          fi
+          python3 tools/emulate_ups.py "${args[@]}" --summary "$GITHUB_STEP_SUMMARY" \
+            --comment "$RUNNER_TEMP/ups-benchmark.md"
       # One comment per pull request, found by its marker and edited on later pushes.
       - name: Post the results on the pull request
+        if: github.event_name == 'pull_request'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           BODY_PATH: ${{ runner.temp }}/ups-benchmark.md
@@ -240,7 +249,7 @@ jobs:
           python3 tools/validate_package.py
 
   # Stable name for a required status check: routed jobs are skipped or renamed
-  # depending on the diff, so require this job instead of the individual checks.
+  # for PR feedback. All constituent jobs are required on a merge group or push.
   result:
     name: CI result
     needs: [changes, freighter, depots, mod, repository, ups, package]
@@ -250,11 +259,19 @@ jobs:
     steps:
       - name: Require every selected check to pass
         env:
-          RESULTS: ${{ join(needs.*.result, ' ') }}
+          RESULTS: ${{ toJSON(needs) }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          for result in $RESULTS; do
-            case "$result" in
-              success | skipped) ;;
-              *) echo "::error::A selected CI check finished with: $result"; exit 1 ;;
-            esac
-          done
+          python3 - <<'PYTHON'
+          import json
+          import os
+
+          failed = False
+          for name, job in json.loads(os.environ['RESULTS']).items():
+              outcome = job['result']
+              if outcome == 'success' or (outcome == 'skipped' and os.environ['EVENT_NAME'] == 'pull_request'):
+                  continue
+              print(f'::error::{name} finished with {outcome}')
+              failed = True
+          raise SystemExit(failed)
+          PYTHON

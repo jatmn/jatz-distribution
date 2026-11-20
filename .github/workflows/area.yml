@@ -46,7 +46,7 @@ jobs:
         id: files
         env:
           AREA: ${{ inputs.area }}
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           python3 tools/ci_changes.py --select "$AREA" --base "$BASE" --event "$EVENT_NAME" --output .cache

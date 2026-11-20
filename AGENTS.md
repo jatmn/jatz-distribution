@@ -70,7 +70,7 @@ Jat'z Distribution is a Factorio 2.1 road logistics mod, released on the [Factor
 
 ## Continuous integration
 
-CI (`.github/workflows/ci.yml`) is routed by repository **area**, so a change only runs the checks for what it touched. `tools/ci_changes.py` reads the complete diff and decides; `CI result` is the one stable check to require. The routing job also runs `git diff --check` on every change, except binary files.
+On pull requests, CI (`.github/workflows/ci.yml`) uses the base revision's `tools/ci_changes.py` to route the complete diff by repository **area**. The merge queue's `merge_group` event and pushes to `main` run every area, both artwork checks, the package and the UPS comparison. In these full runs, `CI result` fails if any job fails, is cancelled or is skipped. CodeQL also scans merge groups. The routing job runs `git diff --check` on every change, except binary files.
 
 | Area | Paths | Checks (`.github/workflows/area.yml`) |
 | --- | --- | --- |
@@ -79,9 +79,9 @@ CI (`.github/workflows/ci.yml`) is routed by repository **area**, so a change on
 | Mod | The mod source at the repository root, `tools/package_mod.py`, `tools/test_mod.py`, `tools/test_mod_setup.py` and the check mod, the UPS benchmark (`tools/benchmark_ups.py`, `tools/emulate_ups.py`, `tools/test_emulate_ups.py`, the benchmark mod, `tests/lua/ups-emulator.lua`), plus anything else that isn't documentation | Lua and Python lint; mod setup tests; for pull requests, the **UPS benchmark** check (`ups` in `ci.yml`): `tools/test_emulate_ups.py`, then the engine-free script cost against the base, in its summary and a pull request comment |
 | Repository | `.github/`, `portal/`, the other `tools/` | Python lint; `tools/test_ci_changes.py`, `test_pullfrog_command.py`, `test_check_blender_sources.py` and `test_apply_rulesets.py`; actionlint |
 
-- Documentation (`README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `SECURITY.md`, `docs/`, `concepts/`, licence files) runs no area checks.
+- Documentation-only PRs (`README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `SECURITY.md`, `docs/`, `concepts/`, licence files) run no area checks during PR feedback.
 - Shared lint configuration (`.luacheckrc`, `.stylua.toml`, `.ruff.toml`, `.gitattributes`) re-checks every area in full. Editing `ci.yml`, `area.yml` or the router runs everything.
-- **Lua:** Lua 5.2 syntax, Luacheck and StyLua. Pull requests check the area's changed `.lua` files; pushes to `main` check all of them.
+- **Lua:** Lua 5.2 syntax, Luacheck and StyLua. Pull requests check the area's changed `.lua` files. Merge groups and pushes to `main` check all of them.
 - **Python:** syntax and Ruff (syntax errors and Pyflakes). The frozen 1×1 archive tools are exempt from Pyflakes.
 - **Blender sources** (`tools/check_blender_sources.py`, no Blender needed): every `.blend` is saved uncompressed by Blender 4.3; each model matches the hashes in its render, packaging and inspection records; each of the area's wrecks (`assets/<area>/remnants/`) was rendered from the committed `asset.json`, master, wreck builder and renderer (the art checkout also fetches the other area's `tools/` for them, and a change to `build_remnants.py` or `render_directions.py` runs both art checks); freighter sprites match `checksums.json`; the freighter and every depot have an icon in Factorio's 120 × 64 mipmap layout (decoded and checked for blank levels and stray pixels), made from the current sprite sheets; the loading zone marking is a 64 px tile, not blank, and current with its drawing script; and the 1×1 archive matches its manifest. The art jobs then install the pinned numpy, Pillow and OpenEXR, exercise the real EXR sprite extractor with a small fixture (`tools/test_art_dependencies.py`), redraw the icons (`tools/make_icons.py --check`) and the marking (`make_loading_zone.py --check`), and require the committed pixels to match exactly. Re-render, re-package and re-inspect after editing a model, so the records follow it.
 - Changes to `requirements.txt` run both artwork checks, so dependency updates must reproduce the committed icons and marking.
