@@ -56,21 +56,8 @@ jobs:
 
       - name: Install Lua 5.2
         # The repository area's routing tests exercise Lua file selection; the mod area's tests run Lua.
-        # Ubuntu 24.04's one lua5.2 build (Lua linked in), unpacked directly: apt-get update took up to 83 s.
         if: steps.files.outputs.lua == 'true' || inputs.area == 'repository' || inputs.area == 'mod'
-        env:
-          LUA_DEB: lua5.2_5.2.4-3build2_amd64.deb
-        run: |
-          curl --fail --silent --show-error --location --retry 3 \
-            "https://archive.ubuntu.com/ubuntu/pool/universe/l/lua5.2/${LUA_DEB}" \
-            -o "$RUNNER_TEMP/$LUA_DEB"
-          echo "de75fdb69ad75802cff02ac7c081d7953082fc34fed4091d7fffc7498a55564c  $RUNNER_TEMP/$LUA_DEB" |
-            sha256sum --check
-          dpkg-deb --extract "$RUNNER_TEMP/$LUA_DEB" "$RUNNER_TEMP/lua"
-          # The Lua tests skip themselves without Lua, so fail here if it can't run.
-          "$RUNNER_TEMP/lua/usr/bin/lua5.2" -v
-          "$RUNNER_TEMP/lua/usr/bin/luac5.2" -v
-          echo "$RUNNER_TEMP/lua/usr/bin" >> "$GITHUB_PATH"
+        uses: ./.github/actions/setup-lua
       - name: Check Lua syntax
         if: steps.files.outputs.lua == 'true'
         run: |
@@ -115,7 +102,7 @@ jobs:
         env:
           RUFF_VERSION: 0.17.3
         run: |
-          curl --fail --silent --show-error --location --retry 3 \
+          curl --fail --silent --show-error --location --max-time 8 \
             "https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSION}/ruff-x86_64-unknown-linux-gnu.tar.gz" \
             -o "$RUNNER_TEMP/ruff.tar.gz"
           echo "2b0890f5a55900af741f133918c2656919bbf18c2ab7741b4ca8403a90e647a9  $RUNNER_TEMP/ruff.tar.gz" |
@@ -135,7 +122,7 @@ jobs:
         env:
           ACTIONLINT_VERSION: 1.7.12
         run: |
-          curl --fail --silent --show-error --location --retry 3 \
+          curl --fail --silent --show-error --location --max-time 8 \
             "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
             -o "$RUNNER_TEMP/actionlint.tar.gz"
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" |
@@ -170,7 +157,7 @@ jobs:
         if: inputs.art
         run: |
           python3 -m venv "$RUNNER_TEMP/art"
-          "$RUNNER_TEMP/art/bin/pip" install --quiet --requirement requirements.txt
+          "$RUNNER_TEMP/art/bin/pip" install --quiet --retries 0 --requirement requirements.txt
           "$RUNNER_TEMP/art/bin/python" tools/test_art_dependencies.py
       - name: Redraw icons and markings and compare them with the committed images
         if: inputs.art
