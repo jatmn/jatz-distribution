@@ -49,7 +49,7 @@ def area_of(path):
     if path in {'tools/package_mod.py', 'tools/test_mod.py', 'tools/test_mod_setup.py', 'tools/benchmark_ups.py',
                 'tools/emulate_ups.py', 'tools/test_emulate_ups.py'}:
         return 'mod'
-    if path.startswith(('.github/', 'tools/', 'portal/')):
+    if path == 'hk.pkl' or path.startswith(('.github/', 'tools/', 'portal/')):
         return 'repository'
     if path in DOCUMENTATION or path.startswith(('docs/', 'concepts/')):
         return None
