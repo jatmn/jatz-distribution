@@ -43,8 +43,11 @@ METRICS = (('instructions_per_tick', 'Mean per tick'), ('instructions_p99', 'p99
 
 def start(mod_root, preset, lua):
     """Starts the emulator on a mod tree; finish() waits for its report."""
-    return subprocess.Popen([lua, str(EMULATOR), str(mod_root), preset], stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, text=True)
+    command = [lua, str(EMULATOR), str(mod_root), preset]
+    # An argument list with shell=False: no shell parses these values, so there is nothing to
+    # inject into. The interpreter is the operator's own --lua choice, the paths come from this
+    # repository or a temporary directory, and argparse limits the preset.
+    return subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args
 
 
 def finish(process, deadline):
