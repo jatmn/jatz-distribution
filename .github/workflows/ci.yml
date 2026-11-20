@@ -209,6 +209,14 @@ jobs:
               });
               const existing = comments.find(
                 (comment) => comment.user?.type === 'Bot' && comment.body?.startsWith(marker));
+              // Reruns keep the original event head, and context.sha is the test merge commit.
+              const { data: pull } = await github.rest.pulls.get({
+                owner, repo, pull_number: context.issue.number,
+              });
+              if (pull.head.sha !== context.payload.pull_request.head.sha) {
+                core.info('Skipping the UPS comment because this run tested a superseded PR head.');
+                return;
+              }
               if (existing) {
                 await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
               } else {
