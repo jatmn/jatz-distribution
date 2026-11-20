@@ -102,7 +102,7 @@ jobs:
         env:
           RUFF_VERSION: 0.17.3
         run: |
-          curl --fail --silent --show-error --location --retry 3 \
+          curl --fail --silent --show-error --location --max-time 8 \
             "https://github.com/astral-sh/ruff/releases/download/${RUFF_VERSION}/ruff-x86_64-unknown-linux-gnu.tar.gz" \
             -o "$RUNNER_TEMP/ruff.tar.gz"
           echo "2b0890f5a55900af741f133918c2656919bbf18c2ab7741b4ca8403a90e647a9  $RUNNER_TEMP/ruff.tar.gz" |
@@ -122,7 +122,7 @@ jobs:
         env:
           ACTIONLINT_VERSION: 1.7.12
         run: |
-          curl --fail --silent --show-error --location --retry 3 \
+          curl --fail --silent --show-error --location --max-time 8 \
             "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
             -o "$RUNNER_TEMP/actionlint.tar.gz"
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" |
@@ -157,7 +157,7 @@ jobs:
         if: inputs.art
         run: |
           python3 -m venv "$RUNNER_TEMP/art"
-          "$RUNNER_TEMP/art/bin/pip" install --quiet --requirement requirements.txt
+          "$RUNNER_TEMP/art/bin/pip" install --quiet --retries 0 --requirement requirements.txt
           "$RUNNER_TEMP/art/bin/python" tools/test_art_dependencies.py
       - name: Redraw icons and markings and compare them with the committed images
         if: inputs.art
