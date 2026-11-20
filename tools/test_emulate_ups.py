@@ -3,12 +3,19 @@
 """Checks that the engine-free UPS emulator (tests/lua/ups-emulator.lua) counts the mod's own Lua
 and nothing else: inert work added to the fake runtime, in a method or a computed property, must
 leave every number unchanged, and work added to a mod handler must show up exactly. Needs Lua 5.2;
-CI's UPS benchmark check runs it before comparing a pull request with its base."""
+CI's UPS benchmark check runs it before comparing a pull request with its base. It also checks that
+the comparison (tools/emulate_ups.py --base) stops the base's emulation as soon as the working tree's
+fails, rather than waiting for it."""
+import contextlib
 import json
+import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -106,6 +113,49 @@ end
         for key in ('api_calls_per_tick', 'path_requests', 'commands', 'freighters_sent', 'vehicles_out',
                     'delivered', 'spilled'):
             self.assertEqual(after[key], before[key], key)
+
+
+# Stands in for Lua 5.2 (argv: emulator, mod root, preset): the base's emulation records its process
+# and runs for minutes; the working tree's fails once the base's is running.
+FAKE_LUA = '''#!{python}
+import os, sys, time
+from pathlib import Path
+running = Path({running!r})
+if sys.argv[2] == {root!r}:
+    for _ in range(1000):
+        if running.exists():
+            break
+        time.sleep(0.01)
+    sys.exit('the working tree broke')
+running.with_suffix('.tmp').write_text(str(os.getpid()))
+running.with_suffix('.tmp').rename(running)
+time.sleep(300)
+'''
+
+
+class ComparisonTests(unittest.TestCase):
+    def test_a_failing_working_tree_stops_the_base_emulation(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        running = Path(directory.name) / 'base.pid'
+        lua = Path(directory.name) / 'lua'
+        lua.write_text(FAKE_LUA.format(python=sys.executable, running=str(running), root=str(ROOT)))
+        lua.chmod(0o755)
+        self.addCleanup(self.kill_survivor, running)
+        started = time.monotonic()
+        result = subprocess.run([sys.executable, str(ROOT / 'tools/emulate_ups.py'), '--base', 'HEAD',
+                                 '--lua', str(lua)], capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('the working tree broke', result.stderr)
+        self.assertLess(time.monotonic() - started, 30)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(int(running.read_text()), 0)
+
+    @staticmethod
+    def kill_survivor(running):
+        # Only a failed run leaves the base's process behind: it may also never have started, or be gone.
+        with contextlib.suppress(FileNotFoundError, ProcessLookupError, ValueError):
+            os.kill(int(running.read_text()), signal.SIGKILL)
 
 
 if __name__ == '__main__':
