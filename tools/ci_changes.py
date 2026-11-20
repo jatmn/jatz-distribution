@@ -6,8 +6,9 @@ Areas: freighter (truck artwork and its test mod), depots (depot artwork, the
 1x1 archive and their test mod), mod (the game mod source at the repository
 root, its packager and its check: everything that isn't another area or
 documentation) and repository (CI, workflows, repo tools and the Mod Portal page in portal/,
-which the release publishes and the package job checks). Each changed area gets its own CI job. An area's art check (Blender
-sources against their render records) only runs when its art or records change.
+which the release publishes and the package job checks). Pull requests route by
+changed files, including art and its records. Merge groups and pushes to main
+run every area and both checks of Blender sources against their render records.
 
 --base BASE              print the routing as GitHub step outputs.
 --select AREA --base BASE --event EVENT --output DIR
