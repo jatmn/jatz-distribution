@@ -10,10 +10,10 @@ permissions:
   contents: read
 
 concurrency:
-  # One group per commit: a re-run or late run for an older commit can never
-  # cancel the newest commit's checks. Pushes never cancel each other.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.run_id }}
-  cancel-in-progress: true
+  # Only first-run PR events supersede each other. Reruns of older commits are
+  # isolated by run ID, as are pushes, merge groups and scheduled checks.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.run_attempt == '1' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == '1' }}
 
 jobs:
   changes:
