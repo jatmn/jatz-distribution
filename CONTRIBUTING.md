@@ -8,6 +8,10 @@ Read [AGENTS.md](AGENTS.md) before changing code or artwork, the notes in [docs/
 
 Use the pinned tool versions in `.github/workflows/area.yml`. For repository-tool changes, run the relevant `tools/test_*.py`, Ruff, and actionlint. Lua changes need Lua 5.2 syntax checks, Luacheck, and StyLua; mod behavior changes also need `tools/test_mod_setup.py` and the Factorio checks in [docs/testing.md](docs/testing.md). A passing `CI result` does not replace review of changes to workflows or their scripts.
 
+Install hk 2.13.0 and the pinned static tools on your `PATH`, including the Lua 5.2 compiler (`luac5.2`). Run `hk install` in your development clone. The pre-commit hook formats staged Lua with StyLua and runs the applicable static checks. The pre-push hook and `hk check --all --no-fail-fast` check the whole working tree with `luac5.2`, Luacheck, StyLua, Python, Ruff and actionlint. Hosted CI checks committed changes and runs the applicable tests, package build and benchmarks.
+
+Run hk and Luacheck only on trusted revisions. The installed hooks run commands from the checkout's `hk.pkl`, and Luacheck executes `.luacheckrc` as Lua. Review untrusted revisions in a separate clone without hk hooks and use an isolated environment if you need to run checks there.
+
 Dependabot proposes weekly updates for Python development packages and GitHub Actions. Updates still need review and CI; they are not merged automatically. A Pullfrog action update must also update `PULLFROG_VERSION` in `tools/pullfrog_command.py` and pass its authorization tests. Preserve commit-SHA action pins, checksum-verified tool downloads, and the owner-only Pullfrog trigger.
 
 Do not commit credentials, local environment files, machine paths, game binaries, saves, or private logs. Disable Blender's filename/hostname metadata when producing preview renders. Preserve the artwork sources and pixel content when cleaning metadata. New source files and third-party material must follow the licensing rules in AGENTS.md and NOTICE.

@@ -117,6 +117,16 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(outputs, {'freighter=false', 'mod=false'} | {
             f'{key}=true' for key in KEYS if key not in ('freighter', 'mod')})
 
+    def test_hook_config_selects_repository_checks(self):
+        repo = Repo(self)
+        repo.write('tools/ci_changes.py', ROUTER.read_text())
+        base = repo.commit('base')
+        repo.write('hk.pkl', 'steps = new Mapping {}\n')
+        repo.commit('hook configuration')
+        result, outputs = repo.run_step(self.route_step, BASE=base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(outputs, {f'{key}={"true" if key == "repository" else "false"}' for key in KEYS})
+
     def test_push_creating_the_branch_checks_everything(self):
         repo = Repo(self)
         repo.write('control.lua')

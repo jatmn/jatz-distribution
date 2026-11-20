@@ -1,0 +1,62 @@
+amends "package://github.com/jdx/hk/releases/download/v2.13.0/hk@2.13.0#/Config.pkl"
+
+local staticChecks = new Mapping {
+    ["stylua"] {
+        glob = "**/*.lua"
+        check = new Command {
+            argv = List("stylua", "--check", "--config-path", ".stylua.toml", "--", "{{files}}")
+        }
+        fix = new Command {
+            argv = List("stylua", "--config-path", ".stylua.toml", "--", "{{files}}")
+        }
+    }
+    ["luacheck"] {
+        glob = "**/*.lua"
+        check = new Command { argv = List("luacheck", "--", "{{files}}") }
+    }
+    ["lua-syntax"] {
+        glob = List("**/*.lua", ".luacheckrc")
+        check = new Command { argv = List("luac5.2", "-p", "--", "{{files}}") }
+    }
+    ["python-syntax"] {
+        glob = "**/*.py"
+        check = new Command {
+            argv = List("python3", "-c", """
+                import ast
+                from pathlib import Path
+                import sys
+
+                for name in sys.argv[2:]:
+                    ast.parse(Path(name).read_bytes(), filename=name)
+                """, "--", "{{files}}")
+        }
+    }
+    ["ruff"] {
+        glob = "**/*.py"
+        exclude = "assets/depots/archive/1x1/**"
+        check = new Command {
+            argv = List("ruff", "check", "--no-cache", "--config", ".ruff.toml", "--", "{{files}}")
+        }
+    }
+    ["actionlint"] {
+        glob = List(".github/workflows/*.yml", ".github/workflows/*.yaml")
+        check = new Command { argv = List("actionlint") }
+    }
+}
+
+steps = staticChecks
+
+hooks {
+    ["pre-commit"] {
+        fix = true
+        stash = "git"
+        steps = staticChecks
+    }
+    ["pre-push"] {
+        steps {
+            ["static-checks"] {
+                check = new Command { argv = List("hk", "check", "--all", "--no-fail-fast") }
+            }
+        }
+    }
+}
