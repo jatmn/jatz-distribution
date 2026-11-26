@@ -15,7 +15,7 @@ OWNER = 'jatmn'
 OWNER_ID = 12479882
 REPOSITORY = 'jatmn/jatz-distribution'
 # Matches the action bootstrap in .github/workflows/pullfrog.yml.
-PULLFROG_VERSION = '0.1.130'
+PULLFROG_VERSION = '0.1.141'
 MAX_PAYLOAD_BYTES = 64 * 1024
 
 

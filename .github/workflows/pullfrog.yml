@@ -43,7 +43,7 @@ jobs:
       - name: Run Pullfrog
         if: steps.authorize.outputs.authorized == 'true'
         # Keep this bootstrap and PULLFROG_VERSION in the helper in sync.
-        uses: pullfrog/pullfrog@44b58efe7fe431053c58aafa05e51e190f969685 # v0.1.130
+        uses: pullfrog/pullfrog@68e99b94b4bb96ef64bee0daaf52825f2ba1c45a # v0.1.141
         with:
           prompt: ${{ steps.authorize.outputs.payload }}
           model: openai/gpt-sol
@@ -86,7 +86,7 @@ jobs:
       - name: Review the pull request
         if: steps.authorize.outputs.authorized == 'true'
         # Keep this pin and PULLFROG_VERSION in the command helper in sync.
-        uses: pullfrog/pullfrog@44b58efe7fe431053c58aafa05e51e190f969685 # v0.1.130
+        uses: pullfrog/pullfrog@68e99b94b4bb96ef64bee0daaf52825f2ba1c45a # v0.1.141
         with:
           prompt: ${{ inputs.prompt }}
           push: disabled
