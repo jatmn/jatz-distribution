@@ -1,4 +1,13 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.1.11
+Date: 2026-11-26
+  Bugfixes:
+    - Keep the freighter network window's selected surface when it rebuilds after the player travels.
+    - Keep the initially viewed surface when a shared snapshot has not yet counted its first depot.
+  Gui:
+    - Add a pin button to the freighter network window: pinned, E, Esc and other windows no longer close it.
+    - Open the freighter network window on the surface the player is on, or the planet or platform they are viewing in remote view.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.10
 Date: 2026-11-17
   Gui:
