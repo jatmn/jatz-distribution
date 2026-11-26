@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.1.11](https://github.com/jatmn/jatz-distribution/compare/v0.1.10...v0.1.11) (2026-11-26)
+
+
+### Features
+
+* pin the freighter network window and open it on the viewed surface ([#119](https://github.com/jatmn/jatz-distribution/issues/119)) ([f9acaff](https://github.com/jatmn/jatz-distribution/commit/f9acaff41ba8557cdbbda5d6f01b050a300eb5cb))
+
+
+### Bug Fixes
+
+* resolve the open CodeQL code scanning alerts ([#130](https://github.com/jatmn/jatz-distribution/issues/130)) ([3749823](https://github.com/jatmn/jatz-distribution/commit/3749823a0077904289518dc5c98f5610ccef4aea))
+
+
+### Documentation
+
+* tidy documentation, fix stale code comments, make the README match the Mod Portal page ([#117](https://github.com/jatmn/jatz-distribution/issues/117)) ([5b454a0](https://github.com/jatmn/jatz-distribution/commit/5b454a074ffb8bc4fcf1f6ff07e6da63f99f7ac1))
+
+
+### Tests
+
+* simulate waits in the release branch guard ([#124](https://github.com/jatmn/jatz-distribution/issues/124)) ([5304245](https://github.com/jatmn/jatz-distribution/commit/53042459e884a3e7df3ca306c5daa84b80ae52ec))
+
+
+### CI
+
+* add hk hooks for local static checks ([#128](https://github.com/jatmn/jatz-distribution/issues/128)) ([bc9a998](https://github.com/jatmn/jatz-distribution/commit/bc9a998216b2ebbba7175c82cae54f8366b5da44))
+* cancel superseded pull request runs ([#127](https://github.com/jatmn/jatz-distribution/issues/127)) ([aaab91f](https://github.com/jatmn/jatz-distribution/commit/aaab91f31a2a17ea95a65648c82a1d3149c4adc0))
+* compare UPS emulations on separate cores ([#125](https://github.com/jatmn/jatz-distribution/issues/125)) ([918b9b5](https://github.com/jatmn/jatz-distribution/commit/918b9b540b9e2f86783f1bf081b0ada1b24061d9))
+* enable owner-only Pullfrog reviews ([#131](https://github.com/jatmn/jatz-distribution/issues/131)) ([daa1825](https://github.com/jatmn/jatz-distribution/commit/daa1825bf2c5d4c356028467db1f90060cf5a663))
+* fail dependency downloads on the first error ([#129](https://github.com/jatmn/jatz-distribution/issues/129)) ([5602094](https://github.com/jatmn/jatz-distribution/commit/5602094ff75519095f45e9fe9be753605769c358))
+* reuse the verified Lua 5.2 package ([#123](https://github.com/jatmn/jatz-distribution/issues/123)) ([c3174b5](https://github.com/jatmn/jatz-distribution/commit/c3174b521914e8817ef427bcb4761194e103c827))
+* run the full suite on merge groups ([#126](https://github.com/jatmn/jatz-distribution/issues/126)) ([2154949](https://github.com/jatmn/jatz-distribution/commit/2154949782b5fad7a2a4fc47106e63e0df018aec))
+
+
+### Maintenance
+
+* **deps:** bump CodeQL Action from 4.39.3 to 4.39.4 ([#132](https://github.com/jatmn/jatz-distribution/issues/132)) ([fa6e8ec](https://github.com/jatmn/jatz-distribution/commit/fa6e8ecbf5a78006c62b3cb927802ee3b41a6905))
+* **deps:** bump numpy from 2.5.4 to 2.5.5 ([#121](https://github.com/jatmn/jatz-distribution/issues/121)) ([67e07f0](https://github.com/jatmn/jatz-distribution/commit/67e07f04b2d53187a73d3d3c7d99c0157e047d67))
+* **deps:** bump openexr from 3.5.3 to 3.5.4 ([#122](https://github.com/jatmn/jatz-distribution/issues/122)) ([71d430e](https://github.com/jatmn/jatz-distribution/commit/71d430e4481cfbffb8d1fd10602f87dd2d2fa531))
+* **deps:** bump openexr from 3.5.4 to 3.5.5 ([#134](https://github.com/jatmn/jatz-distribution/issues/134)) ([ed92726](https://github.com/jatmn/jatz-distribution/commit/ed927263ddd2cc36706880a8eaddb4bbad85c703))
+* **deps:** bump pullfrog/pullfrog from 0.1.125 to 0.1.130 ([#120](https://github.com/jatmn/jatz-distribution/issues/120)) ([bfca50d](https://github.com/jatmn/jatz-distribution/commit/bfca50dad4bcb8d902a8df271d644a3af3a669a5))
+* **deps:** bump pullfrog/pullfrog from 0.1.130 to 0.1.141 ([#135](https://github.com/jatmn/jatz-distribution/issues/135)) ([8ff657a](https://github.com/jatmn/jatz-distribution/commit/8ff657a7404695f410c2c22f1592e4c73292431a))
+
 ## [0.1.10](https://github.com/jatmn/jatz-distribution/compare/v0.1.9...v0.1.10) (2026-11-17)
 
 
